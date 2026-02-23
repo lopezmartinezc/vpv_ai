@@ -131,3 +131,38 @@ export interface LineupDetailResponse {
   total_points: number;
   players: LineupPlayerEntry[];
 }
+
+export interface PositionCounts {
+  POR: number;
+  DEF: number;
+  MED: number;
+  DEL: number;
+}
+
+export interface SquadSummary {
+  participant_id: number;
+  display_name: string;
+  total_players: number;
+  season_points: number;
+  positions: PositionCounts;
+}
+
+export interface SquadListResponse {
+  season_id: number;
+  squads: SquadSummary[];
+}
+
+export interface SquadPlayerEntry {
+  player_id: number;
+  display_name: string;
+  position: string;
+  team_name: string;
+  season_points: number;
+}
+
+export interface SquadDetailResponse {
+  participant_id: number;
+  display_name: string;
+  season_points: number;
+  players: SquadPlayerEntry[];
+}
