@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: vpv_secret
       POSTGRES_DB: ligavpv
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - vpv_pgdata:/var/lib/postgresql/data
       - ./migration/schema:/docker-entrypoint-initdb.d:ro
@@ -27,10 +27,10 @@ services:
       DEBUG: "true"
       ENVIRONMENT: development
       LOG_LEVEL: DEBUG
-      CORS_ORIGINS: '["http://localhost:3000"]'
+      CORS_ORIGINS: '["http://localhost:3000","http://localhost:3001"]'
       JWT_SECRET_KEY: dev-secret-key-change-in-production
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       - ./backend/src:/app/src
       - ./backend/tests:/app/tests
@@ -45,7 +45,7 @@ services:
       dockerfile: Dockerfile.dev
     container_name: vpv-frontend
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000/api
+      NEXT_PUBLIC_API_URL: http://localhost:8001/api
     ports:
       - "3000:3000"
     volumes:

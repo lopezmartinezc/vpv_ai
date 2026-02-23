@@ -57,8 +57,10 @@ def create_app() -> FastAPI:
         )
 
     from src.features.health.router import router as health_router
+    from src.features.seasons.router import router as seasons_router
 
     app.include_router(health_router, prefix="/api")
+    app.include_router(seasons_router, prefix="/api")
 
     return app
 
