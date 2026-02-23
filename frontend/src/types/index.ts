@@ -41,3 +41,18 @@ export interface ValidFormation {
   midfielders: number;
   forwards: number;
 }
+
+export interface StandingEntry {
+  rank: number;
+  participant_id: number;
+  display_name: string;
+  total_points: number;
+  matchdays_played: number;
+  avg_points: number;
+}
+
+export interface StandingsResponse {
+  season_id: number;
+  season_name: string;
+  entries: StandingEntry[];
+}
