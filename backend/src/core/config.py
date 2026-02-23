@@ -1,0 +1,37 @@
+from __future__ import annotations
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+    )
+
+    # App
+    app_name: str = "Liga VPV API"
+    app_version: str = "0.1.0"
+    debug: bool = False
+    environment: str = "development"
+
+    # Database
+    database_url: str = "postgresql+asyncpg://vpv:vpv_secret@localhost:5432/ligavpv"
+    database_echo: bool = False
+    database_pool_size: int = 5
+    database_max_overflow: int = 10
+
+    # Auth
+    jwt_secret_key: str = "CHANGE-ME-IN-PRODUCTION"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 480
+
+    # CORS
+    cors_origins: list[str] = ["http://localhost:3000"]
+
+    # Logging
+    log_level: str = "INFO"
+
+
+settings = Settings()

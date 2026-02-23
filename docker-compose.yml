@@ -1,0 +1,59 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: vpv-db
+    environment:
+      POSTGRES_USER: vpv
+      POSTGRES_PASSWORD: vpv_secret
+      POSTGRES_DB: ligavpv
+    ports:
+      - "5432:5432"
+    volumes:
+      - vpv_pgdata:/var/lib/postgresql/data
+      - ./migration/schema:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vpv -d ligavpv"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: vpv-backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://vpv:vpv_secret@db:5432/ligavpv
+      DEBUG: "true"
+      ENVIRONMENT: development
+      LOG_LEVEL: DEBUG
+      CORS_ORIGINS: '["http://localhost:3000"]'
+      JWT_SECRET_KEY: dev-secret-key-change-in-production
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/src:/app/src
+      - ./backend/tests:/app/tests
+    depends_on:
+      db:
+        condition: service_healthy
+    command: uvicorn src.app:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: vpv-frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+    depends_on:
+      - backend
+    command: npm run dev
+
+volumes:
+  vpv_pgdata:

@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+/* ============================================
+   Liga VPV Fantasy — Design System
+   Light: Glaciar | Dark: Ígneo
+   Rule 60-30-10
+   ============================================ */
+
+:root {
+  --color-bg: #F8FAFC;
+  --color-card: #FFFFFF;
+  --color-card-border: #E2E8F0;
+  --color-border: #E2E8F0;
+  --color-text: #1E293B;
+  --color-text-muted: #64748B;
+  --color-accent: #3B82F6;
+  --color-accent-hover: #2563EB;
+  --color-success: #22C55E;
+  --color-danger: #EF4444;
+  --color-gold: #FBBF24;
+}
+
+.dark {
+  --color-bg: #121212;
+  --color-card: #1E1E1E;
+  --color-card-border: #2D2D2D;
+  --color-border: #2D2D2D;
+  --color-text: #F1F5F9;
+  --color-text-muted: #94A3B8;
+  --color-accent: #EF4444;
+  --color-accent-hover: #DC2626;
+  --color-success: #22C55E;
+  --color-danger: #EF4444;
+  --color-gold: #FBBF24;
+}
+
+@theme inline {
+  --color-vpv-bg: var(--color-bg);
+  --color-vpv-card: var(--color-card);
+  --color-vpv-card-border: var(--color-card-border);
+  --color-vpv-border: var(--color-border);
+  --color-vpv-text: var(--color-text);
+  --color-vpv-text-muted: var(--color-text-muted);
+  --color-vpv-accent: var(--color-accent);
+  --color-vpv-accent-hover: var(--color-accent-hover);
+  --color-vpv-success: var(--color-success);
+  --color-vpv-danger: var(--color-danger);
+  --color-vpv-gold: var(--color-gold);
+  --font-sans: var(--font-inter);
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}

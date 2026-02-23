@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.eggs/
+*.egg
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+!.env.example
+!.env.test
+!.env.local.example
+!backend/.env.example
+!backend/.env.test
+!frontend/.env.local.example
+
+# Node
+node_modules/
+.next/
+out/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+
+# Test
+htmlcov/
+.coverage
+coverage/
+
+# Alembic
+alembic/versions/__pycache__/
+
+# Zone identifier files (WSL)
+*:Zone.Identifier
