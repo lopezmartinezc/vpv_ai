@@ -27,10 +27,10 @@ class Team(Base):
     logo_path: Mapped[str | None] = mapped_column(String(255))
 
     season: Mapped[Season] = relationship(back_populates="teams")
-    players: Mapped[list[Player]] = relationship(back_populates="team", lazy="selectin")
+    players: Mapped[list[Player]] = relationship(back_populates="team", lazy="raise")
     home_matches: Mapped[list[Match]] = relationship(
-        foreign_keys="[Match.home_team_id]", back_populates="home_team", lazy="selectin"
+        foreign_keys="[Match.home_team_id]", back_populates="home_team", lazy="raise"
     )
     away_matches: Mapped[list[Match]] = relationship(
-        foreign_keys="[Match.away_team_id]", back_populates="away_team", lazy="selectin"
+        foreign_keys="[Match.away_team_id]", back_populates="away_team", lazy="raise"
     )

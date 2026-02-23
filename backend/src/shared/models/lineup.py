@@ -41,7 +41,7 @@ class Lineup(Base):
         back_populates="lineup",
         cascade="all, delete-orphan",
         order_by="LineupPlayer.display_order",
-        lazy="selectin",
+        lazy="raise",
     )
 
 

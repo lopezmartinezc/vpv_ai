@@ -23,5 +23,5 @@ class User(TimestampMixin, Base):
     telegram_chat_id: Mapped[str | None] = mapped_column(String(50))
 
     participations: Mapped[list[SeasonParticipant]] = relationship(
-        back_populates="user", lazy="selectin"
+        back_populates="user", lazy="raise"
     )

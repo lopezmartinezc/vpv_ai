@@ -31,16 +31,16 @@ class SeasonParticipant(Base):
 
     season: Mapped[Season] = relationship(back_populates="participants")
     user: Mapped[User] = relationship(back_populates="participations")
-    players: Mapped[list[Player]] = relationship(back_populates="owner", lazy="selectin")
+    players: Mapped[list[Player]] = relationship(back_populates="owner", lazy="raise")
     draft_picks: Mapped[list[DraftPick]] = relationship(
-        back_populates="participant", lazy="selectin"
+        back_populates="participant", lazy="raise"
     )
     lineups: Mapped[list[Lineup]] = relationship(
-        back_populates="participant", lazy="selectin"
+        back_populates="participant", lazy="raise"
     )
     matchday_scores: Mapped[list[ParticipantMatchdayScore]] = relationship(
-        back_populates="participant", lazy="selectin"
+        back_populates="participant", lazy="raise"
     )
     transactions: Mapped[list[Transaction]] = relationship(
-        back_populates="participant", lazy="selectin"
+        back_populates="participant", lazy="raise"
     )

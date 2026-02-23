@@ -32,15 +32,15 @@ class Matchday(Base):
     stats_ok: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     season: Mapped[Season] = relationship(back_populates="matchdays")
-    matches: Mapped[list[Match]] = relationship(back_populates="matchday", lazy="selectin")
+    matches: Mapped[list[Match]] = relationship(back_populates="matchday", lazy="raise")
     player_stats: Mapped[list[PlayerStat]] = relationship(
-        back_populates="matchday", lazy="selectin"
+        back_populates="matchday", lazy="raise"
     )
     lineups: Mapped[list[Lineup]] = relationship(
-        back_populates="matchday", lazy="selectin"
+        back_populates="matchday", lazy="raise"
     )
     scores: Mapped[list[ParticipantMatchdayScore]] = relationship(
-        back_populates="matchday", lazy="selectin"
+        back_populates="matchday", lazy="raise"
     )
 
 
@@ -74,5 +74,5 @@ class Match(Base):
         foreign_keys=[away_team_id], back_populates="away_matches"
     )
     player_stats: Mapped[list[PlayerStat]] = relationship(
-        back_populates="match", lazy="selectin"
+        back_populates="match", lazy="raise"
     )

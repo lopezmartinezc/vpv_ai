@@ -37,24 +37,24 @@ class Season(Base):
     )
 
     scoring_rules: Mapped[list[ScoringRule]] = relationship(
-        back_populates="season", lazy="selectin"
+        back_populates="season", lazy="raise"
     )
     payments: Mapped[list[SeasonPayment]] = relationship(
-        back_populates="season", lazy="selectin"
+        back_populates="season", lazy="raise"
     )
     participants: Mapped[list[SeasonParticipant]] = relationship(
-        back_populates="season", lazy="selectin"
+        back_populates="season", lazy="raise"
     )
-    teams: Mapped[list[Team]] = relationship(back_populates="season", lazy="selectin")
+    teams: Mapped[list[Team]] = relationship(back_populates="season", lazy="raise")
     matchdays: Mapped[list[Matchday]] = relationship(
-        back_populates="season", lazy="selectin"
+        back_populates="season", lazy="raise"
     )
-    drafts: Mapped[list[Draft]] = relationship(back_populates="season", lazy="selectin")
+    drafts: Mapped[list[Draft]] = relationship(back_populates="season", lazy="raise")
     competitions: Mapped[list[Competition]] = relationship(
-        back_populates="season", lazy="selectin"
+        back_populates="season", lazy="raise"
     )
     transactions: Mapped[list[Transaction]] = relationship(
-        back_populates="season", lazy="selectin"
+        back_populates="season", lazy="raise"
     )
 
 

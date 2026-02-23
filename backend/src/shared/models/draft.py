@@ -32,7 +32,7 @@ class Draft(Base):
 
     season: Mapped[Season] = relationship(back_populates="drafts")
     picks: Mapped[list[DraftPick]] = relationship(
-        back_populates="draft", order_by="DraftPick.pick_number", lazy="selectin"
+        back_populates="draft", order_by="DraftPick.pick_number", lazy="raise"
     )
 
 
