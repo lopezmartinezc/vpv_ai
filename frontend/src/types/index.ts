@@ -166,3 +166,78 @@ export interface SquadDetailResponse {
   season_points: number;
   players: SquadPlayerEntry[];
 }
+
+// Drafts
+export interface DraftSummary {
+  id: number;
+  phase: string;
+  draft_type: string;
+  status: string;
+  total_picks: number;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface DraftListResponse {
+  season_id: number;
+  drafts: DraftSummary[];
+}
+
+export interface DraftParticipant {
+  participant_id: number;
+  display_name: string;
+  draft_order: number | null;
+}
+
+export interface DraftPickEntry {
+  pick_number: number;
+  round_number: number;
+  participant_id: number;
+  display_name: string;
+  draft_order: number | null;
+  player_name: string;
+  position: string;
+  team_name: string;
+}
+
+export interface DraftDetailResponse {
+  season_id: number;
+  phase: string;
+  draft_type: string;
+  status: string;
+  started_at: string | null;
+  completed_at: string | null;
+  participants: DraftParticipant[];
+  picks: DraftPickEntry[];
+}
+
+// Economy
+export interface ParticipantBalance {
+  participant_id: number;
+  display_name: string;
+  initial_fee: number;
+  weekly_total: number;
+  draft_fees: number;
+  net_balance: number;
+}
+
+export interface EconomyResponse {
+  season_id: number;
+  balances: ParticipantBalance[];
+}
+
+export interface TransactionEntry {
+  id: number;
+  type: string;
+  amount: number;
+  description: string | null;
+  matchday_number: number | null;
+  created_at: string;
+}
+
+export interface ParticipantEconomyResponse {
+  participant_id: number;
+  display_name: string;
+  net_balance: number;
+  transactions: TransactionEntry[];
+}
