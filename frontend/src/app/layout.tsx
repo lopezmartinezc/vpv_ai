@@ -20,6 +20,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{if(localStorage.getItem("vpv-theme")==="dark"){document.documentElement.classList.add("dark")}}catch(e){}`,
+          }}
+        />
+      </head>
       <body className={`${inter.variable} font-sans antialiased`}>
         <AppShell>{children}</AppShell>
       </body>

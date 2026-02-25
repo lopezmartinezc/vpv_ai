@@ -2,14 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { SeasonSelector } from "./season-selector";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { NavIcon } from "@/components/ui/nav-icon";
 
 const NAV_ITEMS = [
-  { href: "/clasificacion", label: "Clasificacion" },
-  { href: "/jornadas", label: "Jornadas" },
-  { href: "/plantillas", label: "Plantillas" },
-  { href: "/drafts", label: "Drafts" },
-  { href: "/economia", label: "Economia" },
+  { href: "/clasificacion", label: "Clasificacion", icon: "trophy" },
+  { href: "/jornadas", label: "Jornadas", icon: "calendar" },
+  { href: "/plantillas", label: "Plantillas", icon: "users" },
+  { href: "/drafts", label: "Drafts", icon: "shuffle" },
+  { href: "/economia", label: "Economia", icon: "coins" },
 ] as const;
 
 export function NavBar() {
@@ -23,23 +24,27 @@ export function NavBar() {
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex">
-          {NAV_ITEMS.map(({ href, label }) => (
-            <Link
-              key={href}
-              href={href}
-              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                pathname.startsWith(href)
-                  ? "bg-vpv-accent/10 text-vpv-accent"
-                  : "text-vpv-text-muted hover:text-vpv-text"
-              }`}
-            >
-              {label}
-            </Link>
-          ))}
+          {NAV_ITEMS.map(({ href, label, icon }) => {
+            const active = pathname.startsWith(href);
+            return (
+              <Link
+                key={href}
+                href={href}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  active
+                    ? "bg-vpv-accent/10 text-vpv-accent"
+                    : "text-vpv-text-muted hover:text-vpv-text"
+                }`}
+              >
+                <NavIcon name={icon} className="h-4 w-4" />
+                {label}
+              </Link>
+            );
+          })}
         </nav>
 
         <div className="ml-auto">
-          <SeasonSelector />
+          <ThemeToggle />
         </div>
       </div>
     </header>
