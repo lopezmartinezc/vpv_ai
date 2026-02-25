@@ -1,21 +1,76 @@
 "use client";
 
 import { useSeason } from "@/contexts/season-context";
+import { useDashboardData } from "@/hooks/use-dashboard-data";
+import { MatchdayAccordion } from "@/components/dashboard/matchday-accordion";
+import { Podium } from "@/components/dashboard/podium";
+import { QuickStats } from "@/components/dashboard/quick-stats";
+import { NavCards } from "@/components/dashboard/nav-cards";
+import { SkeletonCards } from "@/components/ui/skeleton";
 
 export default function Home() {
-  const { selectedSeason, loading } = useSeason();
+  const { selectedSeason, loading: seasonLoading } = useSeason();
+  const {
+    standings,
+    currentMatchdayDetail,
+    totalPlayed,
+    loading,
+  } = useDashboardData(
+    selectedSeason?.id ?? null,
+    selectedSeason?.matchday_current ?? null,
+  );
 
-  if (loading) {
+  if (seasonLoading || loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <p className="text-vpv-text-muted">Cargando...</p>
+      <div className="space-y-6">
+        <div className="h-10 w-64 animate-pulse rounded bg-vpv-border" />
+        <SkeletonCards count={3} />
       </div>
     );
   }
 
+  const leader = standings?.entries[0] ?? null;
+
+  const navCards = [
+    {
+      title: "Clasificacion",
+      href: "/clasificacion",
+      icon: "trophy" as const,
+      detail: leader
+        ? `Lider: ${leader.display_name} (${leader.total_points} pts)`
+        : "Tabla general",
+    },
+    {
+      title: "Jornadas",
+      href: "/jornadas",
+      icon: "calendar" as const,
+      detail: currentMatchdayDetail
+        ? `Actual: J${currentMatchdayDetail.number}`
+        : "Puntuaciones por jornada",
+    },
+    {
+      title: "Plantillas",
+      href: "/plantillas",
+      icon: "users" as const,
+      detail: `${selectedSeason?.total_participants ?? 0} participantes`,
+    },
+    {
+      title: "Drafts",
+      href: "/drafts",
+      icon: "shuffle" as const,
+      detail: "Historial de elecciones",
+    },
+    {
+      title: "Economia",
+      href: "/economia",
+      icon: "coins" as const,
+      detail: "Balance global de pagos",
+    },
+  ];
+
   return (
     <div className="space-y-6">
-      <div className="rounded-lg border border-vpv-card-border bg-vpv-card p-6">
+      <div>
         <h1 className="text-2xl font-bold text-vpv-text">Liga VPV Fantasy</h1>
         {selectedSeason && (
           <p className="mt-1 text-vpv-text-muted">
@@ -25,44 +80,27 @@ export default function Home() {
         )}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {[
-          {
-            title: "Clasificacion",
-            href: "/clasificacion",
-            desc: "Tabla general de la temporada",
-          },
-          {
-            title: "Jornadas",
-            href: "/jornadas",
-            desc: "Puntuaciones por jornada",
-          },
-          {
-            title: "Plantillas",
-            href: "/plantillas",
-            desc: "Equipos de cada participante",
-          },
-          {
-            title: "Drafts",
-            href: "/drafts",
-            desc: "Historial de elecciones",
-          },
-          {
-            title: "Economia",
-            href: "/economia",
-            desc: "Balance global de pagos",
-          },
-        ].map(({ title, href, desc }) => (
-          <a
-            key={href}
-            href={href}
-            className="rounded-lg border border-vpv-card-border bg-vpv-card p-4 transition-colors hover:border-vpv-accent"
-          >
-            <h2 className="font-semibold text-vpv-text">{title}</h2>
-            <p className="mt-1 text-sm text-vpv-text-muted">{desc}</p>
-          </a>
-        ))}
+      {currentMatchdayDetail && selectedSeason && (
+        <MatchdayAccordion
+          data={currentMatchdayDetail}
+          seasonId={selectedSeason.id}
+        />
+      )}
+
+      <div className="grid gap-4 md:grid-cols-2">
+        {standings && standings.entries.length > 0 && (
+          <Podium entries={standings.entries} />
+        )}
+
+        <QuickStats
+          totalPlayed={totalPlayed}
+          totalParticipants={selectedSeason?.total_participants ?? 0}
+          leaderName={leader?.display_name ?? null}
+          leaderPoints={leader?.total_points ?? null}
+        />
       </div>
+
+      <NavCards cards={navCards} />
     </div>
   );
 }

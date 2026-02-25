@@ -8,6 +8,7 @@ export interface SeasonSummary {
   id: number;
   name: string;
   status: string;
+  matchday_current: number;
   total_participants: number;
 }
 
@@ -123,6 +124,14 @@ export interface LineupPlayerEntry {
   score_breakdown: ScoreBreakdown | null;
 }
 
+export interface BenchPlayerEntry {
+  player_id: number;
+  player_name: string;
+  position: string;
+  team_name: string;
+  matchday_points: number;
+}
+
 export interface LineupDetailResponse {
   participant_id: number;
   display_name: string;
@@ -130,6 +139,7 @@ export interface LineupDetailResponse {
   formation: string;
   total_points: number;
   players: LineupPlayerEntry[];
+  bench: BenchPlayerEntry[];
 }
 
 export interface PositionCounts {

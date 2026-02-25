@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -65,6 +65,15 @@ class LineupPlayerRow:
     pts_marca: int | None
     pts_as: int | None
     pts_total: int | None
+
+
+@dataclass
+class BenchPlayerRow:
+    player_id: int
+    player_name: str
+    position: str
+    team_name: str
+    matchday_points: int
 
 
 class MatchdayRepository:
@@ -199,7 +208,7 @@ class MatchdayRepository:
                 LineupPlayer.position_slot,
                 Player.id.label("player_id"),
                 Player.display_name.label("player_name"),
-                Team.name.label("team_name"),
+                func.coalesce(Team.short_name, Team.name).label("team_name"),
                 LineupPlayer.points,
                 PlayerStat.pts_play,
                 PlayerStat.pts_starter,
@@ -245,6 +254,55 @@ class MatchdayRepository:
                 pts_marca=row.pts_marca,
                 pts_as=row.pts_as,
                 pts_total=row.pts_total,
+            )
+            for row in result.all()
+        ]
+
+    async def get_bench_players(
+        self,
+        matchday_id: int,
+        participant_id: int,
+        season_id: int,
+        lineup_player_ids: set[int],
+    ) -> list[BenchPlayerRow]:
+        """Get squad players NOT in the lineup, with their matchday points."""
+        stmt = (
+            select(
+                Player.id.label("player_id"),
+                Player.display_name.label("player_name"),
+                Player.position,
+                func.coalesce(Team.short_name, Team.name).label("team_name"),
+                func.coalesce(PlayerStat.pts_total, 0).label("matchday_points"),
+            )
+            .join(Team, Player.team_id == Team.id)
+            .outerjoin(
+                PlayerStat,
+                and_(
+                    PlayerStat.player_id == Player.id,
+                    PlayerStat.matchday_id == matchday_id,
+                ),
+            )
+            .where(
+                Player.season_id == season_id,
+                Player.owner_id == participant_id,
+                Player.id.not_in(lineup_player_ids) if lineup_player_ids else True,
+            )
+            .order_by(
+                func.array_position(
+                    func.string_to_array("POR,DEF,MED,DEL", ","),
+                    Player.position,
+                ).asc(),
+                Player.display_name.asc(),
+            )
+        )
+        result = await self.session.execute(stmt)
+        return [
+            BenchPlayerRow(
+                player_id=row.player_id,
+                player_name=row.player_name,
+                position=row.position,
+                team_name=row.team_name,
+                matchday_points=row.matchday_points,
             )
             for row in result.all()
         ]

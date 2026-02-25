@@ -10,6 +10,7 @@ class SeasonSummary(BaseModel):
     id: int
     name: str
     status: str
+    matchday_current: int
     total_participants: int
 
     model_config = {"from_attributes": True}

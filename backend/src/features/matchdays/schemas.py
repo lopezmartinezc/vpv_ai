@@ -71,6 +71,14 @@ class LineupPlayerEntry(BaseModel):
     score_breakdown: ScoreBreakdown | None
 
 
+class BenchPlayerEntry(BaseModel):
+    player_id: int
+    player_name: str
+    position: str
+    team_name: str
+    matchday_points: int
+
+
 class LineupDetailResponse(BaseModel):
     participant_id: int
     display_name: str
@@ -78,3 +86,4 @@ class LineupDetailResponse(BaseModel):
     formation: str
     total_points: int
     players: list[LineupPlayerEntry]
+    bench: list[BenchPlayerEntry]

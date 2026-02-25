@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.exceptions import NotFoundError
 from src.features.matchdays.repository import MatchdayRepository
 from src.features.matchdays.schemas import (
+    BenchPlayerEntry,
     LineupDetailResponse,
     LineupPlayerEntry,
     MatchdayDetailResponse,
@@ -112,6 +113,12 @@ class MatchdayService:
             lineup.id, matchday.id,
         )
 
+        # Get bench players (squad minus lineup)
+        lineup_player_ids = {p.player_id for p in player_rows}
+        bench_rows = await self.repo.get_bench_players(
+            matchday.id, participant_id, season_id, lineup_player_ids,
+        )
+
         # Get participant display name
         score_rows = await self.repo.get_scores(matchday.id)
         display_name = ""
@@ -151,5 +158,15 @@ class MatchdayService:
                     else None,
                 )
                 for p in player_rows
+            ],
+            bench=[
+                BenchPlayerEntry(
+                    player_id=b.player_id,
+                    player_name=b.player_name,
+                    position=b.position,
+                    team_name=b.team_name,
+                    matchday_points=b.matchday_points,
+                )
+                for b in bench_rows
             ],
         )
