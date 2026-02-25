@@ -1,0 +1,86 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.features.scraping.service import ScrapingService
+from src.shared.dependencies import get_db
+
+router = APIRouter(prefix="/scraping", tags=["scraping"])
+
+
+def _get_service(db: AsyncSession = Depends(get_db)) -> ScrapingService:
+    """Dependency factory: creates a ``ScrapingService`` bound to the request session."""
+    return ScrapingService(db)
+
+
+@router.post(
+    "/matchday/{season_id}/{number}",
+    summary="Scrape all player stats for a matchday",
+    response_model=dict,
+)
+async def scrape_matchday_endpoint(
+    season_id: int,
+    number: int,
+    service: ScrapingService = Depends(_get_service),
+) -> dict[str, int]:
+    """Trigger a full scrape of player stats for the given matchday.
+
+    Processes all counting matches in the matchday sequentially (one HTTP
+    request per player).  Returns a summary of processed / skipped / error
+    counts.
+    """
+    return await service.scrape_matchday(season_id, number)
+
+
+@router.post(
+    "/match/{season_id}/{number}/{match_id}",
+    summary="Scrape stats for a single match",
+    response_model=dict,
+)
+async def scrape_match_endpoint(
+    season_id: int,
+    number: int,
+    match_id: int,
+    service: ScrapingService = Depends(_get_service),
+) -> dict[str, int]:
+    """Trigger a scrape of player stats for a single match.
+
+    Useful for re-scraping an individual match without touching the rest of
+    the matchday.  Returns a summary of processed / skipped / error counts.
+    """
+    return await service.scrape_match_players(season_id, number, match_id)
+
+
+@router.post(
+    "/calendar/{season_id}",
+    summary="Update match scores from La Liga calendar",
+    response_model=dict,
+)
+async def scrape_calendar_endpoint(
+    season_id: int,
+    service: ScrapingService = Depends(_get_service),
+) -> dict[str, int]:
+    """Fetch the La Liga calendar page and update DB match scores.
+
+    Returns the number of matches whose score was updated.
+    """
+    count = await service.scrape_calendar(season_id)
+    return {"matches_updated": count}
+
+
+@router.post(
+    "/check-updates",
+    summary="Check homepage CRC for new stats",
+    response_model=dict,
+)
+async def check_updates_endpoint(
+    service: ScrapingService = Depends(_get_service),
+) -> dict:
+    """Check whether the futbolfantasy homepage CRC has changed.
+
+    When the CRC differs from the last saved value it means new match stats
+    are available.  Returns ``changed=True`` and the list of ready match IDs.
+    """
+    match_ids = await service.check_for_updates()
+    return {"changed": len(match_ids) > 0, "ready_match_ids": match_ids}

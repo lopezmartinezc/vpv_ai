@@ -60,6 +60,7 @@ def create_app() -> FastAPI:
     from src.features.economy.router import router as economy_router
     from src.features.health.router import router as health_router
     from src.features.matchdays.router import router as matchdays_router
+    from src.features.scraping.router import router as scraping_router
     from src.features.seasons.router import router as seasons_router
     from src.features.squads.router import router as squads_router
     from src.features.standings.router import router as standings_router
@@ -68,6 +69,7 @@ def create_app() -> FastAPI:
     app.include_router(economy_router, prefix="/api")
     app.include_router(health_router, prefix="/api")
     app.include_router(matchdays_router, prefix="/api")
+    app.include_router(scraping_router, prefix="/api")
     app.include_router(seasons_router, prefix="/api")
     app.include_router(squads_router, prefix="/api")
     app.include_router(standings_router, prefix="/api")
