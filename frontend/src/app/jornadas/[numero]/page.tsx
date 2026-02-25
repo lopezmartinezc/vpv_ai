@@ -4,6 +4,9 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
+import { MatchList } from "@/components/matchdays/match-list";
+import { ScoreList } from "@/components/matchdays/score-list";
+import { SkeletonTable } from "@/components/ui/skeleton";
 import type { MatchdayDetailResponse } from "@/types";
 
 export default function JornadaDetailPage() {
@@ -17,8 +20,10 @@ export default function JornadaDetailPage() {
 
   if (seasonLoading || loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <p className="text-vpv-text-muted">Cargando jornada...</p>
+      <div className="space-y-6">
+        <div className="h-8 w-40 animate-pulse rounded bg-vpv-border" />
+        <SkeletonTable rows={5} />
+        <SkeletonTable rows={8} />
       </div>
     );
   }
@@ -50,82 +55,18 @@ export default function JornadaDetailPage() {
         )}
       </div>
 
-      {/* Matches */}
       <section className="space-y-2">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-vpv-text-muted">
           Partidos
         </h2>
-        <div className="overflow-x-auto rounded-lg border border-vpv-card-border">
-          <table className="w-full text-sm">
-            <tbody>
-              {data.matches.map((m) => (
-                <tr
-                  key={m.id}
-                  className={`border-b border-vpv-border last:border-0 ${
-                    !m.counts ? "opacity-50" : ""
-                  }`}
-                >
-                  <td className="px-4 py-2.5 text-right font-medium text-vpv-text">
-                    {m.home_team}
-                  </td>
-                  <td className="w-20 px-2 py-2.5 text-center font-bold tabular-nums text-vpv-text">
-                    {m.home_score ?? "–"} - {m.away_score ?? "–"}
-                  </td>
-                  <td className="px-4 py-2.5 font-medium text-vpv-text">
-                    {m.away_team}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <MatchList matches={data.matches} />
       </section>
 
-      {/* Participant scores */}
       <section className="space-y-2">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-vpv-text-muted">
           Puntuaciones
         </h2>
-        <div className="overflow-x-auto rounded-lg border border-vpv-card-border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-vpv-border bg-vpv-card text-left text-vpv-text-muted">
-                <th className="w-12 px-4 py-3 text-center">#</th>
-                <th className="px-4 py-3">Participante</th>
-                <th className="px-4 py-3 text-right">Pts</th>
-                <th className="hidden px-4 py-3 text-right sm:table-cell">
-                  Formacion
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.scores.map((s) => (
-                <tr
-                  key={s.participant_id}
-                  className="border-b border-vpv-border transition-colors last:border-0 hover:bg-vpv-accent/5"
-                >
-                  <td className="px-4 py-3 text-center font-medium text-vpv-text-muted">
-                    {s.rank ?? "–"}
-                  </td>
-                  <td className="px-4 py-3 font-medium text-vpv-text">
-                    <Link
-                      href={`/jornadas/${numero}/${s.participant_id}`}
-                      className="transition-colors hover:text-vpv-accent"
-                    >
-                      {s.display_name}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 text-right font-bold tabular-nums text-vpv-text">
-                    {s.total_points}
-                  </td>
-                  <td className="hidden px-4 py-3 text-right tabular-nums text-vpv-text-muted sm:table-cell">
-                    {s.formation ?? "–"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ScoreList scores={data.scores} matchdayNumber={numero} />
       </section>
     </div>
   );

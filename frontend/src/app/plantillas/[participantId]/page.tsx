@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
+import { SkeletonTable } from "@/components/ui/skeleton";
 import type { SquadDetailResponse, SquadPlayerEntry } from "@/types";
 
 const POSITION_ORDER = ["POR", "DEF", "MED", "DEL"];
@@ -33,8 +34,11 @@ export default function PlantillaDetailPage() {
 
   if (seasonLoading || loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <p className="text-vpv-text-muted">Cargando plantilla...</p>
+      <div className="space-y-4">
+        <div className="h-4 w-32 animate-pulse rounded bg-vpv-border" />
+        <div className="h-8 w-40 animate-pulse rounded bg-vpv-border" />
+        <SkeletonTable rows={6} />
+        <SkeletonTable rows={6} />
       </div>
     );
   }
@@ -92,7 +96,30 @@ export default function PlantillaDetailPage() {
                 </span>
               </div>
 
-              <div className="overflow-x-auto rounded-lg border border-vpv-card-border">
+              {/* Mobile: Cards */}
+              <div className="space-y-1.5 md:hidden">
+                {players.map((player) => (
+                  <div
+                    key={player.player_id}
+                    className="flex items-center justify-between rounded-lg border border-vpv-card-border bg-vpv-card px-4 py-2.5"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium text-vpv-text">
+                        {player.display_name}
+                      </p>
+                      <p className="text-xs text-vpv-text-muted">
+                        {player.team_name}
+                      </p>
+                    </div>
+                    <span className="ml-3 font-bold tabular-nums text-vpv-text">
+                      {player.season_points}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop: Table */}
+              <div className="hidden overflow-x-auto rounded-lg border border-vpv-card-border md:block">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-vpv-border bg-vpv-card text-left text-vpv-text-muted">

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
+import { SeasonSelector } from "@/components/layout/season-selector";
 import type { MatchdayListResponse } from "@/types";
 
 export default function JornadasPage() {
@@ -13,8 +14,16 @@ export default function JornadasPage() {
 
   if (seasonLoading || loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <p className="text-vpv-text-muted">Cargando jornadas...</p>
+      <div className="space-y-4">
+        <div className="h-8 w-48 animate-pulse rounded bg-vpv-border" />
+        <div className="grid grid-cols-4 gap-3 sm:grid-cols-6 lg:grid-cols-8">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-16 animate-pulse rounded-lg bg-vpv-border"
+            />
+          ))}
+        </div>
       </div>
     );
   }
@@ -29,9 +38,12 @@ export default function JornadasPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold text-vpv-text">
-        Jornadas {selectedSeason?.name}
-      </h1>
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-2xl font-bold text-vpv-text">
+          Jornadas {selectedSeason?.name}
+        </h1>
+        <SeasonSelector />
+      </div>
 
       <div className="grid grid-cols-4 gap-3 sm:grid-cols-6 lg:grid-cols-8">
         {data.matchdays.map((md) => (

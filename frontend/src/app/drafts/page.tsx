@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
+import { SeasonSelector } from "@/components/layout/season-selector";
 import type { DraftListResponse } from "@/types";
 
 const PHASE_LABELS: Record<string, string> = {
@@ -23,8 +24,16 @@ export default function DraftsPage() {
 
   if (seasonLoading || loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <p className="text-vpv-text-muted">Cargando drafts...</p>
+      <div className="space-y-4">
+        <div className="h-8 w-40 animate-pulse rounded bg-vpv-border" />
+        <div className="grid gap-4 sm:grid-cols-2">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-32 animate-pulse rounded-lg bg-vpv-border"
+            />
+          ))}
+        </div>
       </div>
     );
   }
@@ -40,9 +49,12 @@ export default function DraftsPage() {
   if (data.drafts.length === 0) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-bold text-vpv-text">
-          Drafts {selectedSeason?.name}
-        </h1>
+        <div className="flex items-center justify-between gap-4">
+          <h1 className="text-2xl font-bold text-vpv-text">
+            Drafts {selectedSeason?.name}
+          </h1>
+          <SeasonSelector />
+        </div>
         <p className="text-vpv-text-muted">
           No hay drafts registrados para esta temporada.
         </p>
@@ -52,9 +64,12 @@ export default function DraftsPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold text-vpv-text">
-        Drafts {selectedSeason?.name}
-      </h1>
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-2xl font-bold text-vpv-text">
+          Drafts {selectedSeason?.name}
+        </h1>
+        <SeasonSelector />
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         {data.drafts.map((draft) => (

@@ -4,18 +4,13 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
+import { PicksList } from "@/components/drafts/picks-list";
+import { SkeletonTable } from "@/components/ui/skeleton";
 import type { DraftDetailResponse } from "@/types";
 
 const PHASE_LABELS: Record<string, string> = {
   preseason: "Pretemporada",
   winter: "Invierno",
-};
-
-const POSITION_COLORS: Record<string, string> = {
-  POR: "text-amber-400",
-  DEF: "text-blue-400",
-  MED: "text-green-400",
-  DEL: "text-red-400",
 };
 
 export default function DraftDetailPage() {
@@ -29,8 +24,10 @@ export default function DraftDetailPage() {
 
   if (seasonLoading || loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <p className="text-vpv-text-muted">Cargando draft...</p>
+      <div className="space-y-4">
+        <div className="h-4 w-20 animate-pulse rounded bg-vpv-border" />
+        <div className="h-8 w-48 animate-pulse rounded bg-vpv-border" />
+        <SkeletonTable rows={10} />
       </div>
     );
   }
@@ -64,49 +61,7 @@ export default function DraftDetailPage() {
         {data.participants.length} participantes
       </p>
 
-      <div className="overflow-x-auto rounded-lg border border-vpv-card-border">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-vpv-border bg-vpv-card text-left text-vpv-text-muted">
-              <th className="w-14 px-4 py-2 text-center">#</th>
-              <th className="w-14 px-4 py-2 text-center">Ronda</th>
-              <th className="px-4 py-2">Participante</th>
-              <th className="px-4 py-2">Jugador</th>
-              <th className="w-14 px-4 py-2 text-center">Pos</th>
-              <th className="px-4 py-2">Equipo</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.picks.map((pick) => (
-              <tr
-                key={pick.pick_number}
-                className="border-b border-vpv-border last:border-0 hover:bg-vpv-accent/5"
-              >
-                <td className="px-4 py-2 text-center tabular-nums text-vpv-text-muted">
-                  {pick.pick_number}
-                </td>
-                <td className="px-4 py-2 text-center tabular-nums text-vpv-text-muted">
-                  {pick.round_number}
-                </td>
-                <td className="px-4 py-2 font-medium text-vpv-text">
-                  {pick.display_name}
-                </td>
-                <td className="px-4 py-2 text-vpv-text">
-                  {pick.player_name}
-                </td>
-                <td
-                  className={`px-4 py-2 text-center text-xs font-bold ${POSITION_COLORS[pick.position] ?? ""}`}
-                >
-                  {pick.position}
-                </td>
-                <td className="px-4 py-2 text-vpv-text-muted">
-                  {pick.team_name}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <PicksList picks={data.picks} />
     </div>
   );
 }
