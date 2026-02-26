@@ -61,3 +61,24 @@ class ValidFormationResponse(BaseModel):
     forwards: int
 
     model_config = {"from_attributes": True}
+
+
+# --- Admin schemas ---
+
+
+class SeasonUpdateRequest(BaseModel):
+    status: str | None = None
+    matchday_current: int | None = None
+    matchday_end: int | None = None
+    matchday_winter: int | None = None
+    lineup_deadline_min: int | None = None
+    draft_pool_size: int | None = None
+
+
+class ScoringRuleUpdateRequest(BaseModel):
+    id: int
+    value: Decimal
+
+
+class ScoringRulesBatchUpdate(BaseModel):
+    rules: list[ScoringRuleUpdateRequest]

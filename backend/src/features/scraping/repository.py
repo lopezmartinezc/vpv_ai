@@ -298,7 +298,46 @@ class ScrapingRepository:
         )
 
     # ------------------------------------------------------------------
-    # CRC persistence (file-based, not in DB)
+    # Player photos
+    # ------------------------------------------------------------------
+
+    async def get_players_without_photo(self, season_id: int) -> list[Player]:
+        """Return all players for *season_id* whose ``photo_path`` is NULL."""
+        stmt = (
+            select(Player)
+            .where(Player.season_id == season_id, Player.photo_path.is_(None))
+            .order_by(Player.id)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars())
+
+    async def update_player_photo(
+        self, player_id: int, photo_path: str, source_url: str
+    ) -> None:
+        """Set ``photo_path`` and ``source_url`` for a player."""
+        stmt = (
+            update(Player)
+            .where(Player.id == player_id)
+            .values(photo_path=photo_path, source_url=source_url)
+        )
+        await self.session.execute(stmt)
+        logger.debug("update_player_photo: player_id=%d path=%s", player_id, photo_path)
+
+    # ------------------------------------------------------------------
+    # Match CRC (per-match change detection)
+    # ------------------------------------------------------------------
+
+    async def update_match_crc(self, match_id: int, stats_crc: str) -> None:
+        """Store the computed CRC for a match page."""
+        stmt = (
+            update(Match)
+            .where(Match.id == match_id)
+            .values(stats_crc=stats_crc)
+        )
+        await self.session.execute(stmt)
+
+    # ------------------------------------------------------------------
+    # CRC persistence (file-based, not in DB) — legacy homepage CRC
     # ------------------------------------------------------------------
 
     async def get_crc_value(self) -> str | None:

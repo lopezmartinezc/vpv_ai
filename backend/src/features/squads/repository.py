@@ -30,6 +30,7 @@ class SquadSummaryRow:
 class SquadPlayerRow:
     player_id: int
     display_name: str
+    photo_path: str | None
     position: str
     team_name: str
     season_points: int
@@ -135,6 +136,7 @@ class SquadRepository:
             select(
                 Player.id.label("player_id"),
                 Player.display_name,
+                Player.photo_path,
                 Player.position,
                 Team.name.label("team_name"),
                 season_pts,
@@ -153,7 +155,7 @@ class SquadRepository:
                 Player.owner_id == participant_id,
             )
             .group_by(
-                Player.id, Player.display_name, Player.position, Team.name,
+                Player.id, Player.display_name, Player.photo_path, Player.position, Team.name,
             )
             .order_by(POSITION_ORDER.asc(), season_pts.desc())
         )
@@ -163,6 +165,7 @@ class SquadRepository:
             SquadPlayerRow(
                 player_id=row.player_id,
                 display_name=row.display_name,
+                photo_path=row.photo_path,
                 position=row.position,
                 team_name=row.team_name,
                 season_points=row.season_points,

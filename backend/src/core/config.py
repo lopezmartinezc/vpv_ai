@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 480
 
+    # Invites
+    invite_expiry_days: int = 7
+    invite_base_url: str = "http://localhost:3000/registro"
+
     # CORS
     cors_origins: list[str] = ["http://localhost:3000"]
 

@@ -156,3 +156,30 @@ class EconomyRepository:
         )
         result = await self.session.execute(stmt)
         return result.scalar_one()
+
+    async def create_transaction(
+        self,
+        season_id: int,
+        participant_id: int,
+        tx_type: str,
+        amount: Decimal,
+        description: str | None = None,
+        matchday_id: int | None = None,
+    ) -> Transaction:
+        tx = Transaction(
+            season_id=season_id,
+            participant_id=participant_id,
+            type=tx_type,
+            amount=amount,
+            description=description,
+            matchday_id=matchday_id,
+        )
+        self.session.add(tx)
+        return tx
+
+    async def delete_transaction(self, tx_id: int) -> bool:
+        tx = await self.session.get(Transaction, tx_id)
+        if tx is None:
+            return False
+        await self.session.delete(tx)
+        return True

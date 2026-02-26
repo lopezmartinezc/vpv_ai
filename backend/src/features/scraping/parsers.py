@@ -652,3 +652,48 @@ def parse_homepage_matchday(html: str) -> HomepageMatchdayInfo | None:
     except Exception:
         logger.exception("parse_homepage_matchday: unexpected error")
         return None
+
+
+# ---------------------------------------------------------------------------
+# Player photo
+# ---------------------------------------------------------------------------
+
+
+def parse_player_photo(html: str) -> str | None:
+    """Extract the player's profile photo URL from their stats page.
+
+    Looks for the first ``<img>`` inside ``div.profile``.  Returns the
+    ``src`` attribute value or ``None`` if not found.
+    """
+    soup = BeautifulSoup(html, "lxml")
+    profile_div = soup.select_one("div.profile")
+    if profile_div is None:
+        return None
+    img = profile_div.find("img")
+    if not isinstance(img, Tag):
+        return None
+    src = str(img.get("src", "")).strip()
+    return src if src else None
+
+
+# ---------------------------------------------------------------------------
+# Match page CRC — change detection for scheduler
+# ---------------------------------------------------------------------------
+
+
+def parse_match_crc(html: str) -> str:
+    """Compute a CRC from the match page's player ratings.
+
+    Extracts all ``span[data-juego="modo-picas"]`` and
+    ``span[data-juego="cronistas-marca"]`` text values from the match page
+    (e.g. ``/partidos/20313-athletic-elche``), concatenates them, and returns
+    a CRC32 string.  A change in the CRC indicates that player ratings have
+    been updated on futbolfantasy.com and a re-scrape is warranted.
+    """
+    soup = BeautifulSoup(html, "lxml")
+    parts: list[str] = []
+    for juego in ("modo-picas", "cronistas-marca"):
+        for span in soup.find_all("span", attrs={"data-juego": juego}):
+            parts.append(span.get_text(strip=True))
+    crc_string = "|".join(parts)
+    return str(zlib.crc32(crc_string.encode("utf-8")))

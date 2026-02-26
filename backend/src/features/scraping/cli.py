@@ -101,6 +101,18 @@ async def cmd_update_calendar(season_id: int) -> None:
     await _run_with_session(_run)
 
 
+async def cmd_download_photos(season_id: int) -> None:
+    """Download player photos for *season_id*."""
+
+    async def _run(session: AsyncSession) -> dict:
+        from src.features.scraping.photos import PhotoDownloader
+
+        downloader = PhotoDownloader(session)
+        return await downloader.download_all(season_id)
+
+    await _run_with_session(_run)
+
+
 async def cmd_scrape_current() -> None:
     """Scrape the current matchday for the active season.
 
@@ -168,6 +180,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Scrape current matchday for the active season",
     )
 
+    # download-photos
+    p_photos = sub.add_parser(
+        "download-photos", help="Download player photos as WebP"
+    )
+    p_photos.add_argument("season_id", type=int, help="Season primary-key ID")
+
     return parser
 
 
@@ -204,6 +222,9 @@ def main() -> None:
 
     elif command == "scrape-current":
         asyncio.run(cmd_scrape_current())
+
+    elif command == "download-photos":
+        asyncio.run(cmd_download_photos(args.season_id))
 
     else:
         parser.print_help()

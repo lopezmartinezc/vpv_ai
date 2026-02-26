@@ -52,6 +52,7 @@ class LineupPlayerRow:
     position_slot: str
     player_id: int
     player_name: str
+    photo_path: str | None
     team_name: str
     points: int
     pts_play: int | None
@@ -71,6 +72,7 @@ class LineupPlayerRow:
 class BenchPlayerRow:
     player_id: int
     player_name: str
+    photo_path: str | None
     position: str
     team_name: str
     matchday_points: int
@@ -208,6 +210,7 @@ class MatchdayRepository:
                 LineupPlayer.position_slot,
                 Player.id.label("player_id"),
                 Player.display_name.label("player_name"),
+                Player.photo_path,
                 func.coalesce(Team.short_name, Team.name).label("team_name"),
                 LineupPlayer.points,
                 PlayerStat.pts_play,
@@ -241,6 +244,7 @@ class MatchdayRepository:
                 position_slot=row.position_slot,
                 player_id=row.player_id,
                 player_name=row.player_name,
+                photo_path=row.photo_path,
                 team_name=row.team_name,
                 points=row.points,
                 pts_play=row.pts_play,
@@ -270,6 +274,7 @@ class MatchdayRepository:
             select(
                 Player.id.label("player_id"),
                 Player.display_name.label("player_name"),
+                Player.photo_path,
                 Player.position,
                 func.coalesce(Team.short_name, Team.name).label("team_name"),
                 func.coalesce(PlayerStat.pts_total, 0).label("matchday_points"),
@@ -300,9 +305,32 @@ class MatchdayRepository:
             BenchPlayerRow(
                 player_id=row.player_id,
                 player_name=row.player_name,
+                photo_path=row.photo_path,
                 position=row.position,
                 team_name=row.team_name,
                 matchday_points=row.matchday_points,
             )
             for row in result.all()
         ]
+
+    async def update_matchday(
+        self, season_id: int, number: int, **kwargs: object,
+    ) -> Matchday | None:
+        matchday = await self.get_matchday(season_id, number)
+        if matchday is None:
+            return None
+        for key, value in kwargs.items():
+            if value is not None:
+                setattr(matchday, key, value)
+        return matchday
+
+    async def update_match(
+        self, match_id: int, **kwargs: object,
+    ) -> Match | None:
+        match = await self.session.get(Match, match_id)
+        if match is None:
+            return None
+        for key, value in kwargs.items():
+            if value is not None:
+                setattr(match, key, value)
+        return match

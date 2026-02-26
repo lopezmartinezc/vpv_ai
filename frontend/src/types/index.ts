@@ -119,6 +119,7 @@ export interface LineupPlayerEntry {
   position_slot: string;
   player_id: number;
   player_name: string;
+  photo_path: string | null;
   team_name: string;
   points: number;
   score_breakdown: ScoreBreakdown | null;
@@ -127,6 +128,7 @@ export interface LineupPlayerEntry {
 export interface BenchPlayerEntry {
   player_id: number;
   player_name: string;
+  photo_path: string | null;
   position: string;
   team_name: string;
   matchday_points: number;
@@ -165,6 +167,7 @@ export interface SquadListResponse {
 export interface SquadPlayerEntry {
   player_id: number;
   display_name: string;
+  photo_path: string | null;
   position: string;
   team_name: string;
   season_points: number;

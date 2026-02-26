@@ -3,8 +3,14 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.features.scraping.scheduler import (
+    get_scheduler_status,
+    start_scheduler,
+    stop_scheduler,
+    trigger_tick,
+)
 from src.features.scraping.service import ScrapingService
-from src.shared.dependencies import get_db
+from src.shared.dependencies import get_current_admin, get_db
 
 router = APIRouter(prefix="/scraping", tags=["scraping"])
 
@@ -84,3 +90,54 @@ async def check_updates_endpoint(
     """
     match_ids = await service.check_for_updates()
     return {"changed": len(match_ids) > 0, "ready_match_ids": match_ids}
+
+
+# ---------------------------------------------------------------------------
+# Admin endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/admin/status",
+    summary="Get scheduler status",
+    response_model=dict,
+)
+async def scheduler_status(
+    _admin: dict = Depends(get_current_admin),
+) -> dict:
+    return get_scheduler_status()
+
+
+@router.post(
+    "/admin/trigger",
+    summary="Trigger a manual scheduler tick",
+    response_model=dict,
+)
+async def scheduler_trigger(
+    _admin: dict = Depends(get_current_admin),
+) -> dict:
+    return await trigger_tick()
+
+
+@router.post(
+    "/admin/start",
+    summary="Start the scheduler",
+    response_model=dict,
+)
+async def scheduler_start(
+    _admin: dict = Depends(get_current_admin),
+) -> dict:
+    start_scheduler()
+    return get_scheduler_status()
+
+
+@router.post(
+    "/admin/stop",
+    summary="Stop the scheduler",
+    response_model=dict,
+)
+async def scheduler_stop(
+    _admin: dict = Depends(get_current_admin),
+) -> dict:
+    stop_scheduler()
+    return get_scheduler_status()

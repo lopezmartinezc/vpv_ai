@@ -18,5 +18,9 @@ class ScrapingSettings(BaseSettings):
     scraping_timeout: float = 15.0
     scraping_max_retries: int = 3
 
+    # Scheduler settings
+    scraping_poll_interval_seconds: int = 900  # 15 minutes between ticks
+    scraping_buffer_minutes: int = 120  # minutes after played_at to consider match ended
+
 
 scraping_settings = ScrapingSettings()

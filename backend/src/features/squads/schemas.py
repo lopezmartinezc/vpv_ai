@@ -26,6 +26,7 @@ class SquadListResponse(BaseModel):
 class SquadPlayerEntry(BaseModel):
     player_id: int
     display_name: str
+    photo_path: str | None
     position: str
     team_name: str
     season_points: int

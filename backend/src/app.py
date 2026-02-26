@@ -1,27 +1,36 @@
 from __future__ import annotations
 
+import mimetypes
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+mimetypes.add_type("image/webp", ".webp")
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from src.core.config import settings
 from src.core.database import engine
 from src.core.exceptions import (
+    AuthenticationError,
     AuthorizationError,
     BusinessRuleError,
     NotFoundError,
     VPVError,
 )
 from src.core.logging import setup_logging
+from src.features.scraping.scheduler import start_scheduler, stop_scheduler
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     setup_logging()
+    start_scheduler()
     yield
+    stop_scheduler()
     await engine.dispose()
 
 
@@ -46,6 +55,7 @@ def create_app() -> FastAPI:
     @app.exception_handler(VPVError)
     async def vpv_exception_handler(request: Request, exc: VPVError) -> JSONResponse:
         status_map = {
+            AuthenticationError: 401,
             NotFoundError: 404,
             AuthorizationError: 403,
             BusinessRuleError: 422,
@@ -56,6 +66,7 @@ def create_app() -> FastAPI:
             content={"code": exc.code, "message": exc.message},
         )
 
+    from src.features.auth.router import router as auth_router
     from src.features.drafts.router import router as drafts_router
     from src.features.economy.router import router as economy_router
     from src.features.health.router import router as health_router
@@ -65,6 +76,7 @@ def create_app() -> FastAPI:
     from src.features.squads.router import router as squads_router
     from src.features.standings.router import router as standings_router
 
+    app.include_router(auth_router, prefix="/api")
     app.include_router(drafts_router, prefix="/api")
     app.include_router(economy_router, prefix="/api")
     app.include_router(health_router, prefix="/api")
@@ -73,6 +85,11 @@ def create_app() -> FastAPI:
     app.include_router(seasons_router, prefix="/api")
     app.include_router(squads_router, prefix="/api")
     app.include_router(standings_router, prefix="/api")
+
+    # Serve player photos and other static assets.
+    static_dir = Path(__file__).resolve().parent.parent / "static"
+    static_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
     return app
 

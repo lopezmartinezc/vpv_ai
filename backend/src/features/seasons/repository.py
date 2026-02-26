@@ -48,3 +48,19 @@ class SeasonRepository(BaseRepository[Season]):
         stmt = select(ValidFormation).order_by(ValidFormation.formation)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def update_season(self, season_id: int, **kwargs: object) -> Season | None:
+        season = await self.session.get(Season, season_id)
+        if season is None:
+            return None
+        for key, value in kwargs.items():
+            if value is not None:
+                setattr(season, key, value)
+        return season
+
+    async def update_scoring_rule(self, rule_id: int, value: object) -> ScoringRule | None:
+        rule = await self.session.get(ScoringRule, rule_id)
+        if rule is None:
+            return None
+        rule.value = value  # type: ignore[assignment]
+        return rule

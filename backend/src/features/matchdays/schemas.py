@@ -66,6 +66,7 @@ class LineupPlayerEntry(BaseModel):
     position_slot: str
     player_id: int
     player_name: str
+    photo_path: str | None
     team_name: str
     points: int
     score_breakdown: ScoreBreakdown | None
@@ -74,6 +75,7 @@ class LineupPlayerEntry(BaseModel):
 class BenchPlayerEntry(BaseModel):
     player_id: int
     player_name: str
+    photo_path: str | None
     position: str
     team_name: str
     matchday_points: int
@@ -87,3 +89,36 @@ class LineupDetailResponse(BaseModel):
     total_points: int
     players: list[LineupPlayerEntry]
     bench: list[BenchPlayerEntry]
+
+
+# --- Admin schemas ---
+
+
+class MatchdayUpdateRequest(BaseModel):
+    counts: bool | None = None
+    status: str | None = None
+
+
+class MatchUpdateRequest(BaseModel):
+    counts: bool | None = None
+    home_score: int | None = None
+    away_score: int | None = None
+
+
+class AdminMatchdayResponse(BaseModel):
+    season_id: int
+    number: int
+    status: str
+    counts: bool
+    stats_ok: bool
+    first_match_at: datetime | None
+
+
+class AdminMatchResponse(BaseModel):
+    id: int
+    home_team: str
+    away_team: str
+    home_score: int | None
+    away_score: int | None
+    counts: bool
+    played_at: datetime | None

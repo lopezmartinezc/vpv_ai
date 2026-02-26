@@ -5,13 +5,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.seasons.schemas import (
     ScoringRuleResponse,
+    ScoringRulesBatchUpdate,
     SeasonDetail,
     SeasonPaymentResponse,
     SeasonSummary,
+    SeasonUpdateRequest,
     ValidFormationResponse,
 )
 from src.features.seasons.service import SeasonService
-from src.shared.dependencies import get_db
+from src.shared.dependencies import get_current_admin, get_db
 
 router = APIRouter(prefix="/seasons", tags=["seasons"])
 
@@ -69,3 +71,32 @@ async def get_season_payments(
 ) -> list[SeasonPaymentResponse]:
     payments = await service.get_payments(season_id)
     return [SeasonPaymentResponse.model_validate(p) for p in payments]
+
+
+# ---------------------------------------------------------------------------
+# Admin endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.put("/admin/{season_id}", response_model=SeasonDetail)
+async def update_season(
+    season_id: int,
+    body: SeasonUpdateRequest,
+    service: SeasonService = Depends(_get_service),
+    _admin: dict = Depends(get_current_admin),
+) -> SeasonDetail:
+    return await service.update_season(season_id, **body.model_dump(exclude_none=True))
+
+
+@router.put(
+    "/admin/{season_id}/scoring-rules",
+    response_model=list[ScoringRuleResponse],
+)
+async def update_scoring_rules(
+    season_id: int,
+    body: ScoringRulesBatchUpdate,
+    service: SeasonService = Depends(_get_service),
+    _admin: dict = Depends(get_current_admin),
+) -> list[ScoringRuleResponse]:
+    updates = [(r.id, r.value) for r in body.rules]
+    return await service.update_scoring_rules(season_id, updates)

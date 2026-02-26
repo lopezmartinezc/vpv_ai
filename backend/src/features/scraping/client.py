@@ -133,3 +133,34 @@ class ScrapingClient:
                 await asyncio.sleep(backoff)
 
         raise ScrapingError(url, last_exc)
+
+    async def fetch_bytes(self, url: str) -> bytes:
+        """Fetch *url* and return the raw response bytes (for images/binaries).
+
+        No delay is applied — this is intended for CDN resources, not the main
+        website.  Retries are still performed on failure.
+        """
+        if self._client is None:
+            raise RuntimeError("ScrapingClient must be used as an async context manager.")
+
+        max_attempts = self._settings.scraping_max_retries
+        last_exc: Exception = RuntimeError("unreachable")
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response = await self._client.get(url)
+                response.raise_for_status()
+                return response.content
+            except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+                logger.warning(
+                    "fetch_bytes: error for %s (attempt %d/%d): %s",
+                    url,
+                    attempt,
+                    max_attempts,
+                    exc,
+                )
+                last_exc = exc
+                if attempt < max_attempts:
+                    await asyncio.sleep(1.0)
+
+        raise ScrapingError(url, last_exc)

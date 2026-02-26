@@ -21,6 +21,11 @@ class BusinessRuleError(VPVError):
         super().__init__(message=message, code="BUSINESS_RULE_VIOLATION")
 
 
+class AuthenticationError(VPVError):
+    def __init__(self, message: str = "Credenciales invalidas") -> None:
+        super().__init__(message=message, code="AUTHENTICATION_ERROR")
+
+
 class AuthorizationError(VPVError):
     def __init__(self, message: str = "No autorizado") -> None:
         super().__init__(message=message, code="UNAUTHORIZED")

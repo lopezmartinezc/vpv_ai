@@ -1,0 +1,235 @@
+"""APScheduler-based automatic scraping scheduler.
+
+A single ``AsyncIOScheduler`` job fires every ``scraping_poll_interval_seconds``.
+An ``asyncio.Lock`` prevents tick overlap.
+
+Per-match CRC change detection:
+  For each played match, fetches its match page on futbolfantasy.com and computes
+  a CRC from ``modo-picas`` + ``cronistas-marca`` ratings.  Only matches whose
+  CRC changed since the last check are re-scraped.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+from datetime import datetime, timezone
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+from src.core.database import AsyncSessionLocal
+from src.features.scraping.client import ScrapingClient, ScrapingError
+from src.features.scraping.config import scraping_settings
+from src.features.scraping.parsers import parse_match_crc
+from src.features.scraping.repository import ScrapingRepository
+from src.features.scraping.service import ScrapingService
+
+logger = logging.getLogger(__name__)
+
+_scrape_lock = asyncio.Lock()
+_scheduler: AsyncIOScheduler | None = None
+_last_tick_at: datetime | None = None
+
+
+# ---------------------------------------------------------------------------
+# Core tick
+# ---------------------------------------------------------------------------
+
+
+async def _tick() -> None:
+    """Scheduler entry point.  Skips if the previous tick is still running."""
+    if _scrape_lock.locked():
+        logger.info("scheduler.tick: previous tick still running, skipping")
+        return
+
+    async with _scrape_lock:
+        await _run_tick()
+
+
+async def _run_tick() -> None:
+    global _last_tick_at
+    _last_tick_at = datetime.now(timezone.utc)
+    logger.info("scheduler.tick: starting")
+
+    async with AsyncSessionLocal() as session:
+        try:
+            repo = ScrapingRepository(session)
+            service = ScrapingService(session)
+
+            # 1. Active season
+            season = await repo.get_active_season()
+            if season is None:
+                logger.info("scheduler.tick: no active season, skipping")
+                return
+
+            season_id = season.id
+            md_current = season.matchday_current
+            if md_current == 0:
+                logger.info("scheduler.tick: matchday_current=0, skipping")
+                return
+
+            # 2. Update calendar first — populates match scores so we know
+            #    which matches have been played.
+            try:
+                cal_updated = await service.scrape_calendar(season_id)
+                if cal_updated:
+                    logger.info("scheduler.tick: calendar updated=%d", cal_updated)
+                    await session.commit()
+            except Exception:
+                logger.exception("scheduler.tick: error updating calendar")
+
+            # 3. Load matchday + matches (re-read after calendar update)
+            matchday = await repo.get_matchday(season_id, md_current)
+            if matchday is None:
+                logger.info(
+                    "scheduler.tick: matchday not found season=%d number=%d",
+                    season_id, md_current,
+                )
+                return
+
+            matches = await repo.get_matches_for_matchday(matchday.id)
+            if not matches:
+                logger.info("scheduler.tick: no matches in matchday %d", matchday.id)
+                return
+
+            # 4. Filter played matches (have a result + source_url for CRC check)
+            played = [
+                m for m in matches
+                if m.source_url is not None and m.home_score is not None
+            ]
+            if not played:
+                logger.info("scheduler.tick: no matches played yet, skipping")
+                return
+
+            logger.info(
+                "scheduler.tick: %d/%d matches played, checking CRCs",
+                len(played), len(matches),
+            )
+
+            # 5. Per-match CRC check
+            matches_to_scrape: list[int] = []
+
+            async with ScrapingClient() as client:
+                for match in played:
+                    try:
+                        html = await client.fetch(match.source_url)  # type: ignore[arg-type]
+                    except ScrapingError:
+                        logger.warning(
+                            "scheduler.tick: failed to fetch match page id=%d url=%s",
+                            match.id, match.source_url,
+                        )
+                        continue
+
+                    new_crc = parse_match_crc(html)
+
+                    if match.stats_crc == new_crc:
+                        logger.debug(
+                            "scheduler.tick: match %d CRC unchanged (%s)",
+                            match.id, new_crc,
+                        )
+                        continue
+
+                    logger.info(
+                        "scheduler.tick: match %d CRC changed %s -> %s",
+                        match.id, match.stats_crc, new_crc,
+                    )
+                    await repo.update_match_crc(match.id, new_crc)
+                    matches_to_scrape.append(match.id)
+
+            if not matches_to_scrape:
+                logger.info("scheduler.tick: all CRCs unchanged, nothing to scrape")
+                await session.commit()
+                return
+
+            # 6. Scrape changed matches
+            logger.info(
+                "scheduler.tick: scraping %d matches: %s",
+                len(matches_to_scrape), matches_to_scrape,
+            )
+            for match_id in matches_to_scrape:
+                try:
+                    result = await service.scrape_match_players(
+                        season_id, md_current, match_id,
+                    )
+                    logger.info(
+                        "scheduler.tick: scraped match %d: %s",
+                        match_id, result,
+                    )
+                except Exception:
+                    logger.exception(
+                        "scheduler.tick: error scraping match %d", match_id,
+                    )
+
+            await session.commit()
+            logger.info("scheduler.tick: committed successfully")
+
+        except Exception:
+            await session.rollback()
+            logger.exception("scheduler.tick: unhandled error, rolled back")
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle helpers
+# ---------------------------------------------------------------------------
+
+
+def start_scheduler() -> None:
+    """Create and start the AsyncIOScheduler.  Idempotent."""
+    global _scheduler
+
+    if _scheduler is not None and _scheduler.running:
+        logger.warning("scheduler.start: already running")
+        return
+
+    interval = scraping_settings.scraping_poll_interval_seconds
+    _scheduler = AsyncIOScheduler()
+    _scheduler.add_job(
+        _tick,
+        trigger="interval",
+        seconds=interval,
+        id="scraping_tick",
+        max_instances=1,
+        replace_existing=True,
+        misfire_grace_time=60,
+    )
+    _scheduler.start()
+    logger.info("scheduler.start: started, interval=%ds", interval)
+
+
+def stop_scheduler() -> None:
+    """Shut down the scheduler gracefully."""
+    global _scheduler
+
+    if _scheduler is None or not _scheduler.running:
+        return
+
+    _scheduler.shutdown(wait=False)
+    _scheduler = None
+    logger.info("scheduler.stop: stopped")
+
+
+def get_scheduler_status() -> dict:
+    """Return current scheduler state for admin dashboard."""
+    running = _scheduler is not None and _scheduler.running
+    next_run: str | None = None
+
+    if running and _scheduler is not None:
+        job = _scheduler.get_job("scraping_tick")
+        if job and job.next_run_time:
+            next_run = job.next_run_time.isoformat()
+
+    return {
+        "running": running,
+        "poll_interval_seconds": scraping_settings.scraping_poll_interval_seconds,
+        "last_tick_at": _last_tick_at.isoformat() if _last_tick_at else None,
+        "next_run_at": next_run,
+        "lock_held": _scrape_lock.locked(),
+    }
+
+
+async def trigger_tick() -> dict:
+    """Manually trigger a single scheduler tick.  Returns status."""
+    if _scrape_lock.locked():
+        return {"triggered": False, "reason": "previous tick still running"}
+
+    asyncio.create_task(_tick())
+    return {"triggered": True}

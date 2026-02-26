@@ -4,12 +4,16 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.matchdays.schemas import (
+    AdminMatchResponse,
+    AdminMatchdayResponse,
     LineupDetailResponse,
     MatchdayDetailResponse,
     MatchdayListResponse,
+    MatchdayUpdateRequest,
+    MatchUpdateRequest,
 )
 from src.features.matchdays.service import MatchdayService
-from src.shared.dependencies import get_db
+from src.shared.dependencies import get_current_admin, get_db
 
 router = APIRouter(prefix="/matchdays", tags=["matchdays"])
 
@@ -49,3 +53,41 @@ async def get_lineup_detail(
     service: MatchdayService = Depends(_get_service),
 ) -> LineupDetailResponse:
     return await service.get_lineup_detail(season_id, number, participant_id)
+
+
+# ---------------------------------------------------------------------------
+# Admin endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.put(
+    "/admin/{season_id}/{number}",
+    response_model=AdminMatchdayResponse,
+)
+async def update_matchday(
+    season_id: int,
+    number: int,
+    body: MatchdayUpdateRequest,
+    service: MatchdayService = Depends(_get_service),
+    _admin: dict = Depends(get_current_admin),
+) -> AdminMatchdayResponse:
+    return await service.update_matchday(
+        season_id, number, **body.model_dump(exclude_none=True),
+    )
+
+
+@router.put(
+    "/admin/{season_id}/{number}/match/{match_id}",
+    response_model=AdminMatchResponse,
+)
+async def update_match(
+    season_id: int,
+    number: int,
+    match_id: int,
+    body: MatchUpdateRequest,
+    service: MatchdayService = Depends(_get_service),
+    _admin: dict = Depends(get_current_admin),
+) -> AdminMatchResponse:
+    return await service.update_match(
+        match_id, **body.model_dump(exclude_none=True),
+    )

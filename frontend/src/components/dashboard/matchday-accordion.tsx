@@ -9,6 +9,7 @@ import type {
   BenchPlayerEntry,
 } from "@/types";
 import { apiClient } from "@/lib/api-client";
+import { PlayerAvatar } from "@/components/ui/player-avatar";
 
 const POSITION_COLORS: Record<string, string> = {
   POR: "bg-amber-500/20 text-amber-600 dark:text-amber-400",
@@ -70,6 +71,7 @@ function PlayerRow({ player }: { player: LineupPlayerEntry }) {
           !didPlay ? "opacity-45" : ""
         }`}
       >
+        <PlayerAvatar photoPath={player.photo_path} name={player.player_name} size={48} />
         <PositionBadge pos={player.position_slot} />
         <span className={`min-w-0 flex-1 truncate ${!didPlay ? "text-vpv-danger" : "text-vpv-text"}`}>
           {player.player_name}
@@ -106,6 +108,7 @@ function PlayerRow({ player }: { player: LineupPlayerEntry }) {
 function BenchPlayerRow({ player }: { player: BenchPlayerEntry }) {
   return (
     <div className="flex items-center gap-2 py-1 text-sm opacity-40">
+      <PlayerAvatar photoPath={player.photo_path} name={player.player_name} size={48} />
       <PositionBadge pos={player.position} />
       <span className="min-w-0 flex-1 truncate text-vpv-text">
         {player.player_name}

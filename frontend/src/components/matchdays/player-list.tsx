@@ -1,4 +1,5 @@
 import type { LineupPlayerEntry } from "@/types";
+import { PlayerAvatar } from "@/components/ui/player-avatar";
 
 const POSITION_COLORS: Record<string, string> = {
   POR: "bg-amber-500/20 text-amber-400",
@@ -29,6 +30,7 @@ export function PlayerList({ players }: { players: LineupPlayerEntry[] }) {
           >
             <div className="flex items-center gap-2">
               <PositionBadge pos={p.position_slot} />
+              <PlayerAvatar photoPath={p.photo_path} name={p.player_name} size={48} />
               <span className="flex-1 truncate font-medium text-vpv-text">
                 {p.player_name}
               </span>
@@ -84,8 +86,11 @@ export function PlayerList({ players }: { players: LineupPlayerEntry[] }) {
                   <td className="px-3 py-2.5">
                     <PositionBadge pos={p.position_slot} />
                   </td>
-                  <td className="px-3 py-2.5 font-medium text-vpv-text">
-                    {p.player_name}
+                  <td className="px-3 py-2.5">
+                    <span className="flex items-center gap-2 font-medium text-vpv-text">
+                      <PlayerAvatar photoPath={p.photo_path} name={p.player_name} size={48} />
+                      {p.player_name}
+                    </span>
                   </td>
                   <td className="px-3 py-2.5 text-vpv-text-muted">
                     {p.team_name}

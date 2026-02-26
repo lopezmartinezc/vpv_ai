@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.exceptions import NotFoundError
 from src.features.matchdays.repository import MatchdayRepository
 from src.features.matchdays.schemas import (
+    AdminMatchResponse,
+    AdminMatchdayResponse,
     BenchPlayerEntry,
     LineupDetailResponse,
     LineupPlayerEntry,
@@ -139,6 +141,7 @@ class MatchdayService:
                     position_slot=p.position_slot,
                     player_id=p.player_id,
                     player_name=p.player_name,
+                    photo_path=p.photo_path,
                     team_name=p.team_name,
                     points=p.points,
                     score_breakdown=ScoreBreakdown(
@@ -163,6 +166,7 @@ class MatchdayService:
                 BenchPlayerEntry(
                     player_id=b.player_id,
                     player_name=b.player_name,
+                    photo_path=b.photo_path,
                     position=b.position,
                     team_name=b.team_name,
                     matchday_points=b.matchday_points,
@@ -170,3 +174,44 @@ class MatchdayService:
                 for b in bench_rows
             ],
         )
+
+    # --- Admin methods ---
+
+    async def update_matchday(
+        self, season_id: int, number: int, **kwargs: object,
+    ) -> AdminMatchdayResponse:
+        matchday = await self.repo.update_matchday(season_id, number, **kwargs)
+        if matchday is None:
+            raise NotFoundError("Matchday", f"{season_id}/{number}")
+        await self.repo.session.commit()
+        return AdminMatchdayResponse(
+            season_id=matchday.season_id,
+            number=matchday.number,
+            status=matchday.status,
+            counts=matchday.counts,
+            stats_ok=matchday.stats_ok,
+            first_match_at=matchday.first_match_at,
+        )
+
+    async def update_match(
+        self, match_id: int, **kwargs: object,
+    ) -> AdminMatchResponse:
+        match = await self.repo.update_match(match_id, **kwargs)
+        if match is None:
+            raise NotFoundError("Match", match_id)
+        # Need team names for response
+        await self.repo.session.commit()
+        # Re-fetch match with teams
+        match_rows = await self.repo.get_matches(match.matchday_id)
+        for m in match_rows:
+            if m.id == match_id:
+                return AdminMatchResponse(
+                    id=m.id,
+                    home_team=m.home_team_name,
+                    away_team=m.away_team_name,
+                    home_score=m.home_score,
+                    away_score=m.away_score,
+                    counts=m.counts,
+                    played_at=m.played_at,
+                )
+        raise NotFoundError("Match", match_id)

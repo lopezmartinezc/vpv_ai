@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.exceptions import NotFoundError
+from decimal import Decimal
+
+from src.core.exceptions import BusinessRuleError, NotFoundError
 from src.features.economy.repository import EconomyRepository
 from src.features.economy.schemas import (
     EconomyResponse,
@@ -71,3 +73,51 @@ class EconomyService:
                 for t in tx_rows
             ],
         )
+
+    # --- Admin methods ---
+
+    async def create_transaction(
+        self,
+        season_id: int,
+        participant_id: int,
+        tx_type: str,
+        amount: float,
+        description: str | None = None,
+        matchday_id: int | None = None,
+    ) -> TransactionEntry:
+        season = await self.season_repo.get_by_id(season_id)
+        if season is None:
+            raise NotFoundError("Season", season_id)
+
+        valid_types = {
+            "initial_fee", "weekly_payment", "winter_draft_fee",
+            "prize", "manual_adjustment", "penalty",
+        }
+        if tx_type not in valid_types:
+            raise BusinessRuleError(f"Tipo de transaccion invalido: {tx_type}")
+
+        tx = await self.repo.create_transaction(
+            season_id=season_id,
+            participant_id=participant_id,
+            tx_type=tx_type,
+            amount=Decimal(str(amount)),
+            description=description,
+            matchday_id=matchday_id,
+        )
+        await self.repo.session.commit()
+        await self.repo.session.refresh(tx)
+        return TransactionEntry(
+            id=tx.id,
+            type=tx.type,
+            amount=float(tx.amount),
+            description=tx.description,
+            matchday_number=None,
+            created_at=tx.created_at,
+        )
+
+    async def delete_transaction(self, season_id: int, tx_id: int) -> bool:
+        deleted = await self.repo.delete_transaction(tx_id)
+        if not deleted:
+            raise NotFoundError("Transaction", tx_id)
+        await self.repo.session.commit()
+        return True

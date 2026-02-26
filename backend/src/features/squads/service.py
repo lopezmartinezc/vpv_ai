@@ -65,6 +65,7 @@ class SquadService:
                 SquadPlayerEntry(
                     player_id=p.player_id,
                     display_name=p.display_name,
+                    photo_path=p.photo_path,
                     position=p.position,
                     team_name=p.team_name,
                     season_points=p.season_points,

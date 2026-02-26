@@ -6,6 +6,7 @@ import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
 import { SkeletonTable } from "@/components/ui/skeleton";
 import type { SquadDetailResponse, SquadPlayerEntry } from "@/types";
+import { PlayerAvatar } from "@/components/ui/player-avatar";
 
 const POSITION_ORDER = ["POR", "DEF", "MED", "DEL"];
 const POSITION_COLORS: Record<string, string> = {
@@ -103,6 +104,7 @@ export default function PlantillaDetailPage() {
                     key={player.player_id}
                     className="flex items-center justify-between rounded-lg border border-vpv-card-border bg-vpv-card px-4 py-2.5"
                   >
+                    <PlayerAvatar photoPath={player.photo_path} name={player.display_name} size={48} />
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-medium text-vpv-text">
                         {player.display_name}
@@ -134,8 +136,11 @@ export default function PlantillaDetailPage() {
                         key={player.player_id}
                         className="border-b border-vpv-border last:border-0 hover:bg-vpv-accent/5"
                       >
-                        <td className="px-4 py-2 font-medium text-vpv-text">
-                          {player.display_name}
+                        <td className="px-4 py-2">
+                          <span className="flex items-center gap-2 font-medium text-vpv-text">
+                            <PlayerAvatar photoPath={player.photo_path} name={player.display_name} size={48} />
+                            {player.display_name}
+                          </span>
                         </td>
                         <td className="px-4 py-2 text-vpv-text-muted">
                           {player.team_name}

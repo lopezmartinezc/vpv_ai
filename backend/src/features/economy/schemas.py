@@ -33,3 +33,14 @@ class ParticipantEconomyResponse(BaseModel):
     display_name: str
     net_balance: float
     transactions: list[TransactionEntry]
+
+
+# --- Admin schemas ---
+
+
+class TransactionCreateRequest(BaseModel):
+    participant_id: int
+    type: str
+    amount: float
+    description: str | None = None
+    matchday_id: int | None = None

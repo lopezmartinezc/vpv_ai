@@ -65,6 +65,7 @@ class Match(Base):
     source_id: Mapped[int | None] = mapped_column()
     source_url: Mapped[str | None] = mapped_column(String(200))
     played_at: Mapped[datetime | None] = mapped_column()
+    stats_crc: Mapped[str | None] = mapped_column(String(20))
 
     matchday: Mapped[Matchday] = relationship(back_populates="matches")
     home_team: Mapped[Team] = relationship(
