@@ -68,6 +68,7 @@ class ValidFormationResponse(BaseModel):
 
 class SeasonUpdateRequest(BaseModel):
     status: str | None = None
+    matchday_start: int | None = None
     matchday_current: int | None = None
     matchday_end: int | None = None
     matchday_winter: int | None = None

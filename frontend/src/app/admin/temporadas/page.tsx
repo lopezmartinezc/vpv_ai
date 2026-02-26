@@ -55,6 +55,7 @@ export default function AdminTemporadasPage() {
   const [editMatchdayCurrent, setEditMatchdayCurrent] = useState("");
   const [editMatchdayEnd, setEditMatchdayEnd] = useState("");
   const [editMatchdayWinter, setEditMatchdayWinter] = useState("");
+  const [editMatchdayStart, setEditMatchdayStart] = useState("");
   const [editLineupDeadline, setEditLineupDeadline] = useState("");
   const [editDraftPool, setEditDraftPool] = useState("");
 
@@ -84,6 +85,7 @@ export default function AdminTemporadasPage() {
       setEditedRules({});
       // Populate edit fields
       setEditStatus(detail.status);
+      setEditMatchdayStart(String(detail.matchday_start));
       setEditMatchdayCurrent(String(detail.matchday_current));
       setEditMatchdayEnd(detail.matchday_end !== null ? String(detail.matchday_end) : "");
       setEditMatchdayWinter(detail.matchday_winter !== null ? String(detail.matchday_winter) : "");
@@ -111,6 +113,8 @@ export default function AdminTemporadasPage() {
     try {
       const body: Record<string, unknown> = {};
       if (editStatus !== season.status) body.status = editStatus;
+      if (editMatchdayStart !== String(season.matchday_start))
+        body.matchday_start = Number(editMatchdayStart);
       if (editMatchdayCurrent !== String(season.matchday_current))
         body.matchday_current = Number(editMatchdayCurrent);
       if (editMatchdayEnd !== (season.matchday_end !== null ? String(season.matchday_end) : ""))
@@ -226,6 +230,17 @@ export default function AdminTemporadasPage() {
                 </div>
                 <div>
                   <label className="mb-1 block text-xs text-vpv-text-muted">
+                    Jornada inicial
+                  </label>
+                  <input
+                    type="number"
+                    value={editMatchdayStart}
+                    onChange={(e) => setEditMatchdayStart(e.target.value)}
+                    className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-vpv-text-muted">
                     Jornada actual
                   </label>
                   <input
@@ -284,7 +299,6 @@ export default function AdminTemporadasPage() {
               </div>
 
               <div className="flex items-center gap-3 text-xs text-vpv-text-muted">
-                <span>Inicio: J{season.matchday_start}</span>
                 <span>Scanned: J{season.matchday_scanned}</span>
                 <span>Participantes: {season.total_participants}</span>
               </div>

@@ -55,6 +55,11 @@ class SeasonService:
         season = await self.repo.update_season(season_id, **kwargs)
         if season is None:
             raise NotFoundError("Season", season_id)
+
+        # Auto-sync matchday counts when matchday_start changes
+        if "matchday_start" in kwargs:
+            await self.repo.sync_matchday_counts(season_id, season.matchday_start)
+
         await self.repo.session.commit()
         return SeasonDetail.model_validate(season)
 

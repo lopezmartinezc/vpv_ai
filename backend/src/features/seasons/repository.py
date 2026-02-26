@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.shared.base.repository import BaseRepository
+from src.shared.models.matchday import Matchday
 from src.shared.models.season import ScoringRule, Season, SeasonPayment, ValidFormation
 
 
@@ -57,6 +58,20 @@ class SeasonRepository(BaseRepository[Season]):
             if value is not None:
                 setattr(season, key, value)
         return season
+
+    async def sync_matchday_counts(self, season_id: int, matchday_start: int) -> int:
+        """Set counts=false for matchdays before matchday_start, counts=true for the rest."""
+        await self.session.execute(
+            update(Matchday)
+            .where(Matchday.season_id == season_id, Matchday.number < matchday_start)
+            .values(counts=False)
+        )
+        result = await self.session.execute(
+            update(Matchday)
+            .where(Matchday.season_id == season_id, Matchday.number >= matchday_start)
+            .values(counts=True)
+        )
+        return result.rowcount
 
     async def update_scoring_rule(self, rule_id: int, value: object) -> ScoringRule | None:
         rule = await self.session.get(ScoringRule, rule_id)
