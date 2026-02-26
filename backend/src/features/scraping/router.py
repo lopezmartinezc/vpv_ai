@@ -60,19 +60,18 @@ async def scrape_match_endpoint(
 
 @router.post(
     "/calendar/{season_id}",
-    summary="Update match scores from La Liga calendar",
+    summary="Update match scores and dates from La Liga calendar",
     response_model=dict,
 )
 async def scrape_calendar_endpoint(
     season_id: int,
     service: ScrapingService = Depends(_get_service),
 ) -> dict[str, int]:
-    """Fetch the La Liga calendar page and update DB match scores.
+    """Fetch the La Liga calendar page and update DB match scores and dates.
 
-    Returns the number of matches whose score was updated.
+    Returns the number of scores and dates updated.
     """
-    count = await service.scrape_calendar(season_id)
-    return {"matches_updated": count}
+    return await service.scrape_calendar(season_id)
 
 
 @router.post(

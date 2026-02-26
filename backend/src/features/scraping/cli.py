@@ -91,12 +91,11 @@ async def cmd_check_updates() -> None:
 
 
 async def cmd_update_calendar(season_id: int) -> None:
-    """Update La Liga match scores from the calendar page."""
+    """Update La Liga match scores and dates from the calendar page."""
 
     async def _run(session: AsyncSession) -> dict:
         service = ScrapingService(session)
-        count = await service.scrape_calendar(season_id)
-        return {"matches_updated": count}
+        return await service.scrape_calendar(season_id)
 
     await _run_with_session(_run)
 

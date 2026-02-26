@@ -40,6 +40,7 @@ class CalendarMatchData:
     away_team_name: str
     matchday_number: int
     result: str  # e.g. "2-1" or "" when not yet played
+    played_at: str | None = None  # ISO datetime string, e.g. "2026-02-27T21:00:00"
 
 
 @dataclass
@@ -211,16 +212,52 @@ def parse_roster(html: str) -> list[PlayerUrlData]:
 # ---------------------------------------------------------------------------
 
 
-def parse_calendar(html: str) -> list[CalendarMatchData]:
+def _parse_calendar_date(date_text: str, season_year: int) -> str | None:
+    """Parse a calendar date string like ``'Vie 27/02 21:00h'`` into ISO format.
+
+    The year is inferred from the season: months Aug-Dec belong to
+    ``season_year - 1``; months Jan-Jul belong to ``season_year``.
+
+    Returns an ISO datetime string or ``None`` on parse failure.
+    """
+    import re
+
+    m = re.search(r"(\d{2})/(\d{2})\s+(\d{2}):(\d{2})", date_text)
+    if not m:
+        return None
+
+    day, month, hour, minute = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
+    year = season_year - 1 if month >= 8 else season_year
+
+    try:
+        from datetime import datetime as _dt
+
+        dt = _dt(year, month, day, hour, minute)
+        return dt.isoformat()
+    except ValueError:
+        return None
+
+
+def parse_calendar(html: str, season_year: int = 0) -> list[CalendarMatchData]:
     """Extract match data from the La Liga calendar page.
 
     Looks for ``section.lista`` > ``a.partido`` elements.  Each match
     anchor contains:
-    - ``div.local img[alt]`` — home team name
-    - ``div.visitante img[alt]`` — away team name
-    - ``div.resultado`` (optional) — result string, e.g. "2-1"
-    - ``div.fase`` — matchday label, e.g. "Jornada 24"
-    - ``href`` split on "/" at index 4, then split on "-" at index 0 for the ID
+
+    - ``div.equipo.local img[alt]`` — home team name
+    - ``div.equipo.visitante img[alt]`` — away team name
+    - ``div.resultado`` (optional) — result string for completed matches
+    - ``div.date`` (optional) — date/time for upcoming matches, e.g.
+      ``"Vie 27/02 21:00h"``
+    - ``div.fase`` — matchday label, e.g. ``"Jornada 24"``
+
+    Parameters
+    ----------
+    html:
+        Raw HTML of the calendar page.
+    season_year:
+        The second year of the season (e.g. 2026 for 2025-2026).
+        Used to resolve ``dd/mm`` dates into full datetimes.
 
     Returns an empty list on any parsing failure.
     """
@@ -237,11 +274,6 @@ def parse_calendar(html: str) -> list[CalendarMatchData]:
                 continue
             try:
                 href = str(anchor.get("href", "")).strip()
-                # href: /laliga/partido/{id}-{slug}
-                # The match ID is at the last path segment, before the first dash.
-                # Legacy code used parts[4] assuming a URL like
-                # /laliga/partido/{season}/{id}-{slug}; we support both formats
-                # by always reading the last non-empty segment.
                 parts = [p for p in href.split("/") if p]
                 if not parts:
                     logger.debug("parse_calendar: skipping empty href %r", href)
@@ -253,23 +285,30 @@ def parse_calendar(html: str) -> list[CalendarMatchData]:
                     continue
                 source_id = int(id_candidate)
 
-                # Home team
+                # Home team — div.equipo.local > img[alt]
                 local_div = anchor.find("div", class_="local")
                 home_img = local_div.find("img") if isinstance(local_div, Tag) else None
                 home_team = (
                     str(home_img.get("alt", "")).strip() if isinstance(home_img, Tag) else ""
                 )
 
-                # Away team
+                # Away team — div.equipo.visitante > img[alt]
                 visitante_div = anchor.find("div", class_="visitante")
                 away_img = visitante_div.find("img") if isinstance(visitante_div, Tag) else None
                 away_team = (
                     str(away_img.get("alt", "")).strip() if isinstance(away_img, Tag) else ""
                 )
 
-                # Result
+                # Result (completed matches only)
                 resultado_div = anchor.find("div", class_="resultado")
                 result = _tag_text(resultado_div if isinstance(resultado_div, Tag) else None)
+
+                # Date/time (upcoming matches only — div.date inside div.info)
+                played_at: str | None = None
+                date_div = anchor.find("div", class_="date")
+                if isinstance(date_div, Tag) and season_year:
+                    date_text = date_div.get_text(" ", strip=True)
+                    played_at = _parse_calendar_date(date_text, season_year)
 
                 # Matchday number
                 fase_div = anchor.find("div", class_="fase")
@@ -286,6 +325,7 @@ def parse_calendar(html: str) -> list[CalendarMatchData]:
                         away_team_name=away_team,
                         matchday_number=matchday_number,
                         result=result,
+                        played_at=played_at,
                     )
                 )
             except (IndexError, ValueError):

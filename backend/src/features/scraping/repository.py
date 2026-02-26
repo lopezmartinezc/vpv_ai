@@ -263,6 +263,38 @@ class ScrapingRepository:
             "update_match_score: match_id=%d score=%d-%d", match_id, home_score, away_score
         )
 
+    async def update_match_played_at(self, match_id: int, played_at: object) -> None:
+        """Update the scheduled date/time of a match."""
+        stmt = update(Match).where(Match.id == match_id).values(played_at=played_at)
+        await self.session.execute(stmt)
+        logger.debug("update_match_played_at: match_id=%d played_at=%s", match_id, played_at)
+
+    async def sync_matchday_first_match_at(self, season_id: int) -> int:
+        """Recalculate ``matchdays.first_match_at`` from match dates for all matchdays."""
+        from sqlalchemy import func
+
+        subq = (
+            select(
+                Match.matchday_id,
+                func.min(Match.played_at).label("earliest"),
+            )
+            .join(Matchday, Match.matchday_id == Matchday.id)
+            .where(Matchday.season_id == season_id, Match.played_at.isnot(None))
+            .group_by(Match.matchday_id)
+            .subquery()
+        )
+        stmt = (
+            update(Matchday)
+            .where(Matchday.id == subq.c.matchday_id)
+            .values(first_match_at=subq.c.earliest)
+        )
+        result = await self.session.execute(stmt)
+        logger.debug(
+            "sync_matchday_first_match_at: season_id=%d rows=%d",
+            season_id, result.rowcount,
+        )
+        return result.rowcount
+
     async def mark_match_stats_ok(self, match_id: int) -> None:
         """Set ``match.stats_ok = True``."""
         stmt = update(Match).where(Match.id == match_id).values(stats_ok=True)

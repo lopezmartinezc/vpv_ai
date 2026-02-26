@@ -7,6 +7,10 @@ Per-match CRC change detection:
   For each played match, fetches its match page on futbolfantasy.com and computes
   a CRC from ``modo-picas`` + ``cronistas-marca`` ratings.  Only matches whose
   CRC changed since the last check are re-scraped.
+
+Daily calendar sync:
+  A ``cron`` job runs once per day at 06:00 UTC to refresh match dates
+  (La Liga frequently reschedules matches).
 """
 from __future__ import annotations
 
@@ -28,6 +32,7 @@ logger = logging.getLogger(__name__)
 _scrape_lock = asyncio.Lock()
 _scheduler: AsyncIOScheduler | None = None
 _last_tick_at: datetime | None = None
+_last_calendar_sync_at: datetime | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -67,12 +72,11 @@ async def _run_tick() -> None:
                 logger.info("scheduler.tick: matchday_current=0, skipping")
                 return
 
-            # 2. Update calendar first — populates match scores so we know
-            #    which matches have been played.
+            # 2. Update calendar first — populates match scores and dates.
             try:
-                cal_updated = await service.scrape_calendar(season_id)
-                if cal_updated:
-                    logger.info("scheduler.tick: calendar updated=%d", cal_updated)
+                cal_result = await service.scrape_calendar(season_id)
+                if cal_result["scores_updated"] or cal_result["dates_updated"]:
+                    logger.info("scheduler.tick: calendar %s", cal_result)
                     await session.commit()
             except Exception:
                 logger.exception("scheduler.tick: error updating calendar")
@@ -168,6 +172,36 @@ async def _run_tick() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Daily calendar sync
+# ---------------------------------------------------------------------------
+
+
+async def _calendar_sync() -> None:
+    """Fetch the La Liga calendar and update match dates + scores."""
+    global _last_calendar_sync_at
+    logger.info("scheduler.calendar_sync: starting")
+    _last_calendar_sync_at = datetime.now(timezone.utc)
+
+    async with AsyncSessionLocal() as session:
+        try:
+            repo = ScrapingRepository(session)
+            service = ScrapingService(session)
+
+            season = await repo.get_active_season()
+            if season is None:
+                logger.info("scheduler.calendar_sync: no active season, skipping")
+                return
+
+            result = await service.scrape_calendar(season.id)
+            await session.commit()
+            logger.info("scheduler.calendar_sync: done — %s", result)
+
+        except Exception:
+            await session.rollback()
+            logger.exception("scheduler.calendar_sync: error")
+
+
+# ---------------------------------------------------------------------------
 # Lifecycle helpers
 # ---------------------------------------------------------------------------
 
@@ -191,8 +225,18 @@ def start_scheduler() -> None:
         replace_existing=True,
         misfire_grace_time=60,
     )
+    _scheduler.add_job(
+        _calendar_sync,
+        trigger="cron",
+        hour=6,
+        minute=0,
+        id="calendar_sync",
+        max_instances=1,
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
     _scheduler.start()
-    logger.info("scheduler.start: started, interval=%ds", interval)
+    logger.info("scheduler.start: started, tick_interval=%ds, calendar_sync=daily@06:00", interval)
 
 
 def stop_scheduler() -> None:
@@ -211,11 +255,15 @@ def get_scheduler_status() -> dict:
     """Return current scheduler state for admin dashboard."""
     running = _scheduler is not None and _scheduler.running
     next_run: str | None = None
+    next_calendar_sync: str | None = None
 
     if running and _scheduler is not None:
         job = _scheduler.get_job("scraping_tick")
         if job and job.next_run_time:
             next_run = job.next_run_time.isoformat()
+        cal_job = _scheduler.get_job("calendar_sync")
+        if cal_job and cal_job.next_run_time:
+            next_calendar_sync = cal_job.next_run_time.isoformat()
 
     return {
         "running": running,
@@ -223,6 +271,8 @@ def get_scheduler_status() -> dict:
         "last_tick_at": _last_tick_at.isoformat() if _last_tick_at else None,
         "next_run_at": next_run,
         "lock_held": _scrape_lock.locked(),
+        "last_calendar_sync_at": _last_calendar_sync_at.isoformat() if _last_calendar_sync_at else None,
+        "next_calendar_sync_at": next_calendar_sync,
     }
 
 

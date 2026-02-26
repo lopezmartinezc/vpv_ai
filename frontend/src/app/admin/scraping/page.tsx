@@ -9,10 +9,38 @@ interface SchedulerStatus {
   last_tick_at: string | null;
   next_run_at: string | null;
   lock_held: boolean;
+  last_calendar_sync_at: string | null;
+  next_calendar_sync_at: string | null;
+}
+
+interface SeasonSummary {
+  id: number;
+  name: string;
+  status: string;
+  matchday_current: number;
+}
+
+interface MatchEntry {
+  id: number;
+  home_team: string;
+  away_team: string;
+  home_score: number | null;
+  away_score: number | null;
+  counts: boolean;
+  played_at: string | null;
+}
+
+interface MatchdayDetail {
+  season_id: number;
+  number: number;
+  status: string;
+  counts: boolean;
+  stats_ok: boolean;
+  matches: MatchEntry[];
 }
 
 function formatDateTime(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "\u2014";
   const d = new Date(iso);
   return d.toLocaleString("es-ES", {
     day: "2-digit",
@@ -24,13 +52,50 @@ function formatDateTime(iso: string | null): string {
   });
 }
 
+function formatMatchDate(iso: string | null): string {
+  if (!iso) return "Sin fecha";
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMs = d.getTime() - now.getTime();
+  const diffH = Math.round(diffMs / (1000 * 60 * 60));
+
+  const dateStr = d.toLocaleString("es-ES", {
+    weekday: "short",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  if (diffMs < 0) return `${dateStr} (jugado)`;
+  if (diffH < 24) return `${dateStr} (en ${diffH}h)`;
+  return dateStr;
+}
+
+function matchStatus(match: MatchEntry): "played" | "live" | "upcoming" {
+  if (match.home_score !== null) return "played";
+  if (!match.played_at) return "upcoming";
+  const d = new Date(match.played_at);
+  const now = new Date();
+  if (d.getTime() <= now.getTime()) return "live";
+  return "upcoming";
+}
+
 export default function AdminScrapingPage() {
   const [status, setStatus] = useState<SchedulerStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [manualSeason, setManualSeason] = useState("8");
-  const [manualMatchday, setManualMatchday] = useState("1");
   const [scrapeResult, setScrapeResult] = useState<string | null>(null);
+
+  // Current matchday data
+  const [season, setSeason] = useState<SeasonSummary | null>(null);
+  const [matchdayDetail, setMatchdayDetail] = useState<MatchdayDetail | null>(
+    null,
+  );
+
+  // Manual scraping overrides
+  const [manualSeason, setManualSeason] = useState("");
+  const [manualMatchday, setManualMatchday] = useState("");
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -39,27 +104,45 @@ export default function AdminScrapingPage() {
       );
       setStatus(data);
     } catch {
-      // handled by auth context
+      // handled
     } finally {
       setLoading(false);
     }
   }, []);
 
+  const fetchCurrentMatchday = useCallback(async () => {
+    try {
+      const currentSeason = await apiClient.get<SeasonSummary>(
+        "/seasons/current",
+      );
+      setSeason(currentSeason);
+      setManualSeason(String(currentSeason.id));
+      setManualMatchday(String(currentSeason.matchday_current));
+
+      if (currentSeason.matchday_current > 0) {
+        const detail = await apiClient.get<MatchdayDetail>(
+          `/matchdays/${currentSeason.id}/${currentSeason.matchday_current}`,
+        );
+        setMatchdayDetail(detail);
+      }
+    } catch {
+      // no active season
+    }
+  }, []);
+
   useEffect(() => {
     fetchStatus();
+    fetchCurrentMatchday();
     const interval = setInterval(fetchStatus, 10_000);
     return () => clearInterval(interval);
-  }, [fetchStatus]);
+  }, [fetchStatus, fetchCurrentMatchday]);
 
-  async function handleAction(
-    action: "start" | "stop" | "trigger",
-  ) {
+  async function handleAction(action: "start" | "stop" | "trigger") {
     setActionLoading(action);
     try {
-      const data = await apiClient.post<SchedulerStatus | { triggered: boolean }>(
-        `/scraping/admin/${action}`,
-        {},
-      );
+      const data = await apiClient.post<
+        SchedulerStatus | { triggered: boolean }
+      >(`/scraping/admin/${action}`, {});
       if ("running" in data) {
         setStatus(data as SchedulerStatus);
       } else {
@@ -95,11 +178,14 @@ export default function AdminScrapingPage() {
     setActionLoading("calendar");
     setScrapeResult(null);
     try {
-      const data = await apiClient.post<{ matches_updated: number }>(
+      const data = await apiClient.post<Record<string, number>>(
         `/scraping/calendar/${manualSeason}`,
         {},
       );
-      setScrapeResult(`Partidos actualizados: ${data.matches_updated}`);
+      setScrapeResult(
+        `Resultados actualizados: ${data.scores_updated ?? 0}, Fechas actualizadas: ${data.dates_updated ?? 0}`,
+      );
+      await fetchCurrentMatchday();
     } catch {
       setScrapeResult("Error al actualizar calendario");
     } finally {
@@ -116,12 +202,18 @@ export default function AdminScrapingPage() {
     );
   }
 
+  const playedCount =
+    matchdayDetail?.matches.filter((m) => m.home_score !== null).length ?? 0;
+  const totalCount = matchdayDetail?.matches.length ?? 0;
+
   return (
     <div className="space-y-4">
       {/* Scheduler Status */}
       <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
         <div className="border-b border-vpv-border px-4 py-3">
-          <h2 className="font-semibold text-vpv-text">Scheduler automatico</h2>
+          <h2 className="font-semibold text-vpv-text">
+            Scheduler automatico
+          </h2>
         </div>
         <div className="space-y-3 px-4 py-3">
           <div className="flex flex-wrap items-center gap-3">
@@ -140,13 +232,13 @@ export default function AdminScrapingPage() {
             )}
           </div>
 
-          <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
             <div>
-              <p className="text-vpv-text-muted">Intervalo</p>
+              <p className="text-vpv-text-muted">Intervalo stats</p>
               <p className="font-medium text-vpv-text">
                 {status?.poll_interval_seconds
                   ? `${Math.floor(status.poll_interval_seconds / 60)} min`
-                  : "—"}
+                  : "\u2014"}
               </p>
             </div>
             <div>
@@ -159,6 +251,25 @@ export default function AdminScrapingPage() {
               <p className="text-vpv-text-muted">Proximo tick</p>
               <p className="font-medium text-vpv-text">
                 {formatDateTime(status?.next_run_at ?? null)}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
+            <div>
+              <p className="text-vpv-text-muted">Sync calendario</p>
+              <p className="font-medium text-vpv-text">Diario 06:00 UTC</p>
+            </div>
+            <div>
+              <p className="text-vpv-text-muted">Ultimo sync</p>
+              <p className="font-medium text-vpv-text">
+                {formatDateTime(status?.last_calendar_sync_at ?? null)}
+              </p>
+            </div>
+            <div>
+              <p className="text-vpv-text-muted">Proximo sync</p>
+              <p className="font-medium text-vpv-text">
+                {formatDateTime(status?.next_calendar_sync_at ?? null)}
               </p>
             </div>
           </div>
@@ -193,6 +304,73 @@ export default function AdminScrapingPage() {
           </div>
         </div>
       </div>
+
+      {/* Current Matchday Matches */}
+      {matchdayDetail && season && (
+        <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
+          <div className="border-b border-vpv-border px-4 py-3">
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold text-vpv-text">
+                Jornada {matchdayDetail.number} — {season.name}
+              </h2>
+              <span className="text-xs text-vpv-text-muted">
+                {playedCount}/{totalCount} jugados
+                {matchdayDetail.stats_ok && (
+                  <span className="ml-2 rounded bg-green-500/20 px-1.5 py-0.5 text-green-400">
+                    Stats OK
+                  </span>
+                )}
+              </span>
+            </div>
+          </div>
+          <div className="divide-y divide-vpv-border">
+            {matchdayDetail.matches.map((match) => {
+              const st = matchStatus(match);
+              return (
+                <div
+                  key={match.id}
+                  className="flex items-center gap-3 px-4 py-2"
+                >
+                  <div className="flex-1">
+                    <span className="text-sm text-vpv-text">
+                      {match.home_team} vs {match.away_team}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    {st === "played" ? (
+                      <span className="text-sm font-medium text-vpv-text">
+                        {match.home_score} - {match.away_score}
+                      </span>
+                    ) : st === "live" ? (
+                      <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-xs font-medium text-red-400">
+                        En juego
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="w-44 text-right">
+                    <span
+                      className={`text-xs ${
+                        st === "played"
+                          ? "text-vpv-text-muted"
+                          : st === "live"
+                            ? "text-red-400"
+                            : "text-vpv-text"
+                      }`}
+                    >
+                      {formatMatchDate(match.played_at)}
+                    </span>
+                  </div>
+                  {!match.counts && (
+                    <span className="rounded bg-yellow-500/20 px-1.5 py-0.5 text-xs text-yellow-400">
+                      NC
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Manual Scraping */}
       <div className="rounded-lg border border-vpv-card-border bg-vpv-card">

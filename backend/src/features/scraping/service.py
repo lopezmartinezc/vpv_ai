@@ -316,16 +316,18 @@ class ScrapingService:
         )
         return summary
 
-    async def scrape_calendar(self, season_id: int) -> int:
-        """Fetch the La Liga calendar and update match scores in the DB.
+    async def scrape_calendar(self, season_id: int) -> dict[str, int]:
+        """Fetch the La Liga calendar and update match scores + dates in the DB.
 
         The year suffix is derived from the season ``name`` field
         (e.g. ``"2024-2025"`` → year ``"2025"``).
 
         Returns
         -------
-        Number of matches whose score was updated.
+        dict with keys ``scores_updated`` and ``dates_updated``.
         """
+        from datetime import datetime as _dt
+
         from sqlalchemy import select
 
         from src.shared.models.season import Season
@@ -336,11 +338,12 @@ class ScrapingService:
         season = result.scalar_one_or_none()
         if season is None:
             logger.error("scrape_calendar: season_id=%d not found", season_id)
-            return 0
+            return {"scores_updated": 0, "dates_updated": 0}
 
         # Season name is like "2024-2025"; we need the second year for the URL.
         parts = season.name.split("-")
         year = parts[-1] if len(parts) >= 2 else parts[0]
+        season_year = int(year)
 
         base_url = self._settings.scraping_base_url
         url = f"{base_url}/laliga/calendario/{year}"
@@ -351,17 +354,15 @@ class ScrapingService:
                 html = await client.fetch(url)
             except ScrapingError as exc:
                 logger.error("scrape_calendar: fetch failed: %s", exc)
-                return 0
+                return {"scores_updated": 0, "dates_updated": 0}
 
-        calendar_matches = parse_calendar(html)
+        calendar_matches = parse_calendar(html, season_year=season_year)
         logger.info("scrape_calendar: parsed %d matches from calendar", len(calendar_matches))
 
-        updated = 0
-        for cal_match in calendar_matches:
-            if not cal_match.result:
-                # Match not yet played.
-                continue
+        scores_updated = 0
+        dates_updated = 0
 
+        for cal_match in calendar_matches:
             db_match = await self.repo.get_match_by_source_id(cal_match.source_id)
             if db_match is None:
                 logger.debug(
@@ -370,31 +371,46 @@ class ScrapingService:
                 )
                 continue
 
-            # Parse result string "2-1" into integers.
-            try:
-                home_str, away_str = cal_match.result.split("-", 1)
-                home_score = int(home_str.strip())
-                away_score = int(away_str.strip())
-            except (ValueError, AttributeError):
-                logger.debug(
-                    "scrape_calendar: malformed result %r for source_id=%d",
-                    cal_match.result,
-                    cal_match.source_id,
-                )
-                continue
+            # Update played_at if the calendar provides a date
+            if cal_match.played_at:
+                new_dt = _dt.fromisoformat(cal_match.played_at)
+                if db_match.played_at != new_dt:
+                    await self.repo.update_match_played_at(db_match.id, new_dt)
+                    dates_updated += 1
 
-            # Only update if the score changed or was previously unset.
-            if db_match.home_score != home_score or db_match.away_score != away_score:
-                await self.repo.update_match_score(
-                    match_id=db_match.id,
-                    home_score=home_score,
-                    away_score=away_score,
-                    result=cal_match.result,
-                )
-                updated += 1
+            # Update scores for completed matches
+            if cal_match.result:
+                try:
+                    home_str, away_str = cal_match.result.split("-", 1)
+                    home_score = int(home_str.strip())
+                    away_score = int(away_str.strip())
+                except (ValueError, AttributeError):
+                    logger.debug(
+                        "scrape_calendar: malformed result %r for source_id=%d",
+                        cal_match.result,
+                        cal_match.source_id,
+                    )
+                    continue
 
-        logger.info("scrape_calendar: updated %d match scores", updated)
-        return updated
+                if db_match.home_score != home_score or db_match.away_score != away_score:
+                    await self.repo.update_match_score(
+                        match_id=db_match.id,
+                        home_score=home_score,
+                        away_score=away_score,
+                        result=cal_match.result,
+                    )
+                    scores_updated += 1
+
+        # Recalculate matchday first_match_at if any dates changed.
+        if dates_updated:
+            await self.repo.sync_matchday_first_match_at(season_id)
+
+        logger.info(
+            "scrape_calendar: scores_updated=%d dates_updated=%d",
+            scores_updated,
+            dates_updated,
+        )
+        return {"scores_updated": scores_updated, "dates_updated": dates_updated}
 
     async def check_for_updates(self) -> list[int]:
         """Check the homepage for CRC changes indicating new stats are available.
