@@ -10,6 +10,7 @@ import { apiClient, ApiClientError } from "@/lib/api-client";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
 import { SkeletonTable } from "@/components/ui/skeleton";
 import type {
+  MatchdayDetailResponse,
   SquadListResponse,
   SquadDetailResponse,
   SquadPlayerEntry,
@@ -99,19 +100,14 @@ function isLineupComplete(
   );
 }
 
-/** Build position_slot label: "DEF_1", "DEF_2", ... etc. for the submit body */
+/** Build position_slot for the submit body — backend expects "POR", "DEF", etc. */
 function buildPlayerSlots(
   selected: SquadPlayerEntry[],
 ): { player_id: number; position_slot: string }[] {
-  const counters: Partial<Record<Position, number>> = {};
-  return selected.map((p) => {
-    const pos = p.position as Position;
-    counters[pos] = (counters[pos] ?? 0) + 1;
-    return {
-      player_id: p.player_id,
-      position_slot: `${pos}_${counters[pos]}`,
-    };
-  });
+  return selected.map((p) => ({
+    player_id: p.player_id,
+    position_slot: p.position,
+  }));
 }
 
 /** Minutes until a future date, or null if already passed */
@@ -333,6 +329,12 @@ export default function AlineacionPage() {
   const { user, loading: authLoading } = useAuth();
   const { selectedSeason, loading: seasonLoading } = useSeason();
 
+  // Fetch matchday data (for deadline info)
+  const { data: matchdayData, loading: matchdayLoading } =
+    useFetch<MatchdayDetailResponse>(
+      selectedSeason ? `/matchdays/${selectedSeason.id}/${numero}` : null,
+    );
+
   // Fetch all squads to resolve the user's participant_id
   const { data: squadList, loading: squadListLoading } =
     useFetch<SquadListResponse>(
@@ -504,6 +506,7 @@ export default function AlineacionPage() {
   const isLoading =
     authLoading ||
     seasonLoading ||
+    matchdayLoading ||
     squadListLoading ||
     squadDetailLoading ||
     formationsLoading;
@@ -599,7 +602,7 @@ export default function AlineacionPage() {
 
       {/* Deadline banner */}
       <DeadlineBanner
-        firstMatchAt={null}
+        firstMatchAt={matchdayData?.first_match_at ?? null}
         deadlineMin={30}
       />
 

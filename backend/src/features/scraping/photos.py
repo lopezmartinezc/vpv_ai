@@ -93,7 +93,7 @@ class PhotoDownloader:
 
                 try:
                     img = Image.open(io.BytesIO(img_bytes))
-                    img = img.convert("RGB")
+                    img = img.convert("RGBA")
                     img = img.resize(PHOTO_SIZE, Image.LANCZOS)
 
                     out_path = _PHOTOS_DIR / f"{player.slug}.webp"
