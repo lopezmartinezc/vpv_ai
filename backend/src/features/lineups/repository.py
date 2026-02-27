@@ -48,7 +48,6 @@ class LineupRepository:
     async def get_participant_player_ids(self, participant_id: int) -> set[int]:
         stmt = select(Player.id).where(
             Player.owner_id == participant_id,
-            Player.is_available.is_(True),
         )
         result = await self.session.execute(stmt)
         return set(result.scalars().all())

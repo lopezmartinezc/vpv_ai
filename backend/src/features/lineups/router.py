@@ -27,7 +27,7 @@ async def submit_lineup(
 ) -> LineupSubmitResponse:
     """Submit or update lineup for the current matchday."""
     return await service.submit_lineup(
-        user_id=user["user_id"],
+        user_id=int(user["sub"]),
         season_id=season_id,
         matchday_number=matchday_number,
         data=data,

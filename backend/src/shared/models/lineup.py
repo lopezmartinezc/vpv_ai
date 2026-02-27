@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, SmallInteger, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, SmallInteger, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.shared.models.base import Base
@@ -29,9 +29,9 @@ class Lineup(Base):
     matchday_id: Mapped[int] = mapped_column(ForeignKey("matchdays.id"), nullable=False)
     formation: Mapped[str] = mapped_column(String(10), nullable=False)
     confirmed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    confirmed_at: Mapped[datetime | None] = mapped_column()
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     telegram_sent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    telegram_sent_at: Mapped[datetime | None] = mapped_column()
+    telegram_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     image_path: Mapped[str | None] = mapped_column(String(255))
     total_points: Mapped[int] = mapped_column(SmallInteger, default=0)
 
