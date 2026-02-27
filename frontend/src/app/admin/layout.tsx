@@ -11,6 +11,7 @@ const ADMIN_TABS = [
   { href: "/admin/temporadas", label: "Temporadas" },
   { href: "/admin/jornadas", label: "Jornadas" },
   { href: "/admin/economia", label: "Economia" },
+  { href: "/admin/telegram", label: "Telegram" },
 ];
 
 export default function AdminLayout({

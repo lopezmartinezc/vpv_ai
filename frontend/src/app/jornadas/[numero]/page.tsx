@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useAuth } from "@/contexts/auth-context";
 import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
 import { MatchList } from "@/components/matchdays/match-list";
@@ -12,6 +13,7 @@ import type { MatchdayDetailResponse } from "@/types";
 export default function JornadaDetailPage() {
   const params = useParams<{ numero: string }>();
   const numero = Number(params.numero);
+  const { user } = useAuth();
   const { selectedSeason, loading: seasonLoading } = useSeason();
 
   const { data, loading } = useFetch<MatchdayDetailResponse>(
@@ -52,6 +54,14 @@ export default function JornadaDetailPage() {
           <span className="rounded bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-500">
             No computa
           </span>
+        )}
+        {user && (
+          <Link
+            href={`/jornadas/${numero}/alineacion`}
+            className="ml-auto rounded bg-vpv-accent px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-vpv-accent/80"
+          >
+            Enviar alineacion
+          </Link>
         )}
       </div>
 

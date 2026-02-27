@@ -172,6 +172,73 @@ async def _run_tick() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Lineup deadline check (every 60 seconds)
+# ---------------------------------------------------------------------------
+
+_last_deadline_matchday: int | None = None  # track last processed matchday
+
+
+async def _deadline_check() -> None:
+    """Check if the lineup deadline has passed and copy previous lineups."""
+    global _last_deadline_matchday
+
+    async with AsyncSessionLocal() as session:
+        try:
+            from src.features.lineups.repository import LineupRepository
+            from src.features.lineups.service import LineupService
+
+            repo = LineupRepository(session)
+            scraping_repo = ScrapingRepository(session)
+
+            season = await scraping_repo.get_active_season()
+            if season is None:
+                return
+
+            md_number = season.matchday_current
+            if md_number == 0:
+                return
+
+            # Already processed this matchday
+            if _last_deadline_matchday == md_number:
+                return
+
+            matchday = await repo.get_matchday(season.id, md_number)
+            if matchday is None:
+                return
+
+            # Compute deadline
+            deadline = matchday.deadline_at
+            if deadline is None and matchday.first_match_at is not None:
+                from datetime import timedelta
+                deadline = matchday.first_match_at - timedelta(minutes=season.lineup_deadline_min)
+
+            if deadline is None:
+                return
+
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc)
+            if deadline.tzinfo is None:
+                deadline = deadline.replace(tzinfo=timezone.utc)
+
+            if now < deadline:
+                return  # Deadline not reached yet
+
+            logger.info(
+                "scheduler.deadline_check: deadline passed for matchday %d, applying auto-copy",
+                md_number,
+            )
+            service = LineupService(session)
+            result = await service.apply_deadline_lineups(season.id, md_number)
+            await session.commit()
+            _last_deadline_matchday = md_number
+            logger.info("scheduler.deadline_check: done — %s", result)
+
+        except Exception:
+            await session.rollback()
+            logger.exception("scheduler.deadline_check: error")
+
+
+# ---------------------------------------------------------------------------
 # Daily calendar sync
 # ---------------------------------------------------------------------------
 
@@ -235,8 +302,20 @@ def start_scheduler() -> None:
         replace_existing=True,
         misfire_grace_time=3600,
     )
+    _scheduler.add_job(
+        _deadline_check,
+        trigger="interval",
+        seconds=60,
+        id="deadline_check",
+        max_instances=1,
+        replace_existing=True,
+        misfire_grace_time=30,
+    )
     _scheduler.start()
-    logger.info("scheduler.start: started, tick_interval=%ds, calendar_sync=daily@06:00", interval)
+    logger.info(
+        "scheduler.start: started, tick_interval=%ds, calendar_sync=daily@06:00, deadline_check=60s",
+        interval,
+    )
 
 
 def stop_scheduler() -> None:
