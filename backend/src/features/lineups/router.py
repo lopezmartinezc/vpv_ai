@@ -3,7 +3,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.features.lineups.schemas import LineupSubmitRequest, LineupSubmitResponse
+from src.features.lineups.schemas import (
+    LineupSubmitRequest,
+    LineupSubmitResponse,
+    MyLineupResponse,
+)
 from src.features.lineups.service import LineupService
 from src.shared.dependencies import get_current_admin, get_current_user, get_db
 
@@ -12,6 +16,24 @@ router = APIRouter(prefix="/lineups", tags=["lineups"])
 
 def _get_service(db: AsyncSession = Depends(get_db)) -> LineupService:
     return LineupService(db)
+
+
+@router.get(
+    "/{season_id}/{matchday_number}/me",
+    response_model=MyLineupResponse,
+)
+async def get_my_lineup(
+    season_id: int,
+    matchday_number: int,
+    user: dict = Depends(get_current_user),
+    service: LineupService = Depends(_get_service),
+) -> MyLineupResponse:
+    """Get lineup context for the current user: squad, existing lineup, deadline."""
+    return await service.get_my_lineup(
+        user_id=int(user["sub"]),
+        season_id=season_id,
+        matchday_number=matchday_number,
+    )
 
 
 @router.post(

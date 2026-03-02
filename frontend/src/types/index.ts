@@ -254,3 +254,29 @@ export interface ParticipantEconomyResponse {
   net_balance: number;
   transactions: TransactionEntry[];
 }
+
+// Lineup submission ("my lineup" endpoint)
+export interface LineupPlayerResponseData {
+  player_id: number;
+  player_name: string;
+  position_slot: string;
+  display_order: number;
+  photo_path: string | null;
+}
+
+export interface CurrentLineupData {
+  lineup_id: number;
+  formation: string;
+  confirmed: boolean;
+  confirmed_at: string | null;
+  telegram_sent: boolean;
+  players: LineupPlayerResponseData[];
+}
+
+export interface MyLineupResponse {
+  participant_id: number;
+  display_name: string;
+  lineup_deadline_min: number;
+  current_lineup: CurrentLineupData | null;
+  squad: SquadPlayerEntry[];
+}

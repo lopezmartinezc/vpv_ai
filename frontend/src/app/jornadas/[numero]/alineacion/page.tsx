@@ -8,40 +8,25 @@ import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
 import { apiClient, ApiClientError } from "@/lib/api-client";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
+import { PitchView } from "@/components/ui/pitch-view";
+import type { PitchPlayer } from "@/components/ui/pitch-view";
 import { SkeletonTable } from "@/components/ui/skeleton";
 import type {
   MatchdayDetailResponse,
-  SquadListResponse,
-  SquadDetailResponse,
+  MatchEntry,
+  MyLineupResponse,
   SquadPlayerEntry,
   ValidFormation,
 } from "@/types";
 
 // ---------------------------------------------------------------------------
-// Types
+// Types & Constants
 // ---------------------------------------------------------------------------
 
 interface LineupSubmitBody {
   formation: string;
   players: { player_id: number; position_slot: string }[];
 }
-
-interface LineupSubmitResponse {
-  ok: boolean;
-  message?: string;
-}
-
-/** Required slots for each position given a formation string like "1-4-3-3" */
-interface FormationSlots {
-  POR: number;
-  DEF: number;
-  MED: number;
-  DEL: number;
-}
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const POSITION_ORDER = ["POR", "DEF", "MED", "DEL"] as const;
 type Position = (typeof POSITION_ORDER)[number];
@@ -64,20 +49,19 @@ const POSITION_COLORS: Record<Position, string> = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function parseFormationSlots(formation: string): FormationSlots {
-  const parts = formation.split("-").map(Number);
-  // parts[0] is always 1 (goalkeeper), parts[1] DEF, parts[2] MED, parts[3] DEL
-  return {
-    POR: 1,
-    DEF: parts[1] ?? 0,
-    MED: parts[2] ?? 0,
-    DEL: parts[3] ?? 0,
-  };
+interface FormationSlots {
+  POR: number;
+  DEF: number;
+  MED: number;
+  DEL: number;
 }
 
-function countsByPosition(
-  selected: SquadPlayerEntry[],
-): Record<Position, number> {
+function parseFormationSlots(formation: string): FormationSlots {
+  const parts = formation.split("-").map(Number);
+  return { POR: 1, DEF: parts[1] ?? 0, MED: parts[2] ?? 0, DEL: parts[3] ?? 0 };
+}
+
+function countsByPosition(selected: SquadPlayerEntry[]): Record<Position, number> {
   return {
     POR: selected.filter((p) => p.position === "POR").length,
     DEF: selected.filter((p) => p.position === "DEF").length,
@@ -86,35 +70,18 @@ function countsByPosition(
   };
 }
 
-function isLineupComplete(
-  selected: SquadPlayerEntry[],
-  slots: FormationSlots,
-): boolean {
-  if (selected.length !== 11) return false;
-  const counts = countsByPosition(selected);
-  return (
-    counts.POR === slots.POR &&
-    counts.DEF === slots.DEF &&
-    counts.MED === slots.MED &&
-    counts.DEL === slots.DEL
-  );
-}
-
-/** Build position_slot for the submit body — backend expects "POR", "DEF", etc. */
-function buildPlayerSlots(
-  selected: SquadPlayerEntry[],
-): { player_id: number; position_slot: string }[] {
-  return selected.map((p) => ({
-    player_id: p.player_id,
-    position_slot: p.position,
-  }));
-}
-
-/** Minutes until a future date, or null if already passed */
 function minutesUntil(isoDate: string | null): number | null {
   if (!isoDate) return null;
   const diff = new Date(isoDate).getTime() - Date.now();
   return diff > 0 ? Math.floor(diff / 60_000) : null;
+}
+
+function formatMatchTime(playedAt: string | null): string {
+  if (!playedAt) return "";
+  const d = new Date(playedAt);
+  const day = d.toLocaleDateString("es-ES", { weekday: "short" });
+  const time = d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+  return `${day} ${time}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -132,11 +99,8 @@ function DeadlineBanner({
 
   useEffect(() => {
     if (!firstMatchAt) return;
-
-    const deadlineMs =
-      new Date(firstMatchAt).getTime() - deadlineMin * 60_000;
+    const deadlineMs = new Date(firstMatchAt).getTime() - deadlineMin * 60_000;
     const deadlineIso = new Date(deadlineMs).toISOString();
-
     const update = () => setRemaining(minutesUntil(deadlineIso));
     update();
     const id = setInterval(update, 30_000);
@@ -155,21 +119,21 @@ function DeadlineBanner({
     <div
       role="status"
       aria-live="polite"
-      className={`flex items-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium ${
+      className={`flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium ${
         isUrgent
           ? "border-vpv-danger/40 bg-vpv-danger/10 text-vpv-danger"
           : "border-amber-500/30 bg-amber-500/10 text-amber-400"
       }`}
     >
-      <span aria-hidden="true">{isUrgent ? "!" : "⏱"}</span>
+      <span aria-hidden="true">{isUrgent ? "!" : "\u23F1"}</span>
       <span>
-        Deadline alineacion: <strong>{label}</strong> restantes
+        Deadline: <strong>{label}</strong>
       </span>
     </div>
   );
 }
 
-function FormationSelector({
+function FormationChips({
   formations,
   selected,
   onChange,
@@ -179,55 +143,55 @@ function FormationSelector({
   onChange: (f: string) => void;
 }) {
   return (
-    <div className="space-y-2">
-      <label
-        htmlFor="formation-select"
-        className="block text-sm font-semibold uppercase tracking-wide text-vpv-text-muted"
-      >
-        Formacion
-      </label>
-      <select
-        id="formation-select"
-        value={selected}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-vpv-border bg-vpv-card px-3 py-2 text-sm text-vpv-text focus:border-vpv-accent focus:outline-none focus:ring-1 focus:ring-vpv-accent sm:w-48"
-      >
-        {formations.map((f) => (
-          <option key={f.id} value={f.formation}>
+    <div className="flex gap-2 overflow-x-auto pb-1" role="radiogroup" aria-label="Formacion">
+      {formations.map((f) => {
+        const isActive = f.formation === selected;
+        return (
+          <button
+            key={f.id}
+            type="button"
+            role="radio"
+            aria-checked={isActive}
+            onClick={() => onChange(f.formation)}
+            className={`shrink-0 rounded-lg border px-3 py-1.5 text-sm font-semibold transition-colors ${
+              isActive
+                ? "border-vpv-accent bg-vpv-accent/15 text-vpv-accent"
+                : "border-vpv-border bg-vpv-card text-vpv-text-muted hover:border-vpv-accent/40"
+            }`}
+          >
             {f.formation}
-          </option>
-        ))}
-      </select>
+          </button>
+        );
+      })}
     </div>
   );
 }
 
-function PositionCounter({
-  position,
-  current,
-  required,
-}: {
-  position: Position;
-  current: number;
-  required: number;
-}) {
-  const isFull = current === required;
-  const isOver = current > required;
+function MatchStrip({ matches }: { matches: MatchEntry[] }) {
+  if (matches.length === 0) return null;
 
   return (
-    <div
-      className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium ${
-        isOver
-          ? "border-vpv-danger/40 bg-vpv-danger/10 text-vpv-danger"
-          : isFull
-            ? "border-vpv-success/40 bg-vpv-success/10 text-vpv-success"
-            : POSITION_COLORS[position]
-      }`}
-    >
-      <span>{position}</span>
-      <span className="font-bold tabular-nums">
-        {current}/{required}
-      </span>
+    <div className="space-y-1.5">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-vpv-text-muted">
+        Partidos
+      </h3>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {matches.map((m) => (
+          <div
+            key={m.id}
+            className="shrink-0 rounded-lg border border-vpv-border bg-vpv-card px-3 py-1.5 text-xs"
+          >
+            <span className="font-medium text-vpv-text">
+              {m.home_team} - {m.away_team}
+            </span>
+            {m.played_at && (
+              <span className="ml-1.5 text-vpv-text-muted">
+                {formatMatchTime(m.played_at)}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -245,34 +209,20 @@ function PlayerCard({
 }) {
   const pos = player.position as Position;
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      if (!isDisabled) onToggle(player);
-    }
-  };
-
   return (
-    <div
-      role="checkbox"
-      aria-checked={isSelected}
-      aria-disabled={isDisabled}
-      tabIndex={isDisabled ? -1 : 0}
+    <button
+      type="button"
       onClick={() => !isDisabled && onToggle(player)}
-      onKeyDown={handleKeyDown}
-      className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-all select-none ${
+      disabled={isDisabled}
+      className={`flex w-full items-center gap-2.5 rounded-lg border p-2.5 text-left transition-all ${
         isSelected
           ? "border-vpv-accent bg-vpv-accent/10"
           : isDisabled
             ? "cursor-not-allowed border-vpv-border bg-vpv-card opacity-40"
-            : "border-vpv-card-border bg-vpv-card hover:border-vpv-border hover:bg-vpv-bg"
+            : "border-vpv-card-border bg-vpv-card hover:border-vpv-border active:bg-vpv-bg"
       }`}
     >
-      <PlayerAvatar
-        photoPath={player.photo_path}
-        name={player.display_name}
-        size={36}
-      />
+      <PlayerAvatar photoPath={player.photo_path} name={player.display_name} size={36} />
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-vpv-text">
@@ -281,7 +231,7 @@ function PlayerCard({
         <p className="truncate text-xs text-vpv-text-muted">{player.team_name}</p>
       </div>
 
-      <div className="flex shrink-0 flex-col items-end gap-1">
+      <div className="flex shrink-0 flex-col items-end gap-0.5">
         <span
           className={`rounded border px-1.5 py-0.5 text-[10px] font-bold ${POSITION_COLORS[pos]}`}
         >
@@ -293,17 +243,8 @@ function PlayerCard({
       </div>
 
       {isSelected && (
-        <span
-          aria-hidden="true"
-          className="shrink-0 text-vpv-accent"
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 16 16"
-            fill="none"
-            aria-hidden="true"
-          >
+        <span aria-hidden="true" className="shrink-0 text-vpv-accent">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <circle cx="8" cy="8" r="8" fill="currentColor" opacity="0.2" />
             <path
               d="M4.5 8l2.5 2.5 4.5-5"
@@ -315,7 +256,84 @@ function PlayerCard({
           </svg>
         </span>
       )}
-    </div>
+    </button>
+  );
+}
+
+function PositionSection({
+  position,
+  players,
+  selectedIds,
+  currentCount,
+  requiredCount,
+  onToggle,
+}: {
+  position: Position;
+  players: SquadPlayerEntry[];
+  selectedIds: Set<number>;
+  currentCount: number;
+  requiredCount: number;
+  onToggle: (player: SquadPlayerEntry) => void;
+}) {
+  const isFull = currentCount >= requiredCount;
+  const [collapsed, setCollapsed] = useState(false);
+
+  // Auto-collapse when full
+  useEffect(() => {
+    if (isFull) setCollapsed(true);
+    else setCollapsed(false);
+  }, [isFull]);
+
+  if (players.length === 0) return null;
+
+  return (
+    <section>
+      <button
+        type="button"
+        onClick={() => setCollapsed((c) => !c)}
+        className="mb-2 flex w-full items-center gap-2"
+      >
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-vpv-text-muted">
+          {POSITION_LABELS[position]}
+        </h2>
+        <span
+          className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+            isFull
+              ? "border-vpv-success/40 bg-vpv-success/10 text-vpv-success"
+              : POSITION_COLORS[position]
+          }`}
+        >
+          {currentCount}/{requiredCount}
+        </span>
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 12 12"
+          className={`ml-auto text-vpv-text-muted transition-transform ${collapsed ? "" : "rotate-180"}`}
+        >
+          <path d="M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" fill="none" />
+        </svg>
+      </button>
+
+      {!collapsed && (
+        <div className="grid gap-1.5 sm:grid-cols-2">
+          {players.map((player) => {
+            const isSelected = selectedIds.has(player.player_id);
+            const isDisabled = !isSelected && isFull;
+
+            return (
+              <PlayerCard
+                key={player.player_id}
+                player={player}
+                isSelected={isSelected}
+                isDisabled={isDisabled}
+                onToggle={onToggle}
+              />
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -329,60 +347,55 @@ export default function AlineacionPage() {
   const { user, loading: authLoading } = useAuth();
   const { selectedSeason, loading: seasonLoading } = useSeason();
 
-  // Fetch matchday data (for deadline info)
+  // API calls
+  const { data: myLineup, loading: myLineupLoading } = useFetch<MyLineupResponse>(
+    selectedSeason ? `/lineups/${selectedSeason.id}/${numero}/me` : null,
+  );
+
   const { data: matchdayData, loading: matchdayLoading } =
     useFetch<MatchdayDetailResponse>(
       selectedSeason ? `/matchdays/${selectedSeason.id}/${numero}` : null,
     );
 
-  // Fetch all squads to resolve the user's participant_id
-  const { data: squadList, loading: squadListLoading } =
-    useFetch<SquadListResponse>(
-      selectedSeason ? `/squads/${selectedSeason.id}` : null,
-    );
-
-  // Derive participant_id by matching display_name
-  const participantId = useMemo(() => {
-    if (!squadList || !user) return null;
-    const match = squadList.squads.find(
-      (s) => s.display_name.toLowerCase() === user.displayName.toLowerCase(),
-    );
-    return match?.participant_id ?? null;
-  }, [squadList, user]);
-
-  // Fetch the user's full squad (player list)
-  const { data: squadDetail, loading: squadDetailLoading } =
-    useFetch<SquadDetailResponse>(
-      selectedSeason && participantId !== null
-        ? `/squads/${selectedSeason.id}/${participantId}`
-        : null,
-    );
-
-  // Fetch valid formations
   const { data: formationsData, loading: formationsLoading } = useFetch<
     ValidFormation[]
-  >(selectedSeason ? `/seasons/${selectedSeason.id}/valid-formations` : null);
+  >("/seasons/formations");
 
   // ---------------------------------------------------------------------------
   // Local state
   // ---------------------------------------------------------------------------
 
   const [selectedFormation, setSelectedFormation] = useState<string>("");
-  const [selectedPlayers, setSelectedPlayers] = useState<SquadPlayerEntry[]>(
-    [],
-  );
+  const [selectedPlayers, setSelectedPlayers] = useState<SquadPlayerEntry[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<{
     ok: boolean;
     message: string;
   } | null>(null);
+  const [initialized, setInitialized] = useState(false);
 
-  // Set default formation once data arrives
+  // Initialize from existing lineup + set default formation
   useEffect(() => {
-    if (formationsData && formationsData.length > 0 && !selectedFormation) {
+    if (initialized || !myLineup || !formationsData) return;
+
+    if (myLineup.current_lineup) {
+      // Pre-load existing lineup
+      setSelectedFormation(myLineup.current_lineup.formation);
+
+      // Map lineup players back to squad entries
+      const squadMap = new Map(myLineup.squad.map((s) => [s.player_id, s]));
+      const preSelected: SquadPlayerEntry[] = [];
+      for (const lp of myLineup.current_lineup.players) {
+        const sq = squadMap.get(lp.player_id);
+        if (sq) preSelected.push(sq);
+      }
+      setSelectedPlayers(preSelected);
+    } else if (formationsData.length > 0) {
       setSelectedFormation(formationsData[0].formation);
     }
-  }, [formationsData, selectedFormation]);
+
+    setInitialized(true);
+  }, [myLineup, formationsData, initialized]);
 
   // ---------------------------------------------------------------------------
   // Derived values
@@ -403,32 +416,38 @@ export default function AlineacionPage() {
     [selectedPlayers],
   );
 
-  const lineupComplete = useMemo(
-    () => isLineupComplete(selectedPlayers, formationSlots),
-    [selectedPlayers, formationSlots],
-  );
+  const lineupComplete = useMemo(() => {
+    if (selectedPlayers.length !== 11) return false;
+    const counts = countsByPosition(selectedPlayers);
+    return (
+      counts.POR === formationSlots.POR &&
+      counts.DEF === formationSlots.DEF &&
+      counts.MED === formationSlots.MED &&
+      counts.DEL === formationSlots.DEL
+    );
+  }, [selectedPlayers, formationSlots]);
 
   // Group squad players by position
-  const playersByPosition = useMemo<Record<Position, SquadPlayerEntry[]>>(
-    () => ({
-      POR:
-        squadDetail?.players
-          .filter((p) => p.position === "POR")
-          .sort((a, b) => b.season_points - a.season_points) ?? [],
-      DEF:
-        squadDetail?.players
-          .filter((p) => p.position === "DEF")
-          .sort((a, b) => b.season_points - a.season_points) ?? [],
-      MED:
-        squadDetail?.players
-          .filter((p) => p.position === "MED")
-          .sort((a, b) => b.season_points - a.season_points) ?? [],
-      DEL:
-        squadDetail?.players
-          .filter((p) => p.position === "DEL")
-          .sort((a, b) => b.season_points - a.season_points) ?? [],
-    }),
-    [squadDetail],
+  const playersByPosition = useMemo<Record<Position, SquadPlayerEntry[]>>(() => {
+    const squad = myLineup?.squad ?? [];
+    return {
+      POR: squad.filter((p) => p.position === "POR").sort((a, b) => b.season_points - a.season_points),
+      DEF: squad.filter((p) => p.position === "DEF").sort((a, b) => b.season_points - a.season_points),
+      MED: squad.filter((p) => p.position === "MED").sort((a, b) => b.season_points - a.season_points),
+      DEL: squad.filter((p) => p.position === "DEL").sort((a, b) => b.season_points - a.season_points),
+    };
+  }, [myLineup]);
+
+  // Build PitchView players
+  const pitchPlayers = useMemo<PitchPlayer[]>(
+    () =>
+      selectedPlayers.map((p) => ({
+        player_id: p.player_id,
+        name: p.display_name,
+        photo_path: p.photo_path,
+        position_slot: p.position,
+      })),
+    [selectedPlayers],
   );
 
   // ---------------------------------------------------------------------------
@@ -440,19 +459,14 @@ export default function AlineacionPage() {
       setSubmitResult(null);
       setSelectedPlayers((prev) => {
         const pos = player.position as Position;
-        const isAlreadySelected = prev.some(
-          (p) => p.player_id === player.player_id,
-        );
+        const isAlreadySelected = prev.some((p) => p.player_id === player.player_id);
 
         if (isAlreadySelected) {
           return prev.filter((p) => p.player_id !== player.player_id);
         }
 
-        // Prevent adding more than required for this position
         const currentForPos = prev.filter((p) => p.position === pos).length;
         if (currentForPos >= formationSlots[pos]) return prev;
-
-        // Prevent exceeding 11 total
         if (prev.length >= 11) return prev;
 
         return [...prev, player];
@@ -460,6 +474,11 @@ export default function AlineacionPage() {
     },
     [formationSlots],
   );
+
+  const handleRemoveFromPitch = useCallback((playerId: number) => {
+    setSubmitResult(null);
+    setSelectedPlayers((prev) => prev.filter((p) => p.player_id !== playerId));
+  }, []);
 
   const handleFormationChange = useCallback((formation: string) => {
     setSelectedFormation(formation);
@@ -475,24 +494,23 @@ export default function AlineacionPage() {
 
     const body: LineupSubmitBody = {
       formation: selectedFormation,
-      players: buildPlayerSlots(selectedPlayers),
+      players: selectedPlayers.map((p) => ({
+        player_id: p.player_id,
+        position_slot: p.position,
+      })),
     };
 
     try {
-      await apiClient.post<LineupSubmitResponse>(
-        `/lineups/${selectedSeason.id}/${numero}`,
-        body,
-      );
+      await apiClient.post(`/lineups/${selectedSeason.id}/${numero}`, body);
       setSubmitResult({
         ok: true,
-        message:
-          "Alineacion enviada correctamente. Revisa Telegram para la confirmacion.",
+        message: "Alineacion enviada. Revisa Telegram para la confirmacion.",
       });
     } catch (err) {
       const message =
         err instanceof ApiClientError
           ? err.error.message
-          : "Error al enviar la alineacion. Intentalo de nuevo.";
+          : "Error al enviar la alineacion.";
       setSubmitResult({ ok: false, message });
     } finally {
       setSubmitting(false);
@@ -500,32 +518,22 @@ export default function AlineacionPage() {
   }, [selectedSeason, lineupComplete, submitting, selectedFormation, selectedPlayers, numero]);
 
   // ---------------------------------------------------------------------------
-  // Loading state
+  // Loading / Error states
   // ---------------------------------------------------------------------------
 
   const isLoading =
-    authLoading ||
-    seasonLoading ||
-    matchdayLoading ||
-    squadListLoading ||
-    squadDetailLoading ||
-    formationsLoading;
+    authLoading || seasonLoading || myLineupLoading || matchdayLoading || formationsLoading;
 
   if (isLoading) {
     return (
       <div className="space-y-6">
         <div className="h-4 w-48 animate-pulse rounded bg-vpv-border" />
         <div className="h-8 w-64 animate-pulse rounded bg-vpv-border" />
-        <div className="h-10 w-40 animate-pulse rounded bg-vpv-border" />
-        <SkeletonTable rows={6} />
-        <SkeletonTable rows={6} />
+        <div className="mx-auto aspect-[3/4] w-full max-w-sm animate-pulse rounded-xl bg-vpv-border" />
+        <SkeletonTable rows={4} />
       </div>
     );
   }
-
-  // ---------------------------------------------------------------------------
-  // Error / no-data states
-  // ---------------------------------------------------------------------------
 
   if (!user) {
     return (
@@ -549,15 +557,7 @@ export default function AlineacionPage() {
     );
   }
 
-  if (participantId === null) {
-    return (
-      <div className="py-12 text-center text-vpv-text-muted">
-        No se encontro tu plantilla para esta temporada.
-      </div>
-    );
-  }
-
-  if (!squadDetail || !formationsData) {
+  if (!myLineup || !formationsData) {
     return (
       <div className="py-12 text-center text-vpv-text-muted">
         No se pudo cargar la informacion. Intentalo de nuevo.
@@ -570,16 +570,13 @@ export default function AlineacionPage() {
   // ---------------------------------------------------------------------------
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Breadcrumb */}
       <nav
         aria-label="Navegacion"
         className="flex items-center gap-2 text-sm text-vpv-text-muted"
       >
-        <Link
-          href="/jornadas"
-          className="transition-colors hover:text-vpv-text"
-        >
+        <Link href="/jornadas" className="transition-colors hover:text-vpv-text">
           Jornadas
         </Link>
         <span aria-hidden="true">/</span>
@@ -593,99 +590,86 @@ export default function AlineacionPage() {
         <span className="text-vpv-text">Mi alineacion</span>
       </nav>
 
-      {/* Page heading */}
+      {/* Header row */}
       <div className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-bold text-vpv-text">
-          Alineacion — Jornada {numero}
+        <h1 className="text-xl font-bold text-vpv-text sm:text-2xl">
+          Alineacion — J{numero}
         </h1>
+        <span className="text-sm font-medium text-vpv-text-muted">
+          {myLineup.display_name}
+        </span>
       </div>
 
-      {/* Deadline banner */}
+      {/* Deadline */}
       <DeadlineBanner
         firstMatchAt={matchdayData?.first_match_at ?? null}
-        deadlineMin={30}
+        deadlineMin={myLineup.lineup_deadline_min}
       />
 
-      {/* Formation selector */}
-      <FormationSelector
+      {/* Formation chips */}
+      <FormationChips
         formations={formationsData}
         selected={selectedFormation}
         onChange={handleFormationChange}
       />
 
-      {/* Position counters */}
-      <div
-        aria-label="Jugadores seleccionados por posicion"
-        className="flex flex-wrap gap-2"
-      >
-        {POSITION_ORDER.map((pos) => (
-          <PositionCounter
-            key={pos}
-            position={pos}
-            current={currentCounts[pos]}
-            required={formationSlots[pos]}
+      {/* Two-column layout on desktop */}
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+        {/* Left: PitchView + Matches */}
+        <div className="w-full space-y-4 lg:w-[380px] lg:shrink-0">
+          <PitchView
+            formation={selectedFormation}
+            players={pitchPlayers}
+            onRemovePlayer={handleRemoveFromPitch}
           />
-        ))}
-        <span className="ml-auto text-sm font-medium text-vpv-text-muted">
-          Total:{" "}
-          <span
-            className={`tabular-nums font-bold ${selectedPlayers.length === 11 ? "text-vpv-success" : "text-vpv-text"}`}
-          >
-            {selectedPlayers.length}/11
-          </span>
-        </span>
-      </div>
 
-      {/* Player picker grouped by position */}
-      <div className="space-y-6">
-        {POSITION_ORDER.map((pos) => {
-          const players = playersByPosition[pos];
-          if (players.length === 0) return null;
+          {/* Match strip */}
+          {matchdayData && <MatchStrip matches={matchdayData.matches} />}
+        </div>
 
-          const posRequired = formationSlots[pos];
-          const posCurrent = currentCounts[pos];
-          const posIsFull = posCurrent >= posRequired;
-
-          return (
-            <section key={pos} aria-labelledby={`pos-heading-${pos}`}>
-              <div className="mb-3 flex items-center gap-2">
-                <h2
-                  id={`pos-heading-${pos}`}
-                  className="text-sm font-semibold uppercase tracking-wide text-vpv-text-muted"
-                >
-                  {POSITION_LABELS[pos]}
-                </h2>
+        {/* Right: Player selection */}
+        <div className="flex-1 space-y-4">
+          {/* Position counters summary */}
+          <div className="flex flex-wrap gap-2" aria-label="Resumen posiciones">
+            {POSITION_ORDER.map((pos) => {
+              const cur = currentCounts[pos];
+              const req = formationSlots[pos];
+              const isFull = cur === req;
+              return (
                 <span
-                  className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${POSITION_COLORS[pos]}`}
+                  key={pos}
+                  className={`rounded-full border px-2.5 py-0.5 text-xs font-bold ${
+                    isFull
+                      ? "border-vpv-success/40 bg-vpv-success/10 text-vpv-success"
+                      : POSITION_COLORS[pos]
+                  }`}
                 >
-                  {posCurrent}/{posRequired}
+                  {pos} {cur}/{req}
                 </span>
-              </div>
-
-              <div
-                role="group"
-                aria-label={`${POSITION_LABELS[pos]} disponibles`}
-                className="grid gap-2 sm:grid-cols-2"
+              );
+            })}
+            <span className="ml-auto text-sm font-medium text-vpv-text-muted">
+              <span
+                className={`tabular-nums font-bold ${selectedPlayers.length === 11 ? "text-vpv-success" : "text-vpv-text"}`}
               >
-                {players.map((player) => {
-                  const isSelected = selectedIds.has(player.player_id);
-                  // Disable if position is full and player is not selected
-                  const isDisabled = !isSelected && posIsFull;
+                {selectedPlayers.length}/11
+              </span>
+            </span>
+          </div>
 
-                  return (
-                    <PlayerCard
-                      key={player.player_id}
-                      player={player}
-                      isSelected={isSelected}
-                      isDisabled={isDisabled}
-                      onToggle={handleTogglePlayer}
-                    />
-                  );
-                })}
-              </div>
-            </section>
-          );
-        })}
+          {/* Player lists by position */}
+          {POSITION_ORDER.map((pos) => (
+            <PositionSection
+              key={pos}
+              position={pos}
+              players={playersByPosition[pos]}
+              selectedIds={selectedIds}
+              currentCount={currentCounts[pos]}
+              requiredCount={formationSlots[pos]}
+              onToggle={handleTogglePlayer}
+            />
+          ))}
+        </div>
       </div>
 
       {/* Submit area */}
@@ -708,7 +692,6 @@ export default function AlineacionPage() {
           type="button"
           onClick={handleSubmit}
           disabled={!lineupComplete || submitting}
-          aria-disabled={!lineupComplete || submitting}
           className={`w-full rounded-lg px-6 py-3 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-vpv-accent ${
             lineupComplete && !submitting
               ? "bg-vpv-accent text-white hover:bg-vpv-accent-hover"
@@ -720,7 +703,7 @@ export default function AlineacionPage() {
 
         {!lineupComplete && selectedPlayers.length > 0 && (
           <p className="mt-2 text-center text-xs text-vpv-text-muted">
-            Selecciona exactamente 11 jugadores segun la formacion elegida
+            Selecciona exactamente 11 jugadores segun la formacion
           </p>
         )}
       </div>

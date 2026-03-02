@@ -12,6 +12,8 @@ from src.features.lineups.schemas import (
     LineupPlayerSlot,
     LineupSubmitRequest,
     LineupSubmitResponse,
+    MyLineupResponse,
+    SquadPlayerForLineup,
 )
 
 logger = logging.getLogger(__name__)
@@ -21,6 +23,66 @@ class LineupService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.repo = LineupRepository(session)
+
+    async def get_my_lineup(
+        self,
+        user_id: int,
+        season_id: int,
+        matchday_number: int,
+    ) -> MyLineupResponse:
+        """Get the current user's lineup context for a matchday."""
+        participant = await self.repo.get_participant_for_user(season_id, user_id)
+        if participant is None:
+            raise NotFoundError("Participante", f"user={user_id}, season={season_id}")
+
+        season = await self.repo.get_season(season_id)
+        if season is None:
+            raise NotFoundError("Temporada", season_id)
+
+        matchday = await self.repo.get_matchday(season_id, matchday_number)
+        if matchday is None:
+            raise NotFoundError("Jornada", matchday_number)
+
+        # Get existing lineup (if any)
+        current_lineup = None
+        lineup = await self.repo.get_lineup(participant.id, matchday.id)
+        if lineup is not None:
+            player_rows = await self.repo.get_lineup_players_response(lineup.id)
+            current_lineup = LineupSubmitResponse(
+                lineup_id=lineup.id,
+                formation=lineup.formation,
+                confirmed=lineup.confirmed,
+                confirmed_at=lineup.confirmed_at,
+                telegram_sent=lineup.telegram_sent,
+                players=[LineupPlayerResponse(**r) for r in player_rows],
+            )
+
+        # Get squad players
+        squad_rows = await self.repo.get_squad_players(season_id, participant.id)
+
+        # Get display_name from the user
+        from src.shared.models.user import User
+
+        user_obj = await self.session.get(User, user_id)
+        display_name = user_obj.display_name if user_obj else "Unknown"
+
+        return MyLineupResponse(
+            participant_id=participant.id,
+            display_name=display_name,
+            lineup_deadline_min=season.lineup_deadline_min,
+            current_lineup=current_lineup,
+            squad=[
+                SquadPlayerForLineup(
+                    player_id=r["player_id"],
+                    display_name=r["display_name"],
+                    photo_path=r["photo_path"],
+                    position=r["position"],
+                    team_name=r["team_name"],
+                    season_points=r["season_points"],
+                )
+                for r in squad_rows
+            ],
+        )
 
     async def submit_lineup(
         self,

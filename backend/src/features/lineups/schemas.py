@@ -47,3 +47,22 @@ class LineupSubmitResponse(BaseModel):
     confirmed_at: datetime | None = None
     telegram_sent: bool
     players: list[LineupPlayerResponse]
+
+
+class SquadPlayerForLineup(BaseModel):
+    """Player entry from the user's squad, for lineup selection."""
+
+    player_id: int
+    display_name: str
+    photo_path: str | None = None
+    position: str
+    team_name: str
+    season_points: int
+
+
+class MyLineupResponse(BaseModel):
+    participant_id: int
+    display_name: str
+    lineup_deadline_min: int
+    current_lineup: LineupSubmitResponse | None = None
+    squad: list[SquadPlayerForLineup]

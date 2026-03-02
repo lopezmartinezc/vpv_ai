@@ -27,7 +27,7 @@ _ICON_SIZE = 260
 _TITLE_SIZE = 60
 
 # Player name font size
-_NAME_SIZE = 42
+_NAME_SIZE = 50
 
 # Position coordinates per formation — direct port from PHP $pos_map.
 # Keys are formation strings, values map position -> list of (x, y) coords.
@@ -191,9 +191,7 @@ def generate_lineup_image(
         nh = name_bbox[3] - name_bbox[1]
         name_x = px + (_ICON_SIZE // 2) - (nw // 2)
         name_y = py + _ICON_SIZE
-        # Draw shadow for readability
-        draw.text((name_x + 2, name_y + 2), name, fill=(0, 0, 0, 180), font=font_name)
-        draw.text((name_x, name_y), name, fill=(255, 255, 255), font=font_name)
+        draw.text((name_x, name_y), name, fill=(0, 0, 0), font=font_name)
 
     # Convert to PNG bytes
     buf = io.BytesIO()

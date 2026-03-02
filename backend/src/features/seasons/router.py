@@ -46,6 +46,19 @@ async def get_valid_formations(
     return [ValidFormationResponse.model_validate(f) for f in formations]
 
 
+@router.get(
+    "/{season_id}/valid-formations",
+    response_model=list[ValidFormationResponse],
+)
+async def get_valid_formations_by_season(
+    season_id: int,
+    service: SeasonService = Depends(_get_service),
+) -> list[ValidFormationResponse]:
+    """Alias: formations are global but frontend passes season_id."""
+    formations = await service.get_valid_formations()
+    return [ValidFormationResponse.model_validate(f) for f in formations]
+
+
 @router.get("/{season_id}", response_model=SeasonDetail)
 async def get_season(
     season_id: int,

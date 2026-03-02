@@ -2,14 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import and_, delete, select
+from sqlalchemy import and_, case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.shared.models.lineup import Lineup, LineupPlayer
 from src.shared.models.matchday import Matchday
 from src.shared.models.participant import SeasonParticipant
 from src.shared.models.player import Player
+from src.shared.models.player_stat import PlayerStat
 from src.shared.models.season import Season, ValidFormation
+from src.shared.models.team import Team
 
 
 class LineupRepository:
@@ -251,5 +253,60 @@ class LineupRepository:
             .where(LineupPlayer.lineup_id == lineup_id)
             .order_by(LineupPlayer.display_order)
         )
+        result = await self.session.execute(stmt)
+        return [dict(r._mapping) for r in result.all()]
+
+    async def get_squad_players(
+        self, season_id: int, participant_id: int
+    ) -> list[dict]:
+        """Get all players in a participant's squad with season points."""
+        season_pts = func.coalesce(
+            func.sum(
+                case(
+                    (Matchday.counts.is_(True), PlayerStat.pts_total),
+                    else_=0,
+                ),
+            ),
+            0,
+        ).label("season_points")
+
+        # Position ordering: POR=1, DEF=2, MED=3, DEL=4
+        pos_order = case(
+            (Player.position == "POR", 1),
+            (Player.position == "DEF", 2),
+            (Player.position == "MED", 3),
+            (Player.position == "DEL", 4),
+            else_=5,
+        )
+
+        stmt = (
+            select(
+                Player.id.label("player_id"),
+                Player.display_name,
+                Player.photo_path,
+                Player.position,
+                Team.name.label("team_name"),
+                season_pts,
+            )
+            .join(Team, Player.team_id == Team.id)
+            .outerjoin(PlayerStat, PlayerStat.player_id == Player.id)
+            .outerjoin(
+                Matchday,
+                and_(
+                    PlayerStat.matchday_id == Matchday.id,
+                    Matchday.season_id == season_id,
+                ),
+            )
+            .where(
+                Player.season_id == season_id,
+                Player.owner_id == participant_id,
+            )
+            .group_by(
+                Player.id, Player.display_name, Player.photo_path,
+                Player.position, Team.name,
+            )
+            .order_by(pos_order.asc(), season_pts.desc())
+        )
+
         result = await self.session.execute(stmt)
         return [dict(r._mapping) for r in result.all()]
