@@ -5,6 +5,7 @@ import type {
   StandingsResponse,
   MatchdayListResponse,
   MatchdayDetailResponse,
+  CopaFullResponse,
 } from "@/types";
 
 export function useDashboardData(
@@ -27,6 +28,10 @@ export function useDashboardData(
       : null,
   );
 
+  const { data: copaData } = useFetch<CopaFullResponse>(
+    seasonId ? `/copa/${seasonId}` : null,
+  );
+
   const totalPlayed = matchdays?.matchdays.filter(
     (md) => md.stats_ok && md.counts,
   ).length ?? 0;
@@ -35,6 +40,7 @@ export function useDashboardData(
     standings,
     matchdays,
     currentMatchdayDetail,
+    copaData,
     totalPlayed,
     loading: standingsLoading || matchdaysLoading,
   };

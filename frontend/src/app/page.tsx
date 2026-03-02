@@ -4,8 +4,9 @@ import { useSeason } from "@/contexts/season-context";
 import { useDashboardData } from "@/hooks/use-dashboard-data";
 import { MatchdayAccordion } from "@/components/dashboard/matchday-accordion";
 import { Podium } from "@/components/dashboard/podium";
-import { QuickStats } from "@/components/dashboard/quick-stats";
 import { NavCards } from "@/components/dashboard/nav-cards";
+import { CopaWidget } from "@/components/dashboard/copa-widget";
+import { CopaMatchdayWidget } from "@/components/dashboard/copa-matchday-widget";
 import { SkeletonCards } from "@/components/ui/skeleton";
 
 export default function Home() {
@@ -13,6 +14,7 @@ export default function Home() {
   const {
     standings,
     currentMatchdayDetail,
+    copaData,
     totalPlayed,
     loading,
   } = useDashboardData(
@@ -30,6 +32,10 @@ export default function Home() {
   }
 
   const leader = standings?.entries[0] ?? null;
+  const copaLeader = copaData?.standings[0] ?? null;
+  const currentCopaMatchday = copaData?.matchdays.find(
+    (md) => md.matchday_number === selectedSeason?.matchday_current,
+  ) ?? null;
 
   const navCards = [
     {
@@ -39,6 +45,14 @@ export default function Home() {
       detail: leader
         ? `Lider: ${leader.display_name} (${leader.total_points} pts)`
         : "Tabla general",
+    },
+    {
+      title: "Copa",
+      href: "/copa",
+      icon: "shield" as const,
+      detail: copaLeader
+        ? `Lider: ${copaLeader.display_name} (${copaLeader.total_points} pts)`
+        : "Competicion Copa",
     },
     {
       title: "Jornadas",
@@ -71,11 +85,10 @@ export default function Home() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-vpv-text">Liga VPV Fantasy</h1>
+        <h1 className="text-2xl font-bold text-vpv-text">Liga VPV</h1>
         {selectedSeason && (
           <p className="mt-1 text-vpv-text-muted">
-            Temporada {selectedSeason.name} &mdash;{" "}
-            {selectedSeason.total_participants} participantes
+            Temporada {selectedSeason.name}
           </p>
         )}
       </div>
@@ -87,17 +100,18 @@ export default function Home() {
         />
       )}
 
+      {currentCopaMatchday && (
+        <CopaMatchdayWidget matchday={currentCopaMatchday} />
+      )}
+
       <div className="grid gap-4 md:grid-cols-2">
         {standings && standings.entries.length > 0 && (
           <Podium entries={standings.entries} />
         )}
 
-        <QuickStats
-          totalPlayed={totalPlayed}
-          totalParticipants={selectedSeason?.total_participants ?? 0}
-          leaderName={leader?.display_name ?? null}
-          leaderPoints={leader?.total_points ?? null}
-        />
+        {copaData && copaData.standings.length > 0 && (
+          <CopaWidget entries={copaData.standings} />
+        )}
       </div>
 
       <NavCards cards={navCards} />

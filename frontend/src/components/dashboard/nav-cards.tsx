@@ -4,7 +4,7 @@ import { NavIcon } from "@/components/ui/nav-icon";
 interface NavCardData {
   title: string;
   href: string;
-  icon: "trophy" | "calendar" | "users" | "shuffle" | "coins";
+  icon: "trophy" | "calendar" | "users" | "shuffle" | "coins" | "shield";
   detail: string;
 }
 
