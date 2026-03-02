@@ -42,7 +42,10 @@ export default function CopaPage() {
       <CopaStandings entries={data.standings} />
 
       {data.matchdays.length > 0 && (
-        <CopaMatchdays matchdays={data.matchdays} />
+        <CopaMatchdays
+          matchdays={data.matchdays}
+          matchdayCurrent={selectedSeason?.matchday_current ?? null}
+        />
       )}
     </div>
   );

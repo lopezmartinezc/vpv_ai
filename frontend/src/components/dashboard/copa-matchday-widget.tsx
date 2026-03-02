@@ -60,11 +60,16 @@ export function CopaMatchdayWidget({
               <span className="min-w-0 flex-1 truncate font-medium text-vpv-text">
                 {r.display_name}
               </span>
-              <span className="tabular-nums text-vpv-text">
+              <span className="w-10 text-center tabular-nums text-vpv-text">
                 {r.goals_for}-{r.goals_against}
               </span>
               <span
-                className={`w-8 text-right text-xs font-bold tabular-nums ${r.goal_difference > 0 ? "text-vpv-success" : r.goal_difference < 0 ? "text-vpv-danger" : "text-vpv-text-muted"}`}
+                className={`w-6 text-right text-sm font-bold tabular-nums ${r.points === 3 ? "text-vpv-success" : r.points === 1 ? "text-vpv-text" : "text-vpv-danger"}`}
+              >
+                {r.points}
+              </span>
+              <span
+                className={`w-10 text-right text-xs font-bold tabular-nums ${r.goal_difference > 0 ? "text-vpv-success" : r.goal_difference < 0 ? "text-vpv-danger" : "text-vpv-text-muted"}`}
               >
                 {r.goal_difference > 0
                   ? `+${r.goal_difference}`

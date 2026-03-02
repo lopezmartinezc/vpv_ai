@@ -39,7 +39,7 @@ export default function Home() {
 
   const navCards = [
     {
-      title: "Clasificacion",
+      title: "Liga",
       href: "/clasificacion",
       icon: "trophy" as const,
       detail: leader

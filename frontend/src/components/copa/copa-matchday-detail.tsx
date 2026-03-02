@@ -3,22 +3,6 @@
 import { useState } from "react";
 import type { CopaMatchdayDetail } from "@/types";
 
-function ChevronIcon({ open }: { open: boolean }) {
-  return (
-    <svg
-      className={`h-4 w-4 text-vpv-text-muted transition-transform duration-200 ${open ? "rotate-180" : ""}`}
-      viewBox="0 0 20 20"
-      fill="currentColor"
-    >
-      <path
-        fillRule="evenodd"
-        d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
-        clipRule="evenodd"
-      />
-    </svg>
-  );
-}
-
 function ResultLabel({ points }: { points: number }) {
   if (points === 3)
     return (
@@ -39,29 +23,50 @@ function ResultLabel({ points }: { points: number }) {
   );
 }
 
-function MatchdayRow({ matchday }: { matchday: CopaMatchdayDetail }) {
-  const [open, setOpen] = useState(false);
+export function CopaMatchdays({
+  matchdays,
+  matchdayCurrent,
+}: {
+  matchdays: CopaMatchdayDetail[];
+  matchdayCurrent: number | null;
+}) {
+  const defaultMd =
+    matchdays.find((md) => md.matchday_number === matchdayCurrent)
+      ?.matchday_number ?? matchdays[matchdays.length - 1]?.matchday_number;
+
+  const [selected, setSelected] = useState<number>(defaultMd ?? 1);
+
+  const matchday = matchdays.find((md) => md.matchday_number === selected);
+
+  const sorted = matchday
+    ? [...matchday.results].sort(
+        (a, b) => b.points - a.points || b.goal_difference - a.goal_difference,
+      )
+    : [];
 
   return (
-    <div
-      className={`border-b border-vpv-border last:border-0 ${open ? "bg-vpv-bg/50" : ""}`}
-    >
-      <button
-        type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        className="flex w-full items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-vpv-bg/80"
-      >
-        <span className="text-sm font-bold text-vpv-text">
-          Jornada {matchday.matchday_number}
-        </span>
-        <span className="flex-1" />
-        <ChevronIcon open={open} />
-      </button>
+    <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
+      <div className="flex items-center justify-between px-4 pt-4 pb-2">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-vpv-text-muted">
+          Detalle por jornada
+        </h2>
+        <select
+          value={selected}
+          onChange={(e) => setSelected(Number(e.target.value))}
+          className="rounded-md border border-vpv-border bg-vpv-card px-3 py-1.5 text-sm text-vpv-text focus:border-vpv-accent focus:outline-none"
+        >
+          {[...matchdays].reverse().map((md) => (
+            <option key={md.matchday_number} value={md.matchday_number}>
+              Jornada {md.matchday_number}
+            </option>
+          ))}
+        </select>
+      </div>
 
-      {open && (
+      {sorted.length > 0 && (
         <div className="px-4 pb-3">
           <div className="divide-y divide-vpv-border/50">
-            {matchday.results.map((r) => (
+            {sorted.map((r) => (
               <div
                 key={r.participant_id}
                 className="flex items-center gap-2 py-1.5 text-sm"
@@ -70,11 +75,16 @@ function MatchdayRow({ matchday }: { matchday: CopaMatchdayDetail }) {
                 <span className="min-w-0 flex-1 truncate font-medium text-vpv-text">
                   {r.display_name}
                 </span>
-                <span className="tabular-nums text-vpv-text">
+                <span className="w-10 text-center tabular-nums text-vpv-text">
                   {r.goals_for}-{r.goals_against}
                 </span>
                 <span
-                  className={`w-8 text-right text-xs font-bold tabular-nums ${r.goal_difference > 0 ? "text-vpv-success" : r.goal_difference < 0 ? "text-vpv-danger" : "text-vpv-text-muted"}`}
+                  className={`w-6 text-right text-sm font-bold tabular-nums ${r.points === 3 ? "text-vpv-success" : r.points === 1 ? "text-vpv-text" : "text-vpv-danger"}`}
+                >
+                  {r.points}
+                </span>
+                <span
+                  className={`w-10 text-right text-xs font-bold tabular-nums ${r.goal_difference > 0 ? "text-vpv-success" : r.goal_difference < 0 ? "text-vpv-danger" : "text-vpv-text-muted"}`}
                 >
                   {r.goal_difference > 0
                     ? `+${r.goal_difference}`
@@ -85,30 +95,6 @@ function MatchdayRow({ matchday }: { matchday: CopaMatchdayDetail }) {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-export function CopaMatchdays({
-  matchdays,
-}: {
-  matchdays: CopaMatchdayDetail[];
-}) {
-  // Show most recent first
-  const reversed = [...matchdays].reverse();
-
-  return (
-    <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
-      <div className="px-4 pt-4 pb-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-vpv-text-muted">
-          Detalle por jornada
-        </h2>
-      </div>
-      <div>
-        {reversed.map((md) => (
-          <MatchdayRow key={md.matchday_number} matchday={md} />
-        ))}
-      </div>
     </div>
   );
 }

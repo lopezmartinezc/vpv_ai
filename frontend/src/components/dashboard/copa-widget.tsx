@@ -44,16 +44,15 @@ export function CopaWidget({ entries }: { entries: CopaStandingEntry[] }) {
                   {entry.display_name}
                 </p>
               </div>
-              <span className="text-xs tabular-nums text-vpv-text-muted">
-                DG{" "}
+              <span
+                className={`w-8 text-right text-sm font-bold tabular-nums ${entry.rank === 1 ? "text-vpv-accent" : "text-vpv-text"}`}
+              >
+                {entry.total_points}
+              </span>
+              <span className="w-10 text-right text-xs tabular-nums text-vpv-text-muted">
                 {entry.goal_difference > 0
                   ? `+${entry.goal_difference}`
                   : entry.goal_difference}
-              </span>
-              <span
-                className={`text-sm font-bold tabular-nums ${entry.rank === 1 ? "text-vpv-accent" : "text-vpv-text"}`}
-              >
-                {entry.total_points}
               </span>
             </div>
           );
