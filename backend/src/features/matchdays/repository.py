@@ -76,6 +76,17 @@ class BenchPlayerRow:
     position: str
     team_name: str
     matchday_points: int
+    pts_play: int | None
+    pts_starter: int | None
+    pts_result: int | None
+    pts_clean_sheet: int | None
+    pts_goals: int | None
+    pts_assists: int | None
+    pts_yellow: int | None
+    pts_red: int | None
+    pts_marca: int | None
+    pts_as: int | None
+    pts_total: int | None
 
 
 class MatchdayRepository:
@@ -278,6 +289,17 @@ class MatchdayRepository:
                 Player.position,
                 func.coalesce(Team.short_name, Team.name).label("team_name"),
                 func.coalesce(PlayerStat.pts_total, 0).label("matchday_points"),
+                PlayerStat.pts_play,
+                PlayerStat.pts_starter,
+                PlayerStat.pts_result,
+                PlayerStat.pts_clean_sheet,
+                PlayerStat.pts_goals,
+                PlayerStat.pts_assists,
+                PlayerStat.pts_yellow,
+                PlayerStat.pts_red,
+                PlayerStat.pts_marca,
+                PlayerStat.pts_as,
+                PlayerStat.pts_total,
             )
             .join(Team, Player.team_id == Team.id)
             .outerjoin(
@@ -309,6 +331,17 @@ class MatchdayRepository:
                 position=row.position,
                 team_name=row.team_name,
                 matchday_points=row.matchday_points,
+                pts_play=row.pts_play,
+                pts_starter=row.pts_starter,
+                pts_result=row.pts_result,
+                pts_clean_sheet=row.pts_clean_sheet,
+                pts_goals=row.pts_goals,
+                pts_assists=row.pts_assists,
+                pts_yellow=row.pts_yellow,
+                pts_red=row.pts_red,
+                pts_marca=row.pts_marca,
+                pts_as=row.pts_as,
+                pts_total=row.pts_total,
             )
             for row in result.all()
         ]

@@ -132,6 +132,7 @@ export interface BenchPlayerEntry {
   position: string;
   team_name: string;
   matchday_points: number;
+  score_breakdown: ScoreBreakdown | null;
 }
 
 export interface LineupDetailResponse {
@@ -279,4 +280,40 @@ export interface MyLineupResponse {
   lineup_deadline_min: number;
   current_lineup: CurrentLineupData | null;
   squad: SquadPlayerEntry[];
+}
+
+// Copa
+export interface CopaMatchdayResult {
+  participant_id: number;
+  display_name: string;
+  goals_for: number;
+  goals_against: number;
+  goal_difference: number;
+  points: number;
+}
+
+export interface CopaMatchdayDetail {
+  matchday_number: number;
+  results: CopaMatchdayResult[];
+}
+
+export interface CopaStandingEntry {
+  rank: number;
+  participant_id: number;
+  display_name: string;
+  total_points: number;
+  matches_played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  total_goals_for: number;
+  total_goals_against: number;
+  goal_difference: number;
+}
+
+export interface CopaFullResponse {
+  season_id: number;
+  season_name: string;
+  standings: CopaStandingEntry[];
+  matchdays: CopaMatchdayDetail[];
 }

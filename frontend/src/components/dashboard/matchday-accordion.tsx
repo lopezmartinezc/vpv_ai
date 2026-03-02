@@ -48,7 +48,7 @@ const STAT_LABELS = [
   { key: "play", label: "Juega", get: (b: NonNullable<LineupPlayerEntry["score_breakdown"]>) => b.pts_play },
   { key: "starter", label: "Titular", get: (b: NonNullable<LineupPlayerEntry["score_breakdown"]>) => b.pts_starter },
   { key: "result", label: "Resultado", get: (b: NonNullable<LineupPlayerEntry["score_breakdown"]>) => b.pts_result },
-  { key: "clean_sheet", label: "Imbatida", get: (b: NonNullable<LineupPlayerEntry["score_breakdown"]>) => b.pts_clean_sheet },
+  { key: "clean_sheet", label: "Imbatido", get: (b: NonNullable<LineupPlayerEntry["score_breakdown"]>) => b.pts_clean_sheet },
   { key: "goals", label: "Goles", get: (b: NonNullable<LineupPlayerEntry["score_breakdown"]>) => b.pts_goals },
   { key: "assists", label: "Asistencias", get: (b: NonNullable<LineupPlayerEntry["score_breakdown"]>) => b.pts_assists },
   { key: "yellow", label: "Amarilla", get: (b: NonNullable<LineupPlayerEntry["score_breakdown"]>) => b.pts_yellow },
@@ -106,18 +106,49 @@ function PlayerRow({ player }: { player: LineupPlayerEntry }) {
 }
 
 function BenchPlayerRow({ player }: { player: BenchPlayerEntry }) {
+  const [expanded, setExpanded] = useState(false);
+  const b = player.score_breakdown;
+  const didPlay = b ? b.pts_play > 0 : false;
+
   return (
-    <div className="flex items-center gap-2 py-1 text-sm opacity-40">
-      <PlayerAvatar photoPath={player.photo_path} name={player.player_name} size={48} />
-      <PositionBadge pos={player.position} />
-      <span className="min-w-0 flex-1 truncate text-vpv-text">
-        {player.player_name}
-      </span>
-      <span className="text-xs text-vpv-text-muted">{player.team_name}</span>
-      <span className="w-8 text-right font-bold tabular-nums text-vpv-text">
-        {player.matchday_points}
-      </span>
-      <span className="w-4" />
+    <div>
+      <button
+        type="button"
+        onClick={() => setExpanded((prev) => !prev)}
+        className={`flex w-full items-center gap-2 py-1.5 text-sm text-left transition-colors hover:bg-vpv-bg/60 rounded px-1 -mx-1 ${
+          !didPlay ? "opacity-45" : "opacity-70"
+        }`}
+      >
+        <PlayerAvatar photoPath={player.photo_path} name={player.player_name} size={48} />
+        <PositionBadge pos={player.position} />
+        <span className={`min-w-0 flex-1 truncate ${!didPlay ? "text-vpv-danger" : "text-vpv-text"}`}>
+          {player.player_name}
+        </span>
+        <span className="text-xs text-vpv-text-muted">{player.team_name}</span>
+        <span className="w-8 text-right font-bold tabular-nums text-vpv-text">
+          {player.matchday_points}
+        </span>
+        {didPlay && b ? <ChevronIcon open={expanded} /> : <span className="w-4" />}
+      </button>
+
+      {expanded && didPlay && b && (
+        <div className="ml-8 mb-1.5 grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs sm:grid-cols-3">
+          {STAT_LABELS.map(({ key, label, get }) => {
+            const val = get(b);
+            if (val === 0) return null;
+            return (
+              <div key={key} className="flex items-center justify-between gap-2">
+                <span className="text-vpv-text-muted">{label}</span>
+                <span
+                  className={`font-bold tabular-nums ${val > 0 ? "text-vpv-success" : "text-vpv-danger"}`}
+                >
+                  {val > 0 ? `+${val}` : val}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

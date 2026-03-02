@@ -170,6 +170,21 @@ class MatchdayService:
                     position=b.position,
                     team_name=b.team_name,
                     matchday_points=b.matchday_points,
+                    score_breakdown=ScoreBreakdown(
+                        pts_play=b.pts_play,
+                        pts_starter=b.pts_starter,
+                        pts_result=b.pts_result,
+                        pts_clean_sheet=b.pts_clean_sheet,
+                        pts_goals=b.pts_goals,
+                        pts_assists=b.pts_assists,
+                        pts_yellow=b.pts_yellow,
+                        pts_red=b.pts_red,
+                        pts_marca=b.pts_marca,
+                        pts_as=b.pts_as,
+                        pts_total=b.pts_total,
+                    )
+                    if b.pts_total is not None
+                    else None,
                 )
                 for b in bench_rows
             ],

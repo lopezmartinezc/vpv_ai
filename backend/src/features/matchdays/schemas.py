@@ -79,6 +79,7 @@ class BenchPlayerEntry(BaseModel):
     position: str
     team_name: str
     matchday_points: int
+    score_breakdown: ScoreBreakdown | None = None
 
 
 class LineupDetailResponse(BaseModel):
