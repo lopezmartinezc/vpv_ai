@@ -100,19 +100,17 @@ export default function Home() {
         />
       )}
 
+      {standings && standings.entries.length > 0 && (
+        <Podium entries={standings.entries} />
+      )}
+
       {currentCopaMatchday && (
         <CopaMatchdayWidget matchday={currentCopaMatchday} />
       )}
 
-      <div className="grid gap-4 md:grid-cols-2">
-        {standings && standings.entries.length > 0 && (
-          <Podium entries={standings.entries} />
-        )}
-
-        {copaData && copaData.standings.length > 0 && (
-          <CopaWidget entries={copaData.standings} />
-        )}
-      </div>
+      {copaData && copaData.standings.length > 0 && (
+        <CopaWidget entries={copaData.standings} />
+      )}
 
       <NavCards cards={navCards} />
     </div>

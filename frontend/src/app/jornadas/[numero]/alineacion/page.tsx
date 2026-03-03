@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
@@ -49,19 +49,9 @@ const POSITION_COLORS: Record<Position, string> = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-interface FormationSlots {
-  POR: number;
-  DEF: number;
-  MED: number;
-  DEL: number;
-}
-
-function parseFormationSlots(formation: string): FormationSlots {
-  const parts = formation.split("-").map(Number);
-  return { POR: 1, DEF: parts[1] ?? 0, MED: parts[2] ?? 0, DEL: parts[3] ?? 0 };
-}
-
-function countsByPosition(selected: SquadPlayerEntry[]): Record<Position, number> {
+function countsByPosition(
+  selected: SquadPlayerEntry[],
+): Record<Position, number> {
   return {
     POR: selected.filter((p) => p.position === "POR").length,
     DEF: selected.filter((p) => p.position === "DEF").length,
@@ -80,8 +70,30 @@ function formatMatchTime(playedAt: string | null): string {
   if (!playedAt) return "";
   const d = new Date(playedAt);
   const day = d.toLocaleDateString("es-ES", { weekday: "short" });
-  const time = d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+  const time = d.toLocaleTimeString("es-ES", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
   return `${day} ${time}`;
+}
+
+/** Check if a player of the given position can be added without making it
+ *  impossible to reach any valid formation. */
+function canAddToPosition(
+  pos: Position,
+  counts: Record<Position, number>,
+  formations: ValidFormation[],
+  total: number,
+): boolean {
+  if (total >= 11) return false;
+  if (pos === "POR") return counts.POR < 1;
+  const next = { ...counts, [pos]: counts[pos] + 1 };
+  return formations.some(
+    (f) =>
+      next.DEF <= f.defenders &&
+      next.MED <= f.midfielders &&
+      next.DEL <= f.forwards,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -99,7 +111,8 @@ function DeadlineBanner({
 
   useEffect(() => {
     if (!firstMatchAt) return;
-    const deadlineMs = new Date(firstMatchAt).getTime() - deadlineMin * 60_000;
+    const deadlineMs =
+      new Date(firstMatchAt).getTime() - deadlineMin * 60_000;
     const deadlineIso = new Date(deadlineMs).toISOString();
     const update = () => setRemaining(minutesUntil(deadlineIso));
     update();
@@ -113,7 +126,9 @@ function DeadlineBanner({
   const hours = Math.floor(remaining / 60);
   const mins = remaining % 60;
   const label =
-    hours > 0 ? `${hours}h ${mins}m` : `${mins} minuto${mins !== 1 ? "s" : ""}`;
+    hours > 0
+      ? `${hours}h ${mins}m`
+      : `${mins} minuto${mins !== 1 ? "s" : ""}`;
 
   return (
     <div
@@ -133,65 +148,133 @@ function DeadlineBanner({
   );
 }
 
-function FormationChips({
-  formations,
-  selected,
-  onChange,
+function MatchCards({
+  matches,
+  squad,
+  selectedIds,
 }: {
-  formations: ValidFormation[];
-  selected: string;
-  onChange: (f: string) => void;
+  matches: MatchEntry[];
+  squad: SquadPlayerEntry[];
+  selectedIds: Set<number>;
 }) {
+  const [open, setOpen] = useState(false);
+
+  const squadByTeam = useMemo(() => {
+    const map = new Map<string, SquadPlayerEntry[]>();
+    for (const p of squad) {
+      const list = map.get(p.team_name) ?? [];
+      list.push(p);
+      map.set(p.team_name, list);
+    }
+    return map;
+  }, [squad]);
+
+  if (matches.length === 0) return null;
+
   return (
-    <div className="flex gap-2 overflow-x-auto pb-1" role="radiogroup" aria-label="Formacion">
-      {formations.map((f) => {
-        const isActive = f.formation === selected;
-        return (
-          <button
-            key={f.id}
-            type="button"
-            role="radio"
-            aria-checked={isActive}
-            onClick={() => onChange(f.formation)}
-            className={`shrink-0 rounded-lg border px-3 py-1.5 text-sm font-semibold transition-colors ${
-              isActive
-                ? "border-vpv-accent bg-vpv-accent/15 text-vpv-accent"
-                : "border-vpv-border bg-vpv-card text-vpv-text-muted hover:border-vpv-accent/40"
-            }`}
-          >
-            {f.formation}
-          </button>
-        );
-      })}
+    <div className="rounded-lg border border-vpv-border bg-vpv-card">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between px-3 py-2.5"
+      >
+        <span className="text-xs font-semibold uppercase tracking-wide text-vpv-text-muted">
+          Partidos ({matches.length})
+        </span>
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 14 14"
+          className={`text-vpv-text-muted transition-transform ${open ? "rotate-180" : ""}`}
+        >
+          <path
+            d="M3.5 5.5l3.5 3.5 3.5-3.5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="divide-y divide-vpv-border/50 border-t border-vpv-border">
+          {matches.map((m) => {
+            const homePlayers = squadByTeam.get(m.home_team) ?? [];
+            const awayPlayers = squadByTeam.get(m.away_team) ?? [];
+            const hasPlayers =
+              homePlayers.length > 0 || awayPlayers.length > 0;
+
+            return (
+              <div key={m.id} className="px-3 py-2">
+                {/* Match header */}
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium text-vpv-text">
+                    {m.home_team} - {m.away_team}
+                  </span>
+                  {m.played_at && (
+                    <span className="text-xs text-vpv-text-muted">
+                      {formatMatchTime(m.played_at)}
+                    </span>
+                  )}
+                </div>
+
+                {/* Squad players per team */}
+                {hasPlayers && (
+                  <div className="mt-1.5 grid grid-cols-2 gap-x-3">
+                    <SquadColumn
+                      players={homePlayers}
+                      selectedIds={selectedIds}
+                    />
+                    <SquadColumn
+                      players={awayPlayers}
+                      selectedIds={selectedIds}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
-function MatchStrip({ matches }: { matches: MatchEntry[] }) {
-  if (matches.length === 0) return null;
+function SquadColumn({
+  players,
+  selectedIds,
+}: {
+  players: SquadPlayerEntry[];
+  selectedIds: Set<number>;
+}) {
+  if (players.length === 0) return <div />;
 
   return (
-    <div className="space-y-1.5">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-vpv-text-muted">
-        Partidos
-      </h3>
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {matches.map((m) => (
-          <div
-            key={m.id}
-            className="shrink-0 rounded-lg border border-vpv-border bg-vpv-card px-3 py-1.5 text-xs"
-          >
-            <span className="font-medium text-vpv-text">
-              {m.home_team} - {m.away_team}
+    <div className="space-y-0.5">
+      {players.map((p) => {
+        const selected = selectedIds.has(p.player_id);
+        const pos = p.position as Position;
+        return (
+          <div key={p.player_id} className="flex items-center gap-1.5">
+            <span
+              className={`rounded px-1 py-px text-[9px] font-bold ${POSITION_COLORS[pos]}`}
+            >
+              {pos}
             </span>
-            {m.played_at && (
-              <span className="ml-1.5 text-vpv-text-muted">
-                {formatMatchTime(m.played_at)}
-              </span>
-            )}
+            <span
+              className={`truncate text-xs ${
+                selected
+                  ? "font-semibold text-vpv-accent"
+                  : "text-vpv-text-muted"
+              }`}
+            >
+              {p.display_name}
+            </span>
           </div>
-        ))}
-      </div>
+        );
+      })}
     </div>
   );
 }
@@ -222,13 +305,19 @@ function PlayerCard({
             : "border-vpv-card-border bg-vpv-card hover:border-vpv-border active:bg-vpv-bg"
       }`}
     >
-      <PlayerAvatar photoPath={player.photo_path} name={player.display_name} size={36} />
+      <PlayerAvatar
+        photoPath={player.photo_path}
+        name={player.display_name}
+        size={36}
+      />
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-vpv-text">
           {player.display_name}
         </p>
-        <p className="truncate text-xs text-vpv-text-muted">{player.team_name}</p>
+        <p className="truncate text-xs text-vpv-text-muted">
+          {player.team_name}
+        </p>
       </div>
 
       <div className="flex shrink-0 flex-col items-end gap-0.5">
@@ -260,80 +349,54 @@ function PlayerCard({
   );
 }
 
-function PositionSection({
-  position,
-  players,
-  selectedIds,
-  currentCount,
-  requiredCount,
-  onToggle,
+function PositionTabs({
+  activeTab,
+  onTabChange,
+  counts,
+  canAdd,
 }: {
-  position: Position;
-  players: SquadPlayerEntry[];
-  selectedIds: Set<number>;
-  currentCount: number;
-  requiredCount: number;
-  onToggle: (player: SquadPlayerEntry) => void;
+  activeTab: Position;
+  onTabChange: (pos: Position) => void;
+  counts: Record<Position, number>;
+  canAdd: Record<Position, boolean>;
 }) {
-  const isFull = currentCount >= requiredCount;
-  const [collapsed, setCollapsed] = useState(false);
-
-  // Auto-collapse when full
-  useEffect(() => {
-    if (isFull) setCollapsed(true);
-    else setCollapsed(false);
-  }, [isFull]);
-
-  if (players.length === 0) return null;
-
   return (
-    <section>
-      <button
-        type="button"
-        onClick={() => setCollapsed((c) => !c)}
-        className="mb-2 flex w-full items-center gap-2"
-      >
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-vpv-text-muted">
-          {POSITION_LABELS[position]}
-        </h2>
-        <span
-          className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${
-            isFull
-              ? "border-vpv-success/40 bg-vpv-success/10 text-vpv-success"
-              : POSITION_COLORS[position]
-          }`}
-        >
-          {currentCount}/{requiredCount}
-        </span>
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 12 12"
-          className={`ml-auto text-vpv-text-muted transition-transform ${collapsed ? "" : "rotate-180"}`}
-        >
-          <path d="M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" fill="none" />
-        </svg>
-      </button>
-
-      {!collapsed && (
-        <div className="grid gap-1.5 sm:grid-cols-2">
-          {players.map((player) => {
-            const isSelected = selectedIds.has(player.player_id);
-            const isDisabled = !isSelected && isFull;
-
-            return (
-              <PlayerCard
-                key={player.player_id}
-                player={player}
-                isSelected={isSelected}
-                isDisabled={isDisabled}
-                onToggle={onToggle}
-              />
-            );
-          })}
-        </div>
-      )}
-    </section>
+    <div
+      className="flex rounded-xl bg-vpv-bg p-1"
+      role="tablist"
+      aria-label="Posiciones"
+    >
+      {POSITION_ORDER.map((pos) => {
+        const active = pos === activeTab;
+        const full = !canAdd[pos] && counts[pos] > 0;
+        return (
+          <button
+            key={pos}
+            role="tab"
+            aria-selected={active}
+            onClick={() => onTabChange(pos)}
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2.5 text-sm font-medium transition-all ${
+              active
+                ? "bg-vpv-card text-vpv-text shadow-sm"
+                : "text-vpv-text-muted hover:text-vpv-text"
+            }`}
+          >
+            <span>{pos}</span>
+            {counts[pos] > 0 && (
+              <span
+                className={`min-w-[18px] rounded-full px-1 text-center text-[11px] font-bold ${
+                  full
+                    ? "bg-vpv-success/20 text-vpv-success"
+                    : "bg-vpv-accent/20 text-vpv-accent"
+                }`}
+              >
+                {counts[pos]}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -348,9 +411,10 @@ export default function AlineacionPage() {
   const { selectedSeason, loading: seasonLoading } = useSeason();
 
   // API calls
-  const { data: myLineup, loading: myLineupLoading } = useFetch<MyLineupResponse>(
-    selectedSeason ? `/lineups/${selectedSeason.id}/${numero}/me` : null,
-  );
+  const { data: myLineup, loading: myLineupLoading } =
+    useFetch<MyLineupResponse>(
+      selectedSeason ? `/lineups/${selectedSeason.id}/${numero}/me` : null,
+    );
 
   const { data: matchdayData, loading: matchdayLoading } =
     useFetch<MatchdayDetailResponse>(
@@ -365,24 +429,23 @@ export default function AlineacionPage() {
   // Local state
   // ---------------------------------------------------------------------------
 
-  const [selectedFormation, setSelectedFormation] = useState<string>("");
-  const [selectedPlayers, setSelectedPlayers] = useState<SquadPlayerEntry[]>([]);
+  const [selectedPlayers, setSelectedPlayers] = useState<SquadPlayerEntry[]>(
+    [],
+  );
+  const [activeTab, setActiveTab] = useState<Position>("POR");
   const [submitting, setSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<{
     ok: boolean;
     message: string;
   } | null>(null);
   const [initialized, setInitialized] = useState(false);
+  const prevCountRef = useRef(0);
 
-  // Initialize from existing lineup + set default formation
+  // Initialize from existing lineup
   useEffect(() => {
-    if (initialized || !myLineup || !formationsData) return;
+    if (initialized || !myLineup) return;
 
     if (myLineup.current_lineup) {
-      // Pre-load existing lineup
-      setSelectedFormation(myLineup.current_lineup.formation);
-
-      // Map lineup players back to squad entries
       const squadMap = new Map(myLineup.squad.map((s) => [s.player_id, s]));
       const preSelected: SquadPlayerEntry[] = [];
       for (const lp of myLineup.current_lineup.players) {
@@ -390,21 +453,14 @@ export default function AlineacionPage() {
         if (sq) preSelected.push(sq);
       }
       setSelectedPlayers(preSelected);
-    } else if (formationsData.length > 0) {
-      setSelectedFormation(formationsData[0].formation);
     }
 
     setInitialized(true);
-  }, [myLineup, formationsData, initialized]);
+  }, [myLineup, initialized]);
 
   // ---------------------------------------------------------------------------
   // Derived values
   // ---------------------------------------------------------------------------
-
-  const formationSlots = useMemo(
-    () => parseFormationSlots(selectedFormation || "1-4-3-3"),
-    [selectedFormation],
-  );
 
   const selectedIds = useMemo(
     () => new Set(selectedPlayers.map((p) => p.player_id)),
@@ -416,27 +472,91 @@ export default function AlineacionPage() {
     [selectedPlayers],
   );
 
-  const lineupComplete = useMemo(() => {
-    if (selectedPlayers.length !== 11) return false;
-    const counts = countsByPosition(selectedPlayers);
-    return (
-      counts.POR === formationSlots.POR &&
-      counts.DEF === formationSlots.DEF &&
-      counts.MED === formationSlots.MED &&
-      counts.DEL === formationSlots.DEL
+  /** Formations still reachable with current selection. */
+  const possibleFormations = useMemo(() => {
+    if (!formationsData) return [];
+    const c = currentCounts;
+    return formationsData.filter(
+      (f) =>
+        c.DEF <= f.defenders &&
+        c.MED <= f.midfielders &&
+        c.DEL <= f.forwards,
     );
-  }, [selectedPlayers, formationSlots]);
+  }, [currentCounts, formationsData]);
+
+  /** Exact formation when 11 players are selected. */
+  const detectedFormation = useMemo<ValidFormation | null>(() => {
+    if (selectedPlayers.length !== 11 || currentCounts.POR !== 1) return null;
+    return (
+      formationsData?.find(
+        (f) =>
+          f.defenders === currentCounts.DEF &&
+          f.midfielders === currentCounts.MED &&
+          f.forwards === currentCounts.DEL,
+      ) ?? null
+    );
+  }, [selectedPlayers.length, currentCounts, formationsData]);
+
+  /** Formation string for PitchView display. */
+  const displayFormation =
+    detectedFormation?.formation ??
+    possibleFormations[0]?.formation ??
+    "1-4-3-3";
+
+  /** Whether each position can accept more players. */
+  const canAdd = useMemo<Record<Position, boolean>>(
+    () => ({
+      POR: canAddToPosition(
+        "POR",
+        currentCounts,
+        formationsData ?? [],
+        selectedPlayers.length,
+      ),
+      DEF: canAddToPosition(
+        "DEF",
+        currentCounts,
+        formationsData ?? [],
+        selectedPlayers.length,
+      ),
+      MED: canAddToPosition(
+        "MED",
+        currentCounts,
+        formationsData ?? [],
+        selectedPlayers.length,
+      ),
+      DEL: canAddToPosition(
+        "DEL",
+        currentCounts,
+        formationsData ?? [],
+        selectedPlayers.length,
+      ),
+    }),
+    [currentCounts, formationsData, selectedPlayers.length],
+  );
+
+  const lineupComplete = detectedFormation !== null;
 
   // Group squad players by position
-  const playersByPosition = useMemo<Record<Position, SquadPlayerEntry[]>>(() => {
-    const squad = myLineup?.squad ?? [];
-    return {
-      POR: squad.filter((p) => p.position === "POR").sort((a, b) => b.season_points - a.season_points),
-      DEF: squad.filter((p) => p.position === "DEF").sort((a, b) => b.season_points - a.season_points),
-      MED: squad.filter((p) => p.position === "MED").sort((a, b) => b.season_points - a.season_points),
-      DEL: squad.filter((p) => p.position === "DEL").sort((a, b) => b.season_points - a.season_points),
-    };
-  }, [myLineup]);
+  const playersByPosition = useMemo<Record<Position, SquadPlayerEntry[]>>(
+    () => {
+      const squad = myLineup?.squad ?? [];
+      return {
+        POR: squad
+          .filter((p) => p.position === "POR")
+          .sort((a, b) => b.season_points - a.season_points),
+        DEF: squad
+          .filter((p) => p.position === "DEF")
+          .sort((a, b) => b.season_points - a.season_points),
+        MED: squad
+          .filter((p) => p.position === "MED")
+          .sort((a, b) => b.season_points - a.season_points),
+        DEL: squad
+          .filter((p) => p.position === "DEL")
+          .sort((a, b) => b.season_points - a.season_points),
+      };
+    },
+    [myLineup],
+  );
 
   // Build PitchView players
   const pitchPlayers = useMemo<PitchPlayer[]>(
@@ -451,6 +571,28 @@ export default function AlineacionPage() {
   );
 
   // ---------------------------------------------------------------------------
+  // Auto-advance tab when a position fills up (only on player addition)
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    if (!formationsData || selectedPlayers.length <= prevCountRef.current) {
+      prevCountRef.current = selectedPlayers.length;
+      return;
+    }
+    prevCountRef.current = selectedPlayers.length;
+
+    const counts = countsByPosition(selectedPlayers);
+    if (
+      !canAddToPosition(activeTab, counts, formationsData, selectedPlayers.length)
+    ) {
+      const nextTab = POSITION_ORDER.find((pos) =>
+        canAddToPosition(pos, counts, formationsData, selectedPlayers.length),
+      );
+      if (nextTab) setActiveTab(nextTab);
+    }
+  }, [selectedPlayers, activeTab, formationsData]);
+
+  // ---------------------------------------------------------------------------
   // Handlers
   // ---------------------------------------------------------------------------
 
@@ -459,41 +601,40 @@ export default function AlineacionPage() {
       setSubmitResult(null);
       setSelectedPlayers((prev) => {
         const pos = player.position as Position;
-        const isAlreadySelected = prev.some((p) => p.player_id === player.player_id);
+        const isAlreadySelected = prev.some(
+          (p) => p.player_id === player.player_id,
+        );
 
         if (isAlreadySelected) {
           return prev.filter((p) => p.player_id !== player.player_id);
         }
 
-        const currentForPos = prev.filter((p) => p.position === pos).length;
-        if (currentForPos >= formationSlots[pos]) return prev;
-        if (prev.length >= 11) return prev;
+        const counts = countsByPosition(prev);
+        if (!canAddToPosition(pos, counts, formationsData ?? [], prev.length)) {
+          return prev;
+        }
 
         return [...prev, player];
       });
     },
-    [formationSlots],
+    [formationsData],
   );
 
   const handleRemoveFromPitch = useCallback((playerId: number) => {
     setSubmitResult(null);
-    setSelectedPlayers((prev) => prev.filter((p) => p.player_id !== playerId));
-  }, []);
-
-  const handleFormationChange = useCallback((formation: string) => {
-    setSelectedFormation(formation);
-    setSelectedPlayers([]);
-    setSubmitResult(null);
+    setSelectedPlayers((prev) =>
+      prev.filter((p) => p.player_id !== playerId),
+    );
   }, []);
 
   const handleSubmit = useCallback(async () => {
-    if (!selectedSeason || !lineupComplete || submitting) return;
+    if (!selectedSeason || !detectedFormation || submitting) return;
 
     setSubmitting(true);
     setSubmitResult(null);
 
     const body: LineupSubmitBody = {
-      formation: selectedFormation,
+      formation: detectedFormation.formation,
       players: selectedPlayers.map((p) => ({
         player_id: p.player_id,
         position_slot: p.position,
@@ -515,14 +656,24 @@ export default function AlineacionPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [selectedSeason, lineupComplete, submitting, selectedFormation, selectedPlayers, numero]);
+  }, [
+    selectedSeason,
+    detectedFormation,
+    submitting,
+    selectedPlayers,
+    numero,
+  ]);
 
   // ---------------------------------------------------------------------------
   // Loading / Error states
   // ---------------------------------------------------------------------------
 
   const isLoading =
-    authLoading || seasonLoading || myLineupLoading || matchdayLoading || formationsLoading;
+    authLoading ||
+    seasonLoading ||
+    myLineupLoading ||
+    matchdayLoading ||
+    formationsLoading;
 
   if (isLoading) {
     return (
@@ -576,7 +727,10 @@ export default function AlineacionPage() {
         aria-label="Navegacion"
         className="flex items-center gap-2 text-sm text-vpv-text-muted"
       >
-        <Link href="/jornadas" className="transition-colors hover:text-vpv-text">
+        <Link
+          href="/jornadas"
+          className="transition-colors hover:text-vpv-text"
+        >
           Jornadas
         </Link>
         <span aria-hidden="true">/</span>
@@ -606,69 +760,90 @@ export default function AlineacionPage() {
         deadlineMin={myLineup.lineup_deadline_min}
       />
 
-      {/* Formation chips */}
-      <FormationChips
-        formations={formationsData}
-        selected={selectedFormation}
-        onChange={handleFormationChange}
-      />
+      {/* Formation auto-detect + counter */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {detectedFormation ? (
+            <span className="rounded-lg border border-vpv-success/30 bg-vpv-success/10 px-3 py-1 text-sm font-bold text-vpv-success">
+              {detectedFormation.formation}
+            </span>
+          ) : possibleFormations.length === 1 ? (
+            <span className="rounded-lg border border-vpv-accent/30 bg-vpv-accent/10 px-3 py-1 text-sm font-bold text-vpv-accent">
+              {possibleFormations[0].formation}
+            </span>
+          ) : possibleFormations.length > 1 && selectedPlayers.length > 0 ? (
+            <span className="text-xs text-vpv-text-muted">
+              {possibleFormations.length} formaciones posibles
+            </span>
+          ) : selectedPlayers.length > 0 && possibleFormations.length === 0 ? (
+            <span className="text-xs text-vpv-danger">
+              Combinacion no valida
+            </span>
+          ) : (
+            <span className="text-sm text-vpv-text-muted">
+              Selecciona 11 jugadores
+            </span>
+          )}
+        </div>
+        <span
+          className={`text-sm font-bold tabular-nums ${
+            lineupComplete ? "text-vpv-success" : "text-vpv-text"
+          }`}
+        >
+          {selectedPlayers.length}/11
+        </span>
+      </div>
 
-      {/* Two-column layout on desktop */}
+      {/* Two-column layout */}
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-        {/* Left: PitchView + Matches */}
-        <div className="w-full space-y-4 lg:w-[380px] lg:shrink-0">
+        {/* PitchView + Matches: desktop left, mobile below selection */}
+        <div className="order-2 w-full space-y-4 lg:order-1 lg:w-[380px] lg:shrink-0">
           <PitchView
-            formation={selectedFormation}
+            formation={displayFormation}
             players={pitchPlayers}
             onRemovePlayer={handleRemoveFromPitch}
           />
 
-          {/* Match strip */}
-          {matchdayData && <MatchStrip matches={matchdayData.matches} />}
+          {matchdayData && (
+            <MatchCards
+              matches={matchdayData.matches}
+              squad={myLineup.squad}
+              selectedIds={selectedIds}
+            />
+          )}
         </div>
 
-        {/* Right: Player selection */}
-        <div className="flex-1 space-y-4">
-          {/* Position counters summary */}
-          <div className="flex flex-wrap gap-2" aria-label="Resumen posiciones">
-            {POSITION_ORDER.map((pos) => {
-              const cur = currentCounts[pos];
-              const req = formationSlots[pos];
-              const isFull = cur === req;
+        {/* Player selection: desktop right, mobile first */}
+        <div className="order-1 flex-1 space-y-3 lg:order-2">
+          <PositionTabs
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            counts={currentCounts}
+            canAdd={canAdd}
+          />
+
+          {/* Active tab label */}
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-vpv-text-muted">
+            {POSITION_LABELS[activeTab]}
+          </h2>
+
+          {/* Player grid for active tab */}
+          <div className="grid gap-1.5 sm:grid-cols-2" role="tabpanel">
+            {playersByPosition[activeTab].map((player) => {
+              const isSelected = selectedIds.has(player.player_id);
+              const isDisabled = !isSelected && !canAdd[activeTab];
+
               return (
-                <span
-                  key={pos}
-                  className={`rounded-full border px-2.5 py-0.5 text-xs font-bold ${
-                    isFull
-                      ? "border-vpv-success/40 bg-vpv-success/10 text-vpv-success"
-                      : POSITION_COLORS[pos]
-                  }`}
-                >
-                  {pos} {cur}/{req}
-                </span>
+                <PlayerCard
+                  key={player.player_id}
+                  player={player}
+                  isSelected={isSelected}
+                  isDisabled={isDisabled}
+                  onToggle={handleTogglePlayer}
+                />
               );
             })}
-            <span className="ml-auto text-sm font-medium text-vpv-text-muted">
-              <span
-                className={`tabular-nums font-bold ${selectedPlayers.length === 11 ? "text-vpv-success" : "text-vpv-text"}`}
-              >
-                {selectedPlayers.length}/11
-              </span>
-            </span>
           </div>
-
-          {/* Player lists by position */}
-          {POSITION_ORDER.map((pos) => (
-            <PositionSection
-              key={pos}
-              position={pos}
-              players={playersByPosition[pos]}
-              selectedIds={selectedIds}
-              currentCount={currentCounts[pos]}
-              requiredCount={formationSlots[pos]}
-              onToggle={handleTogglePlayer}
-            />
-          ))}
         </div>
       </div>
 
@@ -703,7 +878,7 @@ export default function AlineacionPage() {
 
         {!lineupComplete && selectedPlayers.length > 0 && (
           <p className="mt-2 text-center text-xs text-vpv-text-muted">
-            Selecciona exactamente 11 jugadores segun la formacion
+            Selecciona exactamente 11 jugadores
           </p>
         )}
       </div>

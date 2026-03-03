@@ -1,5 +1,5 @@
 interface NavIconProps {
-  name: "home" | "trophy" | "calendar" | "users" | "shuffle" | "coins" | "shield";
+  name: "home" | "trophy" | "calendar" | "users" | "shuffle" | "coins" | "shield" | "clipboard";
   className?: string;
 }
 
@@ -75,6 +75,13 @@ export function NavIcon({ name, className = "h-5 w-5" }: NavIconProps) {
       return (
         <svg {...props}>
           <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+        </svg>
+      );
+    case "clipboard":
+      return (
+        <svg {...props}>
+          <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+          <rect x={8} y={2} width={8} height={4} rx={1} ry={1} />
         </svg>
       );
   }
