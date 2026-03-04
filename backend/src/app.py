@@ -77,6 +77,7 @@ def create_app() -> FastAPI:
     from src.features.seasons.router import router as seasons_router
     from src.features.squads.router import router as squads_router
     from src.features.standings.router import router as standings_router
+    from src.features.stats.router import router as stats_router
     from src.features.telegram.router import router as telegram_router
 
     app.include_router(auth_router, prefix="/api")
@@ -90,6 +91,7 @@ def create_app() -> FastAPI:
     app.include_router(seasons_router, prefix="/api")
     app.include_router(squads_router, prefix="/api")
     app.include_router(standings_router, prefix="/api")
+    app.include_router(stats_router, prefix="/api")
     app.include_router(telegram_router, prefix="/api")
 
     # Serve player photos and other static assets.

@@ -317,3 +317,108 @@ export interface CopaFullResponse {
   standings: CopaStandingEntry[];
   matchdays: CopaMatchdayDetail[];
 }
+
+// ---------------------------------------------------------------------------
+// Stats (admin) — matches backend/src/features/stats/schemas.py
+// ---------------------------------------------------------------------------
+
+export interface PlayerStatRow {
+  player_id: number;
+  display_name: string;
+  photo_path: string | null;
+  position: string;
+  team_name: string;
+  goals: number;
+  penalty_goals: number;
+  own_goals: number;
+  assists: number;
+  penalties_saved: number;
+  yellow_cards: number;
+  red_cards: number;
+  avg_marca: number | null;
+  avg_as: number | null;
+  minutes_played: number;
+  matchdays_played: number;
+  started_count: number;
+  avg_points: number;
+  total_points: number;
+}
+
+export interface PlayerStatsResponse {
+  season_id: number;
+  players: PlayerStatRow[];
+}
+
+export interface ParticipantBreakdown {
+  participant_id: number;
+  display_name: string;
+  pts_play: number;
+  pts_result: number;
+  pts_clean_sheet: number;
+  pts_goals: number;
+  pts_assists: number;
+  pts_yellow: number;
+  pts_red: number;
+  pts_marca_as: number;
+  pts_total: number;
+}
+
+export interface ParticipantExtremes {
+  participant_id: number;
+  display_name: string;
+  best_points: number;
+  best_matchday: number;
+  worst_points: number;
+  worst_matchday: number;
+  avg_points: number;
+}
+
+export interface EvolutionEntry {
+  matchday_number: number;
+  participant_id: number;
+  display_name: string;
+  points: number;
+  cumulative: number;
+}
+
+export interface ParticipantStatsResponse {
+  season_id: number;
+  breakdowns: ParticipantBreakdown[];
+  extremes: ParticipantExtremes[];
+  evolution: EvolutionEntry[];
+}
+
+export interface FormationUsage {
+  formation: string;
+  usage_count: number;
+}
+
+export interface MostLinedUpPlayer {
+  player_id: number;
+  display_name: string;
+  position: string;
+  team_name: string;
+  photo_path: string | null;
+  times_lined_up: number;
+}
+
+export interface MatchdayAverageEntry {
+  matchday_number: number;
+  avg_points: number;
+  max_points: number;
+  min_points: number;
+}
+
+export interface RecordEntry {
+  label: string;
+  value: string;
+  detail: string;
+}
+
+export interface LeagueStatsResponse {
+  season_id: number;
+  formations: FormationUsage[];
+  most_lined_up: MostLinedUpPlayer[];
+  matchday_averages: MatchdayAverageEntry[];
+  records: RecordEntry[];
+}
