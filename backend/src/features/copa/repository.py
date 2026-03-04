@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.shared.models.lineup import Lineup, LineupPlayer
 from src.shared.models.matchday import Match, Matchday
-from src.shared.models.player_stat import PlayerStat
 from src.shared.models.participant import SeasonParticipant
+from src.shared.models.player_stat import PlayerStat
 from src.shared.models.user import User
 
 
@@ -33,8 +33,7 @@ class CopaRepository:
                 User.display_name,
                 Matchday.number.label("matchday_number"),
                 func.coalesce(
-                    func.sum(PlayerStat.goals)
-                    + func.sum(PlayerStat.penalty_goals),
+                    func.sum(PlayerStat.goals) + func.sum(PlayerStat.penalty_goals),
                     0,
                 ).label("goals_for"),
                 func.coalesce(

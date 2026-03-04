@@ -49,6 +49,9 @@ python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
 exclude = ["alembic/"]
+# Relax strict checks that generate too many false positives
+disallow_any_generics = false
+warn_return_any = false
 
 [[tool.mypy.overrides]]
 module = "asyncpg.*"

@@ -5,8 +5,6 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-mimetypes.add_type("image/webp", ".webp")
-
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -23,6 +21,8 @@ from src.core.exceptions import (
 )
 from src.core.logging import setup_logging
 from src.features.scraping.scheduler import start_scheduler, stop_scheduler
+
+mimetypes.add_type("image/webp", ".webp")
 
 
 @asynccontextmanager

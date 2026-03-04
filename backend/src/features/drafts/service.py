@@ -42,7 +42,9 @@ class DraftService:
         )
 
     async def get_draft_detail(
-        self, season_id: int, phase: str,
+        self,
+        season_id: int,
+        phase: str,
     ) -> DraftDetailResponse:
         season = await self.season_repo.get_by_id(season_id)
         if season is None:

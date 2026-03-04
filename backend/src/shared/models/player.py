@@ -39,9 +39,7 @@ class Player(Base):
     team: Mapped[Team] = relationship(back_populates="players")
     owner: Mapped[SeasonParticipant | None] = relationship(back_populates="players")
     stats: Mapped[list[PlayerStat]] = relationship(back_populates="player", lazy="raise")
-    draft_picks: Mapped[list[DraftPick]] = relationship(
-        back_populates="player", lazy="raise"
-    )
+    draft_picks: Mapped[list[DraftPick]] = relationship(back_populates="player", lazy="raise")
     lineup_entries: Mapped[list[LineupPlayer]] = relationship(
         back_populates="player", lazy="raise"
     )

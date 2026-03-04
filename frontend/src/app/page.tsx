@@ -15,7 +15,6 @@ export default function Home() {
     standings,
     currentMatchdayDetail,
     copaData,
-    totalPlayed,
     loading,
   } = useDashboardData(
     selectedSeason?.id ?? null,

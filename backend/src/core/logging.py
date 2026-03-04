@@ -17,9 +17,7 @@ def setup_logging() -> None:
     if not root.handlers:
         handler = logging.StreamHandler(sys.stderr)
         handler.setLevel(log_level)
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
-        )
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
         root.addHandler(handler)
 
     # Reduce noise from third-party libraries.

@@ -16,7 +16,8 @@ class ParticipantMatchdayScore(Base):
     __tablename__ = "participant_matchday_scores"
     __table_args__ = (
         UniqueConstraint(
-            "participant_id", "matchday_id",
+            "participant_id",
+            "matchday_id",
             name="uq_participant_matchday_score",
         ),
     )
@@ -29,7 +30,5 @@ class ParticipantMatchdayScore(Base):
     total_points: Mapped[int] = mapped_column(SmallInteger, default=0, nullable=False)
     ranking: Mapped[int | None] = mapped_column(SmallInteger)
 
-    participant: Mapped[SeasonParticipant] = relationship(
-        back_populates="matchday_scores"
-    )
+    participant: Mapped[SeasonParticipant] = relationship(back_populates="matchday_scores")
     matchday: Mapped[Matchday] = relationship(back_populates="scores")

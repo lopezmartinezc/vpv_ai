@@ -49,7 +49,7 @@ export function LigaMatchdayDetail({
 
   // Update selected when matchdayCurrent changes (season switch)
   useEffect(() => {
-    if (defaultMd) setSelected(defaultMd);
+    if (defaultMd) setSelected(defaultMd); // eslint-disable-line react-hooks/set-state-in-effect -- sync prop to state on season change
   }, [defaultMd]);
 
   const { data, loading } = useFetch<MatchdayDetailResponse>(

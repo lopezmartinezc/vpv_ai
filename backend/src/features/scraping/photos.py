@@ -3,6 +3,7 @@
 Photos are fetched from the player's profile page, resized to 200x200,
 converted to WebP, and stored under ``static/players/{slug}.webp``.
 """
+
 from __future__ import annotations
 
 import io
@@ -55,9 +56,7 @@ class PhotoDownloader:
         async with ScrapingClient() as client:
             total = len(players)
             for idx, player in enumerate(players, start=1):
-                logger.info(
-                    "PhotoDownloader: %d/%d slug=%s", idx, total, player.slug
-                )
+                logger.info("PhotoDownloader: %d/%d slug=%s", idx, total, player.slug)
 
                 page_url = f"{base_url}/jugadores/{player.slug}/{season_slug}"
                 try:
@@ -73,9 +72,7 @@ class PhotoDownloader:
 
                 photo_url = parse_player_photo(html)
                 if not photo_url:
-                    logger.debug(
-                        "PhotoDownloader: no photo found for slug=%s", player.slug
-                    )
+                    logger.debug("PhotoDownloader: no photo found for slug=%s", player.slug)
                     skipped += 1
                     continue
 
@@ -92,9 +89,9 @@ class PhotoDownloader:
                     continue
 
                 try:
-                    img = Image.open(io.BytesIO(img_bytes))
+                    img: Image.Image = Image.open(io.BytesIO(img_bytes))
                     img = img.convert("RGBA")
-                    img = img.resize(PHOTO_SIZE, Image.LANCZOS)
+                    img = img.resize(PHOTO_SIZE, Image.Resampling.LANCZOS)
 
                     out_path = _PHOTOS_DIR / f"{player.slug}.webp"
                     img.save(str(out_path), format="WEBP", quality=WEBP_QUALITY)

@@ -26,7 +26,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const stored = localStorage.getItem("vpv-theme") as Theme | null;
     const initial = stored ?? "light";
-    setTheme(initial);
+    setTheme(initial); // eslint-disable-line react-hooks/set-state-in-effect -- hydration from localStorage
     document.documentElement.classList.toggle("dark", initial === "dark");
   }, []);
 

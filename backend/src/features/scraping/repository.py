@@ -41,12 +41,7 @@ class ScrapingRepository:
 
     async def get_active_season(self) -> Season | None:
         """Return the season whose status is ``'active'``, or ``None``."""
-        stmt = (
-            select(Season)
-            .where(Season.status == "active")
-            .order_by(Season.id.desc())
-            .limit(1)
-        )
+        stmt = select(Season).where(Season.status == "active").order_by(Season.id.desc()).limit(1)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -88,9 +83,7 @@ class ScrapingRepository:
         stmt = select(Team).where(Team.season_id == season_id)
         result = await self.session.execute(stmt)
         teams = {row.name: row for row in result.scalars()}
-        logger.debug(
-            "get_teams_by_name: found %d teams for season_id=%d", len(teams), season_id
-        )
+        logger.debug("get_teams_by_name: found %d teams for season_id=%d", len(teams), season_id)
         return teams
 
     # ------------------------------------------------------------------
@@ -109,9 +102,7 @@ class ScrapingRepository:
         )
         return players
 
-    async def get_players_for_teams(
-        self, season_id: int, team_ids: set[int]
-    ) -> list[Player]:
+    async def get_players_for_teams(self, season_id: int, team_ids: set[int]) -> list[Player]:
         """Return all players belonging to any of *team_ids* for *season_id*."""
         stmt = select(Player).where(
             Player.season_id == season_id,
@@ -142,11 +133,7 @@ class ScrapingRepository:
 
     async def get_matches_for_matchday(self, matchday_id: int) -> list[Match]:
         """Return all matches for *matchday_id*, ordered by id."""
-        stmt = (
-            select(Match)
-            .where(Match.matchday_id == matchday_id)
-            .order_by(Match.id)
-        )
+        stmt = select(Match).where(Match.matchday_id == matchday_id).order_by(Match.id)
         result = await self.session.execute(stmt)
         return list(result.scalars())
 
@@ -291,9 +278,10 @@ class ScrapingRepository:
         result = await self.session.execute(stmt)
         logger.debug(
             "sync_matchday_first_match_at: season_id=%d rows=%d",
-            season_id, result.rowcount,
+            season_id,
+            result.rowcount,  # type: ignore[attr-defined]
         )
-        return result.rowcount
+        return result.rowcount  # type: ignore[attr-defined]
 
     async def mark_match_stats_ok(self, match_id: int) -> None:
         """Set ``match.stats_ok = True``."""
@@ -317,17 +305,13 @@ class ScrapingRepository:
         """Update ``season.matchday_scanned`` to *number*."""
         stmt = update(Season).where(Season.id == season_id).values(matchday_scanned=number)
         await self.session.execute(stmt)
-        logger.debug(
-            "update_season_matchday_scanned: season_id=%d number=%d", season_id, number
-        )
+        logger.debug("update_season_matchday_scanned: season_id=%d number=%d", season_id, number)
 
     async def update_season_matchday_current(self, season_id: int, number: int) -> None:
         """Update ``season.matchday_current`` to *number*."""
         stmt = update(Season).where(Season.id == season_id).values(matchday_current=number)
         await self.session.execute(stmt)
-        logger.debug(
-            "update_season_matchday_current: season_id=%d number=%d", season_id, number
-        )
+        logger.debug("update_season_matchday_current: season_id=%d number=%d", season_id, number)
 
     # ------------------------------------------------------------------
     # Player photos
@@ -343,9 +327,7 @@ class ScrapingRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars())
 
-    async def update_player_photo(
-        self, player_id: int, photo_path: str, source_url: str
-    ) -> None:
+    async def update_player_photo(self, player_id: int, photo_path: str, source_url: str) -> None:
         """Set ``photo_path`` and ``source_url`` for a player."""
         stmt = (
             update(Player)
@@ -361,11 +343,7 @@ class ScrapingRepository:
 
     async def update_match_crc(self, match_id: int, stats_crc: str) -> None:
         """Store the computed CRC for a match page."""
-        stmt = (
-            update(Match)
-            .where(Match.id == match_id)
-            .values(stats_crc=stats_crc)
-        )
+        stmt = update(Match).where(Match.id == match_id).values(stats_crc=stats_crc)
         await self.session.execute(stmt)
 
     # ------------------------------------------------------------------

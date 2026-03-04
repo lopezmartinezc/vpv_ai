@@ -15,9 +15,7 @@ if TYPE_CHECKING:
 
 class Team(Base):
     __tablename__ = "teams"
-    __table_args__ = (
-        UniqueConstraint("season_id", "slug", name="uq_team_slug"),
-    )
+    __table_args__ = (UniqueConstraint("season_id", "slug", name="uq_team_slug"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     season_id: Mapped[int] = mapped_column(ForeignKey("seasons.id"), nullable=False)

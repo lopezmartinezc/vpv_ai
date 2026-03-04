@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -121,8 +121,7 @@ class LineupService:
 
         # 7. Upsert lineup
         players_dicts = [
-            {"player_id": p.player_id, "position_slot": p.position_slot}
-            for p in data.players
+            {"player_id": p.player_id, "position_slot": p.position_slot} for p in data.players
         ]
         lineup = await self.repo.upsert_lineup(
             participant_id=participant.id,
@@ -133,7 +132,9 @@ class LineupService:
 
         logger.info(
             "Lineup submitted: lineup_id=%d participant=%d matchday=%d",
-            lineup.id, participant.id, matchday.id,
+            lineup.id,
+            participant.id,
+            matchday.id,
         )
 
         # 8. Send to Telegram (non-blocking, errors don't fail the submission)
@@ -150,17 +151,13 @@ class LineupService:
             players=[LineupPlayerResponse(**r) for r in player_rows],
         )
 
-    async def apply_deadline_lineups(
-        self, season_id: int, matchday_number: int
-    ) -> dict[str, int]:
+    async def apply_deadline_lineups(self, season_id: int, matchday_number: int) -> dict[str, int]:
         """Copy previous lineup for participants who haven't submitted one."""
         matchday = await self.repo.get_matchday(season_id, matchday_number)
         if matchday is None:
             raise NotFoundError("Jornada", matchday_number)
 
-        missing = await self.repo.get_participants_without_lineup(
-            season_id, matchday.id
-        )
+        missing = await self.repo.get_participants_without_lineup(season_id, matchday.id)
 
         copied = 0
         errors = 0
@@ -173,7 +170,8 @@ class LineupService:
                 if prev is None:
                     logger.warning(
                         "No previous lineup for participant=%d matchday=%d",
-                        participant.id, matchday_number,
+                        participant.id,
+                        matchday_number,
                     )
                     continue
 
@@ -189,22 +187,20 @@ class LineupService:
                 await self._notify_telegram(new_lineup.id)
 
             except Exception:
-                logger.exception(
-                    "Error copying lineup for participant=%d", participant.id
-                )
+                logger.exception("Error copying lineup for participant=%d", participant.id)
                 errors += 1
 
         logger.info(
             "Deadline lineups: copied=%d errors=%d missing_total=%d",
-            copied, errors, len(missing),
+            copied,
+            errors,
+            len(missing),
         )
         return {"copied": copied, "errors": errors, "total_missing": len(missing)}
 
-    async def _validate_deadline(
-        self, matchday: object, season_id: int
-    ) -> None:
+    async def _validate_deadline(self, matchday: object, season_id: int) -> None:
         """Check that the deadline hasn't passed."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Use pre-computed deadline_at if available
         deadline = getattr(matchday, "deadline_at", None)
@@ -222,16 +218,12 @@ class LineupService:
 
         # Make deadline timezone-aware if needed
         if deadline.tzinfo is None:
-            deadline = deadline.replace(tzinfo=timezone.utc)
+            deadline = deadline.replace(tzinfo=UTC)
 
         if now >= deadline:
-            raise BusinessRuleError(
-                "El plazo para enviar la alineacion ha finalizado"
-            )
+            raise BusinessRuleError("El plazo para enviar la alineacion ha finalizado")
 
-    def _validate_positions(
-        self, players: list[LineupPlayerSlot], vf: object
-    ) -> None:
+    def _validate_positions(self, players: list[LineupPlayerSlot], vf: object) -> None:
         """Validate that position counts match the formation."""
         counts = {"POR": 0, "DEF": 0, "MED": 0, "DEL": 0}
         for p in players:
@@ -257,9 +249,7 @@ class LineupService:
         submitted = {p.player_id for p in players}
         not_owned = submitted - owned
         if not_owned:
-            raise BusinessRuleError(
-                f"Jugadores no pertenecen a tu plantilla: {not_owned}"
-            )
+            raise BusinessRuleError(f"Jugadores no pertenecen a tu plantilla: {not_owned}")
 
     def _validate_no_duplicates(self, players: list[LineupPlayerSlot]) -> None:
         ids = [p.player_id for p in players]

@@ -3,6 +3,7 @@
 Port of the PHP ``createPhoto()`` function from ``claude_data/telegram/telegram_api.php``.
 Renders 11 players on a football pitch background with their photos and names.
 """
+
 from __future__ import annotations
 
 import io
@@ -86,7 +87,7 @@ def _load_player_photo(photo_path: str | None) -> Image.Image | None:
         return None
     try:
         img = Image.open(full_path).convert("RGBA")
-        return img.resize((_ICON_SIZE, _ICON_SIZE), Image.LANCZOS)
+        return img.resize((_ICON_SIZE, _ICON_SIZE), Image.Resampling.LANCZOS)
     except Exception:
         logger.warning("Failed to load player photo: %s", full_path)
         return None
@@ -101,7 +102,9 @@ def _create_placeholder(name: str) -> Image.Image:
     # Draw initials
     initials = "".join(word[0].upper() for word in name.split()[:2] if word)
     try:
-        font = ImageFont.truetype(str(_FONT_BOLD), 80)
+        font: ImageFont.FreeTypeFont | ImageFont.ImageFont = ImageFont.truetype(
+            str(_FONT_BOLD), 80
+        )
     except OSError:
         font = ImageFont.load_default()
     bbox = draw.textbbox((0, 0), initials, font=font)
@@ -141,8 +144,12 @@ def generate_lineup_image(
 
     # Load fonts
     try:
-        font_title = ImageFont.truetype(str(_FONT_MEDIUM), _TITLE_SIZE)
-        font_name = ImageFont.truetype(str(_FONT_BOLD), _NAME_SIZE)
+        font_title: ImageFont.FreeTypeFont | ImageFont.ImageFont = ImageFont.truetype(
+            str(_FONT_MEDIUM), _TITLE_SIZE
+        )
+        font_name: ImageFont.FreeTypeFont | ImageFont.ImageFont = ImageFont.truetype(
+            str(_FONT_BOLD), _NAME_SIZE
+        )
     except OSError:
         font_title = ImageFont.load_default()
         font_name = ImageFont.load_default()
@@ -188,7 +195,6 @@ def generate_lineup_image(
         name = player.get("player_name", "").strip()
         name_bbox = draw.textbbox((0, 0), name, font=font_name)
         nw = name_bbox[2] - name_bbox[0]
-        nh = name_bbox[3] - name_bbox[1]
         name_x = px + (_ICON_SIZE // 2) - (nw // 2)
         name_y = py + _ICON_SIZE
         draw.text((name_x, name_y), name, fill=(0, 0, 0), font=font_name)

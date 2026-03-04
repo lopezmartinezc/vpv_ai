@@ -18,9 +18,7 @@ if TYPE_CHECKING:
 
 class Matchday(Base):
     __tablename__ = "matchdays"
-    __table_args__ = (
-        UniqueConstraint("season_id", "number", name="uq_matchday_number"),
-    )
+    __table_args__ = (UniqueConstraint("season_id", "number", name="uq_matchday_number"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     season_id: Mapped[int] = mapped_column(ForeignKey("seasons.id"), nullable=False)
@@ -33,12 +31,8 @@ class Matchday(Base):
 
     season: Mapped[Season] = relationship(back_populates="matchdays")
     matches: Mapped[list[Match]] = relationship(back_populates="matchday", lazy="raise")
-    player_stats: Mapped[list[PlayerStat]] = relationship(
-        back_populates="matchday", lazy="raise"
-    )
-    lineups: Mapped[list[Lineup]] = relationship(
-        back_populates="matchday", lazy="raise"
-    )
+    player_stats: Mapped[list[PlayerStat]] = relationship(back_populates="matchday", lazy="raise")
+    lineups: Mapped[list[Lineup]] = relationship(back_populates="matchday", lazy="raise")
     scores: Mapped[list[ParticipantMatchdayScore]] = relationship(
         back_populates="matchday", lazy="raise"
     )
@@ -48,7 +42,9 @@ class Match(Base):
     __tablename__ = "matches"
     __table_args__ = (
         UniqueConstraint(
-            "matchday_id", "home_team_id", "away_team_id",
+            "matchday_id",
+            "home_team_id",
+            "away_team_id",
             name="uq_match_teams",
         ),
     )
@@ -74,6 +70,4 @@ class Match(Base):
     away_team: Mapped[Team] = relationship(
         foreign_keys=[away_team_id], back_populates="away_matches"
     )
-    player_stats: Mapped[list[PlayerStat]] = relationship(
-        back_populates="match", lazy="raise"
-    )
+    player_stats: Mapped[list[PlayerStat]] = relationship(back_populates="match", lazy="raise")

@@ -16,7 +16,7 @@ class BaseRepository[T: Base]:
     async def get_by_id(self, entity_id: int) -> T | None:
         return await self.session.get(self.model, entity_id)
 
-    async def list(
+    async def list_all(
         self,
         *,
         offset: int = 0,

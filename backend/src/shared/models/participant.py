@@ -19,9 +19,7 @@ if TYPE_CHECKING:
 
 class SeasonParticipant(Base):
     __tablename__ = "season_participants"
-    __table_args__ = (
-        UniqueConstraint("season_id", "user_id", name="uq_season_user"),
-    )
+    __table_args__ = (UniqueConstraint("season_id", "user_id", name="uq_season_user"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     season_id: Mapped[int] = mapped_column(ForeignKey("seasons.id"), nullable=False)
@@ -32,12 +30,8 @@ class SeasonParticipant(Base):
     season: Mapped[Season] = relationship(back_populates="participants")
     user: Mapped[User] = relationship(back_populates="participations")
     players: Mapped[list[Player]] = relationship(back_populates="owner", lazy="raise")
-    draft_picks: Mapped[list[DraftPick]] = relationship(
-        back_populates="participant", lazy="raise"
-    )
-    lineups: Mapped[list[Lineup]] = relationship(
-        back_populates="participant", lazy="raise"
-    )
+    draft_picks: Mapped[list[DraftPick]] = relationship(back_populates="participant", lazy="raise")
+    lineups: Mapped[list[Lineup]] = relationship(back_populates="participant", lazy="raise")
     matchday_scores: Mapped[list[ParticipantMatchdayScore]] = relationship(
         back_populates="participant", lazy="raise"
     )

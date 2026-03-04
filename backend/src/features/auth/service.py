@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import bcrypt
 from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
-from src.core.exceptions import AuthenticationError, AuthorizationError, BusinessRuleError
+from src.core.exceptions import AuthenticationError, BusinessRuleError
 from src.features.auth.repository import AuthRepository, InviteRepository
 from src.features.auth.schemas import (
     AdminUserResponse,
@@ -20,6 +20,7 @@ from src.features.auth.schemas import (
 from src.shared.models.invite import Invite
 from src.shared.models.user import User
 
+
 def _hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
@@ -31,7 +32,7 @@ def _verify_password(plain: str, hashed: str) -> bool:
 
 
 def _create_token(user: User) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
+    expire = datetime.now(UTC) + timedelta(minutes=settings.jwt_expire_minutes)
     payload = {
         "sub": str(user.id),
         "username": user.username,
@@ -134,6 +135,8 @@ class AuthService:
                 display_name=username,
             )
 
+        if user is None:
+            raise BusinessRuleError("Error interno: usuario no encontrado tras registro")
         await self.invite_repo.mark_used(invite.id, user.id)
         await self.session.commit()
         return TokenResponse(access_token=_create_token(user))
@@ -152,6 +155,8 @@ class AuthService:
         await self.session.commit()
         # Reload with relationships
         loaded = await self.invite_repo.get_valid_by_token(invite.token)
+        if loaded is None:
+            raise BusinessRuleError("Error interno: invitacion no encontrada")
         return _invite_response(loaded)
 
     async def list_invites(self) -> list[InviteResponse]:
@@ -204,4 +209,6 @@ class AuthService:
         invite = await self.invite_repo.create(admin_id, user_id, 7)
         await self.session.commit()
         loaded = await self.invite_repo.get_valid_by_token(invite.token)
+        if loaded is None:
+            raise BusinessRuleError("Error interno: invitacion no encontrada")
         return _invite_response(loaded)

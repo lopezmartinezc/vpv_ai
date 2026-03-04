@@ -24,7 +24,6 @@ from src.shared.models.score import ParticipantMatchdayScore
 from src.shared.models.team import Team
 from src.shared.models.user import User
 
-
 # ---------------------------------------------------------------------------
 # Dataclasses
 # ---------------------------------------------------------------------------
@@ -140,14 +139,10 @@ class StatsRepository:
                 PlayerStat.position,
                 Team.name.label("team_name"),
                 func.coalesce(func.sum(PlayerStat.goals), 0).label("goals"),
-                func.coalesce(func.sum(PlayerStat.penalty_goals), 0).label(
-                    "penalty_goals"
-                ),
+                func.coalesce(func.sum(PlayerStat.penalty_goals), 0).label("penalty_goals"),
                 func.coalesce(func.sum(PlayerStat.own_goals), 0).label("own_goals"),
                 func.coalesce(func.sum(PlayerStat.assists), 0).label("assists"),
-                func.coalesce(func.sum(PlayerStat.penalties_saved), 0).label(
-                    "penalties_saved"
-                ),
+                func.coalesce(func.sum(PlayerStat.penalties_saved), 0).label("penalties_saved"),
                 func.coalesce(
                     func.sum(
                         case(
@@ -161,8 +156,7 @@ class StatsRepository:
                     func.sum(
                         case(
                             (
-                                PlayerStat.red_card.is_(True)
-                                | PlayerStat.double_yellow.is_(True),
+                                PlayerStat.red_card.is_(True) | PlayerStat.double_yellow.is_(True),
                                 1,
                             ),
                             else_=0,
@@ -173,9 +167,7 @@ class StatsRepository:
                 func.avg(
                     case(
                         (
-                            PlayerStat.marca_rating.op("~")(
-                                literal(r"^\d+(\.\d+)?$")
-                            ),
+                            PlayerStat.marca_rating.op("~")(literal(r"^\d+(\.\d+)?$")),
                             func.cast(PlayerStat.marca_rating, Float),
                         ),
                         else_=None,
@@ -184,17 +176,13 @@ class StatsRepository:
                 func.avg(
                     case(
                         (
-                            PlayerStat.as_picas.op("~")(
-                                literal(r"^\d+(\.\d+)?$")
-                            ),
+                            PlayerStat.as_picas.op("~")(literal(r"^\d+(\.\d+)?$")),
                             func.cast(PlayerStat.as_picas, Float),
                         ),
                         else_=None,
                     )
                 ).label("avg_as"),
-                func.coalesce(func.sum(PlayerStat.minutes_played), 0).label(
-                    "minutes_played"
-                ),
+                func.coalesce(func.sum(PlayerStat.minutes_played), 0).label("minutes_played"),
                 md_count.label("matchdays_played"),
                 func.coalesce(
                     func.sum(
@@ -254,9 +242,7 @@ class StatsRepository:
             for row in result.all()
         ]
 
-    async def get_participant_breakdowns(
-        self, season_id: int
-    ) -> list[ParticipantBreakdownRow]:
+    async def get_participant_breakdowns(self, season_id: int) -> list[ParticipantBreakdownRow]:
         """Point breakdown per participant from their lined-up players.
 
         Joins: SeasonParticipant -> Lineup -> LineupPlayer -> PlayerStat
@@ -268,18 +254,14 @@ class StatsRepository:
                 User.display_name,
                 func.coalesce(func.sum(PlayerStat.pts_play), 0).label("pts_play"),
                 func.coalesce(func.sum(PlayerStat.pts_result), 0).label("pts_result"),
-                func.coalesce(func.sum(PlayerStat.pts_clean_sheet), 0).label(
-                    "pts_clean_sheet"
-                ),
+                func.coalesce(func.sum(PlayerStat.pts_clean_sheet), 0).label("pts_clean_sheet"),
                 func.coalesce(
                     func.sum(PlayerStat.pts_goals + PlayerStat.pts_penalty_goals), 0
                 ).label("pts_goals"),
                 func.coalesce(func.sum(PlayerStat.pts_assists), 0).label("pts_assists"),
                 func.coalesce(func.sum(PlayerStat.pts_yellow), 0).label("pts_yellow"),
                 func.coalesce(func.sum(PlayerStat.pts_red), 0).label("pts_red"),
-                func.coalesce(func.sum(PlayerStat.pts_marca_as), 0).label(
-                    "pts_marca_as"
-                ),
+                func.coalesce(func.sum(PlayerStat.pts_marca_as), 0).label("pts_marca_as"),
                 func.coalesce(func.sum(PlayerStat.pts_total), 0).label("pts_total"),
             )
             .join(User, SeasonParticipant.user_id == User.id)
@@ -298,9 +280,7 @@ class StatsRepository:
                 Matchday.counts.is_(True),
             )
             .group_by(SeasonParticipant.id, User.display_name)
-            .order_by(
-                func.coalesce(func.sum(PlayerStat.pts_total), 0).desc()
-            )
+            .order_by(func.coalesce(func.sum(PlayerStat.pts_total), 0).desc())
         )
         result = await self.session.execute(stmt)
         return [
@@ -320,9 +300,7 @@ class StatsRepository:
             for row in result.all()
         ]
 
-    async def get_participant_matchday_scores(
-        self, season_id: int
-    ) -> list[MatchdayScoreRow]:
+    async def get_participant_matchday_scores(self, season_id: int) -> list[MatchdayScoreRow]:
         """Per-matchday scores from participant_matchday_scores table."""
         stmt = (
             select(
@@ -378,9 +356,7 @@ class StatsRepository:
             for row in result.all()
         ]
 
-    async def get_most_lined_up(
-        self, season_id: int, limit: int = 15
-    ) -> list[MostLinedUpRow]:
+    async def get_most_lined_up(self, season_id: int, limit: int = 15) -> list[MostLinedUpRow]:
         """Top N players by number of appearances in any participant's lineup."""
         stmt = (
             select(

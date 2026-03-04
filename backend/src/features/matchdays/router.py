@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.matchdays.schemas import (
-    AdminMatchResponse,
     AdminMatchdayResponse,
+    AdminMatchResponse,
     LineupDetailResponse,
     MatchdayDetailResponse,
     MatchdayListResponse,
@@ -29,7 +29,8 @@ async def list_matchdays(
     service: MatchdayService = Depends(_get_service),
 ) -> MatchdayListResponse:
     return await service.list_matchdays(
-        season_id, stats_ok_only=stats_ok_only,
+        season_id,
+        stats_ok_only=stats_ok_only,
     )
 
 
@@ -72,7 +73,9 @@ async def update_matchday(
     _admin: dict = Depends(get_current_admin),
 ) -> AdminMatchdayResponse:
     return await service.update_matchday(
-        season_id, number, **body.model_dump(exclude_none=True),
+        season_id,
+        number,
+        **body.model_dump(exclude_none=True),
     )
 
 
@@ -89,5 +92,6 @@ async def update_match(
     _admin: dict = Depends(get_current_admin),
 ) -> AdminMatchResponse:
     return await service.update_match(
-        match_id, **body.model_dump(exclude_none=True),
+        match_id,
+        **body.model_dump(exclude_none=True),
     )

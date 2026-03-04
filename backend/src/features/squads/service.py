@@ -34,7 +34,10 @@ class SquadService:
                     total_players=r.total_players,
                     season_points=r.season_points,
                     positions=PositionCounts(
-                        POR=r.por, DEF=r.defe, MED=r.med, DEL=r.dele,
+                        POR=r.por,
+                        DEF=r.defe,
+                        MED=r.med,
+                        DEL=r.dele,
                     ),
                 )
                 for r in rows
@@ -42,7 +45,9 @@ class SquadService:
         )
 
     async def get_squad_detail(
-        self, season_id: int, participant_id: int,
+        self,
+        season_id: int,
+        participant_id: int,
     ) -> SquadDetailResponse:
         season = await self.season_repo.get_by_id(season_id)
         if season is None:
@@ -53,7 +58,8 @@ class SquadService:
             raise NotFoundError("Participant", participant_id)
 
         season_points = await self.repo.get_participant_season_points(
-            season_id, participant_id,
+            season_id,
+            participant_id,
         )
         player_rows = await self.repo.get_squad_players(season_id, participant_id)
 

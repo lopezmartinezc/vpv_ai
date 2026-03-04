@@ -5,8 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.exceptions import NotFoundError
 from src.features.matchdays.repository import MatchdayRepository
 from src.features.matchdays.schemas import (
-    AdminMatchResponse,
     AdminMatchdayResponse,
+    AdminMatchResponse,
     BenchPlayerEntry,
     LineupDetailResponse,
     LineupPlayerEntry,
@@ -26,14 +26,18 @@ class MatchdayService:
         self.season_repo = SeasonRepository(session)
 
     async def list_matchdays(
-        self, season_id: int, *, stats_ok_only: bool = True,
+        self,
+        season_id: int,
+        *,
+        stats_ok_only: bool = True,
     ) -> MatchdayListResponse:
         season = await self.season_repo.get_by_id(season_id)
         if season is None:
             raise NotFoundError("Season", season_id)
 
         rows = await self.repo.list_for_season(
-            season_id, stats_ok_only=stats_ok_only,
+            season_id,
+            stats_ok_only=stats_ok_only,
         )
         return MatchdayListResponse(
             season_id=season_id,
@@ -50,7 +54,9 @@ class MatchdayService:
         )
 
     async def get_matchday_detail(
-        self, season_id: int, number: int,
+        self,
+        season_id: int,
+        number: int,
     ) -> MatchdayDetailResponse:
         season = await self.season_repo.get_by_id(season_id)
         if season is None:
@@ -95,7 +101,10 @@ class MatchdayService:
         )
 
     async def get_lineup_detail(
-        self, season_id: int, number: int, participant_id: int,
+        self,
+        season_id: int,
+        number: int,
+        participant_id: int,
     ) -> LineupDetailResponse:
         season = await self.season_repo.get_by_id(season_id)
         if season is None:
@@ -108,17 +117,22 @@ class MatchdayService:
         lineup = await self.repo.get_lineup(matchday.id, participant_id)
         if lineup is None:
             raise NotFoundError(
-                "Lineup", f"participant={participant_id}/matchday={matchday.id}",
+                "Lineup",
+                f"participant={participant_id}/matchday={matchday.id}",
             )
 
         player_rows = await self.repo.get_lineup_players(
-            lineup.id, matchday.id,
+            lineup.id,
+            matchday.id,
         )
 
         # Get bench players (squad minus lineup)
         lineup_player_ids = {p.player_id for p in player_rows}
         bench_rows = await self.repo.get_bench_players(
-            matchday.id, participant_id, season_id, lineup_player_ids,
+            matchday.id,
+            participant_id,
+            season_id,
+            lineup_player_ids,
         )
 
         # Get participant display name
@@ -193,7 +207,10 @@ class MatchdayService:
     # --- Admin methods ---
 
     async def update_matchday(
-        self, season_id: int, number: int, **kwargs: object,
+        self,
+        season_id: int,
+        number: int,
+        **kwargs: object,
     ) -> AdminMatchdayResponse:
         matchday = await self.repo.update_matchday(season_id, number, **kwargs)
         if matchday is None:
@@ -209,7 +226,9 @@ class MatchdayService:
         )
 
     async def update_match(
-        self, match_id: int, **kwargs: object,
+        self,
+        match_id: int,
+        **kwargs: object,
     ) -> AdminMatchResponse:
         match = await self.repo.update_match(match_id, **kwargs)
         if match is None:

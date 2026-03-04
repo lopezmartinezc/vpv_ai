@@ -87,7 +87,9 @@ class DraftRepository:
         ]
 
     async def get_draft(
-        self, season_id: int, phase: str,
+        self,
+        season_id: int,
+        phase: str,
     ) -> Draft | None:
         stmt = select(Draft).where(
             Draft.season_id == season_id,
@@ -97,7 +99,8 @@ class DraftRepository:
         return result.scalar_one_or_none()
 
     async def get_participants(
-        self, season_id: int,
+        self,
+        season_id: int,
     ) -> list[DraftParticipantRow]:
         stmt = (
             select(

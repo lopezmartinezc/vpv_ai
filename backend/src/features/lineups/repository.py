@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import and_, case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,9 +32,7 @@ class LineupRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_matchday(
-        self, season_id: int, number: int
-    ) -> Matchday | None:
+    async def get_matchday(self, season_id: int, number: int) -> Matchday | None:
         stmt = select(Matchday).where(
             Matchday.season_id == season_id,
             Matchday.number == number,
@@ -54,9 +52,7 @@ class LineupRepository:
         result = await self.session.execute(stmt)
         return set(result.scalars().all())
 
-    async def get_lineup(
-        self, participant_id: int, matchday_id: int
-    ) -> Lineup | None:
+    async def get_lineup(self, participant_id: int, matchday_id: int) -> Lineup | None:
         stmt = select(Lineup).where(
             Lineup.participant_id == participant_id,
             Lineup.matchday_id == matchday_id,
@@ -70,10 +66,14 @@ class LineupRepository:
         """Get the lineup from the previous matchday (number - 1)."""
         if matchday_number <= 1:
             return None
-        subq = select(Matchday.id).where(
-            Matchday.season_id == season_id,
-            Matchday.number == matchday_number - 1,
-        ).scalar_subquery()
+        subq = (
+            select(Matchday.id)
+            .where(
+                Matchday.season_id == season_id,
+                Matchday.number == matchday_number - 1,
+            )
+            .scalar_subquery()
+        )
         stmt = select(Lineup).where(
             Lineup.participant_id == participant_id,
             Lineup.matchday_id == subq,
@@ -103,7 +103,7 @@ class LineupRepository:
         if existing:
             existing.formation = formation
             existing.confirmed = True
-            existing.confirmed_at = datetime.now(timezone.utc)
+            existing.confirmed_at = datetime.now(UTC)
             existing.telegram_sent = False
             existing.telegram_sent_at = None
             existing.image_path = None
@@ -118,7 +118,7 @@ class LineupRepository:
                 matchday_id=matchday_id,
                 formation=formation,
                 confirmed=True,
-                confirmed_at=datetime.now(timezone.utc),
+                confirmed_at=datetime.now(UTC),
             )
             self.session.add(lineup)
             await self.session.flush()  # get lineup.id
@@ -151,7 +151,7 @@ class LineupRepository:
             matchday_id=to_matchday_id,
             formation=from_formation,
             confirmed=True,
-            confirmed_at=datetime.now(timezone.utc),
+            confirmed_at=datetime.now(UTC),
         )
         self.session.add(lineup)
         await self.session.flush()
@@ -229,13 +229,11 @@ class LineupRepository:
             "players": players,
         }
 
-    async def mark_telegram_sent(
-        self, lineup_id: int, image_path: str | None = None
-    ) -> None:
+    async def mark_telegram_sent(self, lineup_id: int, image_path: str | None = None) -> None:
         lineup = await self.session.get(Lineup, lineup_id)
         if lineup:
             lineup.telegram_sent = True
-            lineup.telegram_sent_at = datetime.now(timezone.utc)
+            lineup.telegram_sent_at = datetime.now(UTC)
             if image_path:
                 lineup.image_path = image_path
 
@@ -256,9 +254,7 @@ class LineupRepository:
         result = await self.session.execute(stmt)
         return [dict(r._mapping) for r in result.all()]
 
-    async def get_squad_players(
-        self, season_id: int, participant_id: int
-    ) -> list[dict]:
+    async def get_squad_players(self, season_id: int, participant_id: int) -> list[dict]:
         """Get all players in a participant's squad with season points."""
         season_pts = func.coalesce(
             func.sum(
@@ -302,8 +298,11 @@ class LineupRepository:
                 Player.owner_id == participant_id,
             )
             .group_by(
-                Player.id, Player.display_name, Player.photo_path,
-                Player.position, Team.name,
+                Player.id,
+                Player.display_name,
+                Player.photo_path,
+                Player.position,
+                Team.name,
             )
             .order_by(pos_order.asc(), season_pts.desc())
         )

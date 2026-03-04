@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from decimal import Decimal
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import BusinessRuleError, NotFoundError
 from src.features.seasons.repository import SeasonRepository
-from src.features.seasons.schemas import SeasonDetail, ScoringRuleResponse
+from src.features.seasons.schemas import ScoringRuleResponse, SeasonDetail
 from src.shared.models.season import ScoringRule, Season, SeasonPayment, ValidFormation
 
 
@@ -15,7 +15,7 @@ class SeasonService:
         self.repo = SeasonRepository(session)
 
     async def list_seasons(self) -> list[Season]:
-        return await self.repo.list(order_by=Season.id.desc())
+        return await self.repo.list_all(order_by=Season.id.desc())
 
     async def get_season(self, season_id: int) -> Season:
         season = await self.repo.get_by_id(season_id)

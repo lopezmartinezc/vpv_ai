@@ -36,9 +36,7 @@ class ScrapingService:
     # Public API
     # ------------------------------------------------------------------
 
-    async def scrape_matchday(
-        self, season_id: int, matchday_number: int
-    ) -> dict[str, int]:
+    async def scrape_matchday(self, season_id: int, matchday_number: int) -> dict[str, int]:
         """Scrape all player stats for every match in *matchday_number*.
 
         Flow
@@ -76,9 +74,7 @@ class ScrapingService:
 
         counting_matches = [m for m in matches if m.counts]
         if not counting_matches:
-            logger.info(
-                "scrape_matchday: no counting matches for matchday_id=%d", matchday_id
-            )
+            logger.info("scrape_matchday: no counting matches for matchday_id=%d", matchday_id)
             return {"processed": 0, "skipped": 0, "errors": 0}
 
         # Collect the set of team IDs referenced by counting matches.
@@ -103,9 +99,8 @@ class ScrapingService:
 
         async with ScrapingClient() as client:
             for match in counting_matches:
-                match_players = (
-                    players_by_team.get(match.home_team_id, [])
-                    + players_by_team.get(match.away_team_id, [])
+                match_players = players_by_team.get(match.home_team_id, []) + players_by_team.get(
+                    match.away_team_id, []
                 )
                 total_in_match = len(match_players)
                 match_errors = 0
@@ -168,9 +163,7 @@ class ScrapingService:
                 # Mark the match stats_ok only when there were no errors.
                 if match_errors == 0:
                     await self.repo.mark_match_stats_ok(match.id)
-                    logger.info(
-                        "scrape_matchday: marked match_id=%d stats_ok", match.id
-                    )
+                    logger.info("scrape_matchday: marked match_id=%d stats_ok", match.id)
                 else:
                     logger.warning(
                         "scrape_matchday: match_id=%d had %d errors, NOT marking stats_ok",
@@ -201,9 +194,7 @@ class ScrapingService:
             "skipped": total_skipped,
             "errors": total_errors,
         }
-        logger.info(
-            "scrape_matchday: done — matchday_id=%d summary=%s", matchday_id, summary
-        )
+        logger.info("scrape_matchday: done — matchday_id=%d summary=%s", matchday_id, summary)
         return summary
 
     async def scrape_match_players(
@@ -311,9 +302,7 @@ class ScrapingService:
             "skipped": total_skipped,
             "errors": total_errors,
         }
-        logger.info(
-            "scrape_match_players: done — match_id=%d summary=%s", match_id, summary
-        )
+        logger.info("scrape_match_players: done — match_id=%d summary=%s", match_id, summary)
         return summary
 
     async def scrape_calendar(self, season_id: int) -> dict[str, int]:

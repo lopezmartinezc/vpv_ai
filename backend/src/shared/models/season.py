@@ -32,30 +32,18 @@ class Season(Base):
     draft_pool_size: Mapped[int] = mapped_column(SmallInteger, default=26, nullable=False)
     lineup_deadline_min: Mapped[int] = mapped_column(SmallInteger, default=30, nullable=False)
     total_participants: Mapped[int] = mapped_column(SmallInteger, default=0, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
 
-    scoring_rules: Mapped[list[ScoringRule]] = relationship(
-        back_populates="season", lazy="raise"
-    )
-    payments: Mapped[list[SeasonPayment]] = relationship(
-        back_populates="season", lazy="raise"
-    )
+    scoring_rules: Mapped[list[ScoringRule]] = relationship(back_populates="season", lazy="raise")
+    payments: Mapped[list[SeasonPayment]] = relationship(back_populates="season", lazy="raise")
     participants: Mapped[list[SeasonParticipant]] = relationship(
         back_populates="season", lazy="raise"
     )
     teams: Mapped[list[Team]] = relationship(back_populates="season", lazy="raise")
-    matchdays: Mapped[list[Matchday]] = relationship(
-        back_populates="season", lazy="raise"
-    )
+    matchdays: Mapped[list[Matchday]] = relationship(back_populates="season", lazy="raise")
     drafts: Mapped[list[Draft]] = relationship(back_populates="season", lazy="raise")
-    competitions: Mapped[list[Competition]] = relationship(
-        back_populates="season", lazy="raise"
-    )
-    transactions: Mapped[list[Transaction]] = relationship(
-        back_populates="season", lazy="raise"
-    )
+    competitions: Mapped[list[Competition]] = relationship(back_populates="season", lazy="raise")
+    transactions: Mapped[list[Transaction]] = relationship(back_populates="season", lazy="raise")
 
 
 class ScoringRule(Base):
@@ -78,7 +66,9 @@ class SeasonPayment(Base):
     __tablename__ = "season_payments"
     __table_args__ = (
         UniqueConstraint(
-            "season_id", "payment_type", "position_rank",
+            "season_id",
+            "payment_type",
+            "position_rank",
             name="uq_season_payment",
         ),
     )

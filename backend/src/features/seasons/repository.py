@@ -13,12 +13,7 @@ class SeasonRepository(BaseRepository[Season]):
         super().__init__(Season, session)
 
     async def get_current(self) -> Season | None:
-        stmt = (
-            select(Season)
-            .where(Season.status == "active")
-            .order_by(Season.id.desc())
-            .limit(1)
-        )
+        stmt = select(Season).where(Season.status == "active").order_by(Season.id.desc()).limit(1)
         result = await self.session.execute(stmt)
         season = result.scalar_one_or_none()
         if season is None:
@@ -71,7 +66,7 @@ class SeasonRepository(BaseRepository[Season]):
             .where(Matchday.season_id == season_id, Matchday.number >= matchday_start)
             .values(counts=True)
         )
-        return result.rowcount
+        return result.rowcount  # type: ignore[attr-defined]
 
     async def update_scoring_rule(self, rule_id: int, value: object) -> ScoringRule | None:
         rule = await self.session.get(ScoringRule, rule_id)

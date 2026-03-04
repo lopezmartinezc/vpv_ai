@@ -47,6 +47,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Restore session from localStorage on mount
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- one-time hydration from localStorage */
     const stored = localStorage.getItem("vpv_token");
     if (stored) {
       try {
@@ -68,6 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
     setLoading(false);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
   const login = useCallback(async (username: string, password: string) => {

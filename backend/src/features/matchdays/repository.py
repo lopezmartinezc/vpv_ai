@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -94,18 +94,18 @@ class MatchdayRepository:
         self.session = session
 
     async def list_for_season(
-        self, season_id: int, *, stats_ok_only: bool = True,
+        self,
+        season_id: int,
+        *,
+        stats_ok_only: bool = True,
     ) -> list[MatchdaySummaryRow]:
-        stmt = (
-            select(
-                Matchday.number,
-                Matchday.status,
-                Matchday.counts,
-                Matchday.stats_ok,
-                Matchday.first_match_at,
-            )
-            .where(Matchday.season_id == season_id)
-        )
+        stmt = select(
+            Matchday.number,
+            Matchday.status,
+            Matchday.counts,
+            Matchday.stats_ok,
+            Matchday.first_match_at,
+        ).where(Matchday.season_id == season_id)
         if stats_ok_only:
             stmt = stmt.where(Matchday.stats_ok.is_(True))
         stmt = stmt.order_by(Matchday.number.asc())
@@ -123,7 +123,9 @@ class MatchdayRepository:
         ]
 
     async def get_matchday(
-        self, season_id: int, number: int,
+        self,
+        season_id: int,
+        number: int,
     ) -> Matchday | None:
         stmt = select(Matchday).where(
             Matchday.season_id == season_id,
@@ -133,20 +135,20 @@ class MatchdayRepository:
         return result.scalar_one_or_none()
 
     async def get_matches(self, matchday_id: int) -> list[MatchRow]:
-        HomeTeam = aliased(Team)
-        AwayTeam = aliased(Team)
+        home_team = aliased(Team)
+        away_team = aliased(Team)
         stmt = (
             select(
                 Match.id,
-                HomeTeam.name.label("home_team_name"),
-                AwayTeam.name.label("away_team_name"),
+                home_team.name.label("home_team_name"),
+                away_team.name.label("away_team_name"),
                 Match.home_score,
                 Match.away_score,
                 Match.counts,
                 Match.played_at,
             )
-            .join(HomeTeam, Match.home_team_id == HomeTeam.id)
-            .join(AwayTeam, Match.away_team_id == AwayTeam.id)
+            .join(home_team, Match.home_team_id == home_team.id)
+            .join(away_team, Match.away_team_id == away_team.id)
             .where(Match.matchday_id == matchday_id)
             .order_by(Match.played_at.asc().nulls_last())
         )
@@ -203,7 +205,9 @@ class MatchdayRepository:
         ]
 
     async def get_lineup(
-        self, matchday_id: int, participant_id: int,
+        self,
+        matchday_id: int,
+        participant_id: int,
     ) -> Lineup | None:
         stmt = select(Lineup).where(
             Lineup.matchday_id == matchday_id,
@@ -213,7 +217,9 @@ class MatchdayRepository:
         return result.scalar_one_or_none()
 
     async def get_lineup_players(
-        self, lineup_id: int, matchday_id: int,
+        self,
+        lineup_id: int,
+        matchday_id: int,
     ) -> list[LineupPlayerRow]:
         stmt = (
             select(
@@ -312,7 +318,7 @@ class MatchdayRepository:
             .where(
                 Player.season_id == season_id,
                 Player.owner_id == participant_id,
-                Player.id.not_in(lineup_player_ids) if lineup_player_ids else True,
+                Player.id.not_in(lineup_player_ids) if lineup_player_ids else true(),
             )
             .order_by(
                 func.array_position(
@@ -347,7 +353,10 @@ class MatchdayRepository:
         ]
 
     async def update_matchday(
-        self, season_id: int, number: int, **kwargs: object,
+        self,
+        season_id: int,
+        number: int,
+        **kwargs: object,
     ) -> Matchday | None:
         matchday = await self.get_matchday(season_id, number)
         if matchday is None:
@@ -358,7 +367,9 @@ class MatchdayRepository:
         return matchday
 
     async def update_match(
-        self, match_id: int, **kwargs: object,
+        self,
+        match_id: int,
+        **kwargs: object,
     ) -> Match | None:
         match = await self.session.get(Match, match_id)
         if match is None:

@@ -101,7 +101,9 @@ class EconomyRepository:
         ]
 
     async def get_transactions(
-        self, season_id: int, participant_id: int,
+        self,
+        season_id: int,
+        participant_id: int,
     ) -> list[TransactionRow]:
         stmt = (
             select(
@@ -134,7 +136,8 @@ class EconomyRepository:
         ]
 
     async def get_participant_display_name(
-        self, participant_id: int,
+        self,
+        participant_id: int,
     ) -> str | None:
         stmt = (
             select(User.display_name)
@@ -145,14 +148,13 @@ class EconomyRepository:
         return result.scalar_one_or_none()
 
     async def get_participant_net_balance(
-        self, season_id: int, participant_id: int,
+        self,
+        season_id: int,
+        participant_id: int,
     ) -> Decimal:
-        stmt = (
-            select(func.coalesce(func.sum(Transaction.amount), 0))
-            .where(
-                Transaction.season_id == season_id,
-                Transaction.participant_id == participant_id,
-            )
+        stmt = select(func.coalesce(func.sum(Transaction.amount), 0)).where(
+            Transaction.season_id == season_id,
+            Transaction.participant_id == participant_id,
         )
         result = await self.session.execute(stmt)
         return result.scalar_one()

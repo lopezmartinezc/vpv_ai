@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-
 # ---------------------------------------------------------------------------
 # Player stats — aggregated per player for a season
 # ---------------------------------------------------------------------------

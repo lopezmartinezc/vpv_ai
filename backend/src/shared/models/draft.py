@@ -26,9 +26,7 @@ class Draft(Base):
     current_pick: Mapped[int] = mapped_column(SmallInteger, default=0, nullable=False)
     started_at: Mapped[datetime | None] = mapped_column()
     completed_at: Mapped[datetime | None] = mapped_column()
-    created_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
 
     season: Mapped[Season] = relationship(back_populates="drafts")
     picks: Mapped[list[DraftPick]] = relationship(
@@ -52,9 +50,7 @@ class DraftPick(Base):
     player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), nullable=False)
     round_number: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     pick_number: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    picked_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), nullable=False
-    )
+    picked_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
 
     draft: Mapped[Draft] = relationship(back_populates="picks")
     participant: Mapped[SeasonParticipant] = relationship(back_populates="draft_picks")

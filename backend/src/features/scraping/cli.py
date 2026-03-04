@@ -12,6 +12,7 @@ Each command opens its own ``AsyncSession``, calls the appropriate
 ``ScrapingService`` method, commits on success and rolls back on failure.
 Results are printed to stdout as JSON.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -19,6 +20,7 @@ import asyncio
 import json
 import logging
 import sys
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,7 +36,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-async def _run_with_session(coro_factory) -> None:  # type: ignore[type-arg]
+async def _run_with_session(coro_factory: Any) -> None:
     """Execute *coro_factory(session)* inside a managed session.
 
     Commits on success, rolls back on exception, and always closes the
@@ -67,9 +69,7 @@ async def cmd_scrape_matchday(season_id: int, matchday_number: int) -> None:
     await _run_with_session(_run)
 
 
-async def cmd_scrape_match(
-    season_id: int, matchday_number: int, match_id: int
-) -> None:
+async def cmd_scrape_match(season_id: int, matchday_number: int, match_id: int) -> None:
     """Scrape player stats for a single *match_id* in *matchday_number*."""
 
     async def _run(session: AsyncSession) -> dict:
@@ -150,16 +150,12 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     # scrape-matchday
-    p_matchday = sub.add_parser(
-        "scrape-matchday", help="Scrape all player stats for a matchday"
-    )
+    p_matchday = sub.add_parser("scrape-matchday", help="Scrape all player stats for a matchday")
     p_matchday.add_argument("season_id", type=int, help="Season primary-key ID")
     p_matchday.add_argument("matchday_number", type=int, help="Matchday number (1-38)")
 
     # scrape-match
-    p_match = sub.add_parser(
-        "scrape-match", help="Scrape stats for a single match"
-    )
+    p_match = sub.add_parser("scrape-match", help="Scrape stats for a single match")
     p_match.add_argument("season_id", type=int, help="Season primary-key ID")
     p_match.add_argument("matchday_number", type=int, help="Matchday number (1-38)")
     p_match.add_argument("match_id", type=int, help="Match primary-key ID")
@@ -180,9 +176,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     # download-photos
-    p_photos = sub.add_parser(
-        "download-photos", help="Download player photos as WebP"
-    )
+    p_photos = sub.add_parser("download-photos", help="Download player photos as WebP")
     p_photos.add_argument("season_id", type=int, help="Season primary-key ID")
 
     return parser

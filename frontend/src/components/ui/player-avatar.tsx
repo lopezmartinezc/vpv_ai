@@ -42,6 +42,7 @@ export function PlayerAvatar({
   }
 
   return (
+    /* eslint-disable-next-line @next/next/no-img-element -- External URL from our API */
     <img
       src={getPhotoUrl(photoPath)}
       alt={name}

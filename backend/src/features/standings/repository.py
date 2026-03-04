@@ -54,12 +54,16 @@ class StandingsRepository:
             )
             .where(SeasonParticipant.season_id == season_id)
             .group_by(SeasonParticipant.id, User.display_name)
-            .order_by(func.sum(
-                case(
-                    (Matchday.counts.is_(True), ParticipantMatchdayScore.total_points),
-                    else_=0,
+            .order_by(
+                func.sum(
+                    case(
+                        (Matchday.counts.is_(True), ParticipantMatchdayScore.total_points),
+                        else_=0,
+                    )
                 )
-            ).desc().nulls_last())
+                .desc()
+                .nulls_last()
+            )
         )
         result = await self.session.execute(stmt)
         return [

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import Integer, and_, case, func, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.shared.models.matchday import Matchday
@@ -70,7 +70,8 @@ class SquadRepository:
             select(
                 ParticipantMatchdayScore.participant_id,
                 func.coalesce(
-                    func.sum(ParticipantMatchdayScore.total_points), 0,
+                    func.sum(ParticipantMatchdayScore.total_points),
+                    0,
                 ).label("season_points"),
             )
             .join(Matchday, ParticipantMatchdayScore.matchday_id == Matchday.id)
@@ -119,7 +120,9 @@ class SquadRepository:
         ]
 
     async def get_squad_players(
-        self, season_id: int, participant_id: int,
+        self,
+        season_id: int,
+        participant_id: int,
     ) -> list[SquadPlayerRow]:
         # Season points per player: SUM(pts_total) WHERE matchday.counts=true
         season_pts = func.coalesce(
@@ -155,7 +158,11 @@ class SquadRepository:
                 Player.owner_id == participant_id,
             )
             .group_by(
-                Player.id, Player.display_name, Player.photo_path, Player.position, Team.name,
+                Player.id,
+                Player.display_name,
+                Player.photo_path,
+                Player.position,
+                Team.name,
             )
             .order_by(POSITION_ORDER.asc(), season_pts.desc())
         )
@@ -174,7 +181,8 @@ class SquadRepository:
         ]
 
     async def get_participant_display_name(
-        self, participant_id: int,
+        self,
+        participant_id: int,
     ) -> str | None:
         stmt = (
             select(User.display_name)
@@ -185,12 +193,15 @@ class SquadRepository:
         return result.scalar_one_or_none()
 
     async def get_participant_season_points(
-        self, season_id: int, participant_id: int,
+        self,
+        season_id: int,
+        participant_id: int,
     ) -> int:
         stmt = (
             select(
                 func.coalesce(
-                    func.sum(ParticipantMatchdayScore.total_points), 0,
+                    func.sum(ParticipantMatchdayScore.total_points),
+                    0,
                 ),
             )
             .join(Matchday, ParticipantMatchdayScore.matchday_id == Matchday.id)

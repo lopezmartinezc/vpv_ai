@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from decimal import Decimal
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import BusinessRuleError, NotFoundError
 from src.features.economy.repository import EconomyRepository
@@ -42,7 +42,9 @@ class EconomyService:
         )
 
     async def get_participant_transactions(
-        self, season_id: int, participant_id: int,
+        self,
+        season_id: int,
+        participant_id: int,
     ) -> ParticipantEconomyResponse:
         season = await self.season_repo.get_by_id(season_id)
         if season is None:
@@ -54,7 +56,8 @@ class EconomyService:
 
         tx_rows = await self.repo.get_transactions(season_id, participant_id)
         net_balance = await self.repo.get_participant_net_balance(
-            season_id, participant_id,
+            season_id,
+            participant_id,
         )
 
         return ParticipantEconomyResponse(
@@ -90,8 +93,12 @@ class EconomyService:
             raise NotFoundError("Season", season_id)
 
         valid_types = {
-            "initial_fee", "weekly_payment", "winter_draft_fee",
-            "prize", "manual_adjustment", "penalty",
+            "initial_fee",
+            "weekly_payment",
+            "winter_draft_fee",
+            "prize",
+            "manual_adjustment",
+            "penalty",
         }
         if tx_type not in valid_types:
             raise BusinessRuleError(f"Tipo de transaccion invalido: {tx_type}")

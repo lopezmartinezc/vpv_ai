@@ -12,11 +12,12 @@ Daily calendar sync:
   A ``cron`` job runs once per day at 06:00 UTC to refresh match dates
   (La Liga frequently reschedules matches).
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -56,7 +57,7 @@ async def _tick() -> None:
 
 async def _run_tick() -> None:
     global _last_tick_at
-    _last_tick_at = datetime.now(timezone.utc)
+    _last_tick_at = datetime.now(UTC)
     logger.info("scheduler.tick: starting")
 
     async with AsyncSessionLocal() as session:
@@ -90,7 +91,8 @@ async def _run_tick() -> None:
             if matchday is None:
                 logger.info(
                     "scheduler.tick: matchday not found season=%d number=%d",
-                    season_id, md_current,
+                    season_id,
+                    md_current,
                 )
                 return
 
@@ -100,17 +102,15 @@ async def _run_tick() -> None:
                 return
 
             # 4. Filter played matches (have a result + source_url for CRC check)
-            played = [
-                m for m in matches
-                if m.source_url is not None and m.home_score is not None
-            ]
+            played = [m for m in matches if m.source_url is not None and m.home_score is not None]
             if not played:
                 logger.info("scheduler.tick: no matches played yet, skipping")
                 return
 
             logger.info(
                 "scheduler.tick: %d/%d matches played, checking CRCs",
-                len(played), len(matches),
+                len(played),
+                len(matches),
             )
 
             # 5. Per-match CRC check
@@ -123,7 +123,8 @@ async def _run_tick() -> None:
                     except ScrapingError:
                         logger.warning(
                             "scheduler.tick: failed to fetch match page id=%d url=%s",
-                            match.id, match.source_url,
+                            match.id,
+                            match.source_url,
                         )
                         continue
 
@@ -132,13 +133,16 @@ async def _run_tick() -> None:
                     if match.stats_crc == new_crc:
                         logger.debug(
                             "scheduler.tick: match %d CRC unchanged (%s)",
-                            match.id, new_crc,
+                            match.id,
+                            new_crc,
                         )
                         continue
 
                     logger.info(
                         "scheduler.tick: match %d CRC changed %s -> %s",
-                        match.id, match.stats_crc, new_crc,
+                        match.id,
+                        match.stats_crc,
+                        new_crc,
                     )
                     await repo.update_match_crc(match.id, new_crc)
                     matches_to_scrape.append(match.id)
@@ -151,20 +155,25 @@ async def _run_tick() -> None:
             # 6. Scrape changed matches
             logger.info(
                 "scheduler.tick: scraping %d matches: %s",
-                len(matches_to_scrape), matches_to_scrape,
+                len(matches_to_scrape),
+                matches_to_scrape,
             )
             for match_id in matches_to_scrape:
                 try:
                     result = await service.scrape_match_players(
-                        season_id, md_current, match_id,
+                        season_id,
+                        md_current,
+                        match_id,
                     )
                     logger.info(
                         "scheduler.tick: scraped match %d: %s",
-                        match_id, result,
+                        match_id,
+                        result,
                     )
                 except Exception:
                     logger.exception(
-                        "scheduler.tick: error scraping match %d", match_id,
+                        "scheduler.tick: error scraping match %d",
+                        match_id,
                     )
 
             await session.commit()
@@ -214,15 +223,17 @@ async def _deadline_check() -> None:
             deadline = matchday.deadline_at
             if deadline is None and matchday.first_match_at is not None:
                 from datetime import timedelta
+
                 deadline = matchday.first_match_at - timedelta(minutes=season.lineup_deadline_min)
 
             if deadline is None:
                 return
 
-            from datetime import datetime, timezone
-            now = datetime.now(timezone.utc)
+            from datetime import datetime
+
+            now = datetime.now(UTC)
             if deadline.tzinfo is None:
-                deadline = deadline.replace(tzinfo=timezone.utc)
+                deadline = deadline.replace(tzinfo=UTC)
 
             if now < deadline:
                 return  # Deadline not reached yet
@@ -251,7 +262,7 @@ async def _calendar_sync() -> None:
     """Fetch the La Liga calendar and update match dates + scores."""
     global _last_calendar_sync_at
     logger.info("scheduler.calendar_sync: starting")
-    _last_calendar_sync_at = datetime.now(timezone.utc)
+    _last_calendar_sync_at = datetime.now(UTC)
 
     async with AsyncSessionLocal() as session:
         try:
@@ -354,7 +365,9 @@ def get_scheduler_status() -> dict:
         "last_tick_at": _last_tick_at.isoformat() if _last_tick_at else None,
         "next_run_at": next_run,
         "lock_held": _scrape_lock.locked(),
-        "last_calendar_sync_at": _last_calendar_sync_at.isoformat() if _last_calendar_sync_at else None,
+        "last_calendar_sync_at": _last_calendar_sync_at.isoformat()
+        if _last_calendar_sync_at
+        else None,
         "next_calendar_sync_at": next_calendar_sync,
     }
 
@@ -364,5 +377,5 @@ async def trigger_tick() -> dict:
     if _scrape_lock.locked():
         return {"triggered": False, "reason": "previous tick still running"}
 
-    asyncio.create_task(_tick())
+    _background_task = asyncio.create_task(_tick())  # noqa: RUF006
     return {"triggered": True}

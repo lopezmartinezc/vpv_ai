@@ -69,7 +69,7 @@ class ScoreAggregator:
         logger.debug(
             "_update_lineup_player_points: matchday_id=%d rows_affected=%d",
             matchday_id,
-            result.rowcount,
+            result.rowcount,  # type: ignore[attr-defined]
         )
 
     async def _update_lineup_totals(self, matchday_id: int) -> None:
@@ -89,7 +89,7 @@ class ScoreAggregator:
         logger.debug(
             "_update_lineup_totals: matchday_id=%d rows_affected=%d",
             matchday_id,
-            result.rowcount,
+            result.rowcount,  # type: ignore[attr-defined]
         )
 
     async def _update_participant_scores(self, matchday_id: int) -> None:
@@ -108,7 +108,7 @@ class ScoreAggregator:
         logger.debug(
             "_update_participant_scores: matchday_id=%d rows_affected=%d",
             matchday_id,
-            result.rowcount,
+            result.rowcount,  # type: ignore[attr-defined]
         )
 
     async def _update_rankings(self, matchday_id: int) -> None:
@@ -130,5 +130,5 @@ class ScoreAggregator:
         logger.debug(
             "_update_rankings: matchday_id=%d rows_affected=%d",
             matchday_id,
-            result.rowcount,
+            result.rowcount,  # type: ignore[attr-defined]
         )

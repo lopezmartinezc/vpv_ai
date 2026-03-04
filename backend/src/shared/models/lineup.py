@@ -17,9 +17,7 @@ if TYPE_CHECKING:
 class Lineup(Base):
     __tablename__ = "lineups"
     __table_args__ = (
-        UniqueConstraint(
-            "participant_id", "matchday_id", name="uq_lineup_participant_matchday"
-        ),
+        UniqueConstraint("participant_id", "matchday_id", name="uq_lineup_participant_matchday"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

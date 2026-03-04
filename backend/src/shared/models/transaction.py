@@ -31,9 +31,7 @@ class Transaction(Base):
     type: Mapped[str] = mapped_column(String(30), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
     description: Mapped[str | None] = mapped_column(String(200))
-    created_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
 
     season: Mapped[Season] = relationship(back_populates="transactions")
     participant: Mapped[SeasonParticipant] = relationship(back_populates="transactions")
