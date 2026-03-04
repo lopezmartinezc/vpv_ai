@@ -47,7 +47,11 @@ async def _tick() -> None:
         return
 
     async with _scrape_lock:
-        await _run_tick()
+        try:
+            await _run_tick()
+        except asyncio.CancelledError:
+            logger.info("scheduler.tick: cancelled (shutdown), exiting gracefully")
+            raise
 
 
 async def _run_tick() -> None:
