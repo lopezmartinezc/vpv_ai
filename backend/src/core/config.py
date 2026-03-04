@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -42,5 +44,16 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
 
+    def validate_production(self) -> None:
+        """Fail fast if critical secrets are not configured in production."""
+        if self.environment != "production":
+            return
+        _log = logging.getLogger(__name__)
+        if self.jwt_secret_key == "CHANGE-ME-IN-PRODUCTION":
+            raise RuntimeError("JWT_SECRET_KEY must be set in production")
+        if "localhost" in self.invite_base_url:
+            _log.warning("INVITE_BASE_URL still points to localhost in production")
+
 
 settings = Settings()
+settings.validate_production()

@@ -18,12 +18,18 @@ env/
 .env
 .env.local
 .env.*.local
+.env.sync
 !.env.example
 !.env.test
 !.env.local.example
+!.env.production.example
 !backend/.env.example
 !backend/.env.test
 !frontend/.env.local.example
+
+# Database dumps
+*.dump
+*.sql.gz
 
 # Node
 node_modules/

@@ -1,0 +1,36 @@
+# Liga VPV Backend — FastAPI + uvicorn
+# Install: sudo cp deploy/systemd/vpv-backend.service /etc/systemd/system/
+#          sudo systemctl daemon-reload
+#          sudo systemctl enable --now vpv-backend
+
+[Unit]
+Description=VPV Liga Backend (FastAPI)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=exec
+User=vpv
+Group=vpv
+WorkingDirectory=/opt/vpv/backend
+EnvironmentFile=/opt/vpv/backend/.env
+ExecStart=/opt/vpv/backend/.venv/bin/uvicorn src.app:app \
+    --host 127.0.0.1 \
+    --port 8000 \
+    --workers 4 \
+    --access-log \
+    --log-level info
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vpv-backend
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/vpv/backend/static /opt/vpv/backend/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

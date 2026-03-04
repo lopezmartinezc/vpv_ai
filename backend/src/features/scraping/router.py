@@ -28,6 +28,7 @@ def _get_service(db: AsyncSession = Depends(get_db)) -> ScrapingService:
 async def scrape_matchday_endpoint(
     season_id: int,
     number: int,
+    _admin: dict = Depends(get_current_admin),
     service: ScrapingService = Depends(_get_service),
 ) -> dict[str, int]:
     """Trigger a full scrape of player stats for the given matchday.
@@ -48,6 +49,7 @@ async def scrape_match_endpoint(
     season_id: int,
     number: int,
     match_id: int,
+    _admin: dict = Depends(get_current_admin),
     service: ScrapingService = Depends(_get_service),
 ) -> dict[str, int]:
     """Trigger a scrape of player stats for a single match.
@@ -65,6 +67,7 @@ async def scrape_match_endpoint(
 )
 async def scrape_calendar_endpoint(
     season_id: int,
+    _admin: dict = Depends(get_current_admin),
     service: ScrapingService = Depends(_get_service),
 ) -> dict[str, int]:
     """Fetch the La Liga calendar page and update DB match scores and dates.
@@ -80,6 +83,7 @@ async def scrape_calendar_endpoint(
     response_model=dict,
 )
 async def check_updates_endpoint(
+    _admin: dict = Depends(get_current_admin),
     service: ScrapingService = Depends(_get_service),
 ) -> dict:
     """Check whether the futbolfantasy homepage CRC has changed.

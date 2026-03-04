@@ -1,0 +1,12 @@
+# Liga VPV log rotation
+# Install: sudo cp deploy/logrotate/vpv /etc/logrotate.d/vpv
+
+/var/log/vpv/*.log {
+    daily
+    missingok
+    rotate 14
+    compress
+    delaycompress
+    notifempty
+    copytruncate
+}
