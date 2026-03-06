@@ -4,6 +4,7 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.features.economy.service import EconomyService
 from src.features.scraping.aggregation import ScoreAggregator
 from src.features.scraping.client import ScrapingClient, ScrapingError
 from src.features.scraping.config import scraping_settings
@@ -184,6 +185,11 @@ class ScrapingService:
 
         # Run score aggregation regardless of completeness (partial updates are fine).
         await self._aggregator.aggregate_matchday(matchday_id)
+
+        # Generate weekly payments once the matchday is fully scored.
+        if all_ok and counting_matches:
+            economy_svc = EconomyService(self.session)
+            await economy_svc.generate_weekly_payments(season_id, matchday_id)
 
         # Advance the season's scanned pointer when the matchday is fully done.
         if all_ok and counting_matches:

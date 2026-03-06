@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import BusinessRuleError, NotFoundError
-from src.features.economy.repository import EconomyRepository
+from src.features.economy.repository import EconomyRepository, MatchdayRankingRow
 from src.features.economy.schemas import (
     EconomyResponse,
     ParticipantBalance,
@@ -13,6 +14,55 @@ from src.features.economy.schemas import (
     TransactionEntry,
 )
 from src.features.seasons.repository import SeasonRepository
+
+logger = logging.getLogger(__name__)
+
+
+def compute_weekly_amounts(
+    rankings: list[MatchdayRankingRow],
+) -> list[tuple[int, Decimal]]:
+    """Compute weekly payment for each participant based on ranking position.
+
+    Returns list of (participant_id, amount) pairs.
+    Uses the original PHP pagometro logic:
+    - Top 5: 0, 6th: 0.50, last: 2, last-1/last-2: 1.50, rest: 1
+    - Tie adjustment: from worst to best, same points = same (worse) payment.
+    """
+    n = len(rankings)
+    if n == 0:
+        return []
+
+    # Step 1: assign base amount by position
+    amounts: list[Decimal] = []
+    for row in rankings:
+        rank = row.ranking
+        if rank <= 5:
+            amounts.append(Decimal("0"))
+        elif rank == 6:
+            amounts.append(Decimal("0.50"))
+        elif rank == n:
+            amounts.append(Decimal("2"))
+        elif rank >= n - 2:
+            amounts.append(Decimal("1.50"))
+        else:
+            amounts.append(Decimal("1"))
+
+    # Step 2: tie adjustment — iterate from worst to best
+    # If two players have the same total_points, the better-ranked one
+    # gets the same (higher) payment as the worse-ranked one.
+    prev_points = rankings[-1].total_points
+    prev_amount = amounts[-1]
+    for i in range(n - 2, -1, -1):
+        if rankings[i].total_points > prev_points:
+            prev_points = rankings[i].total_points
+            prev_amount = amounts[i]
+        else:
+            prev_points = rankings[i].total_points
+            amounts[i] = prev_amount
+
+    return [
+        (rankings[i].participant_id, amounts[i]) for i in range(n)
+    ]
 
 
 class EconomyService:
@@ -128,3 +178,49 @@ class EconomyService:
             raise NotFoundError("Transaction", tx_id)
         await self.repo.session.commit()
         return True
+
+    # --- Weekly payment generation ---
+
+    async def generate_weekly_payments(
+        self,
+        season_id: int,
+        matchday_id: int,
+    ) -> int:
+        """Generate weekly_payment transactions for a matchday.
+
+        Idempotent: skips if payments already exist for this matchday.
+        Returns the number of transactions created.
+        """
+        existing = await self.repo.count_weekly_payments(matchday_id)
+        if existing > 0:
+            logger.debug(
+                "generate_weekly_payments: matchday_id=%d already has %d payments, skip",
+                matchday_id,
+                existing,
+            )
+            return 0
+
+        rankings = await self.repo.get_matchday_rankings(matchday_id)
+        if not rankings:
+            return 0
+
+        pairs = compute_weekly_amounts(rankings)
+        created = 0
+        for participant_id, amount in pairs:
+            if amount > 0:
+                await self.repo.create_transaction(
+                    season_id=season_id,
+                    participant_id=participant_id,
+                    tx_type="weekly_payment",
+                    amount=amount,
+                    description=None,
+                    matchday_id=matchday_id,
+                )
+                created += 1
+
+        logger.info(
+            "generate_weekly_payments: matchday_id=%d — created %d transactions",
+            matchday_id,
+            created,
+        )
+        return created

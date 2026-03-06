@@ -9,8 +9,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.shared.models.matchday import Matchday
 from src.shared.models.participant import SeasonParticipant
+from src.shared.models.score import ParticipantMatchdayScore
 from src.shared.models.transaction import Transaction
 from src.shared.models.user import User
+
+
+@dataclass
+class MatchdayRankingRow:
+    participant_id: int
+    ranking: int
+    total_points: int
 
 
 @dataclass
@@ -185,3 +193,35 @@ class EconomyRepository:
             return False
         await self.session.delete(tx)
         return True
+
+    # --- Weekly payment helpers ---
+
+    async def count_weekly_payments(self, matchday_id: int) -> int:
+        stmt = select(func.count()).where(
+            Transaction.matchday_id == matchday_id,
+            Transaction.type == "weekly_payment",
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one()
+
+    async def get_matchday_rankings(
+        self, matchday_id: int
+    ) -> list[MatchdayRankingRow]:
+        stmt = (
+            select(
+                ParticipantMatchdayScore.participant_id,
+                ParticipantMatchdayScore.ranking,
+                ParticipantMatchdayScore.total_points,
+            )
+            .where(ParticipantMatchdayScore.matchday_id == matchday_id)
+            .order_by(ParticipantMatchdayScore.ranking.asc())
+        )
+        result = await self.session.execute(stmt)
+        return [
+            MatchdayRankingRow(
+                participant_id=row.participant_id,
+                ranking=row.ranking,
+                total_points=row.total_points,
+            )
+            for row in result.all()
+        ]
