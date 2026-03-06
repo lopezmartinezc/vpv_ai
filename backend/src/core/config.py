@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import logging
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -34,7 +32,11 @@ class Settings(BaseSettings):
     invite_base_url: str = "http://localhost:3000/registro"
 
     # CORS
-    cors_origins: list[str] = ["http://localhost:3000"]
+    cors_origins: list[str] = [
+        "http://localhost:3000",
+        "http://localhost:3002",
+        "http://localhost:3003",
+    ]
 
     # Telegram
     telegram_bot_token: str = ""
@@ -48,11 +50,16 @@ class Settings(BaseSettings):
         """Fail fast if critical secrets are not configured in production."""
         if self.environment != "production":
             return
-        _log = logging.getLogger(__name__)
         if self.jwt_secret_key == "CHANGE-ME-IN-PRODUCTION":
             raise RuntimeError("JWT_SECRET_KEY must be set in production")
+        if len(self.jwt_secret_key) < 32:
+            raise RuntimeError("JWT_SECRET_KEY must be at least 32 characters in production")
         if "localhost" in self.invite_base_url:
-            _log.warning("INVITE_BASE_URL still points to localhost in production")
+            raise RuntimeError("INVITE_BASE_URL must not point to localhost in production")
+        if self.telegram_enabled and not self.telegram_bot_token:
+            raise RuntimeError("TELEGRAM_BOT_TOKEN required when TELEGRAM_ENABLED=true")
+        if self.debug:
+            raise RuntimeError("DEBUG must be false in production")
 
 
 settings = Settings()
