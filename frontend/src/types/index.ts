@@ -318,6 +318,14 @@ export interface CopaFullResponse {
   matchdays: CopaMatchdayDetail[];
 }
 
+// Dashboard (combined endpoint)
+export interface DashboardResponse {
+  standings: StandingsResponse | null;
+  current_matchday: MatchdayDetailResponse | null;
+  copa: CopaFullResponse | null;
+  economy: EconomyResponse | null;
+}
+
 // ---------------------------------------------------------------------------
 // Stats (admin) — matches backend/src/features/stats/schemas.py
 // ---------------------------------------------------------------------------

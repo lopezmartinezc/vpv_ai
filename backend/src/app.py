@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import mimetypes
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from src.core.config import settings
 from src.core.database import engine
@@ -20,6 +22,7 @@ from src.core.exceptions import (
     VPVError,
 )
 from src.core.logging import setup_logging
+from src.core.rate_limit import limiter
 from src.features.scraping.scheduler import start_scheduler, stop_scheduler
 
 mimetypes.add_type("image/webp", ".webp")
@@ -44,6 +47,11 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Rate limiting
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
+
+    # CORS
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -51,6 +59,17 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["Content-Type", "Authorization"],
     )
+
+    # Security headers (defense-in-depth; Nginx adds HSTS in production)
+    @app.middleware("http")
+    async def security_headers(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
 
     @app.exception_handler(VPVError)
     async def vpv_exception_handler(request: Request, exc: VPVError) -> JSONResponse:
@@ -68,6 +87,7 @@ def create_app() -> FastAPI:
 
     from src.features.auth.router import router as auth_router
     from src.features.copa.router import router as copa_router
+    from src.features.dashboard.router import router as dashboard_router
     from src.features.drafts.router import router as drafts_router
     from src.features.economy.router import router as economy_router
     from src.features.health.router import router as health_router
@@ -82,6 +102,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_router, prefix="/api")
     app.include_router(copa_router, prefix="/api")
+    app.include_router(dashboard_router, prefix="/api")
     app.include_router(drafts_router, prefix="/api")
     app.include_router(economy_router, prefix="/api")
     app.include_router(health_router, prefix="/api")
