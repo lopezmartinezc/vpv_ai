@@ -17,6 +17,7 @@ from src.features.matchdays.schemas import (
     ParticipantScore,
     ScoreBreakdown,
 )
+from src.features.scraping.aggregation import ScoreAggregator
 from src.features.seasons.repository import SeasonRepository
 
 
@@ -216,6 +217,12 @@ class MatchdayService:
         if matchday is None:
             raise NotFoundError("Matchday", f"{season_id}/{number}")
         await self.repo.session.commit()
+
+        if "counts" in kwargs:
+            aggregator = ScoreAggregator(self.repo.session)
+            await aggregator.aggregate_matchday(matchday.id)
+            await self.repo.session.commit()
+
         return AdminMatchdayResponse(
             season_id=matchday.season_id,
             number=matchday.number,
@@ -235,6 +242,12 @@ class MatchdayService:
             raise NotFoundError("Match", match_id)
         # Need team names for response
         await self.repo.session.commit()
+
+        if "counts" in kwargs:
+            aggregator = ScoreAggregator(self.repo.session)
+            await aggregator.aggregate_matchday(match.matchday_id)
+            await self.repo.session.commit()
+
         # Re-fetch match with teams
         match_rows = await self.repo.get_matches(match.matchday_id)
         for m in match_rows:

@@ -52,24 +52,49 @@ class ScoreAggregator:
     # ------------------------------------------------------------------
 
     async def _update_lineup_player_points(self, matchday_id: int) -> None:
-        """Step 1: set each lineup_player.points = matching player_stat.pts_total."""
-        sql = text(
+        """Step 1: set each lineup_player.points from player_stats, respecting matches.counts.
+
+        Two-pass approach:
+        1a. Reset all lineup_players.points to 0 for this matchday.
+        1b. Set points only for players whose match has counts = TRUE.
+        """
+        # 1a — reset all to 0
+        reset_sql = text(
+            """
+            UPDATE lineup_players lp
+            SET    points = 0
+            FROM   lineups l
+            WHERE  l.matchday_id = :matchday_id
+              AND  lp.lineup_id  = l.id
+            """
+        )
+        reset_result = await self.session.execute(reset_sql, {"matchday_id": matchday_id})
+        logger.debug(
+            "_update_lineup_player_points: matchday_id=%d reset_rows=%d",
+            matchday_id,
+            reset_result.rowcount,  # type: ignore[attr-defined]
+        )
+
+        # 1b — set points from counting matches only
+        set_sql = text(
             """
             UPDATE lineup_players lp
             SET    points = ps.pts_total
             FROM   lineups l,
                    player_stats ps
-            WHERE  l.matchday_id   = :matchday_id
-              AND  lp.lineup_id    = l.id
-              AND  ps.player_id    = lp.player_id
-              AND  ps.matchday_id  = :matchday_id
+                   LEFT JOIN matches m ON ps.match_id = m.id
+            WHERE  l.matchday_id          = :matchday_id
+              AND  lp.lineup_id           = l.id
+              AND  ps.player_id           = lp.player_id
+              AND  ps.matchday_id         = :matchday_id
+              AND  COALESCE(m.counts, TRUE) = TRUE
             """
         )
-        result = await self.session.execute(sql, {"matchday_id": matchday_id})
+        set_result = await self.session.execute(set_sql, {"matchday_id": matchday_id})
         logger.debug(
-            "_update_lineup_player_points: matchday_id=%d rows_affected=%d",
+            "_update_lineup_player_points: matchday_id=%d set_rows=%d",
             matchday_id,
-            result.rowcount,  # type: ignore[attr-defined]
+            set_result.rowcount,  # type: ignore[attr-defined]
         )
 
     async def _update_lineup_totals(self, matchday_id: int) -> None:

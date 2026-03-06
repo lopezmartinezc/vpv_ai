@@ -7,6 +7,7 @@ import { Podium } from "@/components/dashboard/podium";
 import { NavCards } from "@/components/dashboard/nav-cards";
 import { CopaWidget } from "@/components/dashboard/copa-widget";
 import { CopaMatchdayWidget } from "@/components/dashboard/copa-matchday-widget";
+import { PagometroWidget } from "@/components/dashboard/pagometro-widget";
 import { SkeletonCards } from "@/components/ui/skeleton";
 
 export default function Home() {
@@ -15,6 +16,7 @@ export default function Home() {
     standings,
     currentMatchdayDetail,
     copaData,
+    economy,
     loading,
   } = useDashboardData(
     selectedSeason?.id ?? null,
@@ -109,6 +111,10 @@ export default function Home() {
 
       {copaData && copaData.standings.length > 0 && (
         <CopaWidget entries={copaData.standings} />
+      )}
+
+      {economy && economy.balances.length > 0 && (
+        <PagometroWidget balances={economy.balances} />
       )}
 
       <NavCards cards={navCards} />

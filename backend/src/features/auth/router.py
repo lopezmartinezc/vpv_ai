@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.rate_limit import limiter
 from src.features.auth.schemas import (
     AdminUserResponse,
     InviteCreateRequest,
@@ -25,7 +26,9 @@ def _get_service(db: AsyncSession = Depends(get_db)) -> AuthService:
 
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit("5/minute")
 async def login(
+    request: Request,
     body: LoginRequest,
     service: AuthService = Depends(_get_service),
 ) -> TokenResponse:
@@ -49,7 +52,9 @@ async def refresh_token(
 
 
 @router.get("/invite/{token}", response_model=InviteStatusResponse)
+@limiter.limit("10/minute")
 async def validate_invite(
+    request: Request,
     token: str,
     service: AuthService = Depends(_get_service),
 ) -> InviteStatusResponse:
@@ -57,7 +62,9 @@ async def validate_invite(
 
 
 @router.post("/register", response_model=TokenResponse)
+@limiter.limit("3/minute")
 async def register(
+    request: Request,
     body: RegisterRequest,
     service: AuthService = Depends(_get_service),
 ) -> TokenResponse:

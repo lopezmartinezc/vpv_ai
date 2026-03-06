@@ -1,7 +1,9 @@
 """Repository layer for admin statistics queries.
 
 All queries filter on ``matchdays.counts IS TRUE`` so that disabled matchdays
-(e.g. postponed rounds) are automatically excluded.
+(e.g. postponed rounds) are automatically excluded.  Participant-facing queries
+also filter on ``matches.counts IS TRUE`` to exclude individual non-counting
+matches (e.g. postponed games).  Player-level stats always count regardless.
 
 NOTE: ``marca_rating`` and ``as_picas`` are stored as ``String(10)`` and may
 contain non-numeric values (e.g. star characters like "★★").  We use the
@@ -16,7 +18,7 @@ from sqlalchemy import Float, and_, case, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.shared.models.lineup import Lineup, LineupPlayer
-from src.shared.models.matchday import Matchday
+from src.shared.models.matchday import Match, Matchday
 from src.shared.models.participant import SeasonParticipant
 from src.shared.models.player import Player
 from src.shared.models.player_stat import PlayerStat
@@ -275,9 +277,11 @@ class StatsRepository:
                     PlayerStat.matchday_id == Matchday.id,
                 ),
             )
+            .outerjoin(Match, PlayerStat.match_id == Match.id)
             .where(
                 SeasonParticipant.season_id == season_id,
                 Matchday.counts.is_(True),
+                func.coalesce(Match.counts, True).is_(True),
             )
             .group_by(SeasonParticipant.id, User.display_name)
             .order_by(func.coalesce(func.sum(PlayerStat.pts_total), 0).desc())
