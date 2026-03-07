@@ -150,7 +150,7 @@ class MatchdayService:
             display_name=display_name,
             matchday_number=matchday.number,
             formation=lineup.formation,
-            total_points=lineup.total_points,
+            total_points=lineup.total_points or 0,
             players=[
                 LineupPlayerEntry(
                     display_order=p.display_order,
@@ -159,7 +159,7 @@ class MatchdayService:
                     player_name=p.player_name,
                     photo_path=p.photo_path,
                     team_name=p.team_name,
-                    points=p.points,
+                    points=p.points or 0,
                     score_breakdown=ScoreBreakdown(
                         pts_play=p.pts_play,
                         pts_starter=p.pts_starter,
@@ -185,7 +185,7 @@ class MatchdayService:
                     photo_path=b.photo_path,
                     position=b.position,
                     team_name=b.team_name,
-                    matchday_points=b.matchday_points,
+                    matchday_points=b.matchday_points or 0,
                     score_breakdown=ScoreBreakdown(
                         pts_play=b.pts_play,
                         pts_starter=b.pts_starter,
