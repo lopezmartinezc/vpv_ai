@@ -18,10 +18,10 @@ import mysql.connector
 import psycopg
 
 MYSQL_DSN = {
-    "host": "127.0.0.1",
-    "port": 3307,
-    "user": "root",
-    "password": "migration",
+    "host": "franquiciadonpiso.com",
+    "port": 3306,
+    "user": "vpvadmin",
+    "password": "Vpv1977",
     "database": "ligavpv",
 }
 PG_DSN = "host=localhost port=5433 user=vpv password=vpv_secret dbname=ligavpv"

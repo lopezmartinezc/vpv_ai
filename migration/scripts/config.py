@@ -11,9 +11,9 @@ load_dotenv(_env_path)
 def get_mysql_config() -> dict:
     return {
         "host": os.getenv("MYSQL_HOST", "localhost"),
-        "port": int(os.getenv("MYSQL_PORT", "3307")),
-        "user": os.getenv("MYSQL_USER", "root"),
-        "password": os.getenv("MYSQL_PASSWORD", "migration"),
+        "port": int(os.getenv("MYSQL_PORT", "3306")),
+        "user": os.getenv("MYSQL_USER", "vpvadmin"),
+        "password": os.getenv("MYSQL_PASSWORD", ""),
         "database": os.getenv("MYSQL_DATABASE", "ligavpv"),
         "charset": "utf8mb4",
         "use_unicode": True,
@@ -22,8 +22,8 @@ def get_mysql_config() -> dict:
 
 def get_pg_conninfo() -> str:
     host = os.getenv("PG_HOST", "localhost")
-    port = os.getenv("PG_PORT", "5432")
+    port = os.getenv("PG_PORT", "5433")
     user = os.getenv("PG_USER", "vpv")
-    password = os.getenv("PG_PASSWORD", "vpv")
+    password = os.getenv("PG_PASSWORD", "vpv_secret")
     database = os.getenv("PG_DATABASE", "ligavpv")
     return f"host={host} port={port} user={user} password={password} dbname={database}"

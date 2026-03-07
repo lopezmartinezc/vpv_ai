@@ -24,10 +24,10 @@ SEASON_ID = 8
 TEMPORADA = "2025-2026"
 DB_DSN = "host=localhost port=5433 user=vpv password=vpv_secret dbname=ligavpv"
 MYSQL_CONFIG = {
-    "host": "localhost",
-    "port": 3307,
-    "user": "root",
-    "password": "migration",
+    "host": "franquiciadonpiso.com",
+    "port": 3306,
+    "user": "vpvadmin",
+    "password": "Vpv1977",
     "database": "ligavpv",
 }
 

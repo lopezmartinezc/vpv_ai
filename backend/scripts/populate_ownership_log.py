@@ -26,10 +26,10 @@ PG_DSN = os.environ.get(
 )
 
 MYSQL_CONFIG = {
-    "host": os.environ.get("MYSQL_HOST", "localhost"),
-    "port": int(os.environ.get("MYSQL_PORT", "3307")),
-    "user": os.environ.get("MYSQL_USER", "root"),
-    "password": os.environ.get("MYSQL_PASSWORD", "migration"),
+    "host": os.environ.get("MYSQL_HOST", "franquiciadonpiso.com"),
+    "port": int(os.environ.get("MYSQL_PORT", "3306")),
+    "user": os.environ.get("MYSQL_USER", "vpvadmin"),
+    "password": os.environ.get("MYSQL_PASSWORD", "Vpv1977"),
     "database": os.environ.get("MYSQL_DATABASE", "ligavpv"),
     "charset": "utf8mb4",
 }
