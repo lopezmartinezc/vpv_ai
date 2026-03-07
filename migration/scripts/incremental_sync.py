@@ -257,7 +257,8 @@ def sync_match_results(
                            result = %s, counts = %s, stats_ok = %s,
                            source_id = %s, source_url = %s
                        WHERE id = %s AND (home_score IS DISTINCT FROM %s
-                                          OR away_score IS DISTINCT FROM %s)""",
+                                          OR away_score IS DISTINCT FROM %s
+                                          OR stats_ok IS DISTINCT FROM %s)""",
                     (
                         home_score,
                         away_score,
@@ -269,6 +270,7 @@ def sync_match_results(
                         match_id,
                         home_score,
                         away_score,
+                        _bool(row["est_ok"]),
                     ),
                 )
                 updated += pg_cur.rowcount
@@ -581,6 +583,39 @@ def recalculate_scores(
     return upserted
 
 
+def update_matchday_stats_ok(
+    pg_conn: psycopg.Connection,
+    ctx: dict,
+    matchdays: list[int],
+) -> int:
+    """Set matchdays.stats_ok = TRUE when all counting matches have stats_ok."""
+    with pg_conn.cursor() as pg_cur:
+        pg_cur.execute(
+            """UPDATE matchdays md
+               SET stats_ok = TRUE
+               WHERE md.season_id = %s
+                 AND md.number = ANY(%s)
+                 AND md.stats_ok = FALSE
+                 AND NOT EXISTS (
+                     SELECT 1 FROM matches m
+                     WHERE m.matchday_id = md.id
+                       AND m.counts = TRUE
+                       AND m.stats_ok = FALSE
+                 )
+                 AND EXISTS (
+                     SELECT 1 FROM matches m
+                     WHERE m.matchday_id = md.id
+                       AND m.counts = TRUE
+                       AND m.stats_ok = TRUE
+                 )""",
+            (ctx["season_id"], matchdays),
+        )
+        updated = pg_cur.rowcount
+        if updated:
+            log.info("Marked %d matchday(s) as stats_ok", updated)
+        return updated
+
+
 def update_season_metadata(
     mysql_conn: mysql.connector.MySQLConnection,
     pg_conn: psycopg.Connection,
@@ -746,8 +781,12 @@ def main() -> None:
         log.info("--- STEP 4: Recalculate scores ---")
         recalculate_scores(pg_conn, ctx, matchdays)
 
-        # 5. Season metadata
-        log.info("--- STEP 5: Season metadata ---")
+        # 5. Update matchdays.stats_ok
+        log.info("--- STEP 5: Update matchdays.stats_ok ---")
+        update_matchday_stats_ok(pg_conn, ctx, matchdays)
+
+        # 6. Season metadata
+        log.info("--- STEP 6: Season metadata ---")
         update_season_metadata(mysql_conn, pg_conn, ctx)
 
         if dry_run:
