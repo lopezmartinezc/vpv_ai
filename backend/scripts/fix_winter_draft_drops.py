@@ -26,7 +26,7 @@ MYSQL_DSN = {
 }
 PG_DSN = "host=localhost port=5433 user=vpv password=vpv_secret dbname=ligavpv"
 SEASON_ID = 8
-TEMPORADA = "2024-2025"
+TEMPORADA = "2025-2026"
 
 
 def main() -> None:

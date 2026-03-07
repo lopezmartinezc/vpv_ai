@@ -6,6 +6,7 @@ from src.shared.models.lineup import Lineup, LineupPlayer
 from src.shared.models.matchday import Match, Matchday
 from src.shared.models.participant import SeasonParticipant
 from src.shared.models.player import Player
+from src.shared.models.player_ownership_log import PlayerOwnershipLog
 from src.shared.models.player_stat import PlayerStat
 from src.shared.models.score import ParticipantMatchdayScore
 from src.shared.models.season import ScoringRule, Season, SeasonPayment, ValidFormation
@@ -25,6 +26,7 @@ __all__ = [
     "Matchday",
     "ParticipantMatchdayScore",
     "Player",
+    "PlayerOwnershipLog",
     "PlayerStat",
     "ScoringRule",
     "Season",

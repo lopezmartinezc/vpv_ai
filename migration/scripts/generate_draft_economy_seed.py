@@ -1,9 +1,12 @@
 """Generate realistic draft picks and transaction data for season 8.
 
-Reads existing players (with owner_id) and matchday scores to create:
+Reads existing players (with owner_id) and queries MySQL for winter draft
+changes to create:
 - 2 drafts (preseason snake + winter linear)
-- ~286+ draft picks matching existing ownership
-- ~56 transactions (initial fees + weekly payments + winter draft fees)
+- draft picks matching actual ownership (with dropped_player_id for winter)
+- transactions (initial fees + weekly payments + winter draft fees)
+
+Requires MySQL source container running (migration/docker-compose.yml).
 
 Usage:
     cd migration && .venv/bin/python scripts/generate_draft_economy_seed.py
@@ -14,10 +17,19 @@ from __future__ import annotations
 import random
 from datetime import datetime, timedelta, timezone
 
+import mysql.connector
 import psycopg
 
 SEASON_ID = 8
+TEMPORADA = "2025-2026"
 DB_DSN = "host=localhost port=5433 user=vpv password=vpv_secret dbname=ligavpv"
+MYSQL_CONFIG = {
+    "host": "localhost",
+    "port": 3307,
+    "user": "root",
+    "password": "migration",
+    "database": "ligavpv",
+}
 
 POSITION_ORDER = {"POR": 1, "DEF": 2, "MED": 3, "DEL": 4}
 
@@ -27,17 +39,118 @@ INITIAL_FEE = 50.00
 WINTER_DRAFT_FEE = 2.00
 
 
+def get_winter_changes(mysql_conn: mysql.connector.MySQLConnection) -> dict:
+    """Query MySQL for winter draft ownership changes.
+
+    Returns dict with:
+        - picks: list of (mysql_user_id, picked_slug) — players picked in winter draft
+        - drops: dict[mysql_user_id, list[slug]] — players dropped per user
+    """
+    cur = mysql_conn.cursor(dictionary=True)
+
+    # Get jornada_cambios for this season
+    cur.execute(
+        "SELECT jornada_cambios FROM temporadas WHERE temporada = %s",
+        (TEMPORADA,),
+    )
+    row = cur.fetchone()
+    if not row:
+        cur.close()
+        return {"picks": [], "drops": {}}
+    jornada_cambios = row["jornada_cambios"]
+    jornada_pre = jornada_cambios - 1
+
+    # Players picked up in winter (unowned/absent pre-winter, owned post-winter)
+    cur.execute(
+        """
+        SELECT post.id_user, post.nom_url FROM jornadas_temp post
+        LEFT JOIN jornadas_temp pre
+            ON pre.nom_url = post.nom_url AND pre.temporada = post.temporada AND pre.jornada = %s
+        WHERE post.temporada = %s AND post.jornada = %s AND post.id_user > 0
+            AND (pre.nom_url IS NULL OR pre.id_user = 0 OR pre.id_user IS NULL)
+        ORDER BY post.id_user
+        """,
+        (jornada_pre, TEMPORADA, jornada_cambios),
+    )
+    picks = [(r["id_user"], r["nom_url"]) for r in cur.fetchall()]
+
+    # Players swapped between users
+    cur.execute(
+        """
+        SELECT post.id_user, post.nom_url FROM jornadas_temp pre
+        JOIN jornadas_temp post
+            ON pre.nom_url = post.nom_url AND pre.temporada = post.temporada AND post.jornada = %s
+        WHERE pre.temporada = %s AND pre.jornada = %s
+            AND pre.id_user > 0 AND post.id_user > 0 AND pre.id_user != post.id_user
+        """,
+        (jornada_cambios, TEMPORADA, jornada_pre),
+    )
+    picks.extend((r["id_user"], r["nom_url"]) for r in cur.fetchall())
+
+    # Players dropped (owned pre-winter, unowned/absent post-winter)
+    drops: dict[int, list[str]] = {}
+
+    # Dropped to free pool
+    cur.execute(
+        """
+        SELECT pre.id_user, pre.nom_url FROM jornadas_temp pre
+        JOIN jornadas_temp post
+            ON pre.nom_url = post.nom_url AND pre.temporada = post.temporada AND post.jornada = %s
+        WHERE pre.temporada = %s AND pre.jornada = %s
+            AND pre.id_user > 0 AND (post.id_user = 0 OR post.id_user IS NULL)
+        ORDER BY pre.id_user
+        """,
+        (jornada_cambios, TEMPORADA, jornada_pre),
+    )
+    for r in cur.fetchall():
+        drops.setdefault(r["id_user"], []).append(r["nom_url"])
+
+    # Dropped because player left league
+    cur.execute(
+        """
+        SELECT pre.id_user, pre.nom_url FROM jornadas_temp pre
+        LEFT JOIN jornadas_temp post
+            ON pre.nom_url = post.nom_url AND pre.temporada = post.temporada AND post.jornada = %s
+        WHERE pre.temporada = %s AND pre.jornada = %s
+            AND pre.id_user > 0 AND post.nom_url IS NULL
+        ORDER BY pre.id_user
+        """,
+        (jornada_cambios, TEMPORADA, jornada_pre),
+    )
+    for r in cur.fetchall():
+        drops.setdefault(r["id_user"], []).append(r["nom_url"])
+
+    # Swapped out (owned by someone else post-winter)
+    cur.execute(
+        """
+        SELECT pre.id_user, pre.nom_url FROM jornadas_temp pre
+        JOIN jornadas_temp post
+            ON pre.nom_url = post.nom_url AND pre.temporada = post.temporada AND post.jornada = %s
+        WHERE pre.temporada = %s AND pre.jornada = %s
+            AND pre.id_user > 0 AND post.id_user > 0 AND pre.id_user != post.id_user
+        """,
+        (jornada_cambios, TEMPORADA, jornada_pre),
+    )
+    for r in cur.fetchall():
+        drops.setdefault(r["id_user"], []).append(r["nom_url"])
+
+    cur.close()
+    return {"picks": picks, "drops": drops}
+
+
 def main() -> None:
+    mysql_conn = mysql.connector.connect(**MYSQL_CONFIG)
     conn = psycopg.connect(DB_DSN)
     try:
         with conn:
-            run(conn)
+            run(conn, mysql_conn)
         print("Done! Seed data generated successfully.")
     finally:
         conn.close()
+        mysql_conn.close()
 
 
-def run(conn: psycopg.Connection) -> None:
+def run(conn: psycopg.Connection, mysql_conn: mysql.connector.MySQLConnection) -> None:
     cur = conn.cursor()
 
     # Clean existing data (in case of re-run)
@@ -68,7 +181,72 @@ def run(conn: psycopg.Connection) -> None:
     order_to_pid = {v: k for k, v in pid_to_order.items()}
     print(f"Assigned draft_order: {pid_to_order}")
 
-    # --- Fetch owned players grouped by participant ---
+    # --- Build slug -> player_id map for this season ---
+    cur.execute(
+        "SELECT id, slug, owner_id FROM players WHERE season_id = %s",
+        (SEASON_ID,),
+    )
+    slug_to_player = {row[1]: (row[0], row[2]) for row in cur.fetchall()}
+
+    # --- Build mysql_user -> pg_participant_id map ---
+    # Need to look up by display_name since IDs don't map directly
+    cur.execute(
+        """
+        SELECT sp.id, u.display_name
+        FROM season_participants sp JOIN users u ON sp.user_id = u.id
+        WHERE sp.season_id = %s
+        """,
+        (SEASON_ID,),
+    )
+    pg_name_to_pid = {row[1]: row[0] for row in cur.fetchall()}
+
+    mysql_cur = mysql_conn.cursor(dictionary=True)
+    mysql_cur.execute(
+        "SELECT id, nombre FROM usuarios_temp WHERE temporada = %s",
+        (TEMPORADA,),
+    )
+    mysql_user_to_pg_pid = {}
+    for r in mysql_cur.fetchall():
+        pg_pid = pg_name_to_pid.get(r["nombre"])
+        if pg_pid:
+            mysql_user_to_pg_pid[r["id"]] = pg_pid
+    mysql_cur.close()
+    print(f"MySQL user -> PG participant mapping: {mysql_user_to_pg_pid}")
+
+    # --- Get winter draft changes from MySQL ---
+    winter_changes = get_winter_changes(mysql_conn)
+    winter_picks = winter_changes["picks"]  # [(mysql_user, slug)]
+    winter_drops = winter_changes["drops"]  # {mysql_user: [slugs]}
+
+    # Build set of winter-picked player IDs and dropped player IDs per participant
+    winter_picked_ids: set[int] = set()
+    winter_pick_data: list[tuple[int, int, int | None]] = []  # (participant_id, player_id, dropped_player_id)
+
+    for mysql_user, picked_slug in winter_picks:
+        pg_pid = mysql_user_to_pg_pid.get(mysql_user)
+        if not pg_pid:
+            continue
+        player_info = slug_to_player.get(picked_slug)
+        if not player_info:
+            print(f"  WARNING: picked slug '{picked_slug}' not found in PG players")
+            continue
+        player_id = player_info[0]
+        winter_picked_ids.add(player_id)
+
+        # Find a dropped player for this participant
+        user_drops = winter_drops.get(mysql_user, [])
+        dropped_player_id = None
+        if user_drops:
+            dropped_slug = user_drops.pop(0)
+            dropped_info = slug_to_player.get(dropped_slug)
+            if dropped_info:
+                dropped_player_id = dropped_info[0]
+
+        winter_pick_data.append((pg_pid, player_id, dropped_player_id))
+
+    print(f"Winter draft: {len(winter_pick_data)} picks with dropped_player_id")
+
+    # --- Fetch owned players (these are the preseason-drafted ones) ---
     cur.execute(
         """
         SELECT id, owner_id, position
@@ -78,31 +256,42 @@ def run(conn: psycopg.Connection) -> None:
         """,
         (SEASON_ID,),
     )
-    all_owned = cur.fetchall()  # [(player_id, owner_id, position), ...]
+    all_owned = cur.fetchall()
 
-    # Group by participant
-    players_by_participant: dict[int, list[tuple[int, str]]] = {}
+    # Group by participant — exclude winter picks (they were drafted in winter, not preseason)
+    preseason_players: dict[int, list[tuple[int, str]]] = {}
     for player_id, owner_id, position in all_owned:
-        players_by_participant.setdefault(owner_id, []).append((player_id, position))
+        if player_id not in winter_picked_ids:
+            preseason_players.setdefault(owner_id, []).append((player_id, position))
+
+    # Also add dropped players to preseason (they were originally drafted in preseason)
+    for mysql_user, drop_slugs_original in winter_changes["drops"].items():
+        pg_pid = mysql_user_to_pg_pid.get(mysql_user)
+        if not pg_pid:
+            continue
+        # We already popped from winter_drops above, so re-query original
+    # Re-get drops since we consumed them above
+    winter_changes2 = get_winter_changes(mysql_conn)
+    for mysql_user, drop_slugs in winter_changes2["drops"].items():
+        pg_pid = mysql_user_to_pg_pid.get(mysql_user)
+        if not pg_pid:
+            continue
+        for slug in drop_slugs:
+            player_info = slug_to_player.get(slug)
+            if player_info:
+                preseason_players.setdefault(pg_pid, []).append(
+                    (player_info[0], "")  # position doesn't matter for ordering
+                )
 
     # Sort each participant's players by position priority
-    for pid in players_by_participant:
-        players_by_participant[pid].sort(
+    for pid in preseason_players:
+        preseason_players[pid].sort(
             key=lambda x: (POSITION_ORDER.get(x[1], 5), x[0])
         )
 
-    counts = {pid: len(ps) for pid, ps in players_by_participant.items()}
-    print(f"Players per participant: {counts}")
-
-    # --- Determine preseason (26) vs winter picks ---
     preseason_pool = 26
-    preseason_players: dict[int, list[tuple[int, str]]] = {}
-    winter_players: dict[int, list[tuple[int, str]]] = {}
-
-    for pid, player_list in players_by_participant.items():
-        preseason_players[pid] = player_list[:preseason_pool]
-        if len(player_list) > preseason_pool:
-            winter_players[pid] = player_list[preseason_pool:]
+    counts = {pid: len(ps) for pid, ps in preseason_players.items()}
+    print(f"Preseason players per participant: {counts}")
 
     # --- Create preseason draft ---
     draft_start = datetime(2025, 7, 15, 18, 0, tzinfo=timezone.utc)
@@ -132,7 +321,6 @@ def run(conn: psycopg.Connection) -> None:
 
     pick_rows = []
     for round_num in range(1, preseason_pool + 1):
-        # Snake: odd rounds forward, even rounds reverse
         if round_num % 2 == 1:
             order_sequence = list(range(1, n + 1))
         else:
@@ -142,7 +330,7 @@ def run(conn: psycopg.Connection) -> None:
             pid = order_to_pid[draft_pos]
             idx = pick_index_by_pid[pid]
             if idx >= len(preseason_players.get(pid, [])):
-                continue  # safety
+                continue
             player_id, _ = preseason_players[pid][idx]
             pick_index_by_pid[pid] = idx + 1
             pick_number += 1
@@ -151,7 +339,6 @@ def run(conn: psycopg.Connection) -> None:
             )
             pick_time += timedelta(seconds=random.randint(15, 90))
 
-    # Bulk insert preseason picks
     cur.executemany(
         """
         INSERT INTO draft_picks (draft_id, participant_id, player_id,
@@ -162,10 +349,9 @@ def run(conn: psycopg.Connection) -> None:
     )
     print(f"Inserted {len(pick_rows)} preseason draft picks.")
 
-    # --- Create winter draft (if any extra players) ---
-    if winter_players:
+    # --- Create winter draft ---
+    if winter_pick_data:
         winter_start = datetime(2026, 1, 10, 19, 0, tzinfo=timezone.utc)
-        total_winter_picks = sum(len(ps) for ps in winter_players.values())
         cur.execute(
             """
             INSERT INTO drafts (season_id, draft_type, phase, status,
@@ -175,7 +361,7 @@ def run(conn: psycopg.Connection) -> None:
             """,
             (
                 SEASON_ID,
-                total_winter_picks,
+                len(winter_pick_data),
                 winter_start,
                 winter_start + timedelta(hours=1),
             ),
@@ -183,31 +369,54 @@ def run(conn: psycopg.Connection) -> None:
         winter_draft_id = cur.fetchone()[0]
         print(f"Created winter draft id={winter_draft_id}")
 
-        # Linear order: by draft_order
+        # Winter draft order: inverse of accumulated standings at jornada_cambios - 1
+        # Worst-ranked participant picks first
+        cur.execute(
+            """
+            SELECT pms.participant_id, SUM(pms.total_points) AS season_pts
+            FROM participant_matchday_scores pms
+            JOIN matchdays md ON md.id = pms.matchday_id
+            WHERE md.season_id = %s AND md.number <= %s AND md.counts = true
+            GROUP BY pms.participant_id
+            ORDER BY season_pts ASC
+            """,
+            (SEASON_ID, 22),  # jornada_cambios - 1
+        )
+        inverse_standings = [row[0] for row in cur.fetchall()]
+        winter_draft_order = {pid: idx for idx, pid in enumerate(inverse_standings)}
+        print(f"Winter draft order (inverse standings): {[pid for pid in inverse_standings]}")
+
+        winter_pick_data.sort(key=lambda x: winter_draft_order.get(x[0], 99))
+
         winter_pick_rows = []
-        wpick = 0
         wtime = winter_start + timedelta(minutes=5)
-        # Sort participants by draft_order for linear draft
-        sorted_winter = sorted(winter_players.keys(), key=lambda p: pid_to_order[p])
-        for pid in sorted_winter:
-            for player_id, _ in winter_players[pid]:
-                wpick += 1
-                winter_pick_rows.append(
-                    (winter_draft_id, pid, player_id, 1, wpick, wtime)
+        for wpick, (pg_pid, player_id, dropped_player_id) in enumerate(
+            winter_pick_data, 1
+        ):
+            winter_pick_rows.append(
+                (
+                    winter_draft_id,
+                    pg_pid,
+                    player_id,
+                    dropped_player_id,
+                    1,
+                    wpick,
+                    wtime,
                 )
-                wtime += timedelta(seconds=random.randint(30, 120))
+            )
+            wtime += timedelta(seconds=random.randint(30, 120))
 
         cur.executemany(
             """
             INSERT INTO draft_picks (draft_id, participant_id, player_id,
-                                    round_number, pick_number, picked_at)
-            VALUES (%s, %s, %s, %s, %s, %s)
+                                    dropped_player_id, round_number, pick_number, picked_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
             winter_pick_rows,
         )
-        print(f"Inserted {len(winter_pick_rows)} winter draft picks.")
-    else:
-        winter_players_set: set[int] = set()
+        print(f"Inserted {len(winter_pick_rows)} winter draft picks (with dropped_player_id).")
+
+    winter_participant_ids = {d[0] for d in winter_pick_data}
 
     # === TRANSACTIONS ===
 
@@ -257,9 +466,11 @@ def run(conn: psycopg.Connection) -> None:
 
     # 3. Winter draft fees
     winter_fee_count = 0
-    winter_participant_ids = set(winter_players.keys()) if winter_players else set()
-    for pid in winter_participant_ids:
-        n_changes = len(winter_players[pid])
+    # Count picks per participant from winter_pick_data
+    winter_picks_per_pid: dict[int, int] = {}
+    for pg_pid, _, _ in winter_pick_data:
+        winter_picks_per_pid[pg_pid] = winter_picks_per_pid.get(pg_pid, 0) + 1
+    for pid, n_changes in winter_picks_per_pid.items():
         tx_rows.append((
             SEASON_ID, pid, None, "winter_draft_fee",
             WINTER_DRAFT_FEE * n_changes,

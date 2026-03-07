@@ -134,6 +134,7 @@ class MatchdayService:
             participant_id,
             season_id,
             lineup_player_ids,
+            matchday_number=number,
         )
 
         # Get participant display name

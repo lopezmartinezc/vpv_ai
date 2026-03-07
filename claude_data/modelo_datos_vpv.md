@@ -557,6 +557,75 @@ INSERT INTO valid_formations (formation, defenders, midfielders, forwards) VALUE
 
 ---
 
+### 19. `invites` — Invitaciones de registro
+
+```sql
+CREATE TABLE invites (
+    id              SERIAL PRIMARY KEY,
+    token           VARCHAR(255) NOT NULL,
+    target_user_id  INT          REFERENCES users(id),
+    created_by_id   INT          NOT NULL REFERENCES users(id),
+    used_by_id      INT          REFERENCES users(id),
+    expires_at      TIMESTAMPTZ  NOT NULL,
+    used_at         TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+```
+
+---
+
+### 20. `player_ownership_log` — Historico de propiedad de jugadores
+
+Registra cambios de propiedad de jugadores a lo largo de la temporada.
+Permite consultar la plantilla de un participante en cualquier jornada.
+
+```sql
+CREATE TABLE player_ownership_log (
+    id              SERIAL PRIMARY KEY,
+    season_id       INT          NOT NULL REFERENCES seasons(id),
+    player_id       INT          NOT NULL REFERENCES players(id),
+    participant_id  INT          REFERENCES season_participants(id),  -- NULL = liberado
+    from_matchday   SMALLINT     NOT NULL,
+    CONSTRAINT uq_ownership_log_player_matchday
+        UNIQUE (season_id, player_id, from_matchday)
+);
+```
+
+Consulta tipo - propietario de un jugador en la jornada N:
+```sql
+SELECT participant_id FROM player_ownership_log
+WHERE player_id = :pid AND season_id = :sid AND from_matchday <= :N
+ORDER BY from_matchday DESC LIMIT 1;
+```
+
+Consulta tipo - plantilla completa de un participante en jornada N (usado en squads API y matchday bench):
+```sql
+-- Subquery con ROW_NUMBER para obtener el dueño efectivo
+SELECT player_id, participant_id
+FROM (
+    SELECT player_id, participant_id,
+           ROW_NUMBER() OVER (PARTITION BY player_id ORDER BY from_matchday DESC) AS rn
+    FROM player_ownership_log
+    WHERE season_id = :sid AND from_matchday <= :N
+) sub
+WHERE rn = 1 AND participant_id = :participant_id;
+```
+
+Se puebla con `backend/scripts/populate_ownership_log.py`:
+- Temporadas 1-7: derivado de MySQL `jornadas_temp.id_user`
+  - Preseason: todos los jugadores con id_user > 0 en matchday_start
+  - Winter: cambios de ownership entre matchday_winter-1 y matchday_winter
+- Temporada 8 (2025-2026): desde PG `draft_picks`
+  - Preseason picks: from_matchday = season.matchday_start
+  - Winter picks: from_matchday = season.matchday_winter
+  - Winter dropped: participant_id = NULL, from_matchday = season.matchday_winter
+
+Usado en dos code paths del backend:
+- `squads/repository.py` → `_ownership_at_matchday()` para vista de plantillas históricas
+- `matchdays/repository.py` → `get_bench_players()` para banquillo en detalle de jornada
+
+---
+
 ## 🔄 Mapeo MySQL → PostgreSQL
 
 | MySQL actual | PostgreSQL nuevo | Notas |
@@ -574,6 +643,8 @@ INSERT INTO valid_formations (formation, defenders, midfielders, forwards) VALUE
 | *(no existía)* | `competitions` | Preparado para playoffs/copa |
 | *(no existía)* | `scoring_rules` | Puntuación configurable |
 | *(no existía)* | `valid_formations` | Validación de formaciones |
+| *(no existía)* | `player_ownership_log` | Historico de propiedad de jugadores |
+| *(no existía)* | `invites` | Invitaciones de registro |
 
 ---
 
@@ -637,7 +708,7 @@ ORDER BY dp.pick_number;
 
 ---
 
-## 🔑 Resumen: 18 tablas
+## 🔑 Resumen: 20 tablas
 
 | # | Tabla | Propósito |
 |---|---|---|
@@ -659,3 +730,5 @@ ORDER BY dp.pick_number;
 | 16 | `transactions` | Movimientos económicos |
 | 17 | `competitions` | Futuro: playoffs, copa |
 | 18 | `valid_formations` | Formaciones permitidas |
+| 19 | `invites` | Invitaciones de registro |
+| 20 | `player_ownership_log` | Historico de propiedad de jugadores |

@@ -278,28 +278,32 @@ function AccordionRow({
 export function MatchdayAccordion({
   data,
   seasonId,
+  showHeader = true,
 }: {
   data: MatchdayDetailResponse;
   seasonId: number;
+  showHeader?: boolean;
 }) {
   return (
     <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
-      <div className="flex items-center justify-between px-4 pt-4 pb-2">
-        <div>
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-vpv-text-muted">
-            Jornada actual
-          </h2>
-          <p className="text-lg font-bold text-vpv-text">
-            Jornada {data.number}
-          </p>
+      {showHeader && (
+        <div className="flex items-center justify-between px-4 pt-4 pb-2">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-vpv-text-muted">
+              Jornada actual
+            </h2>
+            <p className="text-lg font-bold text-vpv-text">
+              Jornada {data.number}
+            </p>
+          </div>
+          <Link
+            href={`/jornadas/${data.number}`}
+            className="text-xs text-vpv-accent transition-colors hover:text-vpv-accent-hover"
+          >
+            Ver completa &rarr;
+          </Link>
         </div>
-        <Link
-          href={`/jornadas/${data.number}`}
-          className="text-xs text-vpv-accent transition-colors hover:text-vpv-accent-hover"
-        >
-          Ver completa &rarr;
-        </Link>
-      </div>
+      )}
 
       <div>
         {data.scores.map((s, i) => (

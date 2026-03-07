@@ -6,7 +6,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
 import { MatchList } from "@/components/matchdays/match-list";
-import { ScoreList } from "@/components/matchdays/score-list";
+import { MatchdayAccordion } from "@/components/dashboard/matchday-accordion";
 import { SkeletonTable } from "@/components/ui/skeleton";
 import type { MatchdayDetailResponse } from "@/types";
 
@@ -72,12 +72,14 @@ export default function JornadaDetailPage() {
         <MatchList matches={data.matches} />
       </section>
 
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-vpv-text-muted">
-          Puntuaciones
-        </h2>
-        <ScoreList scores={data.scores} matchdayNumber={numero} />
-      </section>
+      {selectedSeason && (
+        <section className="space-y-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-vpv-text-muted">
+            Puntuaciones
+          </h2>
+          <MatchdayAccordion data={data} seasonId={selectedSeason.id} showHeader={false} />
+        </section>
+      )}
     </div>
   );
 }

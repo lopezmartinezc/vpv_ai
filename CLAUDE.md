@@ -44,8 +44,10 @@ Referencia completa: `claude_data/normas_puntuacion_vpv.md`
 2. Partidos que no computan: a 2 niveles (matchdays.counts + matches.counts)
 3. player_stats.position es la fuente de verdad para calculo de puntos (no players.position)
 4. Draft serpiente para pretemporada, lineal para invierno
-5. Deadline alineacion: seasons.lineup_deadline_min minutos antes del primer partido
-6. Alineacion: 1 POR + 10 de campo, formaciones en tabla valid_formations
+5. Draft invierno: orden INVERSO a clasificacion acumulada en seasons.matchday_winter - 1 (peor clasificado elige primero)
+6. Draft invierno: en seasons.matchday_winter los participantes pueden soltar jugadores y fichar sustitutos, manteniendo el limite de 26 jugadores. Jugadores pueden cambiar de equipo en cualquier jornada de la temporada (fichajes reales de La Liga)
+7. Deadline alineacion: seasons.lineup_deadline_min minutos antes del primer partido
+8. Alineacion: 1 POR + 10 de campo, formaciones en tabla valid_formations
 
 ## Estrategia de Migracion
 FASE 1: Next.js -> FastAPI -> MySQL existente

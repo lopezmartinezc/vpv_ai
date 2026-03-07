@@ -19,12 +19,16 @@ class SquadService:
         self.repo = SquadRepository(session)
         self.season_repo = SeasonRepository(session)
 
-    async def list_squads(self, season_id: int) -> SquadListResponse:
+    async def list_squads(
+        self,
+        season_id: int,
+        matchday_number: int | None = None,
+    ) -> SquadListResponse:
         season = await self.season_repo.get_by_id(season_id)
         if season is None:
             raise NotFoundError("Season", season_id)
 
-        rows = await self.repo.list_squads(season_id)
+        rows = await self.repo.list_squads(season_id, matchday_number)
         return SquadListResponse(
             season_id=season_id,
             squads=[
@@ -48,6 +52,7 @@ class SquadService:
         self,
         season_id: int,
         participant_id: int,
+        matchday_number: int | None = None,
     ) -> SquadDetailResponse:
         season = await self.season_repo.get_by_id(season_id)
         if season is None:
@@ -61,7 +66,9 @@ class SquadService:
             season_id,
             participant_id,
         )
-        player_rows = await self.repo.get_squad_players(season_id, participant_id)
+        player_rows = await self.repo.get_squad_players(
+            season_id, participant_id, matchday_number,
+        )
 
         return SquadDetailResponse(
             participant_id=participant_id,

@@ -7,6 +7,7 @@ import { useAuth } from "@/contexts/auth-context";
 const ADMIN_TABS = [
   { href: "/admin/usuarios", label: "Usuarios" },
   { href: "/admin/invitaciones", label: "Invitaciones" },
+  { href: "/admin/jugadores", label: "Jugadores" },
   { href: "/admin/scraping", label: "Scraping" },
   { href: "/admin/temporadas", label: "Temporadas" },
   { href: "/admin/jornadas", label: "Jornadas" },

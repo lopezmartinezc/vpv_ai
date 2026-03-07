@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
@@ -27,11 +27,15 @@ function groupByPosition(players: SquadPlayerEntry[]) {
 export default function PlantillaDetailPage() {
   const { participantId } = useParams<{ participantId: string }>();
   const { selectedSeason, loading: seasonLoading } = useSeason();
-  const { data, loading } = useFetch<SquadDetailResponse>(
+  const searchParams = useSearchParams();
+  const jornada = searchParams.get("jornada");
+
+  const apiPath =
     selectedSeason && participantId
-      ? `/squads/${selectedSeason.id}/${participantId}`
-      : null,
-  );
+      ? `/squads/${selectedSeason.id}/${participantId}${jornada ? `?matchday=${jornada}` : ""}`
+      : null;
+
+  const { data, loading } = useFetch<SquadDetailResponse>(apiPath);
 
   if (seasonLoading || loading) {
     return (
@@ -53,12 +57,13 @@ export default function PlantillaDetailPage() {
   }
 
   const grouped = groupByPosition(data.players);
+  const backHref = `/plantillas${jornada ? `?jornada=${jornada}` : ""}`;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
         <Link
-          href="/plantillas"
+          href={backHref}
           className="text-vpv-text-muted transition-colors hover:text-vpv-text"
         >
           Plantillas
@@ -77,6 +82,7 @@ export default function PlantillaDetailPage() {
 
       <p className="text-sm text-vpv-text-muted">
         {data.players.length} jugadores
+        {jornada && ` (jornada ${jornada})`}
       </p>
 
       <div className="space-y-6">

@@ -11,6 +11,7 @@ from src.shared.models.lineup import Lineup, LineupPlayer
 from src.shared.models.matchday import Match, Matchday
 from src.shared.models.participant import SeasonParticipant
 from src.shared.models.player import Player
+from src.shared.models.player_ownership_log import PlayerOwnershipLog
 from src.shared.models.player_stat import PlayerStat
 from src.shared.models.score import ParticipantMatchdayScore
 from src.shared.models.team import Team
@@ -285,9 +286,14 @@ class MatchdayRepository:
         participant_id: int,
         season_id: int,
         lineup_player_ids: set[int],
+        matchday_number: int | None = None,
     ) -> list[BenchPlayerRow]:
-        """Get squad players NOT in the lineup, with their matchday points."""
-        stmt = (
+        """Get squad players NOT in the lineup, with their matchday points.
+
+        When matchday_number is provided, uses player_ownership_log for
+        historical ownership instead of the current players.owner_id.
+        """
+        base = (
             select(
                 Player.id.label("player_id"),
                 Player.display_name.label("player_name"),
@@ -315,18 +321,52 @@ class MatchdayRepository:
                     PlayerStat.matchday_id == matchday_id,
                 ),
             )
-            .where(
+        )
+
+        if matchday_number is not None:
+            # Historical ownership via ownership log
+            row_num = func.row_number().over(
+                partition_by=PlayerOwnershipLog.player_id,
+                order_by=PlayerOwnershipLog.from_matchday.desc(),
+            ).label("rn")
+            ownership = (
+                select(
+                    PlayerOwnershipLog.player_id,
+                    PlayerOwnershipLog.participant_id,
+                    row_num,
+                )
+                .where(
+                    PlayerOwnershipLog.season_id == season_id,
+                    PlayerOwnershipLog.from_matchday <= matchday_number,
+                )
+                .subquery()
+            )
+            owner_sub = (
+                select(ownership.c.player_id)
+                .where(
+                    ownership.c.rn == 1,
+                    ownership.c.participant_id == participant_id,
+                )
+                .subquery()
+            )
+            base = base.join(owner_sub, Player.id == owner_sub.c.player_id)
+            base = base.where(
+                Player.season_id == season_id,
+                Player.id.not_in(lineup_player_ids) if lineup_player_ids else true(),
+            )
+        else:
+            base = base.where(
                 Player.season_id == season_id,
                 Player.owner_id == participant_id,
                 Player.id.not_in(lineup_player_ids) if lineup_player_ids else true(),
             )
-            .order_by(
-                func.array_position(
-                    func.string_to_array("POR,DEF,MED,DEL", ","),
-                    Player.position,
-                ).asc(),
-                Player.display_name.asc(),
-            )
+
+        stmt = base.order_by(
+            func.array_position(
+                func.string_to_array("POR,DEF,MED,DEL", ","),
+                Player.position,
+            ).asc(),
+            Player.display_name.asc(),
         )
         result = await self.session.execute(stmt)
         return [

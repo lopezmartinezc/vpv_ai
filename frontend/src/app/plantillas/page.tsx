@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
 import { SeasonSelector } from "@/components/layout/season-selector";
@@ -10,9 +11,25 @@ const POSITION_LABELS = ["POR", "DEF", "MED", "DEL"] as const;
 
 export default function PlantillasPage() {
   const { selectedSeason, loading: seasonLoading } = useSeason();
-  const { data, loading } = useFetch<SquadListResponse>(
-    selectedSeason ? `/squads/${selectedSeason.id}` : null,
-  );
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const jornada = searchParams.get("jornada");
+
+  const apiPath = selectedSeason
+    ? `/squads/${selectedSeason.id}${jornada ? `?matchday=${jornada}` : ""}`
+    : null;
+
+  const { data, loading } = useFetch<SquadListResponse>(apiPath);
+
+  function handleJornadaChange(value: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) {
+      params.set("jornada", value);
+    } else {
+      params.delete("jornada");
+    }
+    router.replace(`/plantillas?${params.toString()}`);
+  }
 
   if (seasonLoading || loading) {
     return (
@@ -40,18 +57,38 @@ export default function PlantillasPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-bold text-vpv-text">
           Plantillas {selectedSeason?.name}
         </h1>
-        <SeasonSelector />
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-vpv-text-muted">
+            Jornada
+            <input
+              type="number"
+              min={1}
+              max={38}
+              value={jornada ?? ""}
+              placeholder="Actual"
+              onChange={(e) => handleJornadaChange(e.target.value)}
+              className="w-20 rounded border border-vpv-border bg-vpv-card px-2 py-1 text-sm text-vpv-text placeholder:text-vpv-text-muted"
+            />
+          </label>
+          <SeasonSelector />
+        </div>
       </div>
+
+      {jornada && (
+        <p className="text-sm text-vpv-text-muted">
+          Mostrando plantillas a fecha de jornada {jornada}
+        </p>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {data.squads.map((squad) => (
           <Link
             key={squad.participant_id}
-            href={`/plantillas/${squad.participant_id}`}
+            href={`/plantillas/${squad.participant_id}${jornada ? `?jornada=${jornada}` : ""}`}
             className="rounded-lg border border-vpv-card-border bg-vpv-card p-4 transition-colors hover:border-vpv-accent"
           >
             <div className="flex items-center justify-between">

@@ -15,6 +15,8 @@
 -- DROP TABLES (reverse dependency order -- leaf tables first)
 -- =============================================================================
 
+DROP TABLE IF EXISTS alembic_version               CASCADE;
+DROP TABLE IF EXISTS invites                       CASCADE;
 DROP TABLE IF EXISTS transactions                 CASCADE;
 DROP TABLE IF EXISTS participant_matchday_scores  CASCADE;
 DROP TABLE IF EXISTS lineup_players               CASCADE;
@@ -236,6 +238,7 @@ CREATE TABLE matches (
     stats_ok        BOOLEAN      NOT NULL DEFAULT FALSE,
     source_id       INT,          -- id_part del scraping
     source_url      VARCHAR(200), -- url_part del scraping
+    stats_crc       VARCHAR(20),  -- CRC for change detection (scraping)
     played_at       TIMESTAMPTZ,
     UNIQUE(matchday_id, home_team_id, away_team_id)
 );
@@ -375,3 +378,43 @@ CREATE TABLE transactions (
 
 CREATE INDEX idx_transactions_participant ON transactions(participant_id);
 CREATE INDEX idx_transactions_season      ON transactions(season_id);
+
+-- ----------------------------------------------------------------------------
+-- 19. invites -- Invitaciones de registro
+-- ----------------------------------------------------------------------------
+CREATE TABLE invites (
+    id              SERIAL PRIMARY KEY,
+    token           VARCHAR(255) NOT NULL,
+    target_user_id  INT          REFERENCES users(id),
+    created_by_id   INT          NOT NULL REFERENCES users(id),
+    used_by_id      INT          REFERENCES users(id),
+    expires_at      TIMESTAMPTZ  NOT NULL,
+    used_at         TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX ix_invites_token ON invites(token);
+
+-- ----------------------------------------------------------------------------
+-- 20. player_ownership_log -- Historico de propiedad de jugadores
+-- ----------------------------------------------------------------------------
+CREATE TABLE player_ownership_log (
+    id              SERIAL PRIMARY KEY,
+    season_id       INT          NOT NULL REFERENCES seasons(id),
+    player_id       INT          NOT NULL REFERENCES players(id),
+    participant_id  INT          REFERENCES season_participants(id),
+    from_matchday   SMALLINT     NOT NULL,
+    CONSTRAINT uq_ownership_log_player_matchday
+        UNIQUE (season_id, player_id, from_matchday)
+);
+
+CREATE INDEX idx_ownership_log_season      ON player_ownership_log(season_id);
+CREATE INDEX idx_ownership_log_participant ON player_ownership_log(participant_id);
+CREATE INDEX idx_ownership_log_player      ON player_ownership_log(player_id);
+
+-- ----------------------------------------------------------------------------
+-- Alembic version tracking
+-- ----------------------------------------------------------------------------
+CREATE TABLE alembic_version (
+    version_num     VARCHAR(32)  NOT NULL PRIMARY KEY
+);

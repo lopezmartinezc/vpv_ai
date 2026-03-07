@@ -4,10 +4,12 @@ from dataclasses import dataclass
 
 from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import Select
 
 from src.shared.models.matchday import Matchday
 from src.shared.models.participant import SeasonParticipant
 from src.shared.models.player import Player
+from src.shared.models.player_ownership_log import PlayerOwnershipLog
 from src.shared.models.player_stat import PlayerStat
 from src.shared.models.score import ParticipantMatchdayScore
 from src.shared.models.team import Team
@@ -45,25 +47,78 @@ POSITION_ORDER = case(
 )
 
 
+def _ownership_at_matchday(season_id: int, matchday_number: int) -> Select:
+    """Subquery: effective owner of each player at a given matchday.
+
+    Returns (player_id, participant_id) using the most recent ownership log
+    entry where from_matchday <= matchday_number.
+    """
+    # Row-number window: latest entry per player
+    row_num = func.row_number().over(
+        partition_by=PlayerOwnershipLog.player_id,
+        order_by=PlayerOwnershipLog.from_matchday.desc(),
+    ).label("rn")
+
+    inner = (
+        select(
+            PlayerOwnershipLog.player_id,
+            PlayerOwnershipLog.participant_id,
+            row_num,
+        )
+        .where(
+            PlayerOwnershipLog.season_id == season_id,
+            PlayerOwnershipLog.from_matchday <= matchday_number,
+        )
+        .subquery()
+    )
+
+    return (
+        select(inner.c.player_id, inner.c.participant_id)
+        .where(inner.c.rn == 1)
+        .subquery()
+    )
+
+
 class SquadRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def list_squads(self, season_id: int) -> list[SquadSummaryRow]:
+    async def list_squads(
+        self,
+        season_id: int,
+        matchday_number: int | None = None,
+    ) -> list[SquadSummaryRow]:
         # Subquery: position counts per participant
-        player_counts = (
-            select(
-                Player.owner_id.label("participant_id"),
-                func.count(Player.id).label("total_players"),
-                func.count(Player.id).filter(Player.position == "POR").label("por"),
-                func.count(Player.id).filter(Player.position == "DEF").label("defe"),
-                func.count(Player.id).filter(Player.position == "MED").label("med"),
-                func.count(Player.id).filter(Player.position == "DEL").label("dele"),
+        if matchday_number is not None:
+            ownership = _ownership_at_matchday(season_id, matchday_number)
+            player_counts = (
+                select(
+                    ownership.c.participant_id,
+                    func.count(Player.id).label("total_players"),
+                    func.count(Player.id).filter(Player.position == "POR").label("por"),
+                    func.count(Player.id).filter(Player.position == "DEF").label("defe"),
+                    func.count(Player.id).filter(Player.position == "MED").label("med"),
+                    func.count(Player.id).filter(Player.position == "DEL").label("dele"),
+                )
+                .join(Player, Player.id == ownership.c.player_id)
+                .where(ownership.c.participant_id.isnot(None))
+                .group_by(ownership.c.participant_id)
+                .subquery()
             )
-            .where(Player.season_id == season_id, Player.owner_id.isnot(None))
-            .group_by(Player.owner_id)
-            .subquery()
-        )
+        else:
+            player_counts = (
+                select(
+                    Player.owner_id.label("participant_id"),
+                    func.count(Player.id).label("total_players"),
+                    func.count(Player.id).filter(Player.position == "POR").label("por"),
+                    func.count(Player.id).filter(Player.position == "DEF").label("defe"),
+                    func.count(Player.id).filter(Player.position == "MED").label("med"),
+                    func.count(Player.id).filter(Player.position == "DEL").label("dele"),
+                )
+                .where(Player.season_id == season_id, Player.owner_id.isnot(None))
+                .group_by(Player.owner_id)
+                .subquery()
+            )
 
         # Subquery: season points from participant_matchday_scores (counts=true)
         season_pts = (
@@ -123,6 +178,7 @@ class SquadRepository:
         self,
         season_id: int,
         participant_id: int,
+        matchday_number: int | None = None,
     ) -> list[SquadPlayerRow]:
         # Season points per player: SUM(pts_total) WHERE matchday.counts=true
         season_pts = func.coalesce(
@@ -135,7 +191,7 @@ class SquadRepository:
             0,
         ).label("season_points")
 
-        stmt = (
+        base = (
             select(
                 Player.id.label("player_id"),
                 Player.display_name,
@@ -153,10 +209,25 @@ class SquadRepository:
                     Matchday.season_id == season_id,
                 ),
             )
-            .where(
+        )
+
+        if matchday_number is not None:
+            ownership = _ownership_at_matchday(season_id, matchday_number)
+            base = base.join(
+                ownership,
+                and_(
+                    ownership.c.player_id == Player.id,
+                    ownership.c.participant_id == participant_id,
+                ),
+            ).where(Player.season_id == season_id)
+        else:
+            base = base.where(
                 Player.season_id == season_id,
                 Player.owner_id == participant_id,
             )
+
+        stmt = (
+            base
             .group_by(
                 Player.id,
                 Player.display_name,

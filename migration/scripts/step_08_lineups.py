@@ -265,11 +265,12 @@ def run(
                 lineups_inserted += 1
 
             # -- Insert lineup_players ------------------------------------
+            # Re-number display_order sequentially (1..N) to avoid
+            # duplicate order_astudillo values in MySQL source data.
             for idx, player_row in enumerate(group_players):
                 nom_url: str = player_row["nom_url"]
                 pos: str | None = player_row["pos"]
-                order_val = player_row["order_astudillo"]
-                display_order: int = int(order_val) if order_val is not None else idx + 1
+                display_order: int = idx + 1
 
                 player_id = ctx.player_map.get((temporada, nom_url))
                 if player_id is None:

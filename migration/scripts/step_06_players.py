@@ -29,6 +29,11 @@ Algorithm:
     position and team can change mid-season.  A self-join on (nom_url, temporada,
     MAX(jornada)) gives us one canonical row per player-season.
 
+    OWNERSHIP FIX: ownership is taken from the POST-WINTER state (jornada_cambios),
+    not from MAX(jornada).  Players who left the league at jornada_cambios (exist at
+    jornada_cambios-1 but not at jornada_cambios) had their owner drop them in the
+    winter draft — they must be set as unowned.  This is queried separately.
+
     Players whose team is not in ctx.team_map are foreign/cup players and are
     skipped.  For owned players the owner is resolved from ctx.participant_map.
 
@@ -66,6 +71,32 @@ INNER JOIN (
     AND j.temporada = latest.temporada
     AND j.jornada   = latest.max_jornada
 ORDER BY j.temporada, j.nom_url
+"""
+
+# Fallback: for players whose last team is foreign, find the most recent
+# La Liga team they played for in the same season.
+_MYSQL_FALLBACK_TEAM = """
+SELECT TRIM(j.equipo) AS equipo
+FROM jornadas_temp j
+WHERE j.nom_url = %s AND j.temporada = %s AND TRIM(j.equipo) != %s
+ORDER BY j.jornada DESC
+LIMIT 1
+"""
+
+# Query to get post-winter ownership for each player in a season that had a winter draft.
+# This returns the correct owner after the winter draft took effect.
+# Players who left the league at jornada_cambios won't appear here — they should be unowned.
+_MYSQL_WINTER_OWNERSHIP = """
+SELECT j.nom_url, j.id_user
+FROM jornadas_temp j
+WHERE j.temporada = %s AND j.jornada = %s
+"""
+
+# Which seasons had a winter draft (jornada_actual >= jornada_cambios)
+_MYSQL_WINTER_SEASONS = """
+SELECT temporada, jornada_cambios
+FROM temporadas
+WHERE jornada_actual >= jornada_cambios AND jornada_cambios > 0
 """
 
 _INSERT_PLAYER = """
@@ -115,13 +146,42 @@ def run(
     mysql_cur = mysql_conn.cursor(dictionary=True)
     mysql_cur.execute(_MYSQL_QUERY)
     rows = mysql_cur.fetchall()
-    mysql_cur.close()
 
     logger.info("Found %d unique player-season row(s) from jornadas_temp.", len(rows))
 
     if not rows:
+        mysql_cur.close()
         logger.warning("No player rows found in MySQL — nothing to migrate.")
         return
+
+    # ------------------------------------------------------------------
+    # 1b. Build post-winter ownership overrides
+    #     For seasons that had a winter draft, ownership should come from
+    #     jornada_cambios, not MAX(jornada).  Players who left the league
+    #     at jornada_cambios (not present there) should be unowned.
+    # ------------------------------------------------------------------
+    mysql_cur.execute(_MYSQL_WINTER_SEASONS)
+    winter_seasons = mysql_cur.fetchall()
+
+    # winter_ownership[(temporada, nom_url)] = id_user at jornada_cambios
+    winter_ownership: dict[tuple[str, str], int] = {}
+    winter_season_set: set[str] = set()
+
+    for ws in winter_seasons:
+        temporada = ws["temporada"]
+        jornada_cambios = ws["jornada_cambios"]
+        winter_season_set.add(temporada)
+        mysql_cur.execute(_MYSQL_WINTER_OWNERSHIP, (temporada, jornada_cambios))
+        for wr in mysql_cur.fetchall():
+            winter_ownership[(temporada, wr["nom_url"])] = wr["id_user"]
+        logger.info(
+            "Loaded post-winter ownership for season '%s' (jornada_cambios=%d): %d players.",
+            temporada,
+            jornada_cambios,
+            sum(1 for k in winter_ownership if k[0] == temporada),
+        )
+
+    mysql_cur.close()
 
     # ------------------------------------------------------------------
     # 2. Insert into PostgreSQL players
@@ -156,17 +216,39 @@ def run(
             # -- Filter: skip players from foreign / cup teams -------------
             team_id = ctx.team_map.get((temporada, equipo))
             if team_id is None:
-                logger.debug(
-                    "Team '%s' not in ctx.team_map for season '%s' — skipping player '%s'.",
-                    equipo,
-                    temporada,
-                    nom_url,
-                )
-                skipped_teams.setdefault(temporada, set()).add(equipo)
-                total_skipped_team += 1
-                continue
+                # Fallback: player's last team is foreign — try their most
+                # recent La Liga team in the same season (e.g. loan returns).
+                mysql_cur2 = mysql_conn.cursor(dictionary=True)
+                mysql_cur2.execute(_MYSQL_FALLBACK_TEAM, (nom_url, temporada, equipo))
+                fallback_row = mysql_cur2.fetchone()
+                mysql_cur2.close()
+                if fallback_row:
+                    fallback_team = fallback_row["equipo"]
+                    team_id = ctx.team_map.get((temporada, fallback_team))
+                    if team_id is not None:
+                        logger.info(
+                            "Player '%s' last team '%s' is foreign — using fallback La Liga team '%s'.",
+                            nom_url,
+                            equipo,
+                            fallback_team,
+                        )
+                if team_id is None:
+                    logger.debug(
+                        "Team '%s' not in ctx.team_map for season '%s' — skipping player '%s'.",
+                        equipo,
+                        temporada,
+                        nom_url,
+                    )
+                    skipped_teams.setdefault(temporada, set()).add(equipo)
+                    total_skipped_team += 1
+                    continue
 
             # -- Resolve owner_id -----------------------------------------
+            # For seasons with a winter draft, use post-winter ownership
+            # instead of MAX(jornada) ownership.
+            if temporada in winter_season_set:
+                id_user = winter_ownership.get((temporada, nom_url), 0) or 0
+
             owner_id: int | None = None
             if id_user and id_user > 0:
                 owner_id = ctx.participant_map.get((temporada, id_user))
