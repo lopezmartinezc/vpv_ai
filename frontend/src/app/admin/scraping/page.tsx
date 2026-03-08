@@ -265,6 +265,11 @@ export default function AdminScrapingPage() {
   // Manual scraping overrides
   const [manualSeason, setManualSeason] = useState("");
   const [manualMatchday, setManualMatchday] = useState("");
+  const [scrapingMatchId, setScrapingMatchId] = useState<number | null>(null);
+  const [matchScrapeResult, setMatchScrapeResult] = useState<{
+    matchId: number;
+    lines: string[];
+  } | null>(null);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -321,8 +326,11 @@ export default function AdminScrapingPage() {
     setTriggeringJob(jobId);
     try {
       await apiClient.post(endpoint, {});
-      // Give the job a moment to start, then refresh status
-      setTimeout(() => fetchStatus(), 1500);
+      // Give the job a moment to start, then refresh status + matchday
+      setTimeout(() => {
+        fetchStatus();
+        fetchCurrentMatchday();
+      }, 1500);
     } catch {
       // error
     } finally {
@@ -334,14 +342,20 @@ export default function AdminScrapingPage() {
     setActionLoading("scrape");
     setScrapeResult(null);
     try {
-      const data = await apiClient.post<Record<string, number>>(
-        `/scraping/matchday/${manualSeason}/${manualMatchday}`,
-        {},
-      );
-      setScrapeResult(
-        `Procesados: ${data.processed ?? 0}, Saltados: ${data.skipped ?? 0}, Errores: ${data.errors ?? 0}`,
-      );
-      await fetchStatus();
+      const data = await apiClient.post<{
+        processed?: number;
+        skipped?: number;
+        errors?: number;
+        error_details?: string[];
+      }>(`/scraping/matchday/${manualSeason}/${manualMatchday}`, {});
+      const errors = data.errors ?? 0;
+      const details = data.error_details ?? [];
+      let msg = `Procesados: ${data.processed ?? 0}, Saltados: ${data.skipped ?? 0}, Errores: ${errors}`;
+      if (details.length > 0) {
+        msg += "\n" + details.join("\n");
+      }
+      setScrapeResult(msg);
+      await Promise.all([fetchStatus(), fetchCurrentMatchday()]);
     } catch {
       setScrapeResult("Error al ejecutar scraping");
     } finally {
@@ -365,6 +379,35 @@ export default function AdminScrapingPage() {
       setScrapeResult("Error al actualizar calendario");
     } finally {
       setActionLoading(null);
+    }
+  }
+
+  async function handleScrapeMatch(matchId: number) {
+    if (!season || !matchdayDetail) return;
+    setScrapingMatchId(matchId);
+    setMatchScrapeResult(null);
+    try {
+      const data = await apiClient.post<{
+        processed?: number;
+        skipped?: number;
+        errors?: number;
+        error_details?: string[];
+      }>(
+        `/scraping/match/${season.id}/${matchdayDetail.number}/${matchId}`,
+        {},
+      );
+      const errors = data.errors ?? 0;
+      const details = data.error_details ?? [];
+      const lines = [
+        `Procesados: ${data.processed ?? 0}, Saltados: ${data.skipped ?? 0}, Errores: ${errors}`,
+        ...details,
+      ];
+      setMatchScrapeResult({ matchId, lines });
+      await fetchCurrentMatchday();
+    } catch {
+      setMatchScrapeResult({ matchId, lines: ["Error al scrapear partido"] });
+    } finally {
+      setScrapingMatchId(null);
     }
   }
 
@@ -454,61 +497,83 @@ export default function AdminScrapingPage() {
           <div className="divide-y divide-vpv-border">
             {matchdayDetail.matches.map((match) => {
               const st = matchStatus(match);
+              const hasResult = matchScrapeResult?.matchId === match.id;
               return (
-                <div
-                  key={match.id}
-                  className="flex items-center gap-3 px-4 py-2"
-                >
-                  {/* Scraping status indicator */}
-                  <span
-                    className={`h-2 w-2 shrink-0 rounded-full ${
-                      match.stats_ok
-                        ? "bg-green-500"
-                        : st === "played"
-                          ? "bg-yellow-500 animate-pulse"
-                          : "bg-vpv-border"
-                    }`}
-                    title={
-                      match.stats_ok
-                        ? "Stats scrapeados"
-                        : st === "played"
-                          ? "Pendiente de scrapear"
-                          : "No jugado"
-                    }
-                  />
-                  <div className="flex-1">
-                    <span className="text-sm text-vpv-text">
-                      {match.home_team} vs {match.away_team}
-                    </span>
-                  </div>
-                  <div className="text-right">
-                    {st === "played" ? (
-                      <span className="text-sm font-medium text-vpv-text">
-                        {match.home_score} - {match.away_score}
-                      </span>
-                    ) : st === "live" ? (
-                      <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-xs font-medium text-red-400">
-                        En juego
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="w-44 text-right">
+                <div key={match.id}>
+                  <div className="flex items-center gap-3 px-4 py-2">
+                    {/* Scraping status indicator */}
                     <span
-                      className={`text-xs ${
-                        st === "played"
-                          ? "text-vpv-text-muted"
-                          : st === "live"
-                            ? "text-red-400"
-                            : "text-vpv-text"
+                      className={`h-2 w-2 shrink-0 rounded-full ${
+                        match.stats_ok
+                          ? "bg-green-500"
+                          : st === "played"
+                            ? "bg-yellow-500 animate-pulse"
+                            : "bg-vpv-border"
                       }`}
+                      title={
+                        match.stats_ok
+                          ? "Stats scrapeados"
+                          : st === "played"
+                            ? "Pendiente de scrapear"
+                            : "No jugado"
+                      }
+                    />
+                    <div className="flex-1">
+                      <span className="text-sm text-vpv-text">
+                        {match.home_team} vs {match.away_team}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      {st === "played" ? (
+                        <span className="text-sm font-medium text-vpv-text">
+                          {match.home_score} - {match.away_score}
+                        </span>
+                      ) : st === "live" ? (
+                        <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-xs font-medium text-red-400">
+                          En juego
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="w-44 text-right">
+                      <span
+                        className={`text-xs ${
+                          st === "played"
+                            ? "text-vpv-text-muted"
+                            : st === "live"
+                              ? "text-red-400"
+                              : "text-vpv-text"
+                        }`}
+                      >
+                        {formatMatchDate(match.played_at)}
+                      </span>
+                    </div>
+                    {!match.counts && (
+                      <span className="rounded bg-yellow-500/20 px-1.5 py-0.5 text-xs text-yellow-400">
+                        NC
+                      </span>
+                    )}
+                    <button
+                      onClick={() => handleScrapeMatch(match.id)}
+                      disabled={scrapingMatchId !== null || actionLoading !== null}
+                      className="shrink-0 rounded border border-vpv-border px-2 py-0.5 text-[11px] text-vpv-text-muted transition-colors hover:border-vpv-accent hover:text-vpv-accent disabled:opacity-40"
                     >
-                      {formatMatchDate(match.played_at)}
-                    </span>
+                      {scrapingMatchId === match.id
+                        ? "Scrapeando..."
+                        : "Scrapear"}
+                    </button>
                   </div>
-                  {!match.counts && (
-                    <span className="rounded bg-yellow-500/20 px-1.5 py-0.5 text-xs text-yellow-400">
-                      NC
-                    </span>
+                  {/* Inline scrape result for this match */}
+                  {hasResult && matchScrapeResult && (
+                    <div className="border-t border-vpv-border/30 bg-vpv-bg/40 px-4 py-1.5 pl-10">
+                      {matchScrapeResult.lines.map((line, i) => (
+                        <div
+                          key={i}
+                          className={`text-xs ${i > 0 ? "text-red-400" : "text-vpv-text-muted"}`}
+                        >
+                          {line}
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               );
@@ -567,8 +632,17 @@ export default function AdminScrapingPage() {
           </div>
 
           {scrapeResult && (
-            <div className="rounded bg-vpv-bg px-3 py-2 text-sm text-vpv-text">
-              {scrapeResult}
+            <div className="rounded bg-vpv-bg px-3 py-2 text-sm text-vpv-text whitespace-pre-line">
+              {scrapeResult.split("\n").map((line, i) => (
+                <div
+                  key={i}
+                  className={
+                    i > 0 ? "pl-2 text-xs text-red-400" : ""
+                  }
+                >
+                  {line}
+                </div>
+              ))}
             </div>
           )}
         </div>

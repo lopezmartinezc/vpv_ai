@@ -6,9 +6,8 @@ import { NavIcon } from "@/components/ui/nav-icon";
 
 const TABS = [
   { href: "/clasificacion", label: "Clasificacion", icon: "trophy" },
+  { href: "/copa", label: "Copa", icon: "shield" },
   { href: "/jornadas", label: "Jornadas", icon: "calendar" },
-  { href: "/plantillas", label: "Plantillas", icon: "users" },
-  { href: "/drafts", label: "Drafts", icon: "shuffle" },
   { href: "/economia", label: "Economia", icon: "coins" },
 ] as const;
 

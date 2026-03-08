@@ -4,8 +4,22 @@ import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
 import { StandingsList } from "@/components/standings/standings-list";
 import { LigaMatchdayDetail } from "@/components/standings/liga-matchday-detail";
+import { EvolutionChart } from "@/components/standings/evolution-chart";
 import { SkeletonTable } from "@/components/ui/skeleton";
 import type { StandingsResponse, MatchdayListResponse } from "@/types";
+
+interface EvolutionEntry {
+  matchday_number: number;
+  participant_id: number;
+  display_name: string;
+  points: number;
+  cumulative: number;
+}
+
+interface EvolutionResponse {
+  season_id: number;
+  entries: EvolutionEntry[];
+}
 
 export default function ClasificacionPage() {
   const { selectedSeason, loading: seasonLoading } = useSeason();
@@ -17,6 +31,9 @@ export default function ClasificacionPage() {
     useFetch<MatchdayListResponse>(
       selectedSeason ? `/matchdays/${selectedSeason.id}` : null,
     );
+  const { data: evolution } = useFetch<EvolutionResponse>(
+    selectedSeason ? `/standings/${selectedSeason.id}/evolution` : null,
+  );
 
   if (seasonLoading || standingsLoading || matchdaysLoading) {
     return (
@@ -45,6 +62,10 @@ export default function ClasificacionPage() {
       </div>
 
       <StandingsList entries={standings.entries} />
+
+      {evolution && evolution.entries.length > 0 && (
+        <EvolutionChart entries={evolution.entries} />
+      )}
 
       {selectedSeason && matchdayList && matchdayList.matchdays.length > 0 && (
         <LigaMatchdayDetail

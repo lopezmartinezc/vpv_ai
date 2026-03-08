@@ -39,7 +39,9 @@ export function LigaMatchdayDetail({
   matchdays: MatchdaySummaryItem[];
   matchdayCurrent: number | null;
 }) {
-  const playedMatchdays = matchdays.filter((md) => md.stats_ok);
+  const playedMatchdays = matchdays.filter(
+    (md) => md.stats_ok && md.counts,
+  );
 
   const defaultMd =
     playedMatchdays.find((md) => md.number === matchdayCurrent)?.number ??

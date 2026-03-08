@@ -15,6 +15,7 @@ from src.features.scraping.parsers import (
 )
 from src.features.scraping.repository import ScrapingRepository
 from src.features.scraping.scoring import ScoringEngine
+from src.shared.models.team import Team
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,28 @@ class ScrapingService:
         self.repo = ScrapingRepository(session)
         self._aggregator = ScoreAggregator(session)
         self._settings = scraping_settings
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    async def _team_names(self, team_ids: set[int]) -> dict[int, str]:
+        """Return a mapping of team_id → team name for the given IDs."""
+        from sqlalchemy import select
+
+        stmt = select(Team.id, Team.name).where(Team.id.in_(team_ids))
+        result = await self.session.execute(stmt)
+        return {row.id: row.name for row in result.all()}
+
+    @staticmethod
+    def _format_scrape_error(player_name: str, team_name: str, exc: ScrapingError) -> str:
+        """Build a short, human-readable error string."""
+        import httpx
+
+        cause = exc.cause
+        if isinstance(cause, httpx.HTTPStatusError):
+            return f"{player_name} ({team_name}): HTTP {cause.response.status_code}"
+        return f"{player_name} ({team_name}): {type(cause).__name__}"
 
     # ------------------------------------------------------------------
     # Public API
@@ -86,6 +109,7 @@ class ScrapingService:
 
         # Load all players for those teams in one query.
         all_players = await self.repo.get_players_for_teams(season_id, team_ids)
+        team_names = await self._team_names(team_ids)
         # Build a mapping from team_id → list[Player] for quick per-match lookup.
         players_by_team: dict[int, list] = {}
         for player in all_players:
@@ -94,6 +118,7 @@ class ScrapingService:
         total_processed = 0
         total_skipped = 0
         total_errors = 0
+        error_details: list[str] = []
 
         base_url = self._settings.scraping_base_url
         season_slug = self._settings.scraping_season_slug
@@ -132,6 +157,8 @@ class ScrapingService:
                         )
                         total_errors += 1
                         match_errors += 1
+                        team = team_names.get(player.team_id, "?")
+                        error_details.append(self._format_scrape_error(player.name, team, exc))
                         continue
 
                     stats = parse_player_stats(html, matchday_number)
@@ -195,10 +222,11 @@ class ScrapingService:
         if all_ok and counting_matches:
             await self.repo.update_season_matchday_scanned(season_id, matchday_number)
 
-        summary = {
+        summary: dict[str, object] = {
             "processed": total_processed,
             "skipped": total_skipped,
             "errors": total_errors,
+            "error_details": error_details,
         }
         logger.info("scrape_matchday: done — matchday_id=%d summary=%s", matchday_id, summary)
         return summary
@@ -249,10 +277,12 @@ class ScrapingService:
 
         team_ids = {match.home_team_id, match.away_team_id}
         match_players = await self.repo.get_players_for_teams(season_id, team_ids)
+        team_names = await self._team_names(team_ids)
 
         total_processed = 0
         total_skipped = 0
         total_errors = 0
+        error_details: list[str] = []
 
         base_url = self._settings.scraping_base_url
         season_slug = self._settings.scraping_season_slug
@@ -278,6 +308,8 @@ class ScrapingService:
                         exc,
                     )
                     total_errors += 1
+                    team = team_names.get(player.team_id, "?")
+                    error_details.append(f"{player.name} ({team}): {exc.cause}")
                     continue
 
                 stats = parse_player_stats(html, matchday_number)
@@ -303,10 +335,11 @@ class ScrapingService:
 
         await self._aggregator.aggregate_matchday(matchday_id)
 
-        summary = {
+        summary: dict[str, object] = {
             "processed": total_processed,
             "skipped": total_skipped,
             "errors": total_errors,
+            "error_details": error_details,
         }
         logger.info("scrape_match_players: done — match_id=%d summary=%s", match_id, summary)
         return summary

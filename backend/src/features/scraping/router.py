@@ -25,14 +25,13 @@ def _get_service(db: AsyncSession = Depends(get_db)) -> ScrapingService:
 @router.post(
     "/matchday/{season_id}/{number}",
     summary="Scrape all player stats for a matchday",
-    response_model=dict,
 )
 async def scrape_matchday_endpoint(
     season_id: int,
     number: int,
     _admin: dict = Depends(get_current_admin),
     service: ScrapingService = Depends(_get_service),
-) -> dict[str, int]:
+) -> dict:
     """Trigger a full scrape of player stats for the given matchday.
 
     Processes all counting matches in the matchday sequentially (one HTTP
@@ -45,7 +44,6 @@ async def scrape_matchday_endpoint(
 @router.post(
     "/match/{season_id}/{number}/{match_id}",
     summary="Scrape stats for a single match",
-    response_model=dict,
 )
 async def scrape_match_endpoint(
     season_id: int,
@@ -53,7 +51,7 @@ async def scrape_match_endpoint(
     match_id: int,
     _admin: dict = Depends(get_current_admin),
     service: ScrapingService = Depends(_get_service),
-) -> dict[str, int]:
+) -> dict:
     """Trigger a scrape of player stats for a single match.
 
     Useful for re-scraping an individual match without touching the rest of

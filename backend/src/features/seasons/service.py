@@ -5,6 +5,7 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import BusinessRuleError, NotFoundError
+from src.features.scraping.aggregation import ScoreAggregator
 from src.features.seasons.repository import SeasonRepository
 from src.features.seasons.schemas import ScoringRuleResponse, SeasonDetail
 from src.shared.models.season import ScoringRule, Season, SeasonPayment, ValidFormation
@@ -56,11 +57,21 @@ class SeasonService:
         if season is None:
             raise NotFoundError("Season", season_id)
 
-        # Auto-sync matchday counts when matchday_start changes
-        if "matchday_start" in kwargs:
-            await self.repo.sync_matchday_counts(season_id, season.matchday_start)
-
+        # Always sync matchday counts — idempotent, ensures consistency
+        changed_ids = await self.repo.sync_matchday_counts(
+            season_id,
+            season.matchday_start,
+            matchday_end=season.matchday_end,
+        )
         await self.repo.session.commit()
+
+        # Re-aggregate scores for matchdays whose counts flag flipped
+        if changed_ids:
+            aggregator = ScoreAggregator(self.repo.session)
+            for md_id in changed_ids:
+                await aggregator.aggregate_matchday(md_id)
+            await self.repo.session.commit()
+
         return SeasonDetail.model_validate(season)
 
     async def update_scoring_rules(

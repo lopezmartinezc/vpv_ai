@@ -7,6 +7,7 @@ import { Podium } from "@/components/dashboard/podium";
 import { NavCards } from "@/components/dashboard/nav-cards";
 import { CopaWidget } from "@/components/dashboard/copa-widget";
 import { CopaMatchdayWidget } from "@/components/dashboard/copa-matchday-widget";
+import { PagometroJornadaWidget } from "@/components/dashboard/pagometro-jornada-widget";
 import { PagometroWidget } from "@/components/dashboard/pagometro-widget";
 import { SkeletonCards } from "@/components/ui/skeleton";
 
@@ -64,18 +65,6 @@ export default function Home() {
         : "Puntuaciones por jornada",
     },
     {
-      title: "Plantillas",
-      href: "/plantillas",
-      icon: "users" as const,
-      detail: `${selectedSeason?.total_participants ?? 0} participantes`,
-    },
-    {
-      title: "Drafts",
-      href: "/drafts",
-      icon: "shuffle" as const,
-      detail: "Historial de elecciones",
-    },
-    {
       title: "Economia",
       href: "/economia",
       icon: "coins" as const,
@@ -111,6 +100,13 @@ export default function Home() {
 
       {copaData && copaData.standings.length > 0 && (
         <CopaWidget entries={copaData.standings} />
+      )}
+
+      {currentMatchdayDetail && currentMatchdayDetail.scores.length > 0 && (
+        <PagometroJornadaWidget
+          scores={currentMatchdayDetail.scores}
+          matchdayNumber={currentMatchdayDetail.number}
+        />
       )}
 
       {economy && economy.balances.length > 0 && (

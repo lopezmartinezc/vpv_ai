@@ -37,13 +37,40 @@ const TX_TYPES = [
 ];
 
 const TX_TYPE_LABELS: Record<string, string> = {
-  initial_fee: "Cuota",
-  weekly_payment: "Semanal",
-  winter_draft_fee: "Draft inv.",
+  initial_fee: "Cuota inicial",
+  weekly_payment: "Pago semanal",
+  winter_draft_fee: "Draft invierno",
   prize: "Premio",
   manual_adjustment: "Ajuste",
   penalty: "Penalizacion",
 };
+
+/** Sort transactions into logical order: inicio, jornadas, draft inv, otros */
+function sortTransactions(txs: TransactionEntry[]): {
+  label: string;
+  tx: TransactionEntry;
+}[] {
+  function txSortKey(tx: TransactionEntry): { order: number; label: string } {
+    if (tx.type === "initial_fee")
+      return { order: 0, label: "Inicio temporada" };
+    if (tx.type === "winter_draft_fee")
+      return { order: 0.5, label: "Draft invierno" };
+    if (tx.matchday_number !== null)
+      return { order: tx.matchday_number, label: `J${tx.matchday_number}` };
+    return { order: 999, label: "Otros" };
+  }
+
+  const items = txs.map((tx) => ({ ...txSortKey(tx), tx }));
+  items.sort((a, b) => a.order - b.order);
+
+  // Add group label only on first item of each group
+  let lastLabel = "";
+  return items.map((item) => {
+    const showLabel = item.label !== lastLabel;
+    lastLabel = item.label;
+    return { label: showLabel ? item.label : "", tx: item.tx };
+  });
+}
 
 export default function AdminEconomiaPage() {
   const [seasons, setSeasons] = useState<SeasonSummary[]>([]);
@@ -60,11 +87,13 @@ export default function AdminEconomiaPage() {
   const [formDescription, setFormDescription] = useState("");
   const [formSaving, setFormSaving] = useState(false);
 
-  // Transaction detail
-  const [selectedParticipant, setSelectedParticipant] = useState<number | null>(
+  // Transaction detail — per-participant accordion
+  const [expandedParticipant, setExpandedParticipant] = useState<number | null>(
     null,
   );
-  const [transactions, setTransactions] = useState<TransactionEntry[]>([]);
+  const [participantTxs, setParticipantTxs] = useState<
+    Map<number, TransactionEntry[]>
+  >(new Map());
   const [txLoading, setTxLoading] = useState(false);
 
   const fetchSeasons = useCallback(async () => {
@@ -100,28 +129,32 @@ export default function AdminEconomiaPage() {
   useEffect(() => {
     if (selectedSeasonId !== null) {
       fetchBalances(selectedSeasonId);
-      setSelectedParticipant(null);
-      setTransactions([]);
+      setExpandedParticipant(null);
+      setParticipantTxs(new Map());
     }
   }, [selectedSeasonId, fetchBalances]);
 
-  async function handleViewTransactions(participantId: number) {
-    if (selectedParticipant === participantId) {
-      setSelectedParticipant(null);
-      setTransactions([]);
+  async function handleToggleParticipant(participantId: number) {
+    if (expandedParticipant === participantId) {
+      setExpandedParticipant(null);
       return;
     }
-    setSelectedParticipant(participantId);
-    setTxLoading(true);
-    try {
-      const data = await apiClient.get<{
-        transactions: TransactionEntry[];
-      }>(`/economy/${selectedSeasonId}/${participantId}`);
-      setTransactions(data.transactions);
-    } catch {
-      // handled
-    } finally {
-      setTxLoading(false);
+    setExpandedParticipant(participantId);
+    // Fetch if not cached
+    if (!participantTxs.has(participantId)) {
+      setTxLoading(true);
+      try {
+        const data = await apiClient.get<{
+          transactions: TransactionEntry[];
+        }>(`/economy/${selectedSeasonId}/${participantId}`);
+        setParticipantTxs((prev) =>
+          new Map(prev).set(participantId, data.transactions),
+        );
+      } catch {
+        // handled
+      } finally {
+        setTxLoading(false);
+      }
     }
   }
 
@@ -136,8 +169,21 @@ export default function AdminEconomiaPage() {
         description: formDescription || null,
       });
       await fetchBalances(selectedSeasonId);
-      if (selectedParticipant === Number(formParticipant)) {
-        await handleViewTransactions(selectedParticipant);
+      // Invalidate cached txs for this participant so next expand refetches
+      const pid = Number(formParticipant);
+      setParticipantTxs((prev) => {
+        const next = new Map(prev);
+        next.delete(pid);
+        return next;
+      });
+      // If expanded, refetch immediately
+      if (expandedParticipant === pid) {
+        const data = await apiClient.get<{
+          transactions: TransactionEntry[];
+        }>(`/economy/${selectedSeasonId}/${pid}`);
+        setParticipantTxs((prev) =>
+          new Map(prev).set(pid, data.transactions),
+        );
       }
       setShowForm(false);
       setFormParticipant("");
@@ -152,12 +198,18 @@ export default function AdminEconomiaPage() {
   }
 
   async function handleDeleteTransaction(txId: number) {
-    if (!selectedSeasonId || !selectedParticipant) return;
+    if (!selectedSeasonId || !expandedParticipant) return;
     try {
       await apiClient.delete(
         `/economy/admin/${selectedSeasonId}/transaction/${txId}`,
       );
-      setTransactions((prev) => prev.filter((t) => t.id !== txId));
+      // Update cached txs
+      setParticipantTxs((prev) => {
+        const next = new Map(prev);
+        const txs = next.get(expandedParticipant);
+        if (txs) next.set(expandedParticipant, txs.filter((t) => t.id !== txId));
+        return next;
+      });
       await fetchBalances(selectedSeasonId);
       showMsg("Transaccion eliminada");
     } catch {
@@ -286,153 +338,124 @@ export default function AdminEconomiaPage() {
         </div>
       )}
 
-      {/* Balances table */}
+      {/* Balances — accordion per participant */}
       <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
         <div className="border-b border-vpv-border px-4 py-3">
           <h2 className="font-semibold text-vpv-text">
             Balances ({balances.length})
           </h2>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-vpv-border bg-vpv-bg text-left text-vpv-text-muted">
-                <th className="px-4 py-2">Participante</th>
-                <th className="px-4 py-2 text-right">Cuota</th>
-                <th className="px-4 py-2 text-right">Semanal</th>
-                <th className="px-4 py-2 text-right">Draft</th>
-                <th className="px-4 py-2 text-right">Balance</th>
-                <th className="px-4 py-2 text-right">Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {balances.map((b) => (
-                <tr
-                  key={b.participant_id}
-                  className={`border-b border-vpv-border last:border-0 hover:bg-vpv-bg/50 ${
-                    selectedParticipant === b.participant_id
-                      ? "bg-vpv-bg/30"
-                      : ""
+        <div>
+          {balances.map((b) => {
+            const isOpen = expandedParticipant === b.participant_id;
+            const txs = participantTxs.get(b.participant_id);
+            return (
+              <div
+                key={b.participant_id}
+                className="border-b border-vpv-border last:border-0"
+              >
+                {/* Participant header row — clickable */}
+                <button
+                  type="button"
+                  onClick={() => handleToggleParticipant(b.participant_id)}
+                  className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-vpv-bg/50 ${
+                    isOpen ? "bg-vpv-bg/30" : ""
                   }`}
                 >
-                  <td className="px-4 py-2 font-medium text-vpv-text">
+                  <svg
+                    className={`h-3.5 w-3.5 shrink-0 text-vpv-text-muted transition-transform ${isOpen ? "rotate-90" : ""}`}
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-vpv-text">
                     {b.display_name}
-                  </td>
-                  <td className="px-4 py-2 text-right text-vpv-text-muted">
+                  </span>
+                  <span className="hidden text-xs text-vpv-text-muted sm:inline">
                     {b.initial_fee.toFixed(2)}
-                  </td>
-                  <td className="px-4 py-2 text-right text-vpv-text-muted">
+                  </span>
+                  <span className="hidden text-xs text-vpv-text-muted sm:inline">
                     {b.weekly_total.toFixed(2)}
-                  </td>
-                  <td className="px-4 py-2 text-right text-vpv-text-muted">
+                  </span>
+                  <span className="hidden text-xs text-vpv-text-muted sm:inline">
                     {b.draft_fees.toFixed(2)}
-                  </td>
-                  <td
-                    className={`px-4 py-2 text-right font-medium ${
+                  </span>
+                  <span
+                    className={`w-16 text-right text-sm font-medium tabular-nums ${
                       b.net_balance >= 0 ? "text-green-400" : "text-red-400"
                     }`}
                   >
                     {b.net_balance.toFixed(2)}
-                  </td>
-                  <td className="px-4 py-2 text-right">
-                    <button
-                      onClick={() =>
-                        handleViewTransactions(b.participant_id)
-                      }
-                      className="rounded border border-vpv-border px-2 py-1 text-xs text-vpv-text-muted transition-colors hover:text-vpv-text"
-                    >
-                      {selectedParticipant === b.participant_id
-                        ? "Cerrar"
-                        : "Ver"}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </span>
+                </button>
+
+                {/* Expanded: one line per transaction */}
+                {isOpen && (
+                  <div className="border-t border-vpv-border/50 bg-vpv-bg/20">
+                    {txLoading && !txs ? (
+                      <div className="px-6 py-3">
+                        <div className="h-8 animate-pulse rounded bg-vpv-border" />
+                      </div>
+                    ) : txs && txs.length === 0 ? (
+                      <p className="px-6 py-2 text-center text-xs text-vpv-text-muted">
+                        Sin transacciones
+                      </p>
+                    ) : txs ? (
+                      <div className="divide-y divide-vpv-border/20">
+                        {sortTransactions(txs).map(({ label, tx }) => (
+                          <div
+                            key={tx.id}
+                            className="flex items-center gap-2 py-1 pl-8 pr-4 text-xs hover:bg-vpv-bg/40"
+                          >
+                            {label ? (
+                              <span className="w-28 shrink-0 truncate font-semibold text-vpv-text-muted">
+                                {label}
+                              </span>
+                            ) : (
+                              <span className="w-28 shrink-0" />
+                            )}
+                            <span className="w-20 shrink-0 text-vpv-text-muted">
+                              {TX_TYPE_LABELS[tx.type] ?? tx.type}
+                            </span>
+                            <span
+                              className={`w-16 shrink-0 text-right font-medium tabular-nums ${
+                                tx.amount >= 0
+                                  ? "text-green-400"
+                                  : "text-red-400"
+                              }`}
+                            >
+                              {tx.amount.toFixed(2)}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate text-vpv-text-muted">
+                              {tx.description ?? ""}
+                            </span>
+                            <span className="w-20 shrink-0 text-right text-[11px] text-vpv-text-muted">
+                              {new Date(tx.created_at).toLocaleDateString(
+                                "es-ES",
+                              )}
+                            </span>
+                            <button
+                              onClick={() => handleDeleteTransaction(tx.id)}
+                              className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-red-400 transition-colors hover:bg-red-600/20"
+                            >
+                              Eliminar
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
-
-      {/* Transaction detail */}
-      {selectedParticipant !== null && (
-        <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
-          <div className="border-b border-vpv-border px-4 py-3">
-            <h2 className="font-semibold text-vpv-text">
-              Transacciones —{" "}
-              {balances.find((b) => b.participant_id === selectedParticipant)
-                ?.display_name ?? ""}
-            </h2>
-          </div>
-          {txLoading ? (
-            <div className="px-4 py-3">
-              <div className="h-20 animate-pulse rounded bg-vpv-border" />
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-vpv-border bg-vpv-bg text-left text-xs text-vpv-text-muted">
-                    <th className="px-4 py-2">Tipo</th>
-                    <th className="px-4 py-2 text-right">Cantidad</th>
-                    <th className="px-4 py-2">Descripcion</th>
-                    <th className="px-4 py-2">Jornada</th>
-                    <th className="px-4 py-2">Fecha</th>
-                    <th className="px-4 py-2 text-right">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {transactions.map((tx) => (
-                    <tr
-                      key={tx.id}
-                      className="border-b border-vpv-border last:border-0 hover:bg-vpv-bg/50"
-                    >
-                      <td className="px-4 py-1.5 text-vpv-text">
-                        {TX_TYPE_LABELS[tx.type] ?? tx.type}
-                      </td>
-                      <td
-                        className={`px-4 py-1.5 text-right font-medium ${
-                          tx.amount >= 0 ? "text-green-400" : "text-red-400"
-                        }`}
-                      >
-                        {tx.amount.toFixed(2)}
-                      </td>
-                      <td className="px-4 py-1.5 text-vpv-text-muted">
-                        {tx.description ?? "—"}
-                      </td>
-                      <td className="px-4 py-1.5 text-vpv-text-muted">
-                        {tx.matchday_number !== null
-                          ? `J${tx.matchday_number}`
-                          : "—"}
-                      </td>
-                      <td className="px-4 py-1.5 text-xs text-vpv-text-muted">
-                        {new Date(tx.created_at).toLocaleDateString("es-ES")}
-                      </td>
-                      <td className="px-4 py-1.5 text-right">
-                        <button
-                          onClick={() => handleDeleteTransaction(tx.id)}
-                          className="rounded px-2 py-0.5 text-xs text-red-400 transition-colors hover:bg-red-600/20"
-                        >
-                          Eliminar
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                  {transactions.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan={6}
-                        className="px-4 py-3 text-center text-sm text-vpv-text-muted"
-                      >
-                        Sin transacciones
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
