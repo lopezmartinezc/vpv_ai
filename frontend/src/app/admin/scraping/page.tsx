@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "@/lib/api-client";
 
+interface LogEntry {
+  ts: string;
+  level: string;
+  msg: string;
+}
+
 interface JobStatus {
   id: string;
   name: string;
@@ -12,6 +18,7 @@ interface JobStatus {
   last_run_at: string | null;
   next_run_at: string | null;
   lock_held?: boolean;
+  logs?: LogEntry[];
 }
 
 interface SchedulerStatus {
@@ -133,6 +140,17 @@ function formatFrequency(job: JobStatus): string {
   return "\u2014";
 }
 
+const LOG_LEVEL_COLORS: Record<string, string> = {
+  info: "text-vpv-text-muted",
+  warning: "text-yellow-400",
+  error: "text-red-400",
+};
+
+function formatLogTime(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
 function JobCard({
   job,
   schedulerRunning,
@@ -144,7 +162,10 @@ function JobCard({
   onTrigger: (jobId: string) => void;
   triggeringJob: string | null;
 }) {
+  const [showLogs, setShowLogs] = useState(false);
   const isTriggering = triggeringJob === job.id;
+  const logs = job.logs ?? [];
+  const lastLogs = logs.slice(-15);
 
   return (
     <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
@@ -189,6 +210,42 @@ function JobCard({
           )}
         </div>
       </div>
+
+      {/* Log section */}
+      {logs.length > 0 && (
+        <div className="border-t border-vpv-border">
+          <button
+            type="button"
+            onClick={() => setShowLogs((p) => !p)}
+            className="flex w-full items-center justify-between px-4 py-1.5 text-[11px] text-vpv-text-muted transition-colors hover:text-vpv-text"
+          >
+            <span>Log ({logs.length})</span>
+            <svg
+              className={`h-3 w-3 transition-transform ${showLogs ? "rotate-180" : ""}`}
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fillRule="evenodd"
+                d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </button>
+          {showLogs && (
+            <div className="max-h-48 overflow-y-auto border-t border-vpv-border/50 bg-vpv-bg/50 px-3 py-1.5 font-mono text-[10px] leading-relaxed">
+              {lastLogs.map((entry, i) => (
+                <div key={i} className="flex gap-2">
+                  <span className="shrink-0 text-vpv-text-muted/60">{formatLogTime(entry.ts)}</span>
+                  <span className={LOG_LEVEL_COLORS[entry.level] ?? "text-vpv-text-muted"}>
+                    {entry.msg}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -363,7 +420,7 @@ export default function AdminScrapingPage() {
       </div>
 
       {/* Per-Job Cards */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {jobs.map((job) => (
           <JobCard
             key={job.id}

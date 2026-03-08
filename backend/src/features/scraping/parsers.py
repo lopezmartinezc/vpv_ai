@@ -218,9 +218,14 @@ def _parse_calendar_date(date_text: str, season_year: int) -> str | None:
     The year is inferred from the season: months Aug-Dec belong to
     ``season_year - 1``; months Jan-Jul belong to ``season_year``.
 
+    Times on futbolfantasy.com are in Spanish local time (Europe/Madrid),
+    so the returned ISO string includes the correct UTC offset (CET +01:00
+    or CEST +02:00 depending on DST).
+
     Returns an ISO datetime string or ``None`` on parse failure.
     """
     import re
+    from zoneinfo import ZoneInfo
 
     m = re.search(r"(\d{2})/(\d{2})\s+(\d{2}):(\d{2})", date_text)
     if not m:
@@ -232,7 +237,8 @@ def _parse_calendar_date(date_text: str, season_year: int) -> str | None:
     try:
         from datetime import datetime as _dt
 
-        dt = _dt(year, month, day, hour, minute)
+        madrid_tz = ZoneInfo("Europe/Madrid")
+        dt = _dt(year, month, day, hour, minute, tzinfo=madrid_tz)
         return dt.isoformat()
     except ValueError:
         return None

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import deque
 from datetime import UTC, datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -35,6 +36,27 @@ _scheduler: AsyncIOScheduler | None = None
 _last_tick_at: datetime | None = None
 _last_calendar_sync_at: datetime | None = None
 _last_deadline_check_at: datetime | None = None
+
+# ---------------------------------------------------------------------------
+# Per-job log buffer (circular, max 50 entries per job)
+# ---------------------------------------------------------------------------
+_MAX_LOG_ENTRIES = 50
+_job_logs: dict[str, deque[dict]] = {
+    "scraping_tick": deque(maxlen=_MAX_LOG_ENTRIES),
+    "calendar_sync": deque(maxlen=_MAX_LOG_ENTRIES),
+    "deadline_check": deque(maxlen=_MAX_LOG_ENTRIES),
+}
+
+
+def _log(job_id: str, message: str, level: str = "info") -> None:
+    """Append a log entry to the per-job buffer and also emit via stdlib logger."""
+    entry = {
+        "ts": datetime.now(UTC).isoformat(),
+        "level": level,
+        "msg": message,
+    }
+    _job_logs[job_id].append(entry)
+    getattr(logger, level, logger.info)("scheduler.%s: %s", job_id, message)
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +81,7 @@ async def _tick() -> None:
 async def _run_tick() -> None:
     global _last_tick_at
     _last_tick_at = datetime.now(UTC)
-    logger.info("scheduler.tick: starting")
+    _log("scraping_tick", "Inicio tick")
 
     async with AsyncSessionLocal() as session:
         try:
@@ -69,50 +91,42 @@ async def _run_tick() -> None:
             # 1. Active season
             season = await repo.get_active_season()
             if season is None:
-                logger.info("scheduler.tick: no active season, skipping")
+                _log("scraping_tick", "Sin temporada activa, omitiendo")
                 return
 
             season_id = season.id
             md_current = season.matchday_current
             if md_current == 0:
-                logger.info("scheduler.tick: matchday_current=0, skipping")
+                _log("scraping_tick", "matchday_current=0, omitiendo")
                 return
 
             # 2. Update calendar first — populates match scores and dates.
             try:
                 cal_result = await service.scrape_calendar(season_id)
                 if cal_result["scores_updated"] or cal_result["dates_updated"]:
-                    logger.info("scheduler.tick: calendar %s", cal_result)
+                    _log("scraping_tick", f"Calendario: {cal_result['scores_updated']} resultados, {cal_result['dates_updated']} fechas")
                     await session.commit()
-            except Exception:
-                logger.exception("scheduler.tick: error updating calendar")
+            except Exception as exc:
+                _log("scraping_tick", f"Error calendario: {exc}", "error")
 
             # 3. Load matchday + matches (re-read after calendar update)
             matchday = await repo.get_matchday(season_id, md_current)
             if matchday is None:
-                logger.info(
-                    "scheduler.tick: matchday not found season=%d number=%d",
-                    season_id,
-                    md_current,
-                )
+                _log("scraping_tick", f"Jornada {md_current} no encontrada")
                 return
 
             matches = await repo.get_matches_for_matchday(matchday.id)
             if not matches:
-                logger.info("scheduler.tick: no matches in matchday %d", matchday.id)
+                _log("scraping_tick", f"Sin partidos en J{md_current}")
                 return
 
             # 4. Filter played matches (have a result + source_url for CRC check)
             played = [m for m in matches if m.source_url is not None and m.home_score is not None]
             if not played:
-                logger.info("scheduler.tick: no matches played yet, skipping")
+                _log("scraping_tick", f"J{md_current}: sin partidos jugados aun")
                 return
 
-            logger.info(
-                "scheduler.tick: %d/%d matches played, checking CRCs",
-                len(played),
-                len(matches),
-            )
+            _log("scraping_tick", f"J{md_current}: {len(played)}/{len(matches)} partidos jugados, comprobando CRCs")
 
             # 5. Per-match CRC check
             matches_to_scrape: list[int] = []
@@ -122,43 +136,25 @@ async def _run_tick() -> None:
                     try:
                         html = await client.fetch(match.source_url)  # type: ignore[arg-type]
                     except ScrapingError:
-                        logger.warning(
-                            "scheduler.tick: failed to fetch match page id=%d url=%s",
-                            match.id,
-                            match.source_url,
-                        )
+                        _log("scraping_tick", f"Error fetch match id={match.id}", "warning")
                         continue
 
                     new_crc = parse_match_crc(html)
 
                     if match.stats_crc == new_crc:
-                        logger.debug(
-                            "scheduler.tick: match %d CRC unchanged (%s)",
-                            match.id,
-                            new_crc,
-                        )
                         continue
 
-                    logger.info(
-                        "scheduler.tick: match %d CRC changed %s -> %s",
-                        match.id,
-                        match.stats_crc,
-                        new_crc,
-                    )
+                    _log("scraping_tick", f"Match {match.id}: CRC cambio {match.stats_crc} -> {new_crc}")
                     await repo.update_match_crc(match.id, new_crc)
                     matches_to_scrape.append(match.id)
 
             if not matches_to_scrape:
-                logger.info("scheduler.tick: all CRCs unchanged, nothing to scrape")
+                _log("scraping_tick", "CRCs sin cambios, nada que scrapear")
                 await session.commit()
                 return
 
             # 6. Scrape changed matches
-            logger.info(
-                "scheduler.tick: scraping %d matches: %s",
-                len(matches_to_scrape),
-                matches_to_scrape,
-            )
+            _log("scraping_tick", f"Scrapeando {len(matches_to_scrape)} partidos: {matches_to_scrape}")
             for match_id in matches_to_scrape:
                 try:
                     result = await service.scrape_match_players(
@@ -166,23 +162,16 @@ async def _run_tick() -> None:
                         md_current,
                         match_id,
                     )
-                    logger.info(
-                        "scheduler.tick: scraped match %d: %s",
-                        match_id,
-                        result,
-                    )
-                except Exception:
-                    logger.exception(
-                        "scheduler.tick: error scraping match %d",
-                        match_id,
-                    )
+                    _log("scraping_tick", f"Match {match_id}: procesados={result.get('processed', 0)}, errores={result.get('errors', 0)}")
+                except Exception as exc:
+                    _log("scraping_tick", f"Error scraping match {match_id}: {exc}", "error")
 
             await session.commit()
-            logger.info("scheduler.tick: committed successfully")
+            _log("scraping_tick", "Tick completado, cambios guardados")
 
-        except Exception:
+        except Exception as exc:
             await session.rollback()
-            logger.exception("scheduler.tick: unhandled error, rolled back")
+            _log("scraping_tick", f"Error fatal: {exc}", "error")
 
 
 # ---------------------------------------------------------------------------
@@ -240,19 +229,16 @@ async def _deadline_check() -> None:
             if now < deadline:
                 return  # Deadline not reached yet
 
-            logger.info(
-                "scheduler.deadline_check: deadline passed for matchday %d, applying auto-copy",
-                md_number,
-            )
+            _log("deadline_check", f"Deadline J{md_number} superado, copiando alineaciones")
             service = LineupService(session)
             result = await service.apply_deadline_lineups(season.id, md_number)
             await session.commit()
             _last_deadline_matchday = md_number
-            logger.info("scheduler.deadline_check: done — %s", result)
+            _log("deadline_check", f"Auto-copy completado: {result}")
 
-        except Exception:
+        except Exception as exc:
             await session.rollback()
-            logger.exception("scheduler.deadline_check: error")
+            _log("deadline_check", f"Error: {exc}", "error")
 
 
 # ---------------------------------------------------------------------------
@@ -263,8 +249,8 @@ async def _deadline_check() -> None:
 async def _calendar_sync() -> None:
     """Fetch the La Liga calendar and update match dates + scores."""
     global _last_calendar_sync_at
-    logger.info("scheduler.calendar_sync: starting")
     _last_calendar_sync_at = datetime.now(UTC)
+    _log("calendar_sync", "Inicio sync calendario")
 
     async with AsyncSessionLocal() as session:
         try:
@@ -273,16 +259,16 @@ async def _calendar_sync() -> None:
 
             season = await repo.get_active_season()
             if season is None:
-                logger.info("scheduler.calendar_sync: no active season, skipping")
+                _log("calendar_sync", "Sin temporada activa, omitiendo")
                 return
 
             result = await service.scrape_calendar(season.id)
             await session.commit()
-            logger.info("scheduler.calendar_sync: done — %s", result)
+            _log("calendar_sync", f"Completado: {result['scores_updated']} resultados, {result['dates_updated']} fechas actualizadas")
 
-        except Exception:
+        except Exception as exc:
             await session.rollback()
-            logger.exception("scheduler.calendar_sync: error")
+            _log("calendar_sync", f"Error: {exc}", "error")
 
 
 # ---------------------------------------------------------------------------
@@ -376,6 +362,7 @@ def get_scheduler_status() -> dict:
             "last_run_at": _last_tick_at.isoformat() if _last_tick_at else None,
             "next_run_at": next_run,
             "lock_held": _scrape_lock.locked(),
+            "logs": list(_job_logs["scraping_tick"]),
         },
         {
             "id": "calendar_sync",
@@ -384,6 +371,7 @@ def get_scheduler_status() -> dict:
             "schedule": "Diario 06:00 UTC",
             "last_run_at": _last_calendar_sync_at.isoformat() if _last_calendar_sync_at else None,
             "next_run_at": next_calendar_sync,
+            "logs": list(_job_logs["calendar_sync"]),
         },
         {
             "id": "deadline_check",
@@ -392,6 +380,7 @@ def get_scheduler_status() -> dict:
             "interval_seconds": 60,
             "last_run_at": _last_deadline_check_at.isoformat() if _last_deadline_check_at else None,
             "next_run_at": next_deadline_check,
+            "logs": list(_job_logs["deadline_check"]),
         },
     ]
 
