@@ -498,112 +498,6 @@ export default function AdminScrapingPage() {
         ))}
       </div>
 
-      {/* Matchday Matches */}
-      {matchdayDetail && (
-        <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
-          <div className="border-b border-vpv-border px-4 py-3">
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold text-vpv-text">
-                Jornada {matchdayDetail.number} — {season?.name ?? `Temporada ${manualSeason}`}
-              </h2>
-              <span className="text-xs text-vpv-text-muted">
-                {playedCount}/{totalCount} jugados
-                {matchdayDetail.stats_ok && (
-                  <span className="ml-2 rounded bg-green-500/20 px-1.5 py-0.5 text-green-400">
-                    Stats OK
-                  </span>
-                )}
-              </span>
-            </div>
-          </div>
-          <div className="divide-y divide-vpv-border">
-            {matchdayDetail.matches.map((match) => {
-              const st = matchStatus(match);
-              const hasResult = matchScrapeResult?.matchId === match.id;
-              return (
-                <div key={match.id}>
-                  <div className="flex items-center gap-3 px-4 py-2">
-                    {/* Scraping status indicator */}
-                    <span
-                      className={`h-2 w-2 shrink-0 rounded-full ${
-                        match.stats_ok
-                          ? "bg-green-500"
-                          : st === "played"
-                            ? "bg-yellow-500 animate-pulse"
-                            : "bg-vpv-border"
-                      }`}
-                      title={
-                        match.stats_ok
-                          ? "Stats scrapeados"
-                          : st === "played"
-                            ? "Pendiente de scrapear"
-                            : "No jugado"
-                      }
-                    />
-                    <div className="flex-1">
-                      <span className="text-sm text-vpv-text">
-                        {match.home_team} vs {match.away_team}
-                      </span>
-                    </div>
-                    <div className="text-right">
-                      {st === "played" ? (
-                        <span className="text-sm font-medium text-vpv-text">
-                          {match.home_score} - {match.away_score}
-                        </span>
-                      ) : st === "live" ? (
-                        <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-xs font-medium text-red-400">
-                          En juego
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="w-44 text-right">
-                      <span
-                        className={`text-xs ${
-                          st === "played"
-                            ? "text-vpv-text-muted"
-                            : st === "live"
-                              ? "text-red-400"
-                              : "text-vpv-text"
-                        }`}
-                      >
-                        {formatMatchDate(match.played_at)}
-                      </span>
-                    </div>
-                    {!match.counts && (
-                      <span className="rounded bg-yellow-500/20 px-1.5 py-0.5 text-xs text-yellow-400">
-                        NC
-                      </span>
-                    )}
-                    <button
-                      onClick={() => handleScrapeMatch(match.id)}
-                      disabled={scrapingMatchId !== null || actionLoading !== null}
-                      className="shrink-0 rounded border border-vpv-border px-2 py-0.5 text-[11px] text-vpv-text-muted transition-colors hover:border-vpv-accent hover:text-vpv-accent disabled:opacity-40"
-                    >
-                      {scrapingMatchId === match.id
-                        ? "Scrapeando..."
-                        : "Scrapear"}
-                    </button>
-                  </div>
-                  {/* Inline scrape result for this match */}
-                  {hasResult && matchScrapeResult && (
-                    <div className="border-t border-vpv-border/30 bg-vpv-bg/40 px-4 py-1.5 pl-10">
-                      {matchScrapeResult.lines.map((line, i) => (
-                        <div
-                          key={i}
-                          className={`text-xs ${i > 0 ? "text-red-400" : "text-vpv-text-muted"}`}
-                        >
-                          {line}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       {/* Manual Scraping */}
       <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
         <div className="border-b border-vpv-border px-4 py-3">
@@ -681,6 +575,110 @@ export default function AdminScrapingPage() {
           )}
         </div>
       </div>
+
+      {/* Matchday Matches */}
+      {matchdayDetail && (
+        <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
+          <div className="border-b border-vpv-border px-4 py-3">
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold text-vpv-text">
+                Jornada {matchdayDetail.number} — {season?.name ?? `Temporada ${manualSeason}`}
+              </h2>
+              <span className="text-xs text-vpv-text-muted">
+                {playedCount}/{totalCount} jugados
+                {matchdayDetail.stats_ok && (
+                  <span className="ml-2 rounded bg-green-500/20 px-1.5 py-0.5 text-green-400">
+                    Stats OK
+                  </span>
+                )}
+              </span>
+            </div>
+          </div>
+          <div className="divide-y divide-vpv-border">
+            {matchdayDetail.matches.map((match) => {
+              const st = matchStatus(match);
+              const hasResult = matchScrapeResult?.matchId === match.id;
+              return (
+                <div key={match.id}>
+                  <div className="flex items-center gap-3 px-4 py-2">
+                    <span
+                      className={`h-2 w-2 shrink-0 rounded-full ${
+                        match.stats_ok
+                          ? "bg-green-500"
+                          : st === "played"
+                            ? "bg-yellow-500 animate-pulse"
+                            : "bg-vpv-border"
+                      }`}
+                      title={
+                        match.stats_ok
+                          ? "Stats scrapeados"
+                          : st === "played"
+                            ? "Pendiente de scrapear"
+                            : "No jugado"
+                      }
+                    />
+                    <div className="flex-1">
+                      <span className="text-sm text-vpv-text">
+                        {match.home_team} vs {match.away_team}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      {st === "played" ? (
+                        <span className="text-sm font-medium text-vpv-text">
+                          {match.home_score} - {match.away_score}
+                        </span>
+                      ) : st === "live" ? (
+                        <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-xs font-medium text-red-400">
+                          En juego
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="w-44 text-right">
+                      <span
+                        className={`text-xs ${
+                          st === "played"
+                            ? "text-vpv-text-muted"
+                            : st === "live"
+                              ? "text-red-400"
+                              : "text-vpv-text"
+                        }`}
+                      >
+                        {formatMatchDate(match.played_at)}
+                      </span>
+                    </div>
+                    {!match.counts && (
+                      <span className="rounded bg-yellow-500/20 px-1.5 py-0.5 text-xs text-yellow-400">
+                        NC
+                      </span>
+                    )}
+                    <button
+                      onClick={() => handleScrapeMatch(match.id)}
+                      disabled={scrapingMatchId !== null || actionLoading !== null}
+                      className="shrink-0 rounded border border-vpv-border px-2 py-0.5 text-[11px] text-vpv-text-muted transition-colors hover:border-vpv-accent hover:text-vpv-accent disabled:opacity-40"
+                    >
+                      {scrapingMatchId === match.id
+                        ? "Scrapeando..."
+                        : "Scrapear"}
+                    </button>
+                  </div>
+                  {hasResult && matchScrapeResult && (
+                    <div className="border-t border-vpv-border/30 bg-vpv-bg/40 px-4 py-1.5 pl-10">
+                      {matchScrapeResult.lines.map((line, i) => (
+                        <div
+                          key={i}
+                          className={`text-xs ${i > 0 ? "text-red-400" : "text-vpv-text-muted"}`}
+                        >
+                          {line}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
