@@ -20,32 +20,24 @@ logger = logging.getLogger(__name__)
 
 def compute_weekly_amounts(
     rankings: list[MatchdayRankingRow],
+    rules: dict[int, Decimal],
 ) -> list[tuple[int, Decimal]]:
     """Compute weekly payment for each participant based on ranking position.
 
     Returns list of (participant_id, amount) pairs.
-    Uses the original PHP pagometro logic:
-    - Top 5: 0, 6th: 0.50, last: 2, last-1/last-2: 1.50, rest: 1
-    - Tie adjustment: from worst to best, same points = same (worse) payment.
+    ``rules`` maps position_rank -> amount from season_payments table.
+    Positions not in rules default to 0 (no payment).
+    Tie adjustment: from worst to best, same points = same (worse) payment.
     """
     n = len(rankings)
-    if n == 0:
+    if n == 0 or not rules:
         return []
 
-    # Step 1: assign base amount by position
+    # Step 1: assign base amount by sequential position (1-based index),
+    # NOT by ranking (which has gaps on ties, e.g. 1,2,3,3,5...)
     amounts: list[Decimal] = []
-    for row in rankings:
-        rank = row.ranking
-        if rank <= 5:
-            amounts.append(Decimal("0"))
-        elif rank == 6:
-            amounts.append(Decimal("0.50"))
-        elif rank == n:
-            amounts.append(Decimal("2"))
-        elif rank >= n - 2:
-            amounts.append(Decimal("1.50"))
-        else:
-            amounts.append(Decimal("1"))
+    for i, _row in enumerate(rankings):
+        amounts.append(rules.get(i + 1, Decimal("0")))
 
     # Step 2: tie adjustment — iterate from worst to best
     # If two players have the same total_points, the better-ranked one
@@ -179,6 +171,15 @@ class EconomyService:
         await self.repo.session.commit()
         return True
 
+    async def _get_weekly_rules(self, season_id: int) -> dict[int, Decimal]:
+        """Load weekly_position rules from season_payments table."""
+        payments = await self.season_repo.get_payments(season_id)
+        return {
+            p.position_rank: p.amount
+            for p in payments
+            if p.payment_type == "weekly_position" and p.position_rank is not None
+        }
+
     # --- Weekly payment generation ---
 
     async def generate_weekly_payments(
@@ -204,7 +205,15 @@ class EconomyService:
         if not rankings:
             return 0
 
-        pairs = compute_weekly_amounts(rankings)
+        rules = await self._get_weekly_rules(season_id)
+        if not rules:
+            logger.warning(
+                "generate_weekly_payments: no weekly_position rules for season %d",
+                season_id,
+            )
+            return 0
+
+        pairs = compute_weekly_amounts(rankings, rules)
         created = 0
         for participant_id, amount in pairs:
             if amount > 0:

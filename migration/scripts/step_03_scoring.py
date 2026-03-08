@@ -88,15 +88,7 @@ SCORING_RULES: list[tuple[str, str | None, int | float, str]] = [
 SEASON_PAYMENTS: list[tuple[str, int | None, float, str]] = [
     # --- Cuota inicial ---
     ("initial_fee",         None, 50.00, "Cuota inicial"),
-    # --- Pago semanal por puesto (1 = mejor, 8 = peor) ---
-    ("weekly_position",     1,    0.00,  "1o no paga"),
-    ("weekly_position",     2,    0.00,  "2o no paga"),
-    ("weekly_position",     3,    0.00,  "3o no paga"),
-    ("weekly_position",     4,    0.00,  "4o no paga"),
-    ("weekly_position",     5,    0.00,  "5o no paga"),
-    ("weekly_position",     6,    0.00,  "6o no paga"),
-    ("weekly_position",     7,    3.00,  "7o paga 3 EUR"),
-    ("weekly_position",     8,    5.00,  "8o (ultimo) paga 5 EUR"),
+    # --- Pago semanal por puesto: generados dinámicamente por _weekly_payments() ---
     # --- Draft invierno ---
     ("winter_draft_change", None, 2.00,  "2 EUR por cada cambio"),
     # --- Premios fin de temporada ---
@@ -104,6 +96,24 @@ SEASON_PAYMENTS: list[tuple[str, int | None, float, str]] = [
     ("prize",               2,    100.00, "Premio al 2o"),
     ("prize",               3,    50.00,  "Premio al 3o"),
 ]
+
+
+def _weekly_payments(n: int) -> list[tuple[str, int | None, float, str]]:
+    """Generate weekly_position entries for *n* participants (PHP pagometro logic)."""
+    rows: list[tuple[str, int | None, float, str]] = []
+    for rank in range(1, n + 1):
+        if rank <= 5:
+            amt, desc = 0.0, f"{rank}o no paga"
+        elif rank == 6:
+            amt, desc = 0.50, "6o paga 0.50 EUR"
+        elif rank == n:
+            amt, desc = 2.0, f"{rank}o (ultimo) paga 2 EUR"
+        elif rank >= n - 2:
+            amt, desc = 1.50, f"{rank}o paga 1.50 EUR"
+        else:
+            amt, desc = 1.0, f"{rank}o paga 1 EUR"
+        rows.append(("weekly_position", rank, amt, desc))
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -158,9 +168,13 @@ def run(
 
             total_rules += rules_for_season
 
-            # --- season_payments ---
+            # --- season_payments (static + dynamic weekly) ---
+            n_participants = sum(
+                1 for (t, _) in ctx.participant_map if t == season_name
+            )
+            all_payments = SEASON_PAYMENTS + _weekly_payments(max(n_participants, 8))
             payments_for_season = 0
-            for payment_type, position_rank, amount, description in SEASON_PAYMENTS:
+            for payment_type, position_rank, amount, description in all_payments:
                 pg_cur.execute(
                     insert_payment_sql,
                     {

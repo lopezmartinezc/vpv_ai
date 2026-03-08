@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.exceptions import BusinessRuleError, NotFoundError
 from src.features.scraping.aggregation import ScoreAggregator
 from src.features.seasons.repository import SeasonRepository
-from src.features.seasons.schemas import ScoringRuleResponse, SeasonDetail
+from src.features.seasons.schemas import ScoringRuleResponse, SeasonDetail, SeasonPaymentResponse
 from src.shared.models.season import ScoringRule, Season, SeasonPayment, ValidFormation
 
 
@@ -73,6 +73,20 @@ class SeasonService:
             await self.repo.session.commit()
 
         return SeasonDetail.model_validate(season)
+
+    async def update_payments(
+        self,
+        season_id: int,
+        updates: list[tuple[int, Decimal]],
+    ) -> list[SeasonPaymentResponse]:
+        await self.get_season(season_id)
+        for payment_id, amount in updates:
+            result = await self.repo.update_payment(payment_id, amount)
+            if result is None:
+                raise NotFoundError("SeasonPayment", payment_id)
+        await self.repo.session.commit()
+        payments = await self.repo.get_payments(season_id)
+        return [SeasonPaymentResponse.model_validate(p) for p in payments]
 
     async def update_scoring_rules(
         self,

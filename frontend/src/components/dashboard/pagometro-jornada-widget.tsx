@@ -8,25 +8,21 @@ interface PaymentEntry {
 }
 
 /**
- * Compute weekly payment amounts from matchday rankings.
- * Mirrors backend compute_weekly_amounts logic:
- * - Top 5: 0, 6th: 0.50, last: 2, last-1/last-2: 1.50, rest: 1
- * - Tie adjustment: same points = same (worse) payment
+ * Compute weekly payment amounts from matchday rankings using
+ * configurable rules from season_payments (weekly_position).
+ * Tie adjustment: same points = same (worse) payment.
  */
-function computeWeeklyAmounts(scores: ParticipantScore[]): PaymentEntry[] {
+function computeWeeklyAmounts(
+  scores: ParticipantScore[],
+  rules: Record<number, number>,
+): PaymentEntry[] {
   const sorted = [...scores].sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999));
   const n = sorted.length;
   if (n === 0) return [];
 
-  // Base amounts by rank
-  const amounts = sorted.map((s) => {
-    const rank = s.rank ?? n;
-    if (rank <= 5) return 0;
-    if (rank === 6) return 0.5;
-    if (rank === n) return 2;
-    if (rank >= n - 2) return 1.5;
-    return 1;
-  });
+  // Base amounts by sequential position (1-based index),
+  // NOT by rank (which has gaps on ties, e.g. 1,2,3,3,5...)
+  const amounts = sorted.map((_, i) => rules[i + 1] ?? 0);
 
   // Tie adjustment: worst to best, same points = same payment
   let prevPoints = sorted[n - 1].total_points;
@@ -52,11 +48,13 @@ function computeWeeklyAmounts(scores: ParticipantScore[]): PaymentEntry[] {
 export function PagometroJornadaWidget({
   scores,
   matchdayNumber,
+  weeklyRules,
 }: {
   scores: ParticipantScore[];
   matchdayNumber: number;
+  weeklyRules: Record<number, number>;
 }) {
-  const entries = computeWeeklyAmounts(scores);
+  const entries = computeWeeklyAmounts(scores, weeklyRules);
   if (entries.length === 0) return null;
 
   return (

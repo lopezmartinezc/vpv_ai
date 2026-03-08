@@ -83,3 +83,12 @@ class ScoringRuleUpdateRequest(BaseModel):
 
 class ScoringRulesBatchUpdate(BaseModel):
     rules: list[ScoringRuleUpdateRequest]
+
+
+class PaymentUpdateRequest(BaseModel):
+    id: int
+    amount: Decimal
+
+
+class PaymentsBatchUpdate(BaseModel):
+    payments: list[PaymentUpdateRequest]

@@ -112,6 +112,13 @@ class SeasonRepository(BaseRepository[Season]):
         )
         return changed_ids
 
+    async def update_payment(self, payment_id: int, amount: object) -> SeasonPayment | None:
+        payment = await self.session.get(SeasonPayment, payment_id)
+        if payment is None:
+            return None
+        payment.amount = amount  # type: ignore[assignment]
+        return payment
+
     async def update_scoring_rule(self, rule_id: int, value: object) -> ScoringRule | None:
         rule = await self.session.get(ScoringRule, rule_id)
         if rule is None:

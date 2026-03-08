@@ -25,6 +25,14 @@ interface ScoringRule {
   description: string | null;
 }
 
+interface SeasonPayment {
+  id: number;
+  payment_type: string;
+  position_rank: number | null;
+  amount: number;
+  description: string | null;
+}
+
 interface SeasonSummary {
   id: number;
   name: string;
@@ -44,10 +52,13 @@ export default function AdminTemporadasPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [season, setSeason] = useState<Season | null>(null);
   const [rules, setRules] = useState<ScoringRule[]>([]);
+  const [payments, setPayments] = useState<SeasonPayment[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingRules, setSavingRules] = useState(false);
+  const [savingPayments, setSavingPayments] = useState(false);
   const [editedRules, setEditedRules] = useState<Record<number, string>>({});
+  const [editedPayments, setEditedPayments] = useState<Record<number, string>>({});
   const [message, setMessage] = useState<string | null>(null);
 
   // Editable season fields
@@ -76,13 +87,16 @@ export default function AdminTemporadasPage() {
 
   const fetchSeasonDetail = useCallback(async (id: number) => {
     try {
-      const [detail, scoringRules] = await Promise.all([
+      const [detail, scoringRules, seasonPayments] = await Promise.all([
         apiClient.get<Season>(`/seasons/${id}`),
         apiClient.get<ScoringRule[]>(`/seasons/${id}/scoring-rules`),
+        apiClient.get<SeasonPayment[]>(`/seasons/${id}/payments`),
       ]);
       setSeason(detail);
       setRules(scoringRules);
+      setPayments(seasonPayments);
       setEditedRules({});
+      setEditedPayments({});
       // Populate edit fields
       setEditStatus(detail.status);
       setEditMatchdayStart(String(detail.matchday_start));
@@ -174,6 +188,42 @@ export default function AdminTemporadasPage() {
       setMessage("Error al guardar reglas");
     } finally {
       setSavingRules(false);
+    }
+  }
+
+  const weeklyPayments = payments.filter(
+    (p) => p.payment_type === "weekly_position",
+  );
+
+  async function handleSavePayments() {
+    if (!selectedId) return;
+    const changed = Object.entries(editedPayments)
+      .filter(([id, val]) => {
+        const payment = payments.find((p) => p.id === Number(id));
+        return payment && String(payment.amount) !== val;
+      })
+      .map(([id, val]) => ({ id: Number(id), amount: Number(val) }));
+
+    if (changed.length === 0) {
+      setMessage("Sin cambios en pagos");
+      return;
+    }
+
+    setSavingPayments(true);
+    setMessage(null);
+    try {
+      const updated = await apiClient.put<SeasonPayment[]>(
+        `/seasons/admin/${selectedId}/payments`,
+        { payments: changed },
+      );
+      setPayments(updated);
+      setEditedPayments({});
+      setMessage(`${changed.length} pago(s) actualizado(s)`);
+      setTimeout(() => setMessage(null), 3000);
+    } catch {
+      setMessage("Error al guardar pagos");
+    } finally {
+      setSavingPayments(false);
     }
   }
 
@@ -383,6 +433,80 @@ export default function AdminTemporadasPage() {
               </button>
             </div>
           </div>
+
+          {/* Weekly position payments */}
+          {weeklyPayments.length > 0 && (
+            <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
+              <div className="border-b border-vpv-border px-4 py-3">
+                <h2 className="font-semibold text-vpv-text">
+                  Pagos semanales por posicion
+                </h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-vpv-border bg-vpv-bg text-left text-vpv-text-muted">
+                      <th className="px-4 py-2">Posicion</th>
+                      <th className="px-4 py-2">Descripcion</th>
+                      <th className="px-4 py-2 text-right">Importe</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {weeklyPayments
+                      .sort(
+                        (a, b) =>
+                          (a.position_rank ?? 0) - (b.position_rank ?? 0),
+                      )
+                      .map((p) => (
+                        <tr
+                          key={p.id}
+                          className="border-b border-vpv-border last:border-0 hover:bg-vpv-bg/50"
+                        >
+                          <td className="px-4 py-2 font-medium text-vpv-text">
+                            {p.position_rank !== null
+                              ? `${p.position_rank}°`
+                              : "—"}
+                          </td>
+                          <td className="px-4 py-2 text-vpv-text-muted">
+                            {p.description ?? "—"}
+                          </td>
+                          <td className="px-4 py-2 text-right">
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={
+                                editedPayments[p.id] !== undefined
+                                  ? editedPayments[p.id]
+                                  : String(p.amount)
+                              }
+                              onChange={(e) =>
+                                setEditedPayments((prev) => ({
+                                  ...prev,
+                                  [p.id]: e.target.value,
+                                }))
+                              }
+                              className="w-20 rounded border border-vpv-border bg-vpv-bg px-2 py-1 text-right text-sm text-vpv-text"
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="px-4 py-3">
+                <button
+                  onClick={handleSavePayments}
+                  disabled={
+                    savingPayments ||
+                    Object.keys(editedPayments).length === 0
+                  }
+                  className="rounded bg-vpv-accent px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-vpv-accent/80 disabled:opacity-50"
+                >
+                  {savingPayments ? "Guardando..." : "Guardar pagos"}
+                </button>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.seasons.schemas import (
+    PaymentsBatchUpdate,
     ScoringRuleResponse,
     ScoringRulesBatchUpdate,
     SeasonDetail,
@@ -113,3 +114,17 @@ async def update_scoring_rules(
 ) -> list[ScoringRuleResponse]:
     updates = [(r.id, r.value) for r in body.rules]
     return await service.update_scoring_rules(season_id, updates)
+
+
+@router.put(
+    "/admin/{season_id}/payments",
+    response_model=list[SeasonPaymentResponse],
+)
+async def update_payments(
+    season_id: int,
+    body: PaymentsBatchUpdate,
+    service: SeasonService = Depends(_get_service),
+    _admin: dict = Depends(get_current_admin),
+) -> list[SeasonPaymentResponse]:
+    updates = [(p.id, p.amount) for p in body.payments]
+    return await service.update_payments(season_id, updates)

@@ -1,7 +1,9 @@
 "use client";
 
+import { useMemo } from "react";
 import { useSeason } from "@/contexts/season-context";
 import { useDashboardData } from "@/hooks/use-dashboard-data";
+import { useFetch } from "@/hooks/use-fetch";
 import { MatchdayAccordion } from "@/components/dashboard/matchday-accordion";
 import { Podium } from "@/components/dashboard/podium";
 import { NavCards } from "@/components/dashboard/nav-cards";
@@ -11,6 +13,14 @@ import { PagometroJornadaWidget } from "@/components/dashboard/pagometro-jornada
 import { PagometroWidget } from "@/components/dashboard/pagometro-widget";
 import { SkeletonCards } from "@/components/ui/skeleton";
 import { Logo } from "@/components/ui/logo";
+
+interface SeasonPaymentEntry {
+  id: number;
+  payment_type: string;
+  position_rank: number | null;
+  amount: number;
+  description: string | null;
+}
 
 export default function Home() {
   const { selectedSeason, loading: seasonLoading } = useSeason();
@@ -24,6 +34,20 @@ export default function Home() {
     selectedSeason?.id ?? null,
     selectedSeason?.matchday_current ?? null,
   );
+  const { data: payments } = useFetch<SeasonPaymentEntry[]>(
+    selectedSeason ? `/seasons/${selectedSeason.id}/payments` : null,
+  );
+
+  const weeklyRules = useMemo(() => {
+    if (!payments) return {};
+    const rules: Record<number, number> = {};
+    for (const p of payments) {
+      if (p.payment_type === "weekly_position" && p.position_rank !== null) {
+        rules[p.position_rank] = p.amount;
+      }
+    }
+    return rules;
+  }, [payments]);
 
   if (seasonLoading || loading) {
     return (
@@ -103,12 +127,16 @@ export default function Home() {
         <CopaWidget entries={copaData.standings} />
       )}
 
-      {currentMatchdayDetail && currentMatchdayDetail.scores.length > 0 && (
-        <PagometroJornadaWidget
-          scores={currentMatchdayDetail.scores}
-          matchdayNumber={currentMatchdayDetail.number}
-        />
-      )}
+      {currentMatchdayDetail &&
+        currentMatchdayDetail.stats_ok &&
+        currentMatchdayDetail.scores.length > 0 &&
+        Object.keys(weeklyRules).length > 0 && (
+          <PagometroJornadaWidget
+            scores={currentMatchdayDetail.scores}
+            matchdayNumber={currentMatchdayDetail.number}
+            weeklyRules={weeklyRules}
+          />
+        )}
 
       {economy && economy.balances.length > 0 && (
         <PagometroWidget balances={economy.balances} />
