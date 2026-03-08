@@ -433,6 +433,48 @@ class ScrapingService:
         if dates_updated:
             await self.repo.sync_matchday_first_match_at(season_id)
 
+        # Fallback: for matches that should have ended but calendar has no
+        # result, try fetching the score from the individual match detail page.
+        from datetime import timedelta
+
+        from src.features.scraping.parsers import parse_match_score
+
+        buffer = self._settings.scraping_buffer_minutes
+        cutoff = _dt.now(tz=__import__("datetime").UTC) - timedelta(minutes=buffer)
+        pending = await self.repo.get_pending_score_matches(season_id, before=cutoff)
+
+        if pending:
+            logger.info(
+                "scrape_calendar: %d matches without score past buffer, checking detail pages",
+                len(pending),
+            )
+            async with ScrapingClient() as client:
+                for match in pending:
+                    try:
+                        html = await client.fetch(match.source_url)  # type: ignore[arg-type]
+                    except ScrapingError:
+                        logger.debug("scrape_calendar: fetch failed for match id=%d", match.id)
+                        continue
+
+                    score = parse_match_score(html)
+                    if score is None:
+                        continue
+
+                    home_score, away_score = score
+                    await self.repo.update_match_score(
+                        match_id=match.id,
+                        home_score=home_score,
+                        away_score=away_score,
+                        result=f"{home_score}-{away_score}",
+                    )
+                    scores_updated += 1
+                    logger.info(
+                        "scrape_calendar: match id=%d score discovered from detail page: %d-%d",
+                        match.id,
+                        home_score,
+                        away_score,
+                    )
+
         logger.info(
             "scrape_calendar: scores_updated=%d dates_updated=%d",
             scores_updated,

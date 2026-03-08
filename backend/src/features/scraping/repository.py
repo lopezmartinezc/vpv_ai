@@ -143,6 +143,25 @@ class ScrapingRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_pending_score_matches(self, season_id: int, before: object) -> list[Match]:
+        """Return matches with no score that should have ended (played_at < before)."""
+        from src.shared.models.matchday import Matchday
+
+        stmt = (
+            select(Match)
+            .join(Matchday, Match.matchday_id == Matchday.id)
+            .where(
+                Matchday.season_id == season_id,
+                Match.home_score.is_(None),
+                Match.source_url.isnot(None),
+                Match.played_at.isnot(None),
+                Match.played_at < before,
+            )
+            .order_by(Match.id)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars())
+
     # ------------------------------------------------------------------
     # Player stats upsert
     # ------------------------------------------------------------------
