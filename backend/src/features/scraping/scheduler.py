@@ -125,13 +125,13 @@ async def _run_tick() -> None:
             # 4b. Matches that should have ended but have no score yet
             #     (calendar didn't update, but match page may have it)
             buffer_minutes = scraping_settings.scraping_buffer_minutes
-            now = datetime.now(UTC)
+            now_naive = datetime.now(UTC).replace(tzinfo=None)
             pending_score = [
                 m for m in matches
                 if m.source_url is not None
                 and m.home_score is None
                 and m.played_at is not None
-                and (now - m.played_at.replace(tzinfo=UTC if m.played_at.tzinfo is None else m.played_at.tzinfo)) > timedelta(minutes=buffer_minutes)
+                and (now_naive - m.played_at.replace(tzinfo=None)) > timedelta(minutes=buffer_minutes)
             ]
 
             if not played and not pending_score:
