@@ -740,11 +740,18 @@ def parse_match_score(html: str) -> tuple[int, int] | None:
     """
     soup = BeautifulSoup(html, "lxml")
 
-    # Primary: first div.score containing div.score-local + div.score-visitante
-    first_score = soup.find("div", class_="score")
-    if isinstance(first_score, Tag):
-        local = first_score.find("div", class_="score-local")
-        visit = first_score.find("div", class_="score-visitante")
+    # Primary: two sibling div.score elements at the top (home, away)
+    score_divs = soup.find_all("div", class_="score")
+    if len(score_divs) >= 2:
+        home_text = score_divs[0].get_text(strip=True)
+        away_text = score_divs[1].get_text(strip=True)
+        if home_text.isdigit() and away_text.isdigit():
+            return (int(home_text), int(away_text))
+
+    # Alternative: single div.score with div.score-local + div.score-visitante children
+    if len(score_divs) >= 1 and isinstance(score_divs[0], Tag):
+        local = score_divs[0].find("div", class_="score-local")
+        visit = score_divs[0].find("div", class_="score-visitante")
         if isinstance(local, Tag) and isinstance(visit, Tag):
             local_text = local.get_text(strip=True)
             visit_text = visit.get_text(strip=True)
