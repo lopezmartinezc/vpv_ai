@@ -34,6 +34,7 @@ _scrape_lock = asyncio.Lock()
 _scheduler: AsyncIOScheduler | None = None
 _last_tick_at: datetime | None = None
 _last_calendar_sync_at: datetime | None = None
+_last_deadline_check_at: datetime | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +194,8 @@ _last_deadline_matchday: int | None = None  # track last processed matchday
 
 async def _deadline_check() -> None:
     """Check if the lineup deadline has passed and copy previous lineups."""
-    global _last_deadline_matchday
+    global _last_deadline_matchday, _last_deadline_check_at
+    _last_deadline_check_at = datetime.now(UTC)
 
     async with AsyncSessionLocal() as session:
         try:
@@ -346,20 +348,55 @@ def stop_scheduler() -> None:
 
 
 def get_scheduler_status() -> dict:
-    """Return current scheduler state for admin dashboard."""
-    running = _scheduler is not None and _scheduler.running
-    next_run: str | None = None
-    next_calendar_sync: str | None = None
+    """Return current scheduler state for admin dashboard.
 
-    if running and _scheduler is not None:
-        job = _scheduler.get_job("scraping_tick")
-        if job and job.next_run_time:
-            next_run = job.next_run_time.isoformat()
-        cal_job = _scheduler.get_job("calendar_sync")
-        if cal_job and cal_job.next_run_time:
-            next_calendar_sync = cal_job.next_run_time.isoformat()
+    Includes a ``jobs`` list with per-job detail as well as the legacy flat
+    fields so existing callers are not broken.
+    """
+    running = _scheduler is not None and _scheduler.running
+
+    # --- per-job next_run_time resolution ---
+    def _next(job_id: str) -> str | None:
+        if not running or _scheduler is None:
+            return None
+        job = _scheduler.get_job(job_id)
+        return job.next_run_time.isoformat() if job and job.next_run_time else None
+
+    next_run = _next("scraping_tick")
+    next_calendar_sync = _next("calendar_sync")
+    next_deadline_check = _next("deadline_check")
+
+    # --- structured per-job list ---
+    jobs: list[dict] = [
+        {
+            "id": "scraping_tick",
+            "name": "Scraping stats",
+            "type": "interval",
+            "interval_seconds": scraping_settings.scraping_poll_interval_seconds,
+            "last_run_at": _last_tick_at.isoformat() if _last_tick_at else None,
+            "next_run_at": next_run,
+            "lock_held": _scrape_lock.locked(),
+        },
+        {
+            "id": "calendar_sync",
+            "name": "Sync calendario La Liga",
+            "type": "cron",
+            "schedule": "Diario 06:00 UTC",
+            "last_run_at": _last_calendar_sync_at.isoformat() if _last_calendar_sync_at else None,
+            "next_run_at": next_calendar_sync,
+        },
+        {
+            "id": "deadline_check",
+            "name": "Check deadline alineaciones",
+            "type": "interval",
+            "interval_seconds": 60,
+            "last_run_at": _last_deadline_check_at.isoformat() if _last_deadline_check_at else None,
+            "next_run_at": next_deadline_check,
+        },
+    ]
 
     return {
+        # --- legacy flat fields (backward compatibility) ---
         "running": running,
         "poll_interval_seconds": scraping_settings.scraping_poll_interval_seconds,
         "last_tick_at": _last_tick_at.isoformat() if _last_tick_at else None,
@@ -369,6 +406,8 @@ def get_scheduler_status() -> dict:
         if _last_calendar_sync_at
         else None,
         "next_calendar_sync_at": next_calendar_sync,
+        # --- new structured list ---
+        "jobs": jobs,
     }
 
 
@@ -378,4 +417,16 @@ async def trigger_tick() -> dict:
         return {"triggered": False, "reason": "previous tick still running"}
 
     _background_task = asyncio.create_task(_tick())  # noqa: RUF006
+    return {"triggered": True}
+
+
+async def trigger_calendar_sync() -> dict:
+    """Manually trigger a calendar sync."""
+    _background_task = asyncio.create_task(_calendar_sync())  # noqa: RUF006
+    return {"triggered": True}
+
+
+async def trigger_deadline_check() -> dict:
+    """Manually trigger a deadline check."""
+    _background_task = asyncio.create_task(_deadline_check())  # noqa: RUF006
     return {"triggered": True}

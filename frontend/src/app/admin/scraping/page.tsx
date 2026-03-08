@@ -3,6 +3,17 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "@/lib/api-client";
 
+interface JobStatus {
+  id: string;
+  name: string;
+  type: "interval" | "cron";
+  interval_seconds?: number;
+  schedule?: string;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  lock_held?: boolean;
+}
+
 interface SchedulerStatus {
   running: boolean;
   poll_interval_seconds: number;
@@ -11,6 +22,7 @@ interface SchedulerStatus {
   lock_held: boolean;
   last_calendar_sync_at: string | null;
   next_calendar_sync_at: string | null;
+  jobs: JobStatus[];
 }
 
 interface SeasonSummary {
@@ -52,6 +64,25 @@ function formatDateTime(iso: string | null): string {
   });
 }
 
+function formatRelative(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMs = d.getTime() - now.getTime();
+  const absDiffMs = Math.abs(diffMs);
+
+  if (absDiffMs < 60_000) return diffMs < 0 ? "hace <1 min" : "en <1 min";
+
+  const mins = Math.floor(absDiffMs / 60_000);
+  if (mins < 60) return diffMs < 0 ? `hace ${mins} min` : `en ${mins} min`;
+
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return diffMs < 0 ? `hace ${hours}h` : `en ${hours}h`;
+
+  const days = Math.floor(hours / 24);
+  return diffMs < 0 ? `hace ${days}d` : `en ${days}d`;
+}
+
 function formatMatchDate(iso: string | null): string {
   if (!iso) return "Sin fecha";
   const d = new Date(iso);
@@ -81,17 +112,97 @@ function matchStatus(match: MatchEntry): "played" | "live" | "upcoming" {
   return "upcoming";
 }
 
+const JOB_TRIGGER_MAP: Record<string, string> = {
+  scraping_tick: "/scraping/admin/trigger",
+  calendar_sync: "/scraping/admin/trigger/calendar-sync",
+  deadline_check: "/scraping/admin/trigger/deadline-check",
+};
+
+const JOB_ICONS: Record<string, string> = {
+  scraping_tick: "M",
+  calendar_sync: "C",
+  deadline_check: "D",
+};
+
+function formatFrequency(job: JobStatus): string {
+  if (job.type === "cron" && job.schedule) return job.schedule;
+  if (job.interval_seconds) {
+    if (job.interval_seconds >= 60) return `Cada ${Math.floor(job.interval_seconds / 60)} min`;
+    return `Cada ${job.interval_seconds}s`;
+  }
+  return "\u2014";
+}
+
+function JobCard({
+  job,
+  schedulerRunning,
+  onTrigger,
+  triggeringJob,
+}: {
+  job: JobStatus;
+  schedulerRunning: boolean;
+  onTrigger: (jobId: string) => void;
+  triggeringJob: string | null;
+}) {
+  const isTriggering = triggeringJob === job.id;
+
+  return (
+    <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
+      <div className="flex items-center justify-between border-b border-vpv-border px-4 py-2.5">
+        <div className="flex items-center gap-2">
+          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-vpv-accent/15 text-xs font-bold text-vpv-accent">
+            {JOB_ICONS[job.id] ?? "?"}
+          </span>
+          <div>
+            <h3 className="text-sm font-semibold text-vpv-text">{job.name}</h3>
+            <p className="text-[11px] text-vpv-text-muted">{formatFrequency(job)}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {job.lock_held && (
+            <span className="rounded bg-yellow-500/20 px-2 py-0.5 text-[10px] font-medium text-yellow-400">
+              En curso
+            </span>
+          )}
+          <button
+            onClick={() => onTrigger(job.id)}
+            disabled={!schedulerRunning || triggeringJob !== null}
+            className="rounded bg-vpv-accent/10 px-2.5 py-1 text-[11px] font-medium text-vpv-accent transition-colors hover:bg-vpv-accent/20 disabled:opacity-40"
+          >
+            {isTriggering ? "Ejecutando..." : "Forzar"}
+          </button>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 px-4 py-2.5 text-xs">
+        <div>
+          <p className="text-vpv-text-muted">Ultima ejecucion</p>
+          <p className="font-medium text-vpv-text">{formatDateTime(job.last_run_at)}</p>
+          {job.last_run_at && (
+            <p className="text-[10px] text-vpv-text-muted">{formatRelative(job.last_run_at)}</p>
+          )}
+        </div>
+        <div>
+          <p className="text-vpv-text-muted">Proxima ejecucion</p>
+          <p className="font-medium text-vpv-text">{formatDateTime(job.next_run_at)}</p>
+          {job.next_run_at && (
+            <p className="text-[10px] text-vpv-text-muted">{formatRelative(job.next_run_at)}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminScrapingPage() {
   const [status, setStatus] = useState<SchedulerStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [triggeringJob, setTriggeringJob] = useState<string | null>(null);
   const [scrapeResult, setScrapeResult] = useState<string | null>(null);
 
   // Current matchday data
   const [season, setSeason] = useState<SeasonSummary | null>(null);
-  const [matchdayDetail, setMatchdayDetail] = useState<MatchdayDetail | null>(
-    null,
-  );
+  const [matchdayDetail, setMatchdayDetail] = useState<MatchdayDetail | null>(null);
 
   // Manual scraping overrides
   const [manualSeason, setManualSeason] = useState("");
@@ -99,9 +210,7 @@ export default function AdminScrapingPage() {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const data = await apiClient.get<SchedulerStatus>(
-        "/scraping/admin/status",
-      );
+      const data = await apiClient.get<SchedulerStatus>("/scraping/admin/status");
       setStatus(data);
     } catch {
       // handled
@@ -112,9 +221,7 @@ export default function AdminScrapingPage() {
 
   const fetchCurrentMatchday = useCallback(async () => {
     try {
-      const currentSeason = await apiClient.get<SeasonSummary>(
-        "/seasons/current",
-      );
+      const currentSeason = await apiClient.get<SeasonSummary>("/seasons/current");
       setSeason(currentSeason);
       setManualSeason(String(currentSeason.id));
       setManualMatchday(String(currentSeason.matchday_current));
@@ -137,21 +244,31 @@ export default function AdminScrapingPage() {
     return () => clearInterval(interval);
   }, [fetchStatus, fetchCurrentMatchday]);
 
-  async function handleAction(action: "start" | "stop" | "trigger") {
+  async function handleAction(action: "start" | "stop") {
     setActionLoading(action);
     try {
-      const data = await apiClient.post<
-        SchedulerStatus | { triggered: boolean }
-      >(`/scraping/admin/${action}`, {});
-      if ("running" in data) {
-        setStatus(data as SchedulerStatus);
-      } else {
-        await fetchStatus();
-      }
+      const data = await apiClient.post<SchedulerStatus>(`/scraping/admin/${action}`, {});
+      setStatus(data);
     } catch {
       // error
     } finally {
       setActionLoading(null);
+    }
+  }
+
+  async function handleTriggerJob(jobId: string) {
+    const endpoint = JOB_TRIGGER_MAP[jobId];
+    if (!endpoint) return;
+
+    setTriggeringJob(jobId);
+    try {
+      await apiClient.post(endpoint, {});
+      // Give the job a moment to start, then refresh status
+      setTimeout(() => fetchStatus(), 1500);
+    } catch {
+      // error
+    } finally {
+      setTriggeringJob(null);
     }
   }
 
@@ -205,83 +322,32 @@ export default function AdminScrapingPage() {
   const playedCount =
     matchdayDetail?.matches.filter((m) => m.home_score !== null).length ?? 0;
   const totalCount = matchdayDetail?.matches.length ?? 0;
+  const jobs = status?.jobs ?? [];
 
   return (
     <div className="space-y-4">
-      {/* Scheduler Status */}
+      {/* Scheduler Global Controls */}
       <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
-        <div className="border-b border-vpv-border px-4 py-3">
-          <h2 className="font-semibold text-vpv-text">
-            Scheduler automatico
-          </h2>
-        </div>
-        <div className="space-y-3 px-4 py-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2">
-              <span
-                className={`h-3 w-3 rounded-full ${status?.running ? "bg-green-500" : "bg-red-500"}`}
-              />
-              <span className="text-sm font-medium text-vpv-text">
-                {status?.running ? "Activo" : "Detenido"}
-              </span>
-            </div>
-            {status?.lock_held && (
-              <span className="rounded bg-yellow-500/20 px-2 py-0.5 text-xs font-medium text-yellow-400">
-                Tick en curso
-              </span>
-            )}
+        <div className="flex items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-3">
+            <span
+              className={`h-3 w-3 rounded-full ${status?.running ? "bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]" : "bg-red-500"}`}
+            />
+            <h2 className="font-semibold text-vpv-text">
+              Tareas programadas
+            </h2>
+            <span className="text-xs text-vpv-text-muted">
+              {status?.running ? "Scheduler activo" : "Scheduler detenido"}
+            </span>
           </div>
-
-          <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
-            <div>
-              <p className="text-vpv-text-muted">Intervalo stats</p>
-              <p className="font-medium text-vpv-text">
-                {status?.poll_interval_seconds
-                  ? `${Math.floor(status.poll_interval_seconds / 60)} min`
-                  : "\u2014"}
-              </p>
-            </div>
-            <div>
-              <p className="text-vpv-text-muted">Ultimo tick</p>
-              <p className="font-medium text-vpv-text">
-                {formatDateTime(status?.last_tick_at ?? null)}
-              </p>
-            </div>
-            <div>
-              <p className="text-vpv-text-muted">Proximo tick</p>
-              <p className="font-medium text-vpv-text">
-                {formatDateTime(status?.next_run_at ?? null)}
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
-            <div>
-              <p className="text-vpv-text-muted">Sync calendario</p>
-              <p className="font-medium text-vpv-text">Diario 06:00 UTC</p>
-            </div>
-            <div>
-              <p className="text-vpv-text-muted">Ultimo sync</p>
-              <p className="font-medium text-vpv-text">
-                {formatDateTime(status?.last_calendar_sync_at ?? null)}
-              </p>
-            </div>
-            <div>
-              <p className="text-vpv-text-muted">Proximo sync</p>
-              <p className="font-medium text-vpv-text">
-                {formatDateTime(status?.next_calendar_sync_at ?? null)}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2 pt-1">
+          <div className="flex gap-2">
             {status?.running ? (
               <button
                 onClick={() => handleAction("stop")}
                 disabled={actionLoading !== null}
                 className="rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
               >
-                {actionLoading === "stop" ? "Deteniendo..." : "Detener"}
+                {actionLoading === "stop" ? "Deteniendo..." : "Detener todo"}
               </button>
             ) : (
               <button
@@ -289,20 +355,24 @@ export default function AdminScrapingPage() {
                 disabled={actionLoading !== null}
                 className="rounded bg-green-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50"
               >
-                {actionLoading === "start" ? "Iniciando..." : "Iniciar"}
+                {actionLoading === "start" ? "Iniciando..." : "Iniciar todo"}
               </button>
             )}
-            <button
-              onClick={() => handleAction("trigger")}
-              disabled={actionLoading !== null || !status?.running}
-              className="rounded border border-vpv-border px-3 py-1.5 text-xs font-medium text-vpv-text-muted transition-colors hover:text-vpv-text disabled:opacity-50"
-            >
-              {actionLoading === "trigger"
-                ? "Ejecutando..."
-                : "Forzar tick ahora"}
-            </button>
           </div>
         </div>
+      </div>
+
+      {/* Per-Job Cards */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {jobs.map((job) => (
+          <JobCard
+            key={job.id}
+            job={job}
+            schedulerRunning={status?.running ?? false}
+            onTrigger={handleTriggerJob}
+            triggeringJob={triggeringJob}
+          />
+        ))}
       </div>
 
       {/* Current Matchday Matches */}

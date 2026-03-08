@@ -7,6 +7,8 @@ from src.features.scraping.scheduler import (
     get_scheduler_status,
     start_scheduler,
     stop_scheduler,
+    trigger_calendar_sync,
+    trigger_deadline_check,
     trigger_tick,
 )
 from src.features.scraping.service import ScrapingService
@@ -120,6 +122,30 @@ async def scheduler_trigger(
     _admin: dict = Depends(get_current_admin),
 ) -> dict:
     return await trigger_tick()
+
+
+@router.post(
+    "/admin/trigger/calendar-sync",
+    summary="Trigger calendar sync",
+    response_model=dict,
+)
+async def scheduler_trigger_calendar(
+    _admin: dict = Depends(get_current_admin),
+) -> dict:
+    """Manually fire a calendar sync outside the daily cron schedule."""
+    return await trigger_calendar_sync()
+
+
+@router.post(
+    "/admin/trigger/deadline-check",
+    summary="Trigger deadline check",
+    response_model=dict,
+)
+async def scheduler_trigger_deadline(
+    _admin: dict = Depends(get_current_admin),
+) -> dict:
+    """Manually fire a deadline check outside the 60-second interval."""
+    return await trigger_deadline_check()
 
 
 @router.post(
