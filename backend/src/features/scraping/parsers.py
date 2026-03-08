@@ -730,30 +730,37 @@ def parse_player_photo(html: str) -> str | None:
 def parse_match_score(html: str) -> tuple[int, int] | None:
     """Extract the match score from a match detail page.
 
-    Looks for ``div.resultado`` containing two ``span`` elements with the
-    home and away scores.  Falls back to ``strong.score`` text like ``"2-1"``.
+    The match page on futbolfantasy uses two ``div.score`` elements at the top
+    (one per team), each containing ``div.score-local`` and
+    ``div.score-visitante``.  When not yet available, these contain ``"-"``.
+
+    Falls back to ``div.resultado`` text and ``strong.score`` patterns.
 
     Returns ``(home_score, away_score)`` or ``None`` if not found.
     """
     soup = BeautifulSoup(html, "lxml")
 
-    # Try div.resultado with score spans
+    # Primary: first div.score containing div.score-local + div.score-visitante
+    first_score = soup.find("div", class_="score")
+    if isinstance(first_score, Tag):
+        local = first_score.find("div", class_="score-local")
+        visit = first_score.find("div", class_="score-visitante")
+        if isinstance(local, Tag) and isinstance(visit, Tag):
+            local_text = local.get_text(strip=True)
+            visit_text = visit.get_text(strip=True)
+            if local_text.isdigit() and visit_text.isdigit():
+                return (int(local_text), int(visit_text))
+
+    # Fallback: div.resultado with "N - N" text
     resultado = soup.find("div", class_="resultado")
     if isinstance(resultado, Tag):
-        spans = resultado.find_all("span")
-        if len(spans) >= 2:
-            try:
-                home = int(spans[0].get_text(strip=True))
-                away = int(spans[1].get_text(strip=True))
-                return (home, away)
-            except (ValueError, IndexError):
-                pass
-        # Try text like "2 - 1" directly in resultado
         text = resultado.get_text(strip=True)
         if "-" in text:
             try:
                 parts = text.split("-", 1)
-                return (int(parts[0].strip()), int(parts[1].strip()))
+                home = int(parts[0].strip())
+                away = int(parts[1].strip())
+                return (home, away)
             except (ValueError, IndexError):
                 pass
 
