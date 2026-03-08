@@ -116,8 +116,11 @@ function matchStatus(match: MatchEntry): "played" | "live" | "upcoming" {
   if (!match.played_at) return "upcoming";
   const d = new Date(match.played_at);
   const now = new Date();
-  if (d.getTime() <= now.getTime()) return "live";
-  return "upcoming";
+  const elapsedMs = now.getTime() - d.getTime();
+  if (elapsedMs < 0) return "upcoming";
+  // A football match lasts ~2h; after 3h without score it's "finished" not "live"
+  if (elapsedMs > 3 * 60 * 60 * 1000) return "played";
+  return "live";
 }
 
 const JOB_TRIGGER_MAP: Record<string, string> = {
