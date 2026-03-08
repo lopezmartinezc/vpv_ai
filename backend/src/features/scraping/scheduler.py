@@ -18,7 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import deque
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -213,14 +213,10 @@ async def _deadline_check() -> None:
             # Compute deadline
             deadline = matchday.deadline_at
             if deadline is None and matchday.first_match_at is not None:
-                from datetime import timedelta
-
                 deadline = matchday.first_match_at - timedelta(minutes=season.lineup_deadline_min)
 
             if deadline is None:
                 return
-
-            from datetime import datetime
 
             now = datetime.now(UTC)
             if deadline.tzinfo is None:
