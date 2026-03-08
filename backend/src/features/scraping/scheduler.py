@@ -25,7 +25,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from src.core.database import AsyncSessionLocal
 from src.features.scraping.client import ScrapingClient, ScrapingError
 from src.features.scraping.config import scraping_settings
-from src.features.scraping.parsers import parse_match_crc
+from src.features.scraping.parsers import parse_match_crc, parse_match_score
 from src.features.scraping.repository import ScrapingRepository
 from src.features.scraping.service import ScrapingService
 
@@ -120,18 +120,57 @@ async def _run_tick() -> None:
                 _log("scraping_tick", f"Sin partidos en J{md_current}")
                 return
 
-            # 4. Filter played matches (have a result + source_url for CRC check)
+            # 4a. Matches with result + source_url → CRC check
             played = [m for m in matches if m.source_url is not None and m.home_score is not None]
-            if not played:
+            # 4b. Matches that should have ended but have no score yet
+            #     (calendar didn't update, but match page may have it)
+            buffer_minutes = scraping_settings.scraping_buffer_minutes
+            now = datetime.now(UTC)
+            pending_score = [
+                m for m in matches
+                if m.source_url is not None
+                and m.home_score is None
+                and m.played_at is not None
+                and (now - m.played_at.replace(tzinfo=UTC if m.played_at.tzinfo is None else m.played_at.tzinfo)) > timedelta(minutes=buffer_minutes)
+            ]
+
+            if not played and not pending_score:
                 _log("scraping_tick", f"J{md_current}: sin partidos jugados aun")
                 return
 
-            _log("scraping_tick", f"J{md_current}: {len(played)}/{len(matches)} partidos jugados, comprobando CRCs")
+            _log("scraping_tick", f"J{md_current}: {len(played)} con resultado, {len(pending_score)} pendientes de resultado, comprobando")
 
-            # 5. Per-match CRC check
+            # 5. Per-match CRC check + score discovery
             matches_to_scrape: list[int] = []
 
             async with ScrapingClient() as client:
+                # 5a. Check pending-score matches — try to discover result from match page
+                for match in pending_score:
+                    try:
+                        html = await client.fetch(match.source_url)  # type: ignore[arg-type]
+                    except ScrapingError:
+                        _log("scraping_tick", f"Error fetch match id={match.id}", "warning")
+                        continue
+
+                    score = parse_match_score(html)
+                    if score is None:
+                        continue
+
+                    home_score, away_score = score
+                    _log("scraping_tick", f"Match {match.id}: resultado descubierto {home_score}-{away_score}")
+                    await repo.update_match_score(
+                        match_id=match.id,
+                        home_score=home_score,
+                        away_score=away_score,
+                        result=f"{home_score}-{away_score}",
+                    )
+
+                    new_crc = parse_match_crc(html)
+                    if new_crc != match.stats_crc:
+                        await repo.update_match_crc(match.id, new_crc)
+                        matches_to_scrape.append(match.id)
+
+                # 5b. Normal CRC check for matches already with result
                 for match in played:
                     try:
                         html = await client.fetch(match.source_url)  # type: ignore[arg-type]
