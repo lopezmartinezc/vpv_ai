@@ -258,7 +258,8 @@ export default function AdminScrapingPage() {
   const [triggeringJob, setTriggeringJob] = useState<string | null>(null);
   const [scrapeResult, setScrapeResult] = useState<string | null>(null);
 
-  // Current matchday data
+  // Season list + selection
+  const [seasons, setSeasons] = useState<SeasonSummary[]>([]);
   const [season, setSeason] = useState<SeasonSummary | null>(null);
   const [matchdayDetail, setMatchdayDetail] = useState<MatchdayDetail | null>(null);
 
@@ -282,30 +283,51 @@ export default function AdminScrapingPage() {
     }
   }, []);
 
-  const fetchCurrentMatchday = useCallback(async () => {
+  const fetchSeasons = useCallback(async () => {
     try {
-      const currentSeason = await apiClient.get<SeasonSummary>("/seasons/current");
-      setSeason(currentSeason);
-      setManualSeason(String(currentSeason.id));
-      setManualMatchday(String(currentSeason.matchday_current));
+      const allSeasons = await apiClient.get<SeasonSummary[]>("/seasons");
+      setSeasons(allSeasons);
 
-      if (currentSeason.matchday_current > 0) {
-        const detail = await apiClient.get<MatchdayDetail>(
-          `/matchdays/${currentSeason.id}/${currentSeason.matchday_current}`,
-        );
-        setMatchdayDetail(detail);
+      // Auto-select active season
+      const active = allSeasons.find((s) => s.status === "active") ?? allSeasons[0];
+      if (active) {
+        setSeason(active);
+        setManualSeason(String(active.id));
+        setManualMatchday(String(active.matchday_current));
       }
     } catch {
-      // no active season
+      // no seasons
+    }
+  }, []);
+
+  const fetchMatchday = useCallback(async (seasonId: number, number: number) => {
+    try {
+      const detail = await apiClient.get<MatchdayDetail>(
+        `/matchdays/${seasonId}/${number}`,
+      );
+      setMatchdayDetail(detail);
+    } catch {
+      setMatchdayDetail(null);
     }
   }, []);
 
   useEffect(() => {
     fetchStatus();
-    fetchCurrentMatchday();
+    fetchSeasons();
     const interval = setInterval(fetchStatus, 10_000);
     return () => clearInterval(interval);
-  }, [fetchStatus, fetchCurrentMatchday]);
+  }, [fetchStatus, fetchSeasons]);
+
+  // Load matchday when season/matchday changes
+  useEffect(() => {
+    const sid = Number(manualSeason);
+    const md = Number(manualMatchday);
+    if (sid > 0 && md > 0) {
+      fetchMatchday(sid, md);
+    } else {
+      setMatchdayDetail(null);
+    }
+  }, [manualSeason, manualMatchday, fetchMatchday]);
 
   async function handleAction(action: "start" | "stop") {
     setActionLoading(action);
@@ -329,7 +351,7 @@ export default function AdminScrapingPage() {
       // Give the job a moment to start, then refresh status + matchday
       setTimeout(() => {
         fetchStatus();
-        fetchCurrentMatchday();
+        fetchMatchday(Number(manualSeason), Number(manualMatchday));
       }, 1500);
     } catch {
       // error
@@ -355,7 +377,7 @@ export default function AdminScrapingPage() {
         msg += "\n" + details.join("\n");
       }
       setScrapeResult(msg);
-      await Promise.all([fetchStatus(), fetchCurrentMatchday()]);
+      await Promise.all([fetchStatus(), fetchMatchday(Number(manualSeason), Number(manualMatchday))]);
     } catch {
       setScrapeResult("Error al ejecutar scraping");
     } finally {
@@ -374,7 +396,7 @@ export default function AdminScrapingPage() {
       setScrapeResult(
         `Resultados actualizados: ${data.scores_updated ?? 0}, Fechas actualizadas: ${data.dates_updated ?? 0}`,
       );
-      await fetchCurrentMatchday();
+      await fetchMatchday(Number(manualSeason), Number(manualMatchday));
     } catch {
       setScrapeResult("Error al actualizar calendario");
     } finally {
@@ -383,7 +405,7 @@ export default function AdminScrapingPage() {
   }
 
   async function handleScrapeMatch(matchId: number) {
-    if (!season || !matchdayDetail) return;
+    if (!manualSeason || !manualMatchday) return;
     setScrapingMatchId(matchId);
     setMatchScrapeResult(null);
     try {
@@ -393,7 +415,7 @@ export default function AdminScrapingPage() {
         errors?: number;
         error_details?: string[];
       }>(
-        `/scraping/match/${season.id}/${matchdayDetail.number}/${matchId}`,
+        `/scraping/match/${manualSeason}/${manualMatchday}/${matchId}`,
         {},
       );
       const errors = data.errors ?? 0;
@@ -403,7 +425,7 @@ export default function AdminScrapingPage() {
         ...details,
       ];
       setMatchScrapeResult({ matchId, lines });
-      await fetchCurrentMatchday();
+      await fetchMatchday(Number(manualSeason), Number(manualMatchday));
     } catch {
       setMatchScrapeResult({ matchId, lines: ["Error al scrapear partido"] });
     } finally {
@@ -476,13 +498,13 @@ export default function AdminScrapingPage() {
         ))}
       </div>
 
-      {/* Current Matchday Matches */}
-      {matchdayDetail && season && (
+      {/* Matchday Matches */}
+      {matchdayDetail && (
         <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
           <div className="border-b border-vpv-border px-4 py-3">
             <div className="flex items-center justify-between">
               <h2 className="font-semibold text-vpv-text">
-                Jornada {matchdayDetail.number} — {season.name}
+                Jornada {matchdayDetail.number} — {season?.name ?? `Temporada ${manualSeason}`}
               </h2>
               <span className="text-xs text-vpv-text-muted">
                 {playedCount}/{totalCount} jugados
@@ -591,14 +613,26 @@ export default function AdminScrapingPage() {
           <div className="flex flex-wrap items-end gap-3">
             <div>
               <label className="mb-1 block text-xs text-vpv-text-muted">
-                Temporada ID
+                Temporada
               </label>
-              <input
-                type="number"
+              <select
                 value={manualSeason}
-                onChange={(e) => setManualSeason(e.target.value)}
-                className="w-20 rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
-              />
+                onChange={(e) => {
+                  setManualSeason(e.target.value);
+                  const s = seasons.find((s) => String(s.id) === e.target.value);
+                  if (s) {
+                    setSeason(s);
+                    setManualMatchday(String(s.matchday_current));
+                  }
+                }}
+                className="rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+              >
+                {seasons.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} {s.status === "active" ? "(activa)" : ""}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="mb-1 block text-xs text-vpv-text-muted">
