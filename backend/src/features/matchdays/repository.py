@@ -35,6 +35,7 @@ class MatchRow:
     home_score: int | None
     away_score: int | None
     counts: bool
+    stats_ok: bool
     played_at: datetime | None
 
 
@@ -146,6 +147,7 @@ class MatchdayRepository:
                 Match.home_score,
                 Match.away_score,
                 Match.counts,
+                Match.stats_ok,
                 Match.played_at,
             )
             .join(home_team, Match.home_team_id == home_team.id)
@@ -162,6 +164,7 @@ class MatchdayRepository:
                 home_score=row.home_score,
                 away_score=row.away_score,
                 counts=row.counts,
+                stats_ok=row.stats_ok,
                 played_at=row.played_at,
             )
             for row in result.all()

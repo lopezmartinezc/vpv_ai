@@ -30,9 +30,7 @@ interface PlayersResponse {
   total: number;
 }
 
-interface TeamsResponse {
-  teams: Team[];
-}
+// Backend returns Team[] directly (not wrapped)
 
 interface PatchPlayerResponse {
   id: number;
@@ -196,10 +194,10 @@ export default function AdminJugadoresPage() {
   const fetchTeams = useCallback(async (seasonId: number) => {
     setLoadingTeams(true);
     try {
-      const data = await apiClient.get<TeamsResponse>(
+      const data = await apiClient.get<Team[]>(
         `/players/teams/${seasonId}`,
       );
-      setTeams(data.teams);
+      setTeams(data);
     } catch {
       // errors surfaced by auth context
     } finally {

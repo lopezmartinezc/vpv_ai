@@ -25,6 +25,7 @@ class MatchEntry(BaseModel):
     home_score: int | None
     away_score: int | None
     counts: bool
+    stats_ok: bool
     played_at: datetime | None
 
 
@@ -122,4 +123,5 @@ class AdminMatchResponse(BaseModel):
     home_score: int | None
     away_score: int | None
     counts: bool
+    stats_ok: bool
     played_at: datetime | None

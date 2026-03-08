@@ -46,6 +46,7 @@ interface MatchEntry {
   home_score: number | null;
   away_score: number | null;
   counts: boolean;
+  stats_ok: boolean;
   played_at: string | null;
 }
 
@@ -458,6 +459,23 @@ export default function AdminScrapingPage() {
                   key={match.id}
                   className="flex items-center gap-3 px-4 py-2"
                 >
+                  {/* Scraping status indicator */}
+                  <span
+                    className={`h-2 w-2 shrink-0 rounded-full ${
+                      match.stats_ok
+                        ? "bg-green-500"
+                        : st === "played"
+                          ? "bg-yellow-500 animate-pulse"
+                          : "bg-vpv-border"
+                    }`}
+                    title={
+                      match.stats_ok
+                        ? "Stats scrapeados"
+                        : st === "played"
+                          ? "Pendiente de scrapear"
+                          : "No jugado"
+                    }
+                  />
                   <div className="flex-1">
                     <span className="text-sm text-vpv-text">
                       {match.home_team} vs {match.away_team}

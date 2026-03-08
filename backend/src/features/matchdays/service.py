@@ -85,6 +85,7 @@ class MatchdayService:
                     home_score=m.home_score,
                     away_score=m.away_score,
                     counts=m.counts,
+                    stats_ok=m.stats_ok,
                     played_at=m.played_at,
                 )
                 for m in match_rows
