@@ -271,6 +271,7 @@ export default function AdminScrapingPage() {
     matchId: number;
     lines: string[];
   } | null>(null);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -288,12 +289,13 @@ export default function AdminScrapingPage() {
       const allSeasons = await apiClient.get<SeasonSummary[]>("/seasons");
       setSeasons(allSeasons);
 
-      // Auto-select active season
+      // Auto-select active season and load its current matchday
       const active = allSeasons.find((s) => s.status === "active") ?? allSeasons[0];
       if (active) {
         setSeason(active);
         setManualSeason(String(active.id));
         setManualMatchday(String(active.matchday_current));
+        fetchMatchday(active.id, active.matchday_current);
       }
     } catch {
       // no seasons
@@ -318,16 +320,20 @@ export default function AdminScrapingPage() {
     return () => clearInterval(interval);
   }, [fetchStatus, fetchSeasons]);
 
-  // Load matchday when season/matchday changes
-  useEffect(() => {
+  function handleSearch() {
     const sid = Number(manualSeason);
     const md = Number(manualMatchday);
     if (sid > 0 && md > 0) {
       fetchMatchday(sid, md);
-    } else {
-      setMatchdayDetail(null);
     }
-  }, [manualSeason, manualMatchday, fetchMatchday]);
+  }
+
+  function handleCancelScrape() {
+    if (abortController) {
+      abortController.abort();
+      setAbortController(null);
+    }
+  }
 
   async function handleAction(action: "start" | "stop") {
     setActionLoading(action);
@@ -361,6 +367,8 @@ export default function AdminScrapingPage() {
   }
 
   async function handleManualScrape() {
+    const controller = new AbortController();
+    setAbortController(controller);
     setActionLoading("scrape");
     setScrapeResult(null);
     try {
@@ -369,7 +377,7 @@ export default function AdminScrapingPage() {
         skipped?: number;
         errors?: number;
         error_details?: string[];
-      }>(`/scraping/matchday/${manualSeason}/${manualMatchday}`, {});
+      }>(`/scraping/matchday/${manualSeason}/${manualMatchday}`, {}, { signal: controller.signal });
       const errors = data.errors ?? 0;
       const details = data.error_details ?? [];
       let msg = `Procesados: ${data.processed ?? 0}, Saltados: ${data.skipped ?? 0}, Errores: ${errors}`;
@@ -378,10 +386,15 @@ export default function AdminScrapingPage() {
       }
       setScrapeResult(msg);
       await Promise.all([fetchStatus(), fetchMatchday(Number(manualSeason), Number(manualMatchday))]);
-    } catch {
-      setScrapeResult("Error al ejecutar scraping");
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setScrapeResult("Scraping cancelado");
+      } else {
+        setScrapeResult("Error al ejecutar scraping");
+      }
     } finally {
       setActionLoading(null);
+      setAbortController(null);
     }
   }
 
@@ -406,6 +419,8 @@ export default function AdminScrapingPage() {
 
   async function handleScrapeMatch(matchId: number) {
     if (!manualSeason || !manualMatchday) return;
+    const controller = new AbortController();
+    setAbortController(controller);
     setScrapingMatchId(matchId);
     setMatchScrapeResult(null);
     try {
@@ -417,6 +432,7 @@ export default function AdminScrapingPage() {
       }>(
         `/scraping/match/${manualSeason}/${manualMatchday}/${matchId}`,
         {},
+        { signal: controller.signal },
       );
       const errors = data.errors ?? 0;
       const details = data.error_details ?? [];
@@ -426,10 +442,15 @@ export default function AdminScrapingPage() {
       ];
       setMatchScrapeResult({ matchId, lines });
       await fetchMatchday(Number(manualSeason), Number(manualMatchday));
-    } catch {
-      setMatchScrapeResult({ matchId, lines: ["Error al scrapear partido"] });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setMatchScrapeResult({ matchId, lines: ["Scraping cancelado"] });
+      } else {
+        setMatchScrapeResult({ matchId, lines: ["Error al scrapear partido"] });
+      }
     } finally {
       setScrapingMatchId(null);
+      setAbortController(null);
     }
   }
 
@@ -536,9 +557,17 @@ export default function AdminScrapingPage() {
                 type="number"
                 value={manualMatchday}
                 onChange={(e) => setManualMatchday(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
                 className="w-20 rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
               />
             </div>
+            <button
+              onClick={handleSearch}
+              className="rounded border border-vpv-accent px-3 py-1.5 text-xs font-medium text-vpv-accent transition-colors hover:bg-vpv-accent/10"
+            >
+              Buscar
+            </button>
+            <div className="h-6 w-px bg-vpv-border" />
             <button
               onClick={handleManualScrape}
               disabled={actionLoading !== null}
@@ -548,6 +577,14 @@ export default function AdminScrapingPage() {
                 ? "Scrapeando..."
                 : "Scrapear jornada"}
             </button>
+            {abortController && (
+              <button
+                onClick={handleCancelScrape}
+                className="rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700"
+              >
+                Cancelar
+              </button>
+            )}
             <button
               onClick={handleCalendarScrape}
               disabled={actionLoading !== null}
@@ -651,15 +688,22 @@ export default function AdminScrapingPage() {
                         NC
                       </span>
                     )}
-                    <button
-                      onClick={() => handleScrapeMatch(match.id)}
-                      disabled={scrapingMatchId !== null || actionLoading !== null}
-                      className="shrink-0 rounded border border-vpv-border px-2 py-0.5 text-[11px] text-vpv-text-muted transition-colors hover:border-vpv-accent hover:text-vpv-accent disabled:opacity-40"
-                    >
-                      {scrapingMatchId === match.id
-                        ? "Scrapeando..."
-                        : "Scrapear"}
-                    </button>
+                    {scrapingMatchId === match.id ? (
+                      <button
+                        onClick={handleCancelScrape}
+                        className="shrink-0 rounded bg-red-600 px-2 py-0.5 text-[11px] font-medium text-white transition-colors hover:bg-red-700"
+                      >
+                        Cancelar
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleScrapeMatch(match.id)}
+                        disabled={scrapingMatchId !== null || actionLoading !== null}
+                        className="shrink-0 rounded border border-vpv-border px-2 py-0.5 text-[11px] text-vpv-text-muted transition-colors hover:border-vpv-accent hover:text-vpv-accent disabled:opacity-40"
+                      >
+                        Scrapear
+                      </button>
+                    )}
                   </div>
                   {hasResult && matchScrapeResult && (
                     <div className="border-t border-vpv-border/30 bg-vpv-bg/40 px-4 py-1.5 pl-10">

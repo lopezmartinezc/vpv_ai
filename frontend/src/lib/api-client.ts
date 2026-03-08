@@ -53,8 +53,8 @@ class ApiClient {
     return this.request<T>(path, { method: "GET" });
   }
 
-  async post<T>(path: string, body: unknown): Promise<T> {
-    return this.request<T>(path, { method: "POST", body: JSON.stringify(body) });
+  async post<T>(path: string, body: unknown, options?: { signal?: AbortSignal }): Promise<T> {
+    return this.request<T>(path, { method: "POST", body: JSON.stringify(body), ...options });
   }
 
   async put<T>(path: string, body: unknown): Promise<T> {
