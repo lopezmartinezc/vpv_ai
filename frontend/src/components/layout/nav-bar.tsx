@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useAuth } from "@/contexts/auth-context";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { Logo } from "@/components/ui/logo";
 
 export function NavBar({ onMenuOpen }: { onMenuOpen: () => void }) {
   const { user, logout } = useAuth();
@@ -31,8 +32,8 @@ export function NavBar({ onMenuOpen }: { onMenuOpen: () => void }) {
           </svg>
         </button>
 
-        <Link href="/" className="text-lg font-bold text-vpv-accent">
-          VPV
+        <Link href="/" className="text-vpv-accent">
+          <Logo className="h-10 w-auto" />
         </Link>
 
         <div className="ml-auto flex items-center gap-3">

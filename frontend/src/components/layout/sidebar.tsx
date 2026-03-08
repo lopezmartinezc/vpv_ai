@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { useSeason } from "@/contexts/season-context";
 import { NavIcon } from "@/components/ui/nav-icon";
+import { Logo } from "@/components/ui/logo";
 import { SeasonSelector } from "./season-selector";
 
 const NAV_ITEMS = [
@@ -79,10 +80,10 @@ export function Sidebar({
         <div className="flex items-center justify-between border-b border-vpv-border px-4 py-4">
           <Link
             href="/"
-            className="text-lg font-bold text-vpv-accent"
+            className="text-vpv-accent"
             onClick={onClose}
           >
-            Liga VPV
+            <Logo className="h-12 w-auto" />
           </Link>
           <button
             onClick={onClose}

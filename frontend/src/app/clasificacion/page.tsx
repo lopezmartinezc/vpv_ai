@@ -6,6 +6,7 @@ import { StandingsList } from "@/components/standings/standings-list";
 import { LigaMatchdayDetail } from "@/components/standings/liga-matchday-detail";
 import { EvolutionChart } from "@/components/standings/evolution-chart";
 import { SkeletonTable } from "@/components/ui/skeleton";
+import { Logo } from "@/components/ui/logo";
 import type { StandingsResponse, MatchdayListResponse } from "@/types";
 
 interface EvolutionEntry {
@@ -54,9 +55,9 @@ export default function ClasificacionPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-vpv-text">Liga VPV</h1>
-        <p className="mt-1 text-vpv-text-muted">
+      <div className="flex items-center gap-4">
+        <Logo className="h-16 w-auto text-vpv-accent" />
+        <p className="text-sm text-vpv-text-muted">
           Temporada {standings.season_name}
         </p>
       </div>

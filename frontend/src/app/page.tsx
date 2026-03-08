@@ -10,6 +10,7 @@ import { CopaMatchdayWidget } from "@/components/dashboard/copa-matchday-widget"
 import { PagometroJornadaWidget } from "@/components/dashboard/pagometro-jornada-widget";
 import { PagometroWidget } from "@/components/dashboard/pagometro-widget";
 import { SkeletonCards } from "@/components/ui/skeleton";
+import { Logo } from "@/components/ui/logo";
 
 export default function Home() {
   const { selectedSeason, loading: seasonLoading } = useSeason();
@@ -74,10 +75,10 @@ export default function Home() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-vpv-text">Liga VPV</h1>
+      <div className="flex items-center gap-4">
+        <Logo className="h-16 w-auto text-vpv-accent" />
         {selectedSeason && (
-          <p className="mt-1 text-vpv-text-muted">
+          <p className="text-sm text-vpv-text-muted">
             Temporada {selectedSeason.name}
           </p>
         )}

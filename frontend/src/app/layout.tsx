@@ -11,6 +11,9 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Liga VPV Fantasy",
   description: "Liga fantasy de futbol entre amigos - La Liga espanola",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({

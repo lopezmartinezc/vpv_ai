@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
+import { Logo } from "@/components/ui/logo";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -30,9 +31,12 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-[60vh] items-center justify-center">
       <div className="w-full max-w-sm rounded-lg border border-vpv-card-border bg-vpv-card p-6">
-        <h1 className="mb-6 text-center text-2xl font-bold text-vpv-text">
-          Iniciar sesion
-        </h1>
+        <div className="mb-6 flex flex-col items-center gap-3">
+          <Logo className="h-20 w-20 text-vpv-accent" />
+          <h1 className="text-xl font-bold text-vpv-text">
+            Iniciar sesion
+          </h1>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
