@@ -46,6 +46,7 @@ class ParticipantScoreRow:
     display_name: str
     total_points: int
     formation: str | None
+    pending_players: int = 0
 
 
 @dataclass
@@ -171,6 +172,30 @@ class MatchdayRepository:
         ]
 
     async def get_scores(self, matchday_id: int) -> list[ParticipantScoreRow]:
+        # Subquery: count lineup players whose team's match is not stats_ok
+        # A player is "pending" when their team plays in a match without stats yet
+        pending_sub = (
+            select(
+                Lineup.participant_id,
+                func.count(LineupPlayer.id).label("pending"),
+            )
+            .join(LineupPlayer, LineupPlayer.lineup_id == Lineup.id)
+            .join(Player, Player.id == LineupPlayer.player_id)
+            .join(
+                Match,
+                and_(
+                    Match.matchday_id == matchday_id,
+                    Match.counts.is_(True),
+                    Match.stats_ok.is_(False),
+                    (Player.team_id == Match.home_team_id)
+                    | (Player.team_id == Match.away_team_id),
+                ),
+            )
+            .where(Lineup.matchday_id == matchday_id)
+            .group_by(Lineup.participant_id)
+            .subquery()
+        )
+
         stmt = (
             select(
                 ParticipantMatchdayScore.ranking.label("rank"),
@@ -178,6 +203,7 @@ class MatchdayRepository:
                 User.display_name,
                 ParticipantMatchdayScore.total_points,
                 Lineup.formation,
+                func.coalesce(pending_sub.c.pending, 0).label("pending_players"),
             )
             .join(
                 SeasonParticipant,
@@ -190,6 +216,10 @@ class MatchdayRepository:
                     Lineup.participant_id == SeasonParticipant.id,
                     Lineup.matchday_id == matchday_id,
                 ),
+            )
+            .outerjoin(
+                pending_sub,
+                pending_sub.c.participant_id == SeasonParticipant.id,
             )
             .where(ParticipantMatchdayScore.matchday_id == matchday_id)
             .order_by(
@@ -204,6 +234,7 @@ class MatchdayRepository:
                 display_name=row.display_name,
                 total_points=row.total_points,
                 formation=row.formation,
+                pending_players=row.pending_players,
             )
             for row in result.all()
         ]

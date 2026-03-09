@@ -97,6 +97,7 @@ class MatchdayService:
                     display_name=s.display_name,
                     total_points=s.total_points,
                     formation=s.formation,
+                    pending_players=s.pending_players,
                 )
                 for s in score_rows
             ],
@@ -261,6 +262,7 @@ class MatchdayService:
                     home_score=m.home_score,
                     away_score=m.away_score,
                     counts=m.counts,
+                    stats_ok=m.stats_ok,
                     played_at=m.played_at,
                 )
         raise NotFoundError("Match", match_id)

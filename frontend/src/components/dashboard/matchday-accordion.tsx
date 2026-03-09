@@ -214,6 +214,11 @@ function AccordionRow({
             {score.formation}
           </span>
         )}
+        {score.pending_players > 0 && (
+          <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-amber-400">
+            {score.pending_players} pte
+          </span>
+        )}
         <span
           className={`min-w-[3rem] text-right text-lg font-bold tabular-nums ${
             isFirst ? "text-vpv-accent" : "text-vpv-text"

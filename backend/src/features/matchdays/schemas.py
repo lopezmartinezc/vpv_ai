@@ -35,6 +35,7 @@ class ParticipantScore(BaseModel):
     display_name: str
     total_points: int
     formation: str | None
+    pending_players: int = 0
 
 
 class MatchdayDetailResponse(BaseModel):

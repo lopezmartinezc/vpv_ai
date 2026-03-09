@@ -413,6 +413,7 @@ Detalle de una jornada con partidos y puntuaciones.
       "home_score": 2,
       "away_score": 1,
       "counts": true,
+      "stats_ok": true,
       "played_at": "2026-02-21T21:00:00"
     }
   ],
@@ -422,11 +423,14 @@ Detalle de una jornada con partidos y puntuaciones.
       "participant_id": 3,
       "display_name": "Carlos L.",
       "total_points": 58,
-      "formation": "1-4-3-3"
+      "formation": "1-4-3-3",
+      "pending_players": 0
     }
   ]
 }
 ```
+
+> `pending_players`: numero de jugadores de la alineacion cuyo equipo juega en un partido de esta jornada que aun no ha sido scrapeado (`counts=true` y `stats_ok=false`). Util para indicar puntuaciones parciales.
 
 ### `GET /api/matchdays/{season_id}/{number}/lineup/{participant_id}`
 

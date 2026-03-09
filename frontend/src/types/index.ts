@@ -87,6 +87,7 @@ export interface ParticipantScore {
   display_name: string;
   total_points: number;
   formation: string | null;
+  pending_players: number;
 }
 
 export interface MatchdayDetailResponse {
