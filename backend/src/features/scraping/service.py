@@ -440,7 +440,7 @@ class ScrapingService:
         from src.features.scraping.parsers import parse_match_score
 
         buffer = self._settings.scraping_buffer_minutes
-        cutoff = _dt.now(tz=UTC).replace(tzinfo=None) - timedelta(minutes=buffer)
+        cutoff = _dt.now(tz=UTC) - timedelta(minutes=buffer)
         pending = await self.repo.get_pending_score_matches(season_id, before=cutoff)
 
         if pending:

@@ -621,7 +621,7 @@ def update_season_metadata(
     pg_conn: psycopg.Connection,
     ctx: dict,
 ) -> None:
-    """Update season matchday_current from MySQL production."""
+    """Update season matchday_current and matchday_scanned from MySQL production."""
     cursor = mysql_conn.cursor(dictionary=True)
     cursor.execute(
         "SELECT jornada_actual FROM temporadas WHERE temporada = %s",
@@ -643,6 +643,30 @@ def update_season_metadata(
             log.info("Updated matchday_current to %d", new_current)
         else:
             log.info("matchday_current already >= %d", new_current)
+
+        # Advance matchday_scanned to highest consecutive matchday with stats_ok
+        pg_cur.execute(
+            """SELECT number FROM matchdays
+               WHERE season_id = %s AND stats_ok = TRUE
+               ORDER BY number""",
+            (ctx["season_id"],),
+        )
+        completed = [r[0] for r in pg_cur.fetchall()]
+        scanned = 0
+        for n in completed:
+            if scanned == 0 or n == scanned + 1:
+                scanned = n
+            else:
+                break
+        if scanned > 0:
+            pg_cur.execute(
+                "UPDATE seasons SET matchday_scanned = %s WHERE id = %s AND matchday_scanned < %s",
+                (scanned, ctx["season_id"], scanned),
+            )
+            if pg_cur.rowcount:
+                log.info("Updated matchday_scanned to %d", scanned)
+            else:
+                log.info("matchday_scanned already >= %d", scanned)
 
 
 # ---------------------------------------------------------------------------
