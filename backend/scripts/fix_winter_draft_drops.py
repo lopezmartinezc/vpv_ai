@@ -288,7 +288,7 @@ def fix_season(
         (season_id,),
     )
     has_over = False
-    print(f"\n  Player counts:")
+    print("\n  Player counts:")
     for name, cnt in pcur.fetchall():
         marker = " <-- OVER" if cnt > 26 else ""
         if marker:

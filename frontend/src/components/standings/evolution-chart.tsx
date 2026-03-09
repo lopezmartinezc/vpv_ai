@@ -132,9 +132,9 @@ export function EvolutionChart({
                 borderRadius: "8px",
                 fontSize: "12px",
               }}
-              labelFormatter={(v: number) => `Jornada ${v}`}
-              formatter={(value: number, name: string) => [`${value}º`, name]}
-              itemSorter={(item) => (item.value as number)}
+              labelFormatter={(v) => `Jornada ${v}`}
+              formatter={(value, name) => [`${value}º`, name]}
+              itemSorter="value"
             />
             {participants.map((p) => (
               <Line

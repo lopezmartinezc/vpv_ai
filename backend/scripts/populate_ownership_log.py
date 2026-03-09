@@ -15,7 +15,6 @@ Run with migration venv (has both mysql.connector and psycopg):
 from __future__ import annotations
 
 import os
-import sys
 
 import mysql.connector
 import psycopg
@@ -147,7 +146,7 @@ def populate():
     pg_conn = psycopg.connect(PG_DSN)
 
     preseason_data, winter_data = _get_mysql_ownership(mysql_conn)
-    slot_map, season_by_name = _build_slot_map(mysql_conn, pg_conn)
+    slot_map, _ = _build_slot_map(mysql_conn, pg_conn)
     mysql_conn.close()
 
     with pg_conn.cursor() as cur:
@@ -257,7 +256,7 @@ def populate():
             )
             winter_picks = cur.fetchall()
 
-            for part_id, player_id, dropped_id in winter_picks:
+            for _part_id, _player_id, dropped_id in winter_picks:
                 if dropped_id is not None:
                     cur.execute(
                         "INSERT INTO player_ownership_log "
@@ -269,7 +268,7 @@ def populate():
                     )
                     total += 1
 
-            for part_id, player_id, dropped_id in winter_picks:
+            for part_id, player_id, _dropped_id in winter_picks:
                 cur.execute(
                     "INSERT INTO player_ownership_log "
                     "(season_id, player_id, participant_id, from_matchday) "
