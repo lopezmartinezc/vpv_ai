@@ -1,70 +1,157 @@
-"""Fix winter draft: set player ownership from MySQL post-winter roster (J23).
+"""Fix winter draft: release dropped players + populate ownership log.
 
-Since ownership only changes at the winter draft, J23 is the definitive
-source of truth for the rest of the season.
+Compares each participant's roster at jornada_cambios-1 vs jornada_cambios.
+Players in BEFORE but not AFTER = DROPPED -> set owner_id = NULL.
+
+Also populates player_ownership_log with two periods:
+  1. jornada_inicial: pre-winter roster
+  2. jornada_cambios: post-winter roster (+ NULL for dropped players)
 
 Usage:
     cd backend
-    source .venv/bin/activate
     python -m scripts.fix_winter_draft_drops              # dry-run
-    python -m scripts.fix_winter_draft_drops --apply       # apply changes
+    python -m scripts.fix_winter_draft_drops --apply       # apply
+    python -m scripts.fix_winter_draft_drops --season 2024-2025 --apply
 """
 
 from __future__ import annotations
 
 import argparse
+import os
+from pathlib import Path
 
 import mysql.connector
 import psycopg
+from dotenv import load_dotenv
 
-MYSQL_DSN = {
-    "host": "franquiciadonpiso.com",
-    "port": 3306,
-    "user": "vpvadmin",
-    "password": "Vpv1977",
-    "database": "ligavpv",
-}
-PG_DSN = "host=localhost port=5433 user=vpv password=vpv_secret dbname=ligavpv"
-SEASON_ID = 8
-TEMPORADA = "2025-2026"
+_env_path = Path(__file__).resolve().parent.parent.parent / "migration" / ".env"
+load_dotenv(_env_path)
+
+
+def _get_mysql_config() -> dict:
+    return {
+        "host": os.getenv("MYSQL_HOST", "localhost"),
+        "port": int(os.getenv("MYSQL_PORT", "3306")),
+        "user": os.getenv("MYSQL_USER", "vpvadmin"),
+        "password": os.getenv("MYSQL_PASSWORD", ""),
+        "database": os.getenv("MYSQL_DATABASE", "ligavpv"),
+        "charset": "utf8mb4",
+        "use_unicode": True,
+    }
+
+
+def _get_pg_conninfo() -> str:
+    host = os.getenv("PG_HOST", "localhost")
+    port = os.getenv("PG_PORT", "5433")
+    user = os.getenv("PG_USER", "vpv")
+    password = os.getenv("PG_PASSWORD", "vpv_secret")
+    database = os.getenv("PG_DATABASE", "ligavpv")
+    return f"host={host} port={port} user={user} password={password} dbname={database}"
+
+
+def _get_mysql_roster(mcur, temporada: str, jornada: int) -> dict[int, set[str]]:
+    """Get roster per user at a given matchday. Returns {mysql_uid: {slug, ...}}."""
+    mcur.execute(
+        "SELECT nom_url, id_user FROM jornadas_temp "
+        "WHERE temporada = %s AND jornada = %s AND id_user > 0",
+        (temporada, jornada),
+    )
+    rosters: dict[int, set[str]] = {}
+    for r in mcur.fetchall():
+        rosters.setdefault(r["id_user"], set()).add(r["nom_url"])
+    return rosters
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Fix winter draft drops + populate ownership log"
+    )
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--season", type=str, default=None)
     args = parser.parse_args()
 
-    mysql_conn = mysql.connector.connect(**MYSQL_DSN)
-    pg_conn = psycopg.connect(PG_DSN)
+    mysql_conn = mysql.connector.connect(**_get_mysql_config())
+    pg_conn = psycopg.connect(_get_pg_conninfo())
 
     try:
-        fix(mysql_conn, pg_conn, dry_run=not args.apply)
+        with pg_conn.cursor() as pcur:
+            if args.season:
+                pcur.execute("SELECT id, name FROM seasons WHERE name = %s", (args.season,))
+            else:
+                pcur.execute("SELECT id, name FROM seasons ORDER BY id")
+            seasons = pcur.fetchall()
+
+        if not seasons:
+            print("No seasons found.")
+            return
+
+        total_released = 0
+        total_log = 0
+        for season_id, season_name in seasons:
+            released, log_entries = fix_season(
+                mysql_conn, pg_conn, season_id=season_id,
+                temporada=season_name, dry_run=not args.apply,
+            )
+            total_released += released
+            total_log += log_entries
+
+        print(f"\n{'='*60}")
+        if not args.apply:
+            print(f"[DRY-RUN] Total: {total_released} releases, {total_log} log entries.")
+            print("Use --apply to execute.")
+        else:
+            print(f"Done. {total_released} releases, {total_log} log entries.")
+
     finally:
         mysql_conn.close()
         pg_conn.close()
 
 
-def fix(
+def fix_season(
     mysql_conn: mysql.connector.MySQLConnection,
     pg_conn: psycopg.Connection,
     *,
+    season_id: int,
+    temporada: str,
     dry_run: bool = True,
-) -> None:
+) -> tuple[int, int]:
+    """Fix drops + populate log for one season. Returns (released, log_entries)."""
     mcur = mysql_conn.cursor(dictionary=True)
     pcur = pg_conn.cursor()
     prefix = "[DRY-RUN] " if dry_run else ""
 
+    print(f"\n{'='*60}")
+    print(f"Season: {temporada} (id={season_id})")
+    print(f"{'='*60}")
+
+    # --- Get season metadata from MySQL ---
+    mcur.execute(
+        "SELECT jornada_inicial, jornada_cambios FROM temporadas WHERE temporada = %s",
+        (temporada,),
+    )
+    row = mcur.fetchone()
+    if not row or not row["jornada_cambios"] or not row["jornada_inicial"]:
+        print("  Missing jornada_inicial or jornada_cambios — skipping.")
+        mcur.close()
+        pcur.close()
+        return 0, 0
+
+    j_inicial = int(row["jornada_inicial"])
+    j_cambios = int(row["jornada_cambios"])
+    j_antes = j_cambios - 1
+    print(f"  jornada_inicial={j_inicial}, jornada_cambios={j_cambios}")
+
     # --- Build user mapping ---
     mcur.execute(
         "SELECT id, nombre FROM usuarios_temp WHERE temporada = %s ORDER BY id",
-        (TEMPORADA,),
+        (temporada,),
     )
     mysql_users = {r["id"]: r["nombre"].strip() for r in mcur.fetchall()}
 
     pcur.execute(
         "SELECT sp.id, u.display_name FROM season_participants sp "
         "JOIN users u ON u.id = sp.user_id WHERE sp.season_id = %s",
-        (SEASON_ID,),
+        (season_id,),
     )
     pg_name_to_pid = {name: pid for pid, name in pcur.fetchall()}
     uid_to_pid = {}
@@ -72,145 +159,122 @@ def fix(
         if name in pg_name_to_pid:
             uid_to_pid[uid] = pg_name_to_pid[name]
     pid_to_name = {v: k for k, v in pg_name_to_pid.items()}
-    print(f"Mapped {len(uid_to_pid)} users")
+    print(f"  Mapped {len(uid_to_pid)}/{len(mysql_users)} users")
 
-    # --- Get jornada_cambios ---
-    mcur.execute(
-        "SELECT jornada_cambios FROM temporadas WHERE temporada = %s",
-        (TEMPORADA,),
-    )
-    jornada_cambios = int(mcur.fetchone()["jornada_cambios"])
-    print(f"jornada_cambios = {jornada_cambios}")
-
-    # --- Get post-winter ownership from MySQL (J23) ---
-    # This is the definitive ownership since changes only happen at winter draft
-    mcur.execute(
-        "SELECT DISTINCT nom_url, id_user FROM jornadas_temp "
-        "WHERE temporada = %s AND jornada = %s AND id_user > 0",
-        (TEMPORADA, jornada_cambios),
-    )
-    j23_ownership: dict[str, int] = {}  # slug -> mysql_uid
-    for r in mcur.fetchall():
-        j23_ownership[r["nom_url"]] = r["id_user"]
-
-    # Count per user in MySQL J23
-    user_counts: dict[int, int] = {}
-    for uid in j23_ownership.values():
-        user_counts[uid] = user_counts.get(uid, 0) + 1
-    print(f"\nMySQL J{jornada_cambios} rosters:")
-    for uid in sorted(user_counts.keys()):
-        print(f"  {mysql_users.get(uid, '?')}: {user_counts[uid]} players")
-
-    # --- Get all PG players ---
+    # --- Get PG player map ---
     pcur.execute(
-        "SELECT id, slug, name, owner_id FROM players WHERE season_id = %s",
-        (SEASON_ID,),
+        "SELECT slug, id, owner_id FROM players WHERE season_id = %s",
+        (season_id,),
     )
-    pg_players = {
-        slug: (pid, name, owner_id)
-        for pid, slug, name, owner_id in pcur.fetchall()
-    }
+    slug_to_player = {slug: (pid, owner) for slug, pid, owner in pcur.fetchall()}
 
-    # --- Sync ownership ---
-    print(f"\n=== Syncing ownership ===")
-    changes = 0
+    # --- Read rosters ---
+    roster_inicial = _get_mysql_roster(mcur, temporada, j_inicial)
+    roster_antes = _get_mysql_roster(mcur, temporada, j_antes)
+    roster_cambios = _get_mysql_roster(mcur, temporada, j_cambios)
 
-    for slug, (player_id, player_name, current_owner) in pg_players.items():
-        if slug in j23_ownership:
-            expected_owner = uid_to_pid.get(j23_ownership[slug])
-            if expected_owner is None:
-                continue
-            if current_owner != expected_owner:
-                old_name = pid_to_name.get(current_owner, str(current_owner))
-                new_name = pid_to_name.get(expected_owner, str(expected_owner))
-                print(f"  {prefix}{player_name}: {old_name} -> {new_name}")
-                if not dry_run:
-                    pcur.execute(
-                        "UPDATE players SET owner_id = %s, is_available = FALSE "
-                        "WHERE id = %s",
-                        (expected_owner, player_id),
-                    )
-                changes += 1
-        else:
-            # Not in J23 roster — should be unowned
-            if current_owner is not None:
-                old_name = pid_to_name.get(current_owner, str(current_owner))
-                print(f"  {prefix}{player_name}: RELEASE from {old_name}")
-                if not dry_run:
-                    pcur.execute(
-                        "UPDATE players SET owner_id = NULL, is_available = TRUE "
-                        "WHERE id = %s",
-                        (player_id,),
-                    )
-                changes += 1
+    if not roster_antes or not roster_cambios:
+        print(f"  No roster data for J{j_antes} or J{j_cambios} — skipping.")
+        mcur.close()
+        pcur.close()
+        return 0, 0
 
-    # --- Create missing players (and missing teams if needed) ---
-    missing = set(j23_ownership.keys()) - set(pg_players.keys())
-    if missing:
-        print(f"\n=== Creating {len(missing)} missing players ===")
-        created = 0
-        teams_created = 0
-        for slug in sorted(missing):
-            mcur.execute(
-                "SELECT nom_url, nom_hum, TRIM(equipo) as equipo, pos "
-                "FROM jornadas_temp WHERE temporada = %s AND jornada = %s "
-                "AND nom_url = %s LIMIT 1",
-                (TEMPORADA, jornada_cambios, slug),
-            )
-            r = mcur.fetchone()
-            if not r:
-                continue
+    # --- Detect drops and picks ---
+    # Build set of ALL picked slugs across all participants
+    all_picked: set[str] = set()
+    all_dropped: dict[str, str] = {}  # slug -> participant name who dropped it
+    draft_changes: list[tuple[str, set[str], set[str]]] = []
 
-            # Find or create team in PG
-            pcur.execute(
-                "SELECT id FROM teams WHERE LOWER(name) = LOWER(%s) AND season_id = %s",
-                (r["equipo"], SEASON_ID),
-            )
-            team_row = pcur.fetchone()
-            if not team_row:
-                print(f"  {prefix}CREATE TEAM: {r['equipo']}")
-                if not dry_run:
-                    team_slug = r["equipo"].lower().replace(" ", "-")
-                    pcur.execute(
-                        "INSERT INTO teams (season_id, name, slug) "
-                        "VALUES (%s, %s, %s) RETURNING id",
-                        (SEASON_ID, r["equipo"], team_slug),
-                    )
-                    team_row = pcur.fetchone()
-                    teams_created += 1
-                else:
-                    teams_created += 1
-                    # Use placeholder for dry-run
-                    team_row = None
+    for uid in sorted(roster_antes.keys()):
+        before = roster_antes.get(uid, set())
+        after = roster_cambios.get(uid, set())
+        dropped = before - after
+        picked = after - before
+        name = mysql_users.get(uid, f"uid={uid}")
+        all_picked |= picked
+        for slug in dropped:
+            all_dropped[slug] = name
+        draft_changes.append((name, dropped, picked))
 
-            team_id = team_row[0] if team_row else None
-            owner_pid = uid_to_pid.get(j23_ownership[slug])
-            name = r["nom_hum"] or slug
-            pos = r["pos"]
+    print(f"\n  Draft changes (J{j_antes} vs J{j_cambios}):")
+    released = 0
+    for name, dropped, picked in draft_changes:
+        if dropped or picked:
+            print(f"    {name}:")
+            for slug in sorted(dropped):
+                print(f"      DROPPED: {slug}")
+            for slug in sorted(picked):
+                print(f"      PICKED:  {slug}")
 
-            print(
-                f"  {prefix}CREATE: {name} ({pos}, {r['equipo']}) "
-                f"-> {pid_to_name.get(owner_pid, '?')}"
-            )
+    # Release dropped players ONLY if nobody picked them in the same draft
+    for slug, dropper_name in sorted(all_dropped.items()):
+        if slug in all_picked:
+            # Another participant picked this player — don't release
+            continue
+        player_info = slug_to_player.get(slug)
+        if not player_info:
+            continue
+        player_id, current_owner = player_info
+        if current_owner is not None:
+            owner_name = pid_to_name.get(current_owner, str(current_owner))
+            print(f"    {prefix}RELEASE: {slug} (dropped by {dropper_name}, owner: {owner_name})")
             if not dry_run:
                 pcur.execute(
-                    "INSERT INTO players (season_id, team_id, name, display_name, "
-                    "slug, position, is_available, owner_id) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                    (SEASON_ID, team_id, name, name, slug, pos,
-                     owner_pid is None, owner_pid),
+                    "UPDATE players SET owner_id = NULL, is_available = TRUE "
+                    "WHERE id = %s",
+                    (player_id,),
                 )
-            created += 1
+            released += 1
 
-        print(f"  {prefix}Created {created} players, {teams_created} teams")
+    # --- Populate ownership log ---
+    log_entries = 0
 
-    if not dry_run:
+    # Build flat ownership maps: slug -> participant_id
+    pre_ownership: dict[str, int | None] = {}
+    for uid, slugs in roster_inicial.items():
+        pid = uid_to_pid.get(uid)
+        for slug in slugs:
+            pre_ownership[slug] = pid
+
+    post_ownership: dict[str, int | None] = {}
+    for uid, slugs in roster_cambios.items():
+        pid = uid_to_pid.get(uid)
+        for slug in slugs:
+            post_ownership[slug] = pid
+
+    for slug, (player_id, _) in slug_to_player.items():
+        # Period 1: pre-winter ownership (from jornada_inicial)
+        if slug in pre_ownership and pre_ownership[slug] is not None:
+            if not dry_run:
+                pcur.execute(
+                    "INSERT INTO player_ownership_log "
+                    "(season_id, player_id, participant_id, from_matchday) "
+                    "VALUES (%s, %s, %s, %s) "
+                    "ON CONFLICT (season_id, player_id, from_matchday) DO UPDATE "
+                    "SET participant_id = EXCLUDED.participant_id",
+                    (season_id, player_id, pre_ownership[slug], j_inicial),
+                )
+            log_entries += 1
+
+        # Period 2: if ownership changed at winter draft
+        pre_owner = pre_ownership.get(slug)
+        post_owner = post_ownership.get(slug)
+        if pre_owner != post_owner:
+            if not dry_run:
+                pcur.execute(
+                    "INSERT INTO player_ownership_log "
+                    "(season_id, player_id, participant_id, from_matchday) "
+                    "VALUES (%s, %s, %s, %s) "
+                    "ON CONFLICT (season_id, player_id, from_matchday) DO UPDATE "
+                    "SET participant_id = EXCLUDED.participant_id",
+                    (season_id, player_id, post_owner, j_cambios),
+                )
+            log_entries += 1
+
+    if not dry_run and (released or log_entries):
         pg_conn.commit()
-        print(f"\nAll changes committed. ({changes} ownership + {created} created)")
-    else:
-        print(f"\n[DRY-RUN] Would apply {changes} changes. Use --apply to execute.")
 
-    # Final verification
+    # --- Final verification ---
     pcur.execute(
         """
         SELECT u.display_name, COUNT(p.id) as cnt
@@ -221,16 +285,23 @@ def fix(
         GROUP BY u.display_name
         ORDER BY cnt DESC
         """,
-        (SEASON_ID,),
+        (season_id,),
     )
-    print("\nFinal player counts:")
+    has_over = False
+    print(f"\n  Player counts:")
     for name, cnt in pcur.fetchall():
-        # Some participants may have <26 because some players aren't in PG
         marker = " <-- OVER" if cnt > 26 else ""
-        print(f"  {name}: {cnt}{marker}")
+        if marker:
+            has_over = True
+        print(f"    {name}: {cnt}{marker}")
 
+    if not has_over and released == 0:
+        print("  OK")
+
+    print(f"  Summary: {released} released, {log_entries} log entries")
     mcur.close()
     pcur.close()
+    return released, log_entries
 
 
 if __name__ == "__main__":
