@@ -76,39 +76,27 @@ class SeasonRepository(BaseRepository[Season]):
             in_range = and_(in_range, Matchday.number <= matchday_end)
 
         # Detect matchdays whose counts will flip
-        will_become_false = (
-            sa_select(Matchday.id)
-            .where(
-                Matchday.season_id == season_id,
-                Matchday.counts.is_(True),
-                ~in_range,
-            )
+        will_become_false = sa_select(Matchday.id).where(
+            Matchday.season_id == season_id,
+            Matchday.counts.is_(True),
+            ~in_range,
         )
-        will_become_true = (
-            sa_select(Matchday.id)
-            .where(
-                Matchday.season_id == season_id,
-                Matchday.counts.is_(False),
-                in_range,
-            )
+        will_become_true = sa_select(Matchday.id).where(
+            Matchday.season_id == season_id,
+            Matchday.counts.is_(False),
+            in_range,
         )
         r1 = await self.session.execute(will_become_false)
         r2 = await self.session.execute(will_become_true)
-        changed_ids: list[int] = [row[0] for row in r1.all()] + [
-            row[0] for row in r2.all()
-        ]
+        changed_ids: list[int] = [row[0] for row in r1.all()] + [row[0] for row in r2.all()]
 
         # Bulk update: out of range → false
         await self.session.execute(
-            update(Matchday)
-            .where(Matchday.season_id == season_id, ~in_range)
-            .values(counts=False)
+            update(Matchday).where(Matchday.season_id == season_id, ~in_range).values(counts=False)
         )
         # In range → true
         await self.session.execute(
-            update(Matchday)
-            .where(Matchday.season_id == season_id, in_range)
-            .values(counts=True)
+            update(Matchday).where(Matchday.season_id == season_id, in_range).values(counts=True)
         )
         return changed_ids
 

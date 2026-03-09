@@ -54,10 +54,14 @@ def _ownership_at_matchday(season_id: int, matchday_number: int) -> Subquery:
     entry where from_matchday <= matchday_number.
     """
     # Row-number window: latest entry per player
-    row_num = func.row_number().over(
-        partition_by=PlayerOwnershipLog.player_id,
-        order_by=PlayerOwnershipLog.from_matchday.desc(),
-    ).label("rn")
+    row_num = (
+        func.row_number()
+        .over(
+            partition_by=PlayerOwnershipLog.player_id,
+            order_by=PlayerOwnershipLog.from_matchday.desc(),
+        )
+        .label("rn")
+    )
 
     inner = (
         select(
@@ -72,11 +76,7 @@ def _ownership_at_matchday(season_id: int, matchday_number: int) -> Subquery:
         .subquery()
     )
 
-    return (
-        select(inner.c.player_id, inner.c.participant_id)
-        .where(inner.c.rn == 1)
-        .subquery()
-    )
+    return select(inner.c.player_id, inner.c.participant_id).where(inner.c.rn == 1).subquery()
 
 
 class SquadRepository:
@@ -226,17 +226,13 @@ class SquadRepository:
                 Player.owner_id == participant_id,
             )
 
-        stmt = (
-            base
-            .group_by(
-                Player.id,
-                Player.display_name,
-                Player.photo_path,
-                Player.position,
-                Team.name,
-            )
-            .order_by(POSITION_ORDER.asc(), season_pts.desc())
-        )
+        stmt = base.group_by(
+            Player.id,
+            Player.display_name,
+            Player.photo_path,
+            Player.position,
+            Team.name,
+        ).order_by(POSITION_ORDER.asc(), season_pts.desc())
 
         result = await self.session.execute(stmt)
         return [

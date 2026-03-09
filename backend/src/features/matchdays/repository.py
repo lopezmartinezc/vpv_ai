@@ -359,10 +359,14 @@ class MatchdayRepository:
 
         if matchday_number is not None:
             # Historical ownership via ownership log
-            row_num = func.row_number().over(
-                partition_by=PlayerOwnershipLog.player_id,
-                order_by=PlayerOwnershipLog.from_matchday.desc(),
-            ).label("rn")
+            row_num = (
+                func.row_number()
+                .over(
+                    partition_by=PlayerOwnershipLog.player_id,
+                    order_by=PlayerOwnershipLog.from_matchday.desc(),
+                )
+                .label("rn")
+            )
             ownership = (
                 select(
                     PlayerOwnershipLog.player_id,

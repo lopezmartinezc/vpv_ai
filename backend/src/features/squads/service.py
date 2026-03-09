@@ -67,7 +67,9 @@ class SquadService:
             participant_id,
         )
         player_rows = await self.repo.get_squad_players(
-            season_id, participant_id, matchday_number,
+            season_id,
+            participant_id,
+            matchday_number,
         )
 
         return SquadDetailResponse(

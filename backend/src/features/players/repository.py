@@ -62,9 +62,7 @@ class PlayerRepository:
 
         if search:
             pattern = f"%{search}%"
-            stmt = stmt.where(
-                Player.display_name.ilike(pattern) | Player.slug.ilike(pattern)
-            )
+            stmt = stmt.where(Player.display_name.ilike(pattern) | Player.slug.ilike(pattern))
 
         if team_id is not None:
             stmt = stmt.where(Player.team_id == team_id)
@@ -87,11 +85,7 @@ class PlayerRepository:
         ]
 
     async def list_teams(self, season_id: int) -> list[Team]:
-        stmt = (
-            select(Team)
-            .where(Team.season_id == season_id)
-            .order_by(Team.name)
-        )
+        stmt = select(Team).where(Team.season_id == season_id).order_by(Team.name)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 

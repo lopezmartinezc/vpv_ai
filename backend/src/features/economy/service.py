@@ -52,9 +52,7 @@ def compute_weekly_amounts(
             prev_points = rankings[i].total_points
             amounts[i] = prev_amount
 
-    return [
-        (rankings[i].participant_id, amounts[i]) for i in range(n)
-    ]
+    return [(rankings[i].participant_id, amounts[i]) for i in range(n)]
 
 
 class EconomyService:

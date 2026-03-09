@@ -104,7 +104,10 @@ async def _run_tick() -> None:
             try:
                 cal_result = await service.scrape_calendar(season_id)
                 if cal_result["scores_updated"] or cal_result["dates_updated"]:
-                    _log("scraping_tick", f"Calendario: {cal_result['scores_updated']} resultados, {cal_result['dates_updated']} fechas")
+                    _log(
+                        "scraping_tick",
+                        f"Calendario: {cal_result['scores_updated']} resultados, {cal_result['dates_updated']} fechas",
+                    )
                     await session.commit()
             except Exception as exc:
                 _log("scraping_tick", f"Error calendario: {exc}", "error")
@@ -127,7 +130,8 @@ async def _run_tick() -> None:
             buffer_minutes = scraping_settings.scraping_buffer_minutes
             now_utc = datetime.now(UTC)
             pending_score = [
-                m for m in matches
+                m
+                for m in matches
                 if m.source_url is not None
                 and m.home_score is None
                 and m.played_at is not None
@@ -138,7 +142,10 @@ async def _run_tick() -> None:
                 _log("scraping_tick", f"J{md_current}: sin partidos jugados aun")
                 return
 
-            _log("scraping_tick", f"J{md_current}: {len(played)} con resultado, {len(pending_score)} pendientes de resultado, comprobando")
+            _log(
+                "scraping_tick",
+                f"J{md_current}: {len(played)} con resultado, {len(pending_score)} pendientes de resultado, comprobando",
+            )
 
             # 5. Per-match CRC check + score discovery
             matches_to_scrape: list[int] = []
@@ -157,7 +164,10 @@ async def _run_tick() -> None:
                         continue
 
                     home_score, away_score = score
-                    _log("scraping_tick", f"Match {match.id}: resultado descubierto {home_score}-{away_score}")
+                    _log(
+                        "scraping_tick",
+                        f"Match {match.id}: resultado descubierto {home_score}-{away_score}",
+                    )
                     await repo.update_match_score(
                         match_id=match.id,
                         home_score=home_score,
@@ -183,7 +193,10 @@ async def _run_tick() -> None:
                     if match.stats_crc == new_crc:
                         continue
 
-                    _log("scraping_tick", f"Match {match.id}: CRC cambio {match.stats_crc} -> {new_crc}")
+                    _log(
+                        "scraping_tick",
+                        f"Match {match.id}: CRC cambio {match.stats_crc} -> {new_crc}",
+                    )
                     await repo.update_match_crc(match.id, new_crc)
                     matches_to_scrape.append(match.id)
 
@@ -193,7 +206,10 @@ async def _run_tick() -> None:
                 return
 
             # 6. Scrape changed matches
-            _log("scraping_tick", f"Scrapeando {len(matches_to_scrape)} partidos: {matches_to_scrape}")
+            _log(
+                "scraping_tick",
+                f"Scrapeando {len(matches_to_scrape)} partidos: {matches_to_scrape}",
+            )
             for match_id in matches_to_scrape:
                 try:
                     result = await service.scrape_match_players(
@@ -201,7 +217,10 @@ async def _run_tick() -> None:
                         md_current,
                         match_id,
                     )
-                    _log("scraping_tick", f"Match {match_id}: procesados={result.get('processed', 0)}, errores={result.get('errors', 0)}")
+                    _log(
+                        "scraping_tick",
+                        f"Match {match_id}: procesados={result.get('processed', 0)}, errores={result.get('errors', 0)}",
+                    )
                 except Exception as exc:
                     _log("scraping_tick", f"Error scraping match {match_id}: {exc}", "error")
 
@@ -299,7 +318,10 @@ async def _calendar_sync() -> None:
 
             result = await service.scrape_calendar(season.id)
             await session.commit()
-            _log("calendar_sync", f"Completado: {result['scores_updated']} resultados, {result['dates_updated']} fechas actualizadas")
+            _log(
+                "calendar_sync",
+                f"Completado: {result['scores_updated']} resultados, {result['dates_updated']} fechas actualizadas",
+            )
 
         except Exception as exc:
             await session.rollback()
@@ -413,7 +435,9 @@ def get_scheduler_status() -> dict:
             "name": "Check deadline alineaciones",
             "type": "interval",
             "interval_seconds": 60,
-            "last_run_at": _last_deadline_check_at.isoformat() if _last_deadline_check_at else None,
+            "last_run_at": _last_deadline_check_at.isoformat()
+            if _last_deadline_check_at
+            else None,
             "next_run_at": next_deadline_check,
             "logs": list(_job_logs["deadline_check"]),
         },

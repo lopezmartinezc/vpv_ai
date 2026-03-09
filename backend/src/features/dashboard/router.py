@@ -29,9 +29,7 @@ async def get_dashboard(
         if matchday_current is None:
             return None
         async with AsyncSessionLocal() as s:
-            return await MatchdayService(s).get_matchday_detail(
-                season_id, matchday_current
-            )
+            return await MatchdayService(s).get_matchday_detail(season_id, matchday_current)
 
     async def fetch_copa() -> object:
         async with AsyncSessionLocal() as s:
@@ -51,9 +49,7 @@ async def get_dashboard(
 
     return DashboardResponse(
         standings=results[0] if not isinstance(results[0], BaseException) else None,
-        current_matchday=results[1]
-        if not isinstance(results[1], BaseException)
-        else None,
+        current_matchday=results[1] if not isinstance(results[1], BaseException) else None,
         copa=results[2] if not isinstance(results[2], BaseException) else None,
         economy=results[3] if not isinstance(results[3], BaseException) else None,
     )

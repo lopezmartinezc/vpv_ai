@@ -29,7 +29,9 @@ class PlayerOwnershipLog(Base):
     __tablename__ = "player_ownership_log"
     __table_args__ = (
         UniqueConstraint(
-            "season_id", "player_id", "from_matchday",
+            "season_id",
+            "player_id",
+            "from_matchday",
             name="uq_ownership_log_player_matchday",
         ),
         Index("idx_ownership_log_season", "season_id"),
@@ -41,7 +43,8 @@ class PlayerOwnershipLog(Base):
     season_id: Mapped[int] = mapped_column(ForeignKey("seasons.id"), nullable=False)
     player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), nullable=False)
     participant_id: Mapped[int | None] = mapped_column(
-        ForeignKey("season_participants.id"), nullable=True,
+        ForeignKey("season_participants.id"),
+        nullable=True,
     )
     from_matchday: Mapped[int] = mapped_column(SmallInteger, nullable=False)
 

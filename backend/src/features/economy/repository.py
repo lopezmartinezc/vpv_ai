@@ -204,9 +204,7 @@ class EconomyRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one()
 
-    async def get_matchday_rankings(
-        self, matchday_id: int
-    ) -> list[MatchdayRankingRow]:
+    async def get_matchday_rankings(self, matchday_id: int) -> list[MatchdayRankingRow]:
         stmt = (
             select(
                 ParticipantMatchdayScore.participant_id,
