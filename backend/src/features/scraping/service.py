@@ -435,11 +435,9 @@ class ScrapingService:
 
         # Fallback: for matches that should have ended but calendar has no
         # result, try fetching the score from the individual match detail page.
-        from datetime import timedelta
+        from datetime import UTC, timedelta
 
         from src.features.scraping.parsers import parse_match_score
-
-        from datetime import UTC
 
         buffer = self._settings.scraping_buffer_minutes
         cutoff = _dt.now(tz=UTC).replace(tzinfo=None) - timedelta(minutes=buffer)

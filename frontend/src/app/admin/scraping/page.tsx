@@ -287,6 +287,17 @@ export default function AdminScrapingPage() {
     }
   }, []);
 
+  const fetchMatchday = useCallback(async (seasonId: number, number: number) => {
+    try {
+      const detail = await apiClient.get<MatchdayDetail>(
+        `/matchdays/${seasonId}/${number}`,
+      );
+      setMatchdayDetail(detail);
+    } catch {
+      setMatchdayDetail(null);
+    }
+  }, []);
+
   const fetchSeasons = useCallback(async () => {
     try {
       const allSeasons = await apiClient.get<SeasonSummary[]>("/seasons");
@@ -303,18 +314,7 @@ export default function AdminScrapingPage() {
     } catch {
       // no seasons
     }
-  }, []);
-
-  const fetchMatchday = useCallback(async (seasonId: number, number: number) => {
-    try {
-      const detail = await apiClient.get<MatchdayDetail>(
-        `/matchdays/${seasonId}/${number}`,
-      );
-      setMatchdayDetail(detail);
-    } catch {
-      setMatchdayDetail(null);
-    }
-  }, []);
+  }, [fetchMatchday]);
 
   useEffect(() => {
     fetchStatus();

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, SmallInteger, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, SmallInteger, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.shared.models.base import Base
@@ -25,8 +25,8 @@ class Matchday(Base):
     number: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
     counts: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    first_match_at: Mapped[datetime | None] = mapped_column()
-    deadline_at: Mapped[datetime | None] = mapped_column()
+    first_match_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     stats_ok: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     season: Mapped[Season] = relationship(back_populates="matchdays")
@@ -60,7 +60,7 @@ class Match(Base):
     stats_ok: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     source_id: Mapped[int | None] = mapped_column()
     source_url: Mapped[str | None] = mapped_column(String(200))
-    played_at: Mapped[datetime | None] = mapped_column()
+    played_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     stats_crc: Mapped[str | None] = mapped_column(String(20))
 
     matchday: Mapped[Matchday] = relationship(back_populates="matches")

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import select, update
+from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.shared.base.repository import BaseRepository
@@ -68,7 +68,7 @@ class SeasonRepository(BaseRepository[Season]):
         Returns the list of matchday primary-key ids whose ``counts`` value was
         actually flipped so the caller can trigger score re-aggregation.
         """
-        from sqlalchemy import and_, or_, select as sa_select
+        from sqlalchemy import select as sa_select
 
         # Build the "in range" condition
         in_range = Matchday.number >= matchday_start

@@ -66,7 +66,7 @@ class PlayerService:
 
         updated = await self.repo.get_updated_player_detail(player_id)
         # updated cannot be None here — we just confirmed the player exists.
-        assert updated is not None  # noqa: S101
+        assert updated is not None
 
         return PlayerUpdateResponse(
             id=updated.id,
