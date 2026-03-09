@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql import Select
+from sqlalchemy.sql import Subquery
 
 from src.shared.models.matchday import Matchday
 from src.shared.models.participant import SeasonParticipant
@@ -47,7 +47,7 @@ POSITION_ORDER = case(
 )
 
 
-def _ownership_at_matchday(season_id: int, matchday_number: int) -> Select:
+def _ownership_at_matchday(season_id: int, matchday_number: int) -> Subquery:
     """Subquery: effective owner of each player at a given matchday.
 
     Returns (player_id, participant_id) using the most recent ownership log

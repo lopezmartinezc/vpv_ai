@@ -60,7 +60,7 @@ class ScrapingService:
     # Public API
     # ------------------------------------------------------------------
 
-    async def scrape_matchday(self, season_id: int, matchday_number: int) -> dict[str, int]:
+    async def scrape_matchday(self, season_id: int, matchday_number: int) -> dict[str, object]:
         """Scrape all player stats for every match in *matchday_number*.
 
         Flow
@@ -233,7 +233,7 @@ class ScrapingService:
 
     async def scrape_match_players(
         self, season_id: int, matchday_number: int, match_id: int
-    ) -> dict[str, int]:
+    ) -> dict[str, object]:
         """Scrape stats for the two teams in a single match.
 
         Parameters
