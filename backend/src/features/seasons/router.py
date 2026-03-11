@@ -8,6 +8,7 @@ from src.features.seasons.schemas import (
     ScoringRuleResponse,
     ScoringRulesBatchUpdate,
     SeasonDetail,
+    SeasonParticipantResponse,
     SeasonPaymentResponse,
     SeasonSummary,
     SeasonUpdateRequest,
@@ -87,6 +88,15 @@ async def get_season_payments(
     return [SeasonPaymentResponse.model_validate(p) for p in payments]
 
 
+@router.get("/{season_id}/participants", response_model=list[SeasonParticipantResponse])
+async def get_season_participants(
+    season_id: int,
+    service: SeasonService = Depends(_get_service),
+) -> list[SeasonParticipantResponse]:
+    participants = await service.get_participants(season_id)
+    return [SeasonParticipantResponse.model_validate(p) for p in participants]
+
+
 # ---------------------------------------------------------------------------
 # Admin endpoints
 # ---------------------------------------------------------------------------
@@ -128,3 +138,17 @@ async def update_payments(
 ) -> list[SeasonPaymentResponse]:
     updates = [(p.id, p.amount) for p in body.payments]
     return await service.update_payments(season_id, updates)
+
+
+@router.put(
+    "/admin/{season_id}/participants/{participant_id}/toggle-active",
+    response_model=SeasonParticipantResponse,
+)
+async def toggle_participant_active(
+    season_id: int,
+    participant_id: int,
+    service: SeasonService = Depends(_get_service),
+    _admin: dict = Depends(get_current_admin),
+) -> SeasonParticipantResponse:
+    participant = await service.toggle_participant_active(season_id, participant_id)
+    return SeasonParticipantResponse.model_validate(participant)

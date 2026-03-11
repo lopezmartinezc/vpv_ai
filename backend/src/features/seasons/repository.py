@@ -1,11 +1,24 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.shared.base.repository import BaseRepository
 from src.shared.models.matchday import Matchday
+from src.shared.models.participant import SeasonParticipant
 from src.shared.models.season import ScoringRule, Season, SeasonPayment, ValidFormation
+from src.shared.models.user import User
+
+
+@dataclass
+class ParticipantRow:
+    id: int
+    user_id: int
+    display_name: str
+    draft_order: int | None
+    is_active: bool
 
 
 class SeasonRepository(BaseRepository[Season]):
@@ -44,6 +57,47 @@ class SeasonRepository(BaseRepository[Season]):
         stmt = select(ValidFormation).order_by(ValidFormation.formation)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_participants(self, season_id: int) -> list[ParticipantRow]:
+        stmt = (
+            select(
+                SeasonParticipant.id,
+                SeasonParticipant.user_id,
+                User.display_name,
+                SeasonParticipant.draft_order,
+                SeasonParticipant.is_active,
+            )
+            .join(User, User.id == SeasonParticipant.user_id)
+            .where(SeasonParticipant.season_id == season_id)
+            .order_by(SeasonParticipant.draft_order.asc().nulls_last(), SeasonParticipant.id)
+        )
+        result = await self.session.execute(stmt)
+        return [
+            ParticipantRow(
+                id=row.id,
+                user_id=row.user_id,
+                display_name=row.display_name,
+                draft_order=row.draft_order,
+                is_active=row.is_active,
+            )
+            for row in result.all()
+        ]
+
+    async def toggle_participant_active(self, participant_id: int) -> ParticipantRow | None:
+        participant = await self.session.get(SeasonParticipant, participant_id)
+        if participant is None:
+            return None
+        participant.is_active = not participant.is_active
+        user = await self.session.get(User, participant.user_id)
+        if user is None:
+            return None
+        return ParticipantRow(
+            id=participant.id,
+            user_id=participant.user_id,
+            display_name=user.display_name,
+            draft_order=participant.draft_order,
+            is_active=participant.is_active,
+        )
 
     async def update_season(self, season_id: int, **kwargs: object) -> Season | None:
         season = await self.session.get(Season, season_id)

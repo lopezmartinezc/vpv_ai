@@ -92,3 +92,13 @@ class PaymentUpdateRequest(BaseModel):
 
 class PaymentsBatchUpdate(BaseModel):
     payments: list[PaymentUpdateRequest]
+
+
+class SeasonParticipantResponse(BaseModel):
+    id: int
+    user_id: int
+    display_name: str
+    draft_order: int | None
+    is_active: bool
+
+    model_config = {"from_attributes": True}

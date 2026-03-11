@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import BusinessRuleError, NotFoundError
 from src.features.scraping.aggregation import ScoreAggregator
-from src.features.seasons.repository import SeasonRepository
+from src.features.seasons.repository import ParticipantRow, SeasonRepository
 from src.features.seasons.schemas import ScoringRuleResponse, SeasonDetail, SeasonPaymentResponse
 from src.shared.models.season import ScoringRule, Season, SeasonPayment, ValidFormation
 
@@ -41,7 +41,23 @@ class SeasonService:
     async def get_valid_formations(self) -> list[ValidFormation]:
         return await self.repo.get_valid_formations()
 
+    async def get_participants(self, season_id: int) -> list[ParticipantRow]:
+        await self.get_season(season_id)
+        return await self.repo.get_participants(season_id)
+
     # --- Admin methods ---
+
+    async def toggle_participant_active(
+        self,
+        season_id: int,
+        participant_id: int,
+    ) -> ParticipantRow:
+        await self.get_season(season_id)
+        result = await self.repo.toggle_participant_active(participant_id)
+        if result is None:
+            raise NotFoundError("SeasonParticipant", participant_id)
+        await self.repo.session.commit()
+        return result
 
     async def update_season(
         self,
