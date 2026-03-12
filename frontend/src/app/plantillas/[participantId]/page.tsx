@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useSeason } from "@/contexts/season-context";
@@ -25,6 +26,23 @@ function groupByPosition(players: SquadPlayerEntry[]) {
 }
 
 export default function PlantillaDetailPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="space-y-4">
+          <div className="h-4 w-32 animate-pulse rounded bg-vpv-border" />
+          <div className="h-8 w-40 animate-pulse rounded bg-vpv-border" />
+          <SkeletonTable rows={6} />
+          <SkeletonTable rows={6} />
+        </div>
+      }
+    >
+      <PlantillaDetailContent />
+    </Suspense>
+  );
+}
+
+function PlantillaDetailContent() {
   const { participantId } = useParams<{ participantId: string }>();
   const { selectedSeason, loading: seasonLoading } = useSeason();
   const searchParams = useSearchParams();

@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useSeason } from "@/contexts/season-context";
@@ -10,6 +11,28 @@ import type { SquadListResponse } from "@/types";
 const POSITION_LABELS = ["POR", "DEF", "MED", "DEL"] as const;
 
 export default function PlantillasPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="space-y-4">
+          <div className="h-8 w-48 animate-pulse rounded bg-vpv-border" />
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div
+                key={i}
+                className="h-28 animate-pulse rounded-lg bg-vpv-border"
+              />
+            ))}
+          </div>
+        </div>
+      }
+    >
+      <PlantillasContent />
+    </Suspense>
+  );
+}
+
+function PlantillasContent() {
   const { selectedSeason, loading: seasonLoading } = useSeason();
   const searchParams = useSearchParams();
   const router = useRouter();
