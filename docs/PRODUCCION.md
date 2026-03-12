@@ -1175,6 +1175,77 @@ psql -h 127.0.0.1 -U vpv -d ligavpv -c "SELECT username, is_admin FROM users WHE
 
 El primer admin debe configurarse por SQL directo. Una vez configurado, puede gestionar otros usuarios desde el panel de administración (`/admin/usuarios`).
 
+### 15.6. Datos post-migración
+
+La migración trae los datos históricos de MySQL, pero hay datos que no vienen de ella y deben poblarse después. El backend debe estar corriendo para ejecutar estos comandos.
+
+**1. Calendario de partidos (fechas y resultados)**
+
+Actualiza horarios, resultados y fechas de todos los partidos de la temporada activa:
+
+```bash
+# Desde el servidor de producción
+curl -s -X POST https://ligavpv.com/api/scraping/calendar/8 \
+  -H "Authorization: Bearer TU_JWT_TOKEN"
+
+# O via CLI del backend
+cd /opt/vpv/repo/backend && source .venv/bin/activate
+python -m src.features.scraping.cli update-calendar 8
+```
+
+**2. Fotos de jugadores**
+
+Descarga todas las fotos de jugadores de la temporada como WebP 200x200:
+
+```bash
+cd /opt/vpv/repo/backend && source .venv/bin/activate
+python -m src.features.scraping.cli download-photos 8
+```
+
+**3. Scraping de jornadas pendientes**
+
+Si hay jornadas jugadas después del dump de MySQL que no se migraron:
+
+```bash
+# Scraping de una jornada específica
+python -m src.features.scraping.cli scrape-matchday 8 26
+
+# O scraping automático de la jornada actual
+python -m src.features.scraping.cli scrape-current
+```
+
+**4. Sincronización incremental (si MySQL sigue activo)**
+
+Si la BD MySQL sigue recibiendo datos del sistema antiguo mientras se despliega el nuevo:
+
+```bash
+cd /opt/vpv/repo/migration/scripts
+
+# Configurar .env.sync con credenciales de MySQL y PostgreSQL
+cp ../.env.example ../.env.sync
+nano ../.env.sync
+
+# Sincronizar jornadas específicas
+python incremental_sync.py --matchdays 26,27
+
+# O sincronizar todas las pendientes
+python incremental_sync.py
+```
+
+**5. Activar scheduler automático**
+
+Una vez todo verificado, activar el scheduler que scrapea automáticamente:
+
+```bash
+curl -s -X POST https://ligavpv.com/api/scraping/admin/start \
+  -H "Authorization: Bearer TU_JWT_TOKEN"
+```
+
+El scheduler ejecuta:
+- Check de nuevas estadísticas cada 15 minutos (configurable en `SCRAPING_POLL_INTERVAL_SECONDS`)
+- Sync de calendario diario
+- Check de deadline de alineaciones cada 60 segundos
+
 ---
 
 ## 16. Fotos de jugadores

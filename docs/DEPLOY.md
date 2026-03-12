@@ -225,12 +225,35 @@ psql -U vpv -d ligavpv -c "UPDATE users SET is_admin = TRUE WHERE username = 'tu
 
 Una vez configurado, puede gestionar otros usuarios desde `/admin/usuarios`.
 
-### 4.6. Stamp de Alembic
+### 4.6. Datos post-migracion
+
+La migracion trae datos historicos de MySQL. Estos datos deben poblarse despues (requiere backend corriendo):
+
+```bash
+cd /opt/vpv/repo/backend && source .venv/bin/activate
+
+# 1. Calendario de partidos (fechas, horarios, resultados)
+python -m src.features.scraping.cli update-calendar 8
+
+# 2. Fotos de jugadores (WebP 200x200)
+python -m src.features.scraping.cli download-photos 8
+
+# 3. Jornadas pendientes (si hay jornadas jugadas despues del dump)
+python -m src.features.scraping.cli scrape-matchday 8 26
+# O scraping automatico de la jornada actual:
+python -m src.features.scraping.cli scrape-current
+
+# 4. Sincronizacion incremental (si MySQL sigue activo en paralelo)
+cd /opt/vpv/repo/migration/scripts
+python incremental_sync.py --matchdays 26,27
+```
+
+### 4.7. Stamp de Alembic
 
 Despues de la migracion, marcar la version de Alembic para que las migraciones futuras funcionen:
 
 ```bash
-cd /opt/vpv/backend
+cd /opt/vpv/repo/backend
 source .venv/bin/activate
 alembic stamp head
 ```
