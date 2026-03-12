@@ -59,3 +59,6 @@ alembic/versions/__pycache__/
 
 # Zone identifier files (WSL)
 *:Zone.Identifier
+
+# Sensitive config files
+claude_data/telegram/_conn.ini

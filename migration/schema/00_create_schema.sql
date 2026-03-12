@@ -194,13 +194,14 @@ CREATE TABLE drafts (
 -- 11. draft_picks -- Cada eleccion del draft
 -- ----------------------------------------------------------------------------
 CREATE TABLE draft_picks (
-    id              SERIAL PRIMARY KEY,
-    draft_id        INT      NOT NULL REFERENCES drafts(id),
-    participant_id  INT      NOT NULL REFERENCES season_participants(id),
-    player_id       INT      NOT NULL REFERENCES players(id),
-    round_number    SMALLINT NOT NULL,
-    pick_number     SMALLINT NOT NULL,  -- Orden global (1, 2, 3...)
-    picked_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    id                SERIAL PRIMARY KEY,
+    draft_id          INT      NOT NULL REFERENCES drafts(id),
+    participant_id    INT      NOT NULL REFERENCES season_participants(id),
+    player_id         INT      NOT NULL REFERENCES players(id),
+    round_number      SMALLINT NOT NULL,
+    pick_number       SMALLINT NOT NULL,  -- Orden global (1, 2, 3...)
+    picked_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    dropped_player_id INT      REFERENCES players(id),  -- Jugador soltado (draft invierno)
     UNIQUE(draft_id, pick_number),
     UNIQUE(draft_id, player_id)
 );

@@ -150,7 +150,7 @@ python migrate.py --dry-run
 python migrate.py
 ```
 
-El orquestador ejecuta 12 pasos en orden:
+El orquestador ejecuta 13 pasos en orden:
 1. `00_create_schema.sql` — Crea las 20 tablas PostgreSQL
 2. `01_seed_data.sql` — Datos fijos (formaciones validas)
 3. Seasons — Migra temporadas
@@ -163,6 +163,7 @@ El orquestador ejecuta 12 pasos en orden:
 10. Lineups — Migra alineaciones (normaliza de flag a 11 jugadores)
 11. Scores — Calcula puntuaciones por participante/jornada
 12. Validate — Verifica integridad referencial y conteos
+13. Add indexes — Crea indices de rendimiento para queries del dashboard
 
 Tiempo estimado: 5-10 minutos.
 

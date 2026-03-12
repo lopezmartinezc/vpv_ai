@@ -1064,7 +1064,7 @@ sudo -u vpv pm2 status
 
 ### 15.1. Prerequisitos
 
-- Acceso a la base de datos MySQL actual (franquiciadonpiso.com:3306 u otra)
+- Acceso a la base de datos MySQL actual (servidor MySQL origen)
 - O un dump MySQL disponible
 
 ### 15.2. Migración desde MySQL en vivo
@@ -1080,37 +1080,31 @@ python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# Configurar .env
+# Configurar .env con credenciales reales
 cp .env.example .env
 nano .env
-```
-
-Editar `.env`:
-
-```ini
-# MySQL origen (producción actual)
-MYSQL_HOST=franquiciadonpiso.com
-MYSQL_PORT=3306
-MYSQL_USER=root
-MYSQL_PASSWORD=TU_PASSWORD_MYSQL
-MYSQL_DATABASE=ligavpv
-
-# PostgreSQL destino
-PG_HOST=localhost
-PG_PORT=5432
-PG_USER=vpv
-PG_PASSWORD=TU_PASSWORD_PG
-PG_DATABASE=ligavpv
+# Rellenar: MYSQL_HOST, MYSQL_USER, MYSQL_PASSWORD, PG_PASSWORD
 ```
 
 ```bash
-# Ejecutar migración
+# Dry-run primero (rollback automático, no persiste nada)
 cd /opt/vpv/repo/migration/scripts
+python migrate.py --dry-run
+
+# Si el dry-run es exitoso, ejecutar migración real
 python migrate.py
 
-# Esperado: "Migration complete!"
-# Tiempo: 5-10 minutos
+# Esperado: "Migration complete!" con 13 pasos (00-12)
 ```
+
+El migrador ejecuta estos pasos en orden:
+- 00: Crear schema (20 tablas)
+- 01: Seed data (formaciones válidas)
+- 02-10: Migrar datos desde MySQL (seasons, users, scoring, teams, matchdays, players, stats, lineups, scores)
+- 11: Validación de integridad
+- 12: Crear índices de rendimiento
+
+Para reanudar desde un paso específico: `python migrate.py --step N`
 
 ### 15.3. Migración desde dump MySQL
 

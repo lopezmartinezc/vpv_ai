@@ -1,1 +1,4 @@
 .venv/
+.env
+.env.sync
+schema/02_dev_seed.sql

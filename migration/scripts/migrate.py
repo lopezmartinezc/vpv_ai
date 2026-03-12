@@ -71,6 +71,15 @@ def run_seed(
     _exec_sql_file(pg_conn, _SCHEMA_DIR / "01_seed_data.sql")
 
 
+def run_indexes(
+    mysql_conn: mysql.connector.MySQLConnection,
+    pg_conn: psycopg.Connection,
+    ctx: MigrationContext,
+) -> None:
+    """Post-migration - Execute 03_add_indexes.sql for performance indexes."""
+    _exec_sql_file(pg_conn, _SCHEMA_DIR / "03_add_indexes.sql")
+
+
 # ---------------------------------------------------------------------------
 # Optional step module loader
 # ---------------------------------------------------------------------------
@@ -129,6 +138,7 @@ _ALL_STEPS: list[tuple[str, Callable | None]] = [
     ("09. Lineups",              _get_run(_step_08_lineups)),
     ("10. Scores",               _get_run(_step_09_scores)),
     ("11. Validate",             _get_run(_step_10_validate)),
+    ("12. Add indexes",          run_indexes),
 ]
 
 # ---------------------------------------------------------------------------

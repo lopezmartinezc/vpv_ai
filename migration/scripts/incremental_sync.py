@@ -53,9 +53,9 @@ load_dotenv(_sync_env if _sync_env.exists() else _default_env)
 
 def _get_mysql_config() -> dict:
     return {
-        "host": os.getenv("MYSQL_HOST", "franquiciadonpiso.com"),
+        "host": os.getenv("MYSQL_HOST", "localhost"),
         "port": int(os.getenv("MYSQL_PORT", "3306")),
-        "user": os.getenv("MYSQL_USER", "vpvadmin"),
+        "user": os.getenv("MYSQL_USER", ""),
         "password": os.getenv("MYSQL_PASSWORD", ""),
         "database": os.getenv("MYSQL_DATABASE", "ligavpv"),
         "charset": "utf8mb4",

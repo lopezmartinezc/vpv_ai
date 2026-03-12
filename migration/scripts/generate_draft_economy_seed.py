@@ -22,13 +22,18 @@ import psycopg
 
 SEASON_ID = 8
 TEMPORADA = "2025-2026"
-DB_DSN = "host=localhost port=5433 user=vpv password=vpv_secret dbname=ligavpv"
+DB_DSN = os.getenv(
+    "PG_DSN",
+    f"host={os.getenv('PG_HOST', 'localhost')} port={os.getenv('PG_PORT', '5433')} "
+    f"user={os.getenv('PG_USER', 'vpv')} password={os.getenv('PG_PASSWORD', '')} "
+    f"dbname={os.getenv('PG_DATABASE', 'ligavpv')}",
+)
 MYSQL_CONFIG = {
-    "host": "franquiciadonpiso.com",
-    "port": 3306,
-    "user": "vpvadmin",
-    "password": "Vpv1977",
-    "database": "ligavpv",
+    "host": os.getenv("MYSQL_HOST", "localhost"),
+    "port": int(os.getenv("MYSQL_PORT", "3306")),
+    "user": os.getenv("MYSQL_USER", ""),
+    "password": os.getenv("MYSQL_PASSWORD", ""),
+    "database": os.getenv("MYSQL_DATABASE", "ligavpv"),
 }
 
 POSITION_ORDER = {"POR": 1, "DEF": 2, "MED": 3, "DEL": 4}
