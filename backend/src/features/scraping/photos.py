@@ -138,6 +138,11 @@ class PhotoDownloader:
                 )
                 downloaded += 1
 
-        summary = {"downloaded": downloaded, "skipped": skipped, "errors": errors, "restored": restored}
+        summary = {
+            "downloaded": downloaded,
+            "skipped": skipped,
+            "errors": errors,
+            "restored": restored,
+        }
         logger.info("PhotoDownloader: done — %s", summary)
         return summary
