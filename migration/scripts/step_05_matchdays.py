@@ -110,6 +110,13 @@ def _migrate_matchdays(
 
     log.info("Found %d (season, matchday) group(s) in list_jornadas_temp.", len(groups))
 
+    # Load season matchday ranges from PG to apply matchday_start/matchday_end logic
+    season_ranges: dict[int, tuple[int, int | None]] = {}
+    with pg_conn.cursor() as pg_cur:
+        pg_cur.execute("SELECT id, matchday_start, matchday_end FROM seasons")
+        for r in pg_cur.fetchall():
+            season_ranges[r[0]] = (r[1], r[2])
+
     insert_sql = """
         INSERT INTO matchdays (
             season_id,
@@ -147,8 +154,13 @@ def _migrate_matchdays(
                 continue
 
             # matchday.counts = TRUE if at least one match in the matchday counts
-            # (MAX(contabiliza) > 0).
+            # (MAX(contabiliza) > 0) AND the matchday is within the season range.
             counts: bool = (row["max_counts"] or 0) > 0
+            md_start, md_end = season_ranges.get(season_id, (1, None))
+            if jornada < md_start:
+                counts = False
+            if md_end is not None and jornada > md_end:
+                counts = False
 
             # matchday.stats_ok = TRUE only when ALL matches have statistics
             # (MIN(est_ok) > 0).
