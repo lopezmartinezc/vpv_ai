@@ -137,19 +137,10 @@ python -m src.features.scraping.cli update-calendar 8
 echo ">>> Downloading player photos for season 8..."
 python -m src.features.scraping.cli download-photos 8
 
-# ---------------------------------------------------------------
-# 7. Incremental sync (matchdays with missing data)
-# ---------------------------------------------------------------
-echo ""
-echo ">>> Running incremental sync for matchdays 12,23,26,27..."
-deactivate
-cd "$MIGRATION_DIR/scripts"
-source "$MIGRATION_DIR/.venv/bin/activate"
-python incremental_sync.py --matchdays 12,23,26,27
 deactivate
 
 # ---------------------------------------------------------------
-# 8. Restart backend
+# 7. Restart backend
 # ---------------------------------------------------------------
 if systemctl list-unit-files vpv-backend.service &>/dev/null; then
     echo ""
