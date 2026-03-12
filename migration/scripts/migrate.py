@@ -71,6 +71,52 @@ def run_seed(
     _exec_sql_file(pg_conn, _SCHEMA_DIR / "01_seed_data.sql")
 
 
+def run_fix_stats_ok(
+    mysql_conn: mysql.connector.MySQLConnection,
+    pg_conn: psycopg.Connection,
+    ctx: MigrationContext,
+) -> None:
+    """Post-scores - Recalculate stats_ok from actual player_stats data.
+
+    MySQL est_ok may be unreliable.  This step sets matches.stats_ok = TRUE
+    when a match has player_stats with played=TRUE, then propagates to
+    matchdays when all counting matches are stats_ok.
+    """
+    logger = logging.getLogger(__name__)
+    with pg_conn.cursor() as cur:
+        # 1. matches.stats_ok based on real player_stats
+        cur.execute("""
+            UPDATE matches m
+            SET stats_ok = TRUE
+            WHERE m.stats_ok = FALSE
+              AND EXISTS (
+                  SELECT 1 FROM player_stats ps
+                  WHERE ps.match_id = m.id AND ps.played = TRUE
+              )
+        """)
+        logger.info("Marked %d match(es) as stats_ok from player_stats", cur.rowcount)
+
+        # 2. matchdays.stats_ok when all counting matches are stats_ok
+        cur.execute("""
+            UPDATE matchdays md
+            SET stats_ok = TRUE
+            WHERE md.stats_ok = FALSE
+              AND NOT EXISTS (
+                  SELECT 1 FROM matches m
+                  WHERE m.matchday_id = md.id
+                    AND m.counts = TRUE
+                    AND m.stats_ok = FALSE
+              )
+              AND EXISTS (
+                  SELECT 1 FROM matches m
+                  WHERE m.matchday_id = md.id
+                    AND m.counts = TRUE
+                    AND m.stats_ok = TRUE
+              )
+        """)
+        logger.info("Marked %d matchday(s) as stats_ok", cur.rowcount)
+
+
 def run_indexes(
     mysql_conn: mysql.connector.MySQLConnection,
     pg_conn: psycopg.Connection,
@@ -137,8 +183,9 @@ _ALL_STEPS: list[tuple[str, Callable | None]] = [
     ("08. Player Stats",         _get_run(_step_07_player_stats)),
     ("09. Lineups",              _get_run(_step_08_lineups)),
     ("10. Scores",               _get_run(_step_09_scores)),
-    ("11. Validate",             _get_run(_step_10_validate)),
-    ("12. Add indexes",          run_indexes),
+    ("11. Fix stats_ok",         run_fix_stats_ok),
+    ("12. Validate",             _get_run(_step_10_validate)),
+    ("13. Add indexes",          run_indexes),
 ]
 
 # ---------------------------------------------------------------------------
