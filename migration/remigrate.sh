@@ -43,7 +43,8 @@ fi
 PG_DB="${PG_DATABASE:-ligavpv}"
 PG_SUPER="${PG_SUPERUSER:-postgres}"
 PG_OWNER="${PG_USER:-vpv}"
-ADMIN_USER="${ADMIN_USER:-}"
+ADMIN_USER="${ADMIN_USER:-carloslopez}"
+WEBAPP_USER="${WEBAPP_USER:-vpv}"
 
 echo "============================================================"
 echo "  VPV Migration — Full Reset"
