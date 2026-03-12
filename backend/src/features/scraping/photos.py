@@ -39,7 +39,11 @@ class PhotoDownloader:
     async def download_all(self, season_id: int) -> dict[str, int]:
         """Download photos for every player in *season_id* that lacks one.
 
-        Returns a summary dict with keys ``downloaded``, ``skipped``, ``errors``.
+        If the WebP file already exists on disk (e.g. from a previous migration),
+        the DB record is updated without re-downloading.
+
+        Returns a summary dict with keys ``downloaded``, ``skipped``, ``errors``,
+        ``restored``.
         """
         _PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -49,6 +53,28 @@ class PhotoDownloader:
         downloaded = 0
         skipped = 0
         errors = 0
+        restored = 0
+
+        # Restore photo_path for players whose file already exists on disk
+        remaining = []
+        for player in players:
+            existing = _PHOTOS_DIR / f"{player.slug}.webp"
+            if existing.exists():
+                relative_path = f"players/{player.slug}.webp"
+                await self.repo.update_player_photo(
+                    player_id=player.id,
+                    photo_path=relative_path,
+                    source_url="",
+                )
+                restored += 1
+            else:
+                remaining.append(player)
+
+        if restored:
+            await self.session.commit()
+            logger.info("PhotoDownloader: restored %d photos from disk", restored)
+
+        players = remaining
 
         base_url = self._settings.scraping_base_url
         season_slug = self._settings.scraping_season_slug
@@ -112,6 +138,6 @@ class PhotoDownloader:
                 )
                 downloaded += 1
 
-        summary = {"downloaded": downloaded, "skipped": skipped, "errors": errors}
+        summary = {"downloaded": downloaded, "skipped": skipped, "errors": errors, "restored": restored}
         logger.info("PhotoDownloader: done — %s", summary)
         return summary
