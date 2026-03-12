@@ -583,6 +583,35 @@ def recalculate_scores(
     return upserted
 
 
+def update_match_stats_ok(
+    pg_conn: psycopg.Connection,
+    ctx: dict,
+    matchdays: list[int],
+) -> int:
+    """Set matches.stats_ok = TRUE for matches that have player_stats with played players."""
+    with pg_conn.cursor() as pg_cur:
+        pg_cur.execute(
+            """UPDATE matches m
+               SET stats_ok = TRUE
+               WHERE m.matchday_id IN (
+                   SELECT id FROM matchdays WHERE season_id = %s AND number = ANY(%s)
+               )
+               AND m.counts = TRUE
+               AND m.stats_ok = FALSE
+               AND EXISTS (
+                   SELECT 1 FROM player_stats ps
+                   WHERE ps.match_id = m.id AND ps.played = TRUE
+               )""",
+            (ctx["season_id"], matchdays),
+        )
+        updated = pg_cur.rowcount
+        if updated:
+            log.info("Marked %d match(es) as stats_ok", updated)
+        else:
+            log.info("No matches needed stats_ok update")
+        return updated
+
+
 def update_matchday_stats_ok(
     pg_conn: psycopg.Connection,
     ctx: dict,
@@ -613,6 +642,8 @@ def update_matchday_stats_ok(
         updated = pg_cur.rowcount
         if updated:
             log.info("Marked %d matchday(s) as stats_ok", updated)
+        else:
+            log.info("No matchdays needed stats_ok update")
         return updated
 
 
@@ -805,12 +836,16 @@ def main() -> None:
         log.info("--- STEP 4: Recalculate scores ---")
         recalculate_scores(pg_conn, ctx, matchdays)
 
-        # 5. Update matchdays.stats_ok
-        log.info("--- STEP 5: Update matchdays.stats_ok ---")
+        # 5. Update matches.stats_ok
+        log.info("--- STEP 5: Update matches.stats_ok ---")
+        update_match_stats_ok(pg_conn, ctx, matchdays)
+
+        # 6. Update matchdays.stats_ok
+        log.info("--- STEP 6: Update matchdays.stats_ok ---")
         update_matchday_stats_ok(pg_conn, ctx, matchdays)
 
-        # 6. Season metadata
-        log.info("--- STEP 6: Season metadata ---")
+        # 7. Season metadata
+        log.info("--- STEP 7: Season metadata ---")
         update_season_metadata(mysql_conn, pg_conn, ctx)
 
         if dry_run:
