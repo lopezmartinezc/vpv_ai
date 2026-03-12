@@ -1158,6 +1158,23 @@ Si los números son muy bajos o cero, verifica:
 - MySQL está accesible
 - No hay errores en los logs de la migración
 
+### 15.5. Configurar usuario administrador
+
+La migración no establece ningún usuario como admin. Después de migrar, asignar el rol manualmente:
+
+```bash
+# Ver usuarios disponibles
+psql -h 127.0.0.1 -U vpv -d ligavpv -c "SELECT id, username, display_name FROM users;"
+
+# Marcar como admin
+psql -h 127.0.0.1 -U vpv -d ligavpv -c "UPDATE users SET is_admin = TRUE WHERE username = 'tu_username';"
+
+# Verificar
+psql -h 127.0.0.1 -U vpv -d ligavpv -c "SELECT username, is_admin FROM users WHERE is_admin = TRUE;"
+```
+
+El primer admin debe configurarse por SQL directo. Una vez configurado, puede gestionar otros usuarios desde el panel de administración (`/admin/usuarios`).
+
 ---
 
 ## 16. Fotos de jugadores

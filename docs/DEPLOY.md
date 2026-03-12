@@ -211,7 +211,21 @@ Valores esperados (a fecha de migracion):
 - lineups: variable
 - transactions: variable
 
-### 4.5. Stamp de Alembic
+### 4.5. Configurar usuario administrador
+
+La migracion no establece ningun usuario como admin. Asignar el rol manualmente:
+
+```bash
+# Ver usuarios disponibles
+psql -U vpv -d ligavpv -c "SELECT id, username, display_name FROM users;"
+
+# Marcar como admin
+psql -U vpv -d ligavpv -c "UPDATE users SET is_admin = TRUE WHERE username = 'tu_username';"
+```
+
+Una vez configurado, puede gestionar otros usuarios desde `/admin/usuarios`.
+
+### 4.6. Stamp de Alembic
 
 Despues de la migracion, marcar la version de Alembic para que las migraciones futuras funcionen:
 
