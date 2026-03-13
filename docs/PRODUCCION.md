@@ -655,15 +655,17 @@ sudo firewall-cmd --list-all | grep 'services\|ports'
 ## 11. Clonar repositorio
 
 ```bash
-# Cambiar a usuario vpv
-sudo -u vpv -s
+# Crear directorio y dar permisos a vpv (necesario antes de clonar)
+sudo mkdir -p /opt/vpv
+sudo chown vpv:vpv /opt/vpv
 
 # Clonar directamente en /opt/vpv (el repo ES el directorio de la app)
-git clone https://github.com/tu_usuario/vpv_ai.git /opt/vpv
+# NOTA: usar sudo -u (no sudo -i) para evitar error si /opt/vpv es el home de vpv
+sudo -u vpv git clone https://github.com/tu_usuario/vpv_ai.git /opt/vpv
 # (Reemplaza con la URL real de tu repositorio)
 
 # Crear directorio para fotos de jugadores (gitignored)
-mkdir -p /opt/vpv/backend/static/players
+sudo -u vpv mkdir -p /opt/vpv/backend/static/players
 
 # Verificar
 ls -la /opt/vpv
