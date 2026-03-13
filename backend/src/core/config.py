@@ -37,6 +37,7 @@ class Settings(BaseSettings):
                 f"@{self.pg_host}:{self.pg_port}/{self.pg_database}"
             )
         return self
+
     database_echo: bool = False
     database_pool_size: int = 5
     database_max_overflow: int = 10
