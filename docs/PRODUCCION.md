@@ -736,8 +736,12 @@ ENVIRONMENT=production
 DEBUG=false
 LOG_LEVEL=INFO
 
-# Base de datos
-DATABASE_URL=postgresql+asyncpg://vpv:TU_CONTRASEÑA_PG@localhost:5432/ligavpv
+# Base de datos (DATABASE_URL se construye automáticamente desde estas vars)
+PG_HOST=localhost
+PG_PORT=5432
+PG_USER=vpv
+PG_PASSWORD=TU_CONTRASEÑA_PG
+PG_DATABASE=ligavpv
 DATABASE_POOL_SIZE=20
 DATABASE_MAX_OVERFLOW=30
 
@@ -1094,7 +1098,7 @@ python migrate.py --dry-run
 # Si el dry-run es exitoso, ejecutar migración real
 python migrate.py
 
-# Esperado: "Migration complete!" con 13 pasos (00-12)
+# Esperado: "Migration complete!" con 14 pasos (00-13)
 ```
 
 El migrador ejecuta estos pasos en orden:
@@ -1103,6 +1107,7 @@ El migrador ejecuta estos pasos en orden:
 - 02-10: Migrar datos desde MySQL (seasons, users, scoring, teams, matchdays, players, stats, lineups, scores)
 - 11: Validación de integridad
 - 12: Crear índices de rendimiento
+- 13: Fotos de jugadores (descarga desde disco o futbolfantasy)
 
 Para reanudar desde un paso específico: `python migrate.py --step N`
 
@@ -1175,46 +1180,61 @@ psql -h 127.0.0.1 -U vpv -d ligavpv -c "SELECT username, is_admin FROM users WHE
 
 El primer admin debe configurarse por SQL directo. Una vez configurado, puede gestionar otros usuarios desde el panel de administración (`/admin/usuarios`).
 
-### 15.6. Datos post-migración
+### 15.6. Scripts post-migración
 
-La migración trae los datos históricos de MySQL, pero hay datos que no vienen de ella y deben poblarse después. El backend debe estar corriendo para ejecutar estos comandos.
+La migración trae los datos históricos de MySQL, pero hay scripts adicionales que deben ejecutarse después. **Importante:** hay dos venvs distintos porque algunos scripts necesitan MySQL.
 
-**1. Calendario de partidos (fechas y resultados)**
-
-Actualiza horarios, resultados y fechas de todos los partidos de la temporada activa:
+**Scripts con migration/.venv** (necesitan mysql.connector + psycopg):
 
 ```bash
-# Desde el servidor de producción
-curl -s -X POST https://ligavpv.com/api/scraping/calendar/8 \
-  -H "Authorization: Bearer TU_JWT_TOKEN"
+# 1. Admin: marcar usuario administrador
+psql -U vpv -d ligavpv -c "UPDATE users SET is_admin = TRUE WHERE username = 'carlos';"
 
-# O via CLI del backend
+# 2. Ownership log (historial de propiedad de jugadores)
+cd /opt/vpv/repo/backend
+source ../migration/.venv/bin/activate
+python -m scripts.populate_ownership_log
+
+# 3. Fix winter draft drops (corrige drops del draft de invierno)
+python -m scripts.fix_winter_draft_drops --apply
+
+# 4. Draft economy seed (drafts + transacciones históricas)
+cd ../migration/scripts
+python generate_draft_economy_seed.py --apply
+deactivate
+```
+
+**Scripts con backend/.venv** (necesitan SQLAlchemy, NO necesitan MySQL):
+
+```bash
+# 5. Backfill weekly payments (pagos semanales históricos)
 cd /opt/vpv/repo/backend && source .venv/bin/activate
+python -m scripts.backfill_weekly_payments
+
+# 6. Calendario de partidos (fechas y resultados)
 python -m src.features.scraping.cli update-calendar 8
-```
 
-**2. Fotos de jugadores**
-
-Descarga todas las fotos de jugadores de la temporada como WebP 200x200:
-
-```bash
-cd /opt/vpv/repo/backend && source .venv/bin/activate
+# 7. Fotos de jugadores (WebP 200x200)
 python -m src.features.scraping.cli download-photos 8
+deactivate
 ```
 
-**3. Scraping de jornadas pendientes**
+### 15.7. Scraping de jornadas pendientes
 
 Si hay jornadas jugadas después del dump de MySQL que no se migraron:
 
 ```bash
+cd /opt/vpv/repo/backend && source .venv/bin/activate
+
 # Scraping de una jornada específica
 python -m src.features.scraping.cli scrape-matchday 8 26
 
 # O scraping automático de la jornada actual
 python -m src.features.scraping.cli scrape-current
+deactivate
 ```
 
-**4. Sincronización incremental (si MySQL sigue activo)**
+### 15.8. Sincronización incremental (si MySQL sigue activo)
 
 Si la BD MySQL sigue recibiendo datos del sistema antiguo mientras se despliega el nuevo:
 
@@ -1232,7 +1252,7 @@ python incremental_sync.py --matchdays 26,27
 python incremental_sync.py
 ```
 
-**5. Activar scheduler automático**
+### 15.9. Activar scheduler automático
 
 Una vez todo verificado, activar el scheduler que scrapea automáticamente:
 

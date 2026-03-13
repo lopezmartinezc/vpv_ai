@@ -22,7 +22,7 @@ function computeWeeklyAmounts(
 
   // Base amounts by sequential position (1-based index),
   // NOT by rank (which has gaps on ties, e.g. 1,2,3,3,5...)
-  const amounts = sorted.map((_, i) => rules[i + 1] ?? 0);
+  const amounts = sorted.map((_, i) => Number(rules[i + 1] ?? 0));
 
   // Tie adjustment: worst to best, same points = same payment
   let prevPoints = sorted[n - 1].total_points;
