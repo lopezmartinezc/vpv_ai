@@ -25,7 +25,7 @@ import psycopg
 
 # Import shared config from migration/scripts/
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "migration" / "scripts"))
-from config import get_mysql_config, get_pg_conninfo  # noqa: E402
+from config import get_mysql_config, get_pg_conninfo
 
 
 def _get_mysql_roster(mcur, temporada: str, jornada: int) -> dict[int, set[str]]:

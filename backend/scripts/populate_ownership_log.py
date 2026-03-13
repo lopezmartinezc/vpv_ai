@@ -22,7 +22,7 @@ import psycopg
 
 # Import shared config from migration/scripts/
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "migration" / "scripts"))
-from config import get_mysql_config, get_pg_conninfo  # noqa: E402
+from config import get_mysql_config, get_pg_conninfo
 
 CURRENT_SEASON_NAME = "2025-2026"
 
