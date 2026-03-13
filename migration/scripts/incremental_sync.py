@@ -22,12 +22,13 @@ import re
 import sys
 from collections import Counter
 
-import os
-from pathlib import Path
-
 import mysql.connector
 import psycopg
-from dotenv import load_dotenv
+
+from config import get_mysql_config, get_pg_conninfo, load_sync_env
+
+# Prefer .env.sync for incremental sync (may use different MySQL host)
+load_sync_env()
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -39,36 +40,6 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 log = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Connection config — loads from migration/.env.sync
-# Falls back to migration/.env if .env.sync doesn't exist.
-# ---------------------------------------------------------------------------
-
-_env_dir = Path(__file__).resolve().parent.parent
-_sync_env = _env_dir / ".env.sync"
-_default_env = _env_dir / ".env"
-load_dotenv(_sync_env if _sync_env.exists() else _default_env)
-
-
-def _get_mysql_config() -> dict:
-    return {
-        "host": os.getenv("MYSQL_HOST", "localhost"),
-        "port": int(os.getenv("MYSQL_PORT", "3306")),
-        "user": os.getenv("MYSQL_USER", ""),
-        "password": os.getenv("MYSQL_PASSWORD", ""),
-        "database": os.getenv("MYSQL_DATABASE", "ligavpv"),
-        "charset": "utf8mb4",
-    }
-
-
-def _get_pg_conninfo() -> str:
-    host = os.getenv("PG_HOST", "localhost")
-    port = os.getenv("PG_PORT", "5432")
-    user = os.getenv("PG_USER", "vpv")
-    password = os.getenv("PG_PASSWORD", "")
-    database = os.getenv("PG_DATABASE", "ligavpv")
-    return f"host={host} port={port} user={user} password={password} dbname={database}"
 
 
 SEASON = "2025-2026"
@@ -788,14 +759,14 @@ def main() -> None:
     # Connect
     log.info("Connecting to MySQL production...")
     try:
-        mysql_conn = mysql.connector.connect(**_get_mysql_config())
+        mysql_conn = mysql.connector.connect(**get_mysql_config())
     except mysql.connector.Error as exc:
         log.error("Could not connect to MySQL: %s", exc)
         sys.exit(1)
 
     log.info("Connecting to PostgreSQL app...")
     try:
-        pg_conn = psycopg.connect(_get_pg_conninfo(), autocommit=False)
+        pg_conn = psycopg.connect(get_pg_conninfo(), autocommit=False)
     except psycopg.Error as exc:
         log.error("Could not connect to PostgreSQL: %s", exc)
         mysql_conn.close()

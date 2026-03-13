@@ -6,6 +6,49 @@ Usage:
     python migrate.py --step 3      # start from step index 3 (0-based)
     python migrate.py --dry-run     # rollback every step instead of committing
     python migrate.py --step 2 --dry-run
+
+=== PRODUCTION DEPLOYMENT (FULL LOAD) ===
+
+Prerequisites:
+  - PostgreSQL 16 running, user 'vpv' created with CREATEDB
+  - MySQL accessible (remote or local)
+  - migration/.env configured with MYSQL_* and PG_* credentials
+  - backend/.env configured with PG_* vars + JWT + Telegram
+  - migration/.venv installed (pip install -r requirements.txt)
+  - backend/.venv installed (pip install -r requirements.txt)
+
+Step 1: Create database
+  sudo -u postgres psql -c "CREATE DATABASE ligavpv OWNER vpv;"
+
+Step 2: Full migration (migration/.venv)
+  cd migration/scripts && source ../.venv/bin/activate
+  python migrate.py
+  deactivate
+
+Step 3: Admin + post-migration scripts (migration/.venv — needs MySQL)
+  psql -U vpv -d ligavpv -c "UPDATE users SET is_admin = TRUE WHERE username = 'carlos';"
+  cd ../../backend
+  source ../migration/.venv/bin/activate
+  python -m scripts.populate_ownership_log
+  python -m scripts.fix_winter_draft_drops --apply
+  cd ../migration/scripts
+  python generate_draft_economy_seed.py --apply
+  deactivate
+
+Step 4: Backend scripts (backend/.venv — no MySQL needed)
+  cd ../../backend && source .venv/bin/activate
+  python -m scripts.backfill_weekly_payments
+
+Step 5: Scraping for current season
+  python -m src.features.scraping.cli update-calendar 8
+  python -m src.features.scraping.cli download-photos 8
+  deactivate
+
+Step 6: Start services
+  sudo systemctl start vpv-backend
+
+Re-migration: drop database first, then repeat from Step 1
+  sudo -u postgres psql -c "DROP DATABASE IF EXISTS ligavpv;"
 """
 
 import argparse

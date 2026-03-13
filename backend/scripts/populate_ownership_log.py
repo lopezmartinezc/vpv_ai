@@ -14,36 +14,15 @@ Run with migration venv (has both mysql.connector and psycopg):
 """
 from __future__ import annotations
 
-import os
+import sys
 from pathlib import Path
 
 import mysql.connector
 import psycopg
-from dotenv import load_dotenv
 
-_env_path = Path(__file__).resolve().parent.parent.parent / "migration" / ".env"
-load_dotenv(_env_path)
-
-
-def _get_pg_conninfo() -> str:
-    if dsn := os.environ.get("PG_DSN"):
-        return dsn
-    host = os.getenv("PG_HOST", "localhost")
-    port = os.getenv("PG_PORT", "5432")
-    user = os.getenv("PG_USER", "vpv")
-    password = os.getenv("PG_PASSWORD", "")
-    database = os.getenv("PG_DATABASE", "ligavpv")
-    return f"host={host} port={port} user={user} password={password} dbname={database}"
-
-
-MYSQL_CONFIG = {
-    "host": os.environ.get("MYSQL_HOST", "localhost"),
-    "port": int(os.environ.get("MYSQL_PORT", "3306")),
-    "user": os.environ.get("MYSQL_USER", ""),
-    "password": os.environ.get("MYSQL_PASSWORD", ""),
-    "database": os.environ.get("MYSQL_DATABASE", "ligavpv"),
-    "charset": "utf8mb4",
-}
+# Import shared config from migration/scripts/
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "migration" / "scripts"))
+from config import get_mysql_config, get_pg_conninfo  # noqa: E402
 
 CURRENT_SEASON_NAME = "2025-2026"
 
@@ -154,8 +133,8 @@ def _build_slot_map(mysql_conn, pg_conn):
 
 
 def populate():
-    mysql_conn = mysql.connector.connect(**MYSQL_CONFIG)
-    pg_conn = psycopg.connect(_get_pg_conninfo())
+    mysql_conn = mysql.connector.connect(**get_mysql_config())
+    pg_conn = psycopg.connect(get_pg_conninfo())
 
     preseason_data, winter_data = _get_mysql_ownership(mysql_conn)
     slot_map, _ = _build_slot_map(mysql_conn, pg_conn)

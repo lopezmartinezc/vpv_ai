@@ -14,33 +14,16 @@ Usage:
 
 from __future__ import annotations
 
-import os
 import random
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 import mysql.connector
 import psycopg
-from dotenv import load_dotenv
 
-_env_path = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(_env_path)
+from config import get_mysql_config, get_pg_conninfo
 
 SEASON_ID = 8
 TEMPORADA = "2025-2026"
-DB_DSN = os.getenv(
-    "PG_DSN",
-    f"host={os.getenv('PG_HOST', 'localhost')} port={os.getenv('PG_PORT', '5432')} "
-    f"user={os.getenv('PG_USER', 'vpv')} password={os.getenv('PG_PASSWORD', '')} "
-    f"dbname={os.getenv('PG_DATABASE', 'ligavpv')}",
-)
-MYSQL_CONFIG = {
-    "host": os.getenv("MYSQL_HOST", "localhost"),
-    "port": int(os.getenv("MYSQL_PORT", "3306")),
-    "user": os.getenv("MYSQL_USER", ""),
-    "password": os.getenv("MYSQL_PASSWORD", ""),
-    "database": os.getenv("MYSQL_DATABASE", "ligavpv"),
-}
 
 POSITION_ORDER = {"POR": 1, "DEF": 2, "MED": 3, "DEL": 4}
 
@@ -150,8 +133,8 @@ def get_winter_changes(mysql_conn: mysql.connector.MySQLConnection) -> dict:
 
 
 def main() -> None:
-    mysql_conn = mysql.connector.connect(**MYSQL_CONFIG)
-    conn = psycopg.connect(DB_DSN)
+    mysql_conn = mysql.connector.connect(**get_mysql_config())
+    conn = psycopg.connect(get_pg_conninfo())
     try:
         with conn:
             run(conn, mysql_conn)

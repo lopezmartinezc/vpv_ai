@@ -17,36 +17,15 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import os
+import sys
 from pathlib import Path
 
 import mysql.connector
 import psycopg
-from dotenv import load_dotenv
 
-_env_path = Path(__file__).resolve().parent.parent.parent / "migration" / ".env"
-load_dotenv(_env_path)
-
-
-def _get_mysql_config() -> dict:
-    return {
-        "host": os.getenv("MYSQL_HOST", "localhost"),
-        "port": int(os.getenv("MYSQL_PORT", "3306")),
-        "user": os.getenv("MYSQL_USER", ""),
-        "password": os.getenv("MYSQL_PASSWORD", ""),
-        "database": os.getenv("MYSQL_DATABASE", "ligavpv"),
-        "charset": "utf8mb4",
-        "use_unicode": True,
-    }
-
-
-def _get_pg_conninfo() -> str:
-    host = os.getenv("PG_HOST", "localhost")
-    port = os.getenv("PG_PORT", "5432")
-    user = os.getenv("PG_USER", "vpv")
-    password = os.getenv("PG_PASSWORD", "")
-    database = os.getenv("PG_DATABASE", "ligavpv")
-    return f"host={host} port={port} user={user} password={password} dbname={database}"
+# Import shared config from migration/scripts/
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "migration" / "scripts"))
+from config import get_mysql_config, get_pg_conninfo  # noqa: E402
 
 
 def _get_mysql_roster(mcur, temporada: str, jornada: int) -> dict[int, set[str]]:
@@ -70,8 +49,8 @@ def main() -> None:
     parser.add_argument("--season", type=str, default=None)
     args = parser.parse_args()
 
-    mysql_conn = mysql.connector.connect(**_get_mysql_config())
-    pg_conn = psycopg.connect(_get_pg_conninfo())
+    mysql_conn = mysql.connector.connect(**get_mysql_config())
+    pg_conn = psycopg.connect(get_pg_conninfo())
 
     try:
         with pg_conn.cursor() as pcur:
