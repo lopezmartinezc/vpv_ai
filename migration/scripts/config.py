@@ -22,7 +22,7 @@ def get_mysql_config() -> dict:
 
 def get_pg_conninfo() -> str:
     host = os.getenv("PG_HOST", "localhost")
-    port = os.getenv("PG_PORT", "5433")
+    port = os.getenv("PG_PORT", "5432")
     user = os.getenv("PG_USER", "vpv")
     password = os.getenv("PG_PASSWORD", "")
     database = os.getenv("PG_DATABASE", "ligavpv")

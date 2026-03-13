@@ -15,14 +15,26 @@ Run with migration venv (has both mysql.connector and psycopg):
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import mysql.connector
 import psycopg
+from dotenv import load_dotenv
 
-PG_DSN = os.environ.get(
-    "PG_DSN",
-    "postgresql://vpv:vpv_secret@localhost:5433/ligavpv",
-)
+_env_path = Path(__file__).resolve().parent.parent.parent / "migration" / ".env"
+load_dotenv(_env_path)
+
+
+def _get_pg_dsn() -> str:
+    if dsn := os.environ.get("PG_DSN"):
+        return dsn
+    host = os.getenv("PG_HOST", "localhost")
+    port = os.getenv("PG_PORT", "5432")
+    user = os.getenv("PG_USER", "vpv")
+    password = os.getenv("PG_PASSWORD", "")
+    database = os.getenv("PG_DATABASE", "ligavpv")
+    return f"postgresql://{user}:{password}@{host}:{port}/{database}"
+
 
 MYSQL_CONFIG = {
     "host": os.environ.get("MYSQL_HOST", "localhost"),
@@ -143,7 +155,7 @@ def _build_slot_map(mysql_conn, pg_conn):
 
 def populate():
     mysql_conn = mysql.connector.connect(**MYSQL_CONFIG)
-    pg_conn = psycopg.connect(PG_DSN)
+    pg_conn = psycopg.connect(_get_pg_dsn())
 
     preseason_data, winter_data = _get_mysql_ownership(mysql_conn)
     slot_map, _ = _build_slot_map(mysql_conn, pg_conn)
