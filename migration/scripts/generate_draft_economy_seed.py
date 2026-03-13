@@ -17,9 +17,14 @@ from __future__ import annotations
 import os
 import random
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import mysql.connector
 import psycopg
+from dotenv import load_dotenv
+
+_env_path = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(_env_path)
 
 SEASON_ID = 8
 TEMPORADA = "2025-2026"
