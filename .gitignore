@@ -60,5 +60,9 @@ alembic/versions/__pycache__/
 # Zone identifier files (WSL)
 *:Zone.Identifier
 
+# Player photos (downloaded at runtime, not committed)
+backend/static/
+!backend/static/.gitkeep
+
 # Sensitive config files
 claude_data/telegram/_conn.ini

@@ -1,20 +1,22 @@
 // PM2 configuration for Liga VPV frontend (Next.js standalone)
-// Install: pm2 start deploy/pm2/ecosystem.config.js
+// Install: pm2 start /opt/vpv/deploy/pm2/ecosystem.config.js
 // Manage:  pm2 status | pm2 logs vpv-frontend | pm2 restart vpv-frontend
+//
+// NEXT_PUBLIC_* vars are build-time only (inlined by Next.js during `npm run build`).
+// They go in frontend/.env.production, NOT here.
+// Runtime secrets (NEXTAUTH_SECRET) go in frontend/.env.production.local.
 
 module.exports = {
   apps: [
     {
       name: "vpv-frontend",
       cwd: "/opt/vpv/frontend",
-      script: "server.js",
+      script: ".next/standalone/server.js",
       env: {
         NODE_ENV: "production",
         PORT: 3000,
         HOSTNAME: "127.0.0.1",
-        NEXT_PUBLIC_API_URL: "https://ligavpv.com/api",
-        NEXTAUTH_URL: "https://ligavpv.com",
-        // NEXTAUTH_SECRET: set in /opt/vpv/frontend/.env
+        NEXTAUTH_URL: "https://new.ligavpv.com",
         API_INTERNAL_URL: "http://127.0.0.1:8000/api",
       },
       instances: 1,

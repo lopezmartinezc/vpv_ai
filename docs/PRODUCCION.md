@@ -586,7 +586,7 @@ sudo systemctl status nginx
 **IMPORTANTE:** Este paso requiere que hayas clonado el repo (sección 11). Si aun no lo has hecho, salta este paso y vuelve aqui despues de la seccion 11.
 
 ```bash
-sudo cp /opt/vpv/repo/deploy/nginx/ligavpv.conf /etc/nginx/conf.d/
+sudo cp /opt/vpv/deploy/nginx/ligavpv.conf /etc/nginx/conf.d/
 
 # Verificar sintaxis
 sudo nginx -t
@@ -636,9 +636,9 @@ sudo certbot renew --dry-run
 sudo certbot certificates
 
 # Acceder vía HTTPS
-curl -s -I https://ligavpv.com | grep SSL
+curl -s -I https://new.ligavpv.com | grep SSL
 # Si no tienes acceso a DNS aún, usar -k para ignorar cert:
-curl -sk -I https://ligavpv.com | grep SSL
+curl -sk -I https://new.ligavpv.com | grep SSL
 ```
 
 ### 10.5. Firewall (recordatorio)
@@ -652,45 +652,25 @@ sudo firewall-cmd --list-all | grep 'services\|ports'
 
 ---
 
-## 11. Clonar repositorio y estructura
-
-### 11.1. Clonar como usuario vpv
+## 11. Clonar repositorio
 
 ```bash
 # Cambiar a usuario vpv
 sudo -u vpv -s
 
-# Dentro de la shell de vpv:
-cd /opt/vpv
-git clone https://github.com/tu_usuario/vpv_ai.git repo
+# Clonar directamente en /opt/vpv (el repo ES el directorio de la app)
+git clone https://github.com/tu_usuario/vpv_ai.git /opt/vpv
 # (Reemplaza con la URL real de tu repositorio)
 
-# Verificar
-ls -la /opt/vpv/repo
-```
-
-### 11.2. Crear symlinks de backend
-
-El backend necesita acceso a fuentes, migrations (Alembic), y datos estáticos.
-
-```bash
-# Como usuario vpv, crear estructura
-cd /opt/vpv/backend
-
-# Symlinks al repositorio (para que ediciones en repo se reflejen)
-ln -s /opt/vpv/repo/backend/src ./src
-ln -s /opt/vpv/repo/backend/scripts ./scripts
-ln -s /opt/vpv/repo/backend/alembic ./alembic
-ln -s /opt/vpv/repo/backend/alembic.ini ./alembic.ini
-ln -s /opt/vpv/repo/backend/pyproject.toml ./pyproject.toml
-
-# Directorio para fotos (será creado después)
+# Crear directorio para fotos de jugadores (gitignored)
 mkdir -p /opt/vpv/backend/static/players
 
 # Verificar
-ls -la /opt/vpv/backend
-# Debe mostrar symlinks
+ls -la /opt/vpv
+# Debe mostrar: backend/ frontend/ migration/ deploy/ docs/ ...
 ```
+
+> **No se necesitan symlinks.** Todo está en su sitio directo.
 
 ---
 
@@ -712,7 +692,7 @@ pip install --upgrade pip setuptools wheel
 ### 12.2. Instalar dependencias
 
 ```bash
-# Dentro de venv, desde /opt/vpv/backend (los symlinks apuntan al repo)
+# Dentro de venv, desde /opt/vpv/backend
 pip install .
 # Esto instala todas las dependencias especificadas en pyproject.toml
 ```
@@ -751,10 +731,10 @@ JWT_SECRET_KEY=CAMBIA_ESTO_GENERAR_UNO_ALEATORIO_64_CARACTERES
 JWT_EXPIRE_MINUTES=480
 
 # CORS
-CORS_ORIGINS=["https://ligavpv.com","https://www.ligavpv.com"]
+CORS_ORIGINS=["https://new.ligavpv.com"]
 
 # Invitaciones
-INVITE_BASE_URL=https://ligavpv.com/registro
+INVITE_BASE_URL=https://new.ligavpv.com/registro
 INVITE_EXPIRY_DAYS=7
 
 # Telegram (llenar si usas notificaciones)
@@ -834,118 +814,70 @@ Ctrl+C para detener uvicorn.
 ### 13.1. Instalar dependencias
 
 ```bash
-# Como usuario vpv, ir al repo
-cd /opt/vpv/repo/frontend
+# Como usuario vpv
+cd /opt/vpv/frontend
 
 # Instalar todas las dependencias (incluidas devDependencies para build)
 npm ci --production=false
 ```
 
-Tiempo estimado: 3-5 minutos.
+### 13.2. Variables de entorno
 
-### 13.2. Crear archivo .env.production
+El repo ya incluye `frontend/.env.production` con la variable build-time:
 
-Next.js necesita variables de entorno en build-time:
+```ini
+NEXT_PUBLIC_API_URL=https://new.ligavpv.com/api
+```
+
+> **IMPORTANTE:** Las variables `NEXT_PUBLIC_*` se incrustan en el JS durante el build. Si cambias el dominio, debes rebuilder.
+
+Para los secrets de runtime, crear `.env.production.local`:
 
 ```bash
-nano /opt/vpv/repo/frontend/.env.production
+cp .env.production.local.example .env.production.local
+nano .env.production.local
 ```
 
 Contenido:
 
 ```ini
-NEXT_PUBLIC_API_URL=https://ligavpv.com/api
-NEXTAUTH_URL=https://ligavpv.com
+NEXTAUTH_SECRET=TU_SECRET_AQUI
+NEXTAUTH_URL=https://new.ligavpv.com
 API_INTERNAL_URL=http://127.0.0.1:8000/api
-```
-
-### 13.3. Build de Next.js
-
-```bash
-cd /opt/vpv/repo/frontend
-
-# Variables de entorno
-export NEXT_PUBLIC_API_URL=https://ligavpv.com/api
-
-# Build (output: .next/standalone)
-npm run build
-# Tiempo estimado: 3-5 minutos
-
-# Verificar output
-ls -la .next/standalone/
-```
-
-### 13.4. Copiar a /opt/vpv/frontend
-
-```bash
-# Como usuario vpv (o root)
-cd /opt/vpv/repo/frontend
-
-# Limpiar destino anterior
-rm -rf /opt/vpv/frontend
-
-# Copiar standalone output
-cp -r .next/standalone /opt/vpv/frontend
-
-# Copiar static assets
-cp -r .next/static /opt/vpv/frontend/.next/static
-
-# Copiar public si existe
-cp -r public /opt/vpv/frontend/public 2>/dev/null || true
-
-# Ajustar permisos
-sudo chown -R vpv:vpv /opt/vpv/frontend
-```
-
-### 13.5. Configurar NEXTAUTH_SECRET en PM2
-
-Next.js standalone no lee archivos `.env` en runtime — las variables las inyecta PM2 via `ecosystem.config.js`.
-
-```bash
-nano /opt/vpv/ecosystem.config.js
-```
-
-Anadir `NEXTAUTH_SECRET` dentro de la seccion `env`:
-
-```javascript
-env: {
-  // ... otras variables existentes ...
-  NEXTAUTH_SECRET: "TU_SECRET_AQUI",
-},
 ```
 
 Generar el secret:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-# Copia el resultado y pegalo en ecosystem.config.js
 ```
 
-**IMPORTANTE:** El archivo `ecosystem.config.js` contiene secrets. Protegerlo:
+Proteger:
 
 ```bash
-chmod 600 /opt/vpv/ecosystem.config.js
+chmod 600 .env.production.local
 ```
 
-### 13.6. Verificar arranque manual
+### 13.3. Build de Next.js
 
 ```bash
-# Como usuario vpv
 cd /opt/vpv/frontend
 
-export NODE_ENV=production
-export PORT=3000
-export HOSTNAME=127.0.0.1
-export NEXT_PUBLIC_API_URL=https://ligavpv.com/api
-export NEXTAUTH_URL=https://ligavpv.com
+npm run build
 
-node server.js
+# Copiar static assets al standalone (Next.js no los incluye)
+cp -r .next/static .next/standalone/.next/static
+cp -r public .next/standalone/public 2>/dev/null || true
+
+# Verificar
+ls -la .next/standalone/server.js
 ```
 
-El servidor debe mostrar:
+### 13.4. Verificar arranque manual
 
-```
-> ready - started server on 0.0.0.0:3000, url: http://127.0.0.1:3000
+```bash
+cd /opt/vpv/frontend
+node .next/standalone/server.js
 ```
 
 En otra terminal:
@@ -966,7 +898,7 @@ Ctrl+C para detener.
 #### Copiar unit file
 
 ```bash
-sudo cp /opt/vpv/repo/deploy/systemd/vpv-backend.service /etc/systemd/system/
+sudo cp /opt/vpv/deploy/systemd/vpv-backend.service /etc/systemd/system/
 ```
 
 #### Editar si es necesario
@@ -1007,33 +939,11 @@ Si falla, verifica:
 
 ### 14.2. Frontend con PM2
 
-#### Copiar ecosystem config
-
-```bash
-# PM2 necesita este archivo para conocer cómo arrancar el app
-cp /opt/vpv/repo/deploy/pm2/ecosystem.config.js /opt/vpv/
-```
-
-#### Editar si es necesario
-
-```bash
-nano /opt/vpv/ecosystem.config.js
-
-# Verificar:
-# cwd: "/opt/vpv/frontend"
-# script: "server.js"
-# PORT: 3000
-# HOSTNAME: 127.0.0.1
-```
-
 #### Arrancar con PM2
 
 ```bash
-# Como usuario vpv
-cd /opt/vpv
-
-# Arrancar la aplicación
-pm2 start ecosystem.config.js
+# Como usuario vpv — usar el ecosystem.config.js directo del repo
+pm2 start /opt/vpv/deploy/pm2/ecosystem.config.js
 
 # Ver estado
 pm2 status
@@ -1047,9 +957,7 @@ pm2 save
 
 # Habilitar startup en boot
 pm2 startup systemd -u vpv --hp /opt/vpv
-# Esto imprime un comando sudo que DEBES ejecutar
-# Cópialo y ejecuta:
-sudo env PATH=$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -u vpv --hp /opt/vpv
+# Esto imprime un comando sudo que DEBES ejecutar como root
 ```
 
 Verificar que se inicia en boot:
@@ -1078,7 +986,7 @@ Si la BD MySQL sigue activa:
 
 ```bash
 # En el servidor de producción, ir a migration
-cd /opt/vpv/repo/migration
+cd /opt/vpv/migration
 
 # Crear venv para la migración
 python3.12 -m venv .venv
@@ -1093,7 +1001,7 @@ nano .env
 
 ```bash
 # Dry-run primero (rollback automático, no persiste nada)
-cd /opt/vpv/repo/migration/scripts
+cd /opt/vpv/migration/scripts
 python migrate.py --dry-run
 
 # Si el dry-run es exitoso, ejecutar migración real
@@ -1123,7 +1031,7 @@ sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 sudo systemctl enable --now docker
 
 # Levantar MySQL temporal con el dump
-cd /opt/vpv/repo/migration
+cd /opt/vpv/migration
 docker compose up -d mysql-source
 
 # Esperar ~2 minutos a que cargue el dump
@@ -1164,22 +1072,17 @@ Si los números son muy bajos o cero, verifica:
 - MySQL está accesible
 - No hay errores en los logs de la migración
 
-### 15.5. Configurar usuario administrador
+### 15.5. Usuario administrador
 
-La migración no establece ningún usuario como admin. Después de migrar, asignar el rol manualmente:
+La migración (paso 14) establece automáticamente `carlos` como admin. La contraseña inicial de todos los usuarios es su **username** (ej: `carlos` / `carlos`).
+
+Para verificar:
 
 ```bash
-# Ver usuarios disponibles
-psql -h 127.0.0.1 -U vpv -d ligavpv -c "SELECT id, username, display_name FROM users;"
-
-# Marcar como admin
-psql -h 127.0.0.1 -U vpv -d ligavpv -c "UPDATE users SET is_admin = TRUE WHERE username = 'tu_username';"
-
-# Verificar
 psql -h 127.0.0.1 -U vpv -d ligavpv -c "SELECT username, is_admin FROM users WHERE is_admin = TRUE;"
 ```
 
-El primer admin debe configurarse por SQL directo. Una vez configurado, puede gestionar otros usuarios desde el panel de administración (`/admin/usuarios`).
+Una vez logueado, el admin puede gestionar otros usuarios desde `/admin/usuarios`.
 
 ### 15.6. Scripts post-migración
 
@@ -1188,26 +1091,21 @@ La migración trae los datos históricos de MySQL, pero hay scripts adicionales 
 **Scripts con migration/.venv** (necesitan mysql.connector + psycopg):
 
 ```bash
-# 1. Admin: marcar usuario administrador
-psql -U vpv -d ligavpv -c "UPDATE users SET is_admin = TRUE WHERE username = 'carlos';"
-
-# 2. Ownership log (historial de propiedad de jugadores)
-cd /opt/vpv/repo/backend
+# 1. Ownership log (historial de propiedad de jugadores)
+cd /opt/vpv/backend
 source ../migration/.venv/bin/activate
 python -m scripts.populate_ownership_log
 
-# 3. Fix winter draft drops (corrige drops del draft de invierno)
+# 2. Fix winter draft drops (corrige drops del draft de invierno)
 python -m scripts.fix_winter_draft_drops --apply
 
-# 4. Draft economy seed (drafts + transacciones históricas)
+# 3. Draft economy seed (drafts + transacciones históricas)
 cd ../migration/scripts
 python generate_draft_economy_seed.py --apply
 deactivate
 ```
 
 **Scripts con backend/.venv** (necesitan SQLAlchemy, NO necesitan MySQL):
-
-**IMPORTANTE:** Ejecutar siempre desde `/opt/vpv/backend` (no desde `/opt/vpv/repo/backend`), porque Pydantic busca `.env` en el directorio de trabajo actual.
 
 ```bash
 # 5. Backfill weekly payments (pagos semanales históricos)
@@ -1242,7 +1140,7 @@ deactivate
 Si la BD MySQL sigue recibiendo datos del sistema antiguo mientras se despliega el nuevo:
 
 ```bash
-cd /opt/vpv/repo/migration/scripts
+cd /opt/vpv/migration/scripts
 
 # Configurar .env.sync con credenciales de MySQL y PostgreSQL
 cp ../.env.example ../.env.sync
@@ -1260,7 +1158,7 @@ python incremental_sync.py
 Una vez todo verificado, activar el scheduler que scrapea automáticamente:
 
 ```bash
-curl -s -X POST https://ligavpv.com/api/scraping/admin/start \
+curl -s -X POST https://new.ligavpv.com/api/scraping/admin/start \
   -H "Authorization: Bearer TU_JWT_TOKEN"
 ```
 
@@ -1340,11 +1238,11 @@ psql -h 127.0.0.1 -U vpv -d ligavpv -c "SELECT count(*) FROM players WHERE photo
 
 ```bash
 # Desde el servidor, probar una foto
-curl -s -o /dev/null -w "%{http_code}" https://ligavpv.com/static/players/dani-parejo.webp
+curl -s -o /dev/null -w "%{http_code}" https://new.ligavpv.com/static/players/dani-parejo.webp
 # Esperado: 200
 
 # O desde tu máquina local
-curl -sk -o /dev/null -w "%{http_code}" https://ligavpv.com/static/players/dani-parejo.webp
+curl -sk -o /dev/null -w "%{http_code}" https://new.ligavpv.com/static/players/dani-parejo.webp
 ```
 
 ---
@@ -1381,7 +1279,7 @@ sudo -u vpv pg_dump -U vpv -d ligavpv -F c -f /dev/null
 
 ```bash
 # Copiar script
-sudo cp /opt/vpv/repo/deploy/scripts/backup_db.sh /opt/vpv/
+sudo cp /opt/vpv/deploy/scripts/backup_db.sh /opt/vpv/
 sudo chmod +x /opt/vpv/backup_db.sh
 sudo chown vpv:vpv /opt/vpv/backup_db.sh
 ```
@@ -1413,7 +1311,7 @@ ls -lh /opt/vpv/backups/
 
 ```bash
 # Copiar configuración
-sudo cp /opt/vpv/repo/deploy/logrotate/vpv /etc/logrotate.d/vpv
+sudo cp /opt/vpv/deploy/logrotate/vpv /etc/logrotate.d/vpv
 
 # Verificar sintaxis
 sudo logrotate -d /etc/logrotate.d/vpv
@@ -1552,14 +1450,14 @@ psql -h 127.0.0.1 -U vpv -d ligavpv -c "SELECT count(*) as total_players FROM pl
 
 ```bash
 # Health check
-curl -s https://ligavpv.com/api/health | python3 -m json.tool
+curl -s https://new.ligavpv.com/api/health | python3 -m json.tool
 # Esperado: {"status":"healthy","database":true,...}
 
 # Temporadas
-curl -s https://ligavpv.com/api/seasons | python3 -m json.tool | head -20
+curl -s https://new.ligavpv.com/api/seasons | python3 -m json.tool | head -20
 
 # Usuarios
-curl -s https://ligavpv.com/api/users | python3 -m json.tool | head -10
+curl -s https://new.ligavpv.com/api/users | python3 -m json.tool | head -10
 ```
 
 Si alguno de estos falla con 502/503, verifica:
@@ -1572,23 +1470,23 @@ sudo journalctl -u vpv-backend --no-pager -n 30
 ### 19.3. Frontend
 
 ```bash
-# Acceder a https://ligavpv.com
-curl -s -o /dev/null -w "%{http_code}" https://ligavpv.com
+# Acceder a https://new.ligavpv.com
+curl -s -o /dev/null -w "%{http_code}" https://new.ligavpv.com
 # Esperado: 200
 
 # Ver el HTML
-curl -sk https://ligavpv.com | head -20
+curl -sk https://new.ligavpv.com | head -20
 ```
 
 ### 19.4. Fotos de jugadores
 
 ```bash
 # Verificar foto específica
-curl -sk -o /dev/null -w "%{http_code}" https://ligavpv.com/static/players/dani-parejo.webp
+curl -sk -o /dev/null -w "%{http_code}" https://new.ligavpv.com/static/players/dani-parejo.webp
 # Esperado: 200
 
 # Descargar y verificar tamaño
-curl -sk -L https://ligavpv.com/static/players/dani-parejo.webp > /tmp/test.webp
+curl -sk -L https://new.ligavpv.com/static/players/dani-parejo.webp > /tmp/test.webp
 file /tmp/test.webp
 # Esperado: "WebP image data"
 ```
@@ -1597,7 +1495,7 @@ file /tmp/test.webp
 
 ```bash
 # Verificar certificado
-curl -sk -I https://ligavpv.com | grep -i ssl
+curl -sk -I https://new.ligavpv.com | grep -i ssl
 
 # Ver detalles del certificado
 openssl s_client -connect ligavpv.com:443 < /dev/null 2>/dev/null | \
@@ -1666,7 +1564,7 @@ ls -lh /opt/vpv/backups/ | head -5
 Cuando tengas nuevas versiones en el repositorio:
 
 ```bash
-cd /opt/vpv/repo
+cd /opt/vpv
 ./deploy/scripts/deploy.sh
 ```
 
@@ -1944,7 +1842,7 @@ Si algo sale mal después de un despliegue:
 
 ```bash
 # Ver commits recientes
-cd /opt/vpv/repo
+cd /opt/vpv
 git log --oneline -5
 
 # Volver a version anterior
@@ -1961,7 +1859,7 @@ git checkout <commit_hash>
 ls -lht /opt/vpv/backups/ | head -10
 
 # Restaurar
-/opt/vpv/repo/deploy/scripts/restore_db.sh /opt/vpv/backups/ligavpv_YYYYMMDD_HHMMSS.dump
+/opt/vpv/deploy/scripts/restore_db.sh /opt/vpv/backups/ligavpv_YYYYMMDD_HHMMSS.dump
 
 # El script te pedirá confirmación y reiniciará el backend
 ```
@@ -2004,7 +1902,7 @@ sudo -u vpv pm2 logs vpv-frontend
 sudo -u vpv /opt/vpv/backup_db.sh
 
 # Despliegue
-cd /opt/vpv/repo
+cd /opt/vpv
 ./deploy/scripts/deploy.sh
 
 # Acceder a PostgreSQL
@@ -2016,7 +1914,7 @@ source .venv/bin/activate
 alembic upgrade head
 
 # Health check
-curl -s https://ligavpv.com/api/health | python3 -m json.tool
+curl -s https://new.ligavpv.com/api/health | python3 -m json.tool
 ```
 
 ---
@@ -2025,7 +1923,7 @@ curl -s https://ligavpv.com/api/health | python3 -m json.tool
 
 | Recurso | Ruta |
 |---------|------|
-| Repositorio | `/opt/vpv/repo` |
+| Repositorio | `/opt/vpv` (el repo ES el directorio raíz) |
 | Backend (app) | `/opt/vpv/backend` |
 | Backend (venv) | `/opt/vpv/backend/.venv` |
 | Backend (variables env) | `/opt/vpv/backend/.env` |
@@ -2064,7 +1962,7 @@ curl -s https://ligavpv.com/api/health | python3 -m json.tool
 - [ ] Backups: ejecutados diariamente, retención de 30 días
 - [ ] PostgreSQL: contraseña fuerte, scram-sha-256
 - [ ] JWT_SECRET_KEY: > 64 caracteres aleatorios
-- [ ] CORS_ORIGINS: solo https://ligavpv.com
+- [ ] CORS_ORIGINS: solo https://new.ligavpv.com
 - [ ] DEBUG: false en backend
 - [ ] ENVIRONMENT: production
 - [ ] Logs: monitorizados, rotados diariamente

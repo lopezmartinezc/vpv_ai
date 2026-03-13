@@ -25,8 +25,7 @@ Step 2: Full migration (migration/.venv)
   python migrate.py
   deactivate
 
-Step 3: Admin + post-migration scripts (migration/.venv — needs MySQL)
-  psql -U vpv -d ligavpv -c "UPDATE users SET is_admin = TRUE WHERE username = 'carlos';"
+Step 3: Post-migration scripts (migration/.venv — needs MySQL)
   cd ../../backend
   source ../migration/.venv/bin/activate
   python -m scripts.populate_ownership_log
@@ -169,6 +168,20 @@ def run_indexes(
     _exec_sql_file(pg_conn, _SCHEMA_DIR / "03_add_indexes.sql")
 
 
+def run_set_admin(
+    mysql_conn: mysql.connector.MySQLConnection,
+    pg_conn: psycopg.Connection,
+    ctx: MigrationContext,
+) -> None:
+    """Post-migration - Set default admin user."""
+    logger = logging.getLogger(__name__)
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "UPDATE users SET is_admin = TRUE WHERE username = 'carlos'"
+        )
+        logger.info("Set is_admin=TRUE for %d user(s)", cur.rowcount)
+
+
 # ---------------------------------------------------------------------------
 # Optional step module loader
 # ---------------------------------------------------------------------------
@@ -229,6 +242,7 @@ _ALL_STEPS: list[tuple[str, Callable | None]] = [
     ("11. Fix stats_ok",         run_fix_stats_ok),
     ("12. Validate",             _get_run(_step_10_validate)),
     ("13. Add indexes",          run_indexes),
+    ("14. Set admin user",       run_set_admin),
 ]
 
 # ---------------------------------------------------------------------------

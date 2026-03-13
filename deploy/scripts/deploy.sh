@@ -1,19 +1,16 @@
 #!/usr/bin/env bash
 # Liga VPV — Deploy script
-# Usage: ./deploy/scripts/deploy.sh
-# Run from the project root on the production server.
+# Usage: sudo -u vpv /opt/vpv/deploy/scripts/deploy.sh
+# /opt/vpv IS the git repo — no separate repo/ directory.
 set -euo pipefail
 
 APP_DIR="/opt/vpv"
-REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 
 echo "=== VPV Deploy ==="
-echo "Repo: $REPO_DIR"
-echo "App:  $APP_DIR"
 
 # 1. Pull latest code
 echo "--- Pulling latest code ---"
-cd "$REPO_DIR"
+cd "$APP_DIR"
 git pull --ff-only
 
 # 2. Backend
@@ -38,18 +35,16 @@ fi
 
 # 3. Frontend
 echo "--- Frontend: install and build ---"
-cd "$REPO_DIR/frontend"
+cd "$APP_DIR/frontend"
 npm ci --production=false
 npm run build
 
-echo "--- Frontend: copy standalone output ---"
-rm -rf "$APP_DIR/frontend"
-cp -r .next/standalone "$APP_DIR/frontend"
-cp -r .next/static "$APP_DIR/frontend/.next/static"
-cp -r public "$APP_DIR/frontend/public" 2>/dev/null || true
+# Standalone build needs static assets copied in
+cp -r .next/static .next/standalone/.next/static
+cp -r public .next/standalone/public 2>/dev/null || true
 
 echo "--- Frontend: restart PM2 ---"
-pm2 restart vpv-frontend || pm2 start "$REPO_DIR/deploy/pm2/ecosystem.config.js"
+pm2 restart vpv-frontend || pm2 start "$APP_DIR/deploy/pm2/ecosystem.config.js"
 sleep 2
 pm2 status vpv-frontend
 
