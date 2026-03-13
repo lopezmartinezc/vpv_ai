@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from urllib.parse import quote_plus
+
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,8 +19,24 @@ class Settings(BaseSettings):
     debug: bool = False
     environment: str = "development"
 
-    # Database
-    database_url: str = "postgresql+asyncpg://vpv:vpv_secret@localhost:5432/ligavpv"
+    # Database — individual vars (preferred, auto-escapes password)
+    pg_host: str = "localhost"
+    pg_port: int = 5432
+    pg_user: str = "vpv"
+    pg_password: str = ""
+    pg_database: str = "ligavpv"
+    # If DATABASE_URL is set explicitly, it takes precedence
+    database_url: str = ""
+
+    @model_validator(mode="after")
+    def build_database_url(self) -> Settings:
+        if not self.database_url:
+            password = quote_plus(self.pg_password)
+            self.database_url = (
+                f"postgresql+asyncpg://{self.pg_user}:{password}"
+                f"@{self.pg_host}:{self.pg_port}/{self.pg_database}"
+            )
+        return self
     database_echo: bool = False
     database_pool_size: int = 5
     database_max_overflow: int = 10
