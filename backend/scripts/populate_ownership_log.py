@@ -25,7 +25,7 @@ _env_path = Path(__file__).resolve().parent.parent.parent / "migration" / ".env"
 load_dotenv(_env_path)
 
 
-def _get_pg_dsn() -> str:
+def _get_pg_conninfo() -> str:
     if dsn := os.environ.get("PG_DSN"):
         return dsn
     host = os.getenv("PG_HOST", "localhost")
@@ -33,7 +33,7 @@ def _get_pg_dsn() -> str:
     user = os.getenv("PG_USER", "vpv")
     password = os.getenv("PG_PASSWORD", "")
     database = os.getenv("PG_DATABASE", "ligavpv")
-    return f"postgresql://{user}:{password}@{host}:{port}/{database}"
+    return f"host={host} port={port} user={user} password={password} dbname={database}"
 
 
 MYSQL_CONFIG = {
@@ -155,7 +155,7 @@ def _build_slot_map(mysql_conn, pg_conn):
 
 def populate():
     mysql_conn = mysql.connector.connect(**MYSQL_CONFIG)
-    pg_conn = psycopg.connect(_get_pg_dsn())
+    pg_conn = psycopg.connect(_get_pg_conninfo())
 
     preseason_data, winter_data = _get_mysql_ownership(mysql_conn)
     slot_map, _ = _build_slot_map(mysql_conn, pg_conn)
