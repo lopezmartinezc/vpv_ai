@@ -679,6 +679,7 @@ cd /opt/vpv/backend
 
 # Symlinks al repositorio (para que ediciones en repo se reflejen)
 ln -s /opt/vpv/repo/backend/src ./src
+ln -s /opt/vpv/repo/backend/scripts ./scripts
 ln -s /opt/vpv/repo/backend/alembic ./alembic
 ln -s /opt/vpv/repo/backend/alembic.ini ./alembic.ini
 ln -s /opt/vpv/repo/backend/pyproject.toml ./pyproject.toml
@@ -1206,9 +1207,11 @@ deactivate
 
 **Scripts con backend/.venv** (necesitan SQLAlchemy, NO necesitan MySQL):
 
+**IMPORTANTE:** Ejecutar siempre desde `/opt/vpv/backend` (no desde `/opt/vpv/repo/backend`), porque Pydantic busca `.env` en el directorio de trabajo actual.
+
 ```bash
 # 5. Backfill weekly payments (pagos semanales históricos)
-cd /opt/vpv/repo/backend && source .venv/bin/activate
+cd /opt/vpv/backend && source .venv/bin/activate
 python -m scripts.backfill_weekly_payments
 
 # 6. Calendario de partidos (fechas y resultados)
@@ -1224,7 +1227,7 @@ deactivate
 Si hay jornadas jugadas después del dump de MySQL que no se migraron:
 
 ```bash
-cd /opt/vpv/repo/backend && source .venv/bin/activate
+cd /opt/vpv/backend && source .venv/bin/activate
 
 # Scraping de una jornada específica
 python -m src.features.scraping.cli scrape-matchday 8 26
