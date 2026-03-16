@@ -6,9 +6,10 @@ import subprocess
 
 from textual.app import ComposeResult
 from textual.containers import Vertical, Horizontal
+from textual.message import Message
 from textual.screen import Screen
 from textual.widgets import Static, Button, Input, Checkbox, RichLog, Header, Footer
-from textual.worker import Worker
+from textual.worker import Worker, get_current_worker
 
 from vpv_ops.executor import build_command
 from vpv_ops.models.registry import Operation
@@ -21,6 +22,20 @@ class OperationScreen(Screen):
     BINDINGS = [
         ("escape", "go_back", "Volver"),
     ]
+
+    class LogLine(Message):
+        """Thread-safe message to append a line to the log."""
+
+        def __init__(self, text: str) -> None:
+            super().__init__()
+            self.text = text
+
+    class RunFinished(Message):
+        """Thread-safe message indicating the run completed."""
+
+        def __init__(self, return_code: int) -> None:
+            super().__init__()
+            self.return_code = return_code
 
     def __init__(self, operation: Operation) -> None:
         super().__init__()
@@ -122,6 +137,18 @@ class OperationScreen(Screen):
         if confirmed:
             self._execute()
 
+    def on_operation_screen_log_line(self, message: LogLine) -> None:
+        """Handle log line messages from the worker thread."""
+        log = self.query_one("#log-panel", RichLog)
+        log.write(message.text)
+
+    def on_operation_screen_run_finished(self, message: RunFinished) -> None:
+        """Handle run completion from the worker thread."""
+        self._running = False
+        btn = self.query_one("#btn-run", Button)
+        btn.disabled = False
+        btn.label = "Ejecutar"
+
     def _execute(self) -> None:
         self._running = True
         log = self.query_one("#log-panel", RichLog)
@@ -136,20 +163,12 @@ class OperationScreen(Screen):
         op = self.operation
         cmd = build_command(op, args, dry_run)
 
-        def _write(text: str) -> None:
-            self.app.call_from_thread(log.write, text)
-
-        def _finish(return_code: int) -> None:
-            def _done() -> None:
-                self._running = False
-                btn.disabled = False
-                btn.label = "Ejecutar"
-            self.app.call_from_thread(_done)
-
         def _thread_run() -> None:
-            _write(f"$ {' '.join(cmd)}")
-            _write(f"  cwd: {op.abs_cwd}")
-            _write("")
+            worker = get_current_worker()
+
+            self.post_message(self.LogLine(f"$ {' '.join(cmd)}"))
+            self.post_message(self.LogLine(f"  cwd: {op.abs_cwd}"))
+            self.post_message(self.LogLine(""))
 
             try:
                 proc = subprocess.Popen(
@@ -163,22 +182,27 @@ class OperationScreen(Screen):
                 )
                 assert proc.stdout is not None
                 for line in proc.stdout:
-                    _write(line.rstrip())
+                    if worker.is_cancelled:
+                        proc.kill()
+                        break
+                    self.post_message(self.LogLine(line.rstrip()))
                 proc.wait()
 
-                _write("")
+                self.post_message(self.LogLine(""))
                 if proc.returncode == 0:
-                    _write("[green]Completado exitosamente[/green]")
+                    self.post_message(self.LogLine("[green]Completado exitosamente[/green]"))
                 else:
-                    _write(f"[red]Error: código de salida {proc.returncode}[/red]")
-                _finish(proc.returncode)
+                    self.post_message(
+                        self.LogLine(f"[red]Error: código de salida {proc.returncode}[/red]")
+                    )
+                self.post_message(self.RunFinished(proc.returncode))
 
             except FileNotFoundError as exc:
-                _write(f"[red]Error: comando no encontrado — {exc}[/red]")
-                _finish(127)
+                self.post_message(self.LogLine(f"[red]Error: comando no encontrado — {exc}[/red]"))
+                self.post_message(self.RunFinished(127))
             except PermissionError as exc:
-                _write(f"[red]Error: permiso denegado — {exc}[/red]")
-                _finish(126)
+                self.post_message(self.LogLine(f"[red]Error: permiso denegado — {exc}[/red]"))
+                self.post_message(self.RunFinished(126))
 
         self._worker = self.run_worker(_thread_run, thread=True)
 
