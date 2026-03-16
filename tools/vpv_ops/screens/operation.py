@@ -30,6 +30,7 @@ class OperationScreen(Screen):
         super().__init__()
         self.operation = operation
         self._running = False
+        self._ready = False
         self._queue: queue.Queue = queue.Queue()
         self._timer = None
 
@@ -83,6 +84,10 @@ class OperationScreen(Screen):
     def on_mount(self) -> None:
         log = self.query_one("#log-panel", RichLog)
         log.write("[yellow]Listo. Pulsa r para ejecutar.[/yellow]")
+        self.set_timer(0.3, self._mark_ready)
+
+    def _mark_ready(self) -> None:
+        self._ready = True
 
     def _get_args(self) -> dict[str, str]:
         args: dict[str, str] = {}
@@ -111,22 +116,16 @@ class OperationScreen(Screen):
             self._execute()
 
     def _try_run(self) -> None:
-        log = self.query_one("#log-panel", RichLog)
-        log.write(f"[dim]_try_run: _running={self._running}[/dim]")
-        if self._running:
+        if self._running or not self._ready:
             return
         dry_run = self._get_dry_run()
-        log.write(f"[dim]dry_run={dry_run}, destructive={self.operation.destructive}[/dim]")
         if self.operation.destructive and not dry_run:
             self.app.push_screen(
                 ConfirmScreen(self.operation.name, self.operation.description),
                 callback=self._on_confirm,
             )
         else:
-            try:
-                self._execute()
-            except Exception as exc:
-                log.write(f"[red]_execute crashed: {exc}[/red]")
+            self._execute()
 
     def _poll_queue(self) -> None:
         """Called by timer on the main thread — drain the queue into RichLog."""
@@ -204,8 +203,6 @@ class OperationScreen(Screen):
         thread.start()
 
     def action_run_op(self) -> None:
-        log = self.query_one("#log-panel", RichLog)
-        log.write("[cyan]r pulsado — ejecutando...[/cyan]")
         self._try_run()
 
     def action_go_back(self) -> None:
