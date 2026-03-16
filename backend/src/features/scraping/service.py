@@ -61,7 +61,9 @@ class ScrapingService:
     # ------------------------------------------------------------------
 
     async def scrape_matchday(
-        self, season_id: int, matchday_number: int,
+        self,
+        season_id: int,
+        matchday_number: int,
     ) -> dict[str, object]:
         """Scrape all player stats for every match in *matchday_number*.
 
