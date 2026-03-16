@@ -842,7 +842,7 @@ export default function AlineacionPage() {
                   isSelected={isSelected}
                   isDisabled={isDisabled}
                   onToggle={handleTogglePlayer}
-                  showPoints={user?.isAdmin}
+                  showPoints={user?.isAdmin ?? false}
                 />
               );
             })}
