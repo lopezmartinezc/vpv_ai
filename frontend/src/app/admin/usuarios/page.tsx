@@ -9,6 +9,7 @@ interface AdminUser {
   display_name: string;
   email: string | null;
   is_admin: boolean;
+  is_draft_manager: boolean;
   has_password: boolean;
   telegram_chat_id: string | null;
 }
@@ -121,6 +122,23 @@ export default function AdminUsuariosPage() {
     }
   }
 
+  async function handleToggleDraftManager(userId: number) {
+    setActionLoading(userId);
+    try {
+      const updated = await apiClient.put<AdminUser>(
+        `/auth/admin/users/${userId}/toggle-draft-manager`,
+        {},
+      );
+      setUsers((prev) =>
+        prev.map((u) => (u.id === updated.id ? updated : u)),
+      );
+    } catch {
+      // error
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
   async function handleResetPassword(userId: number) {
     setActionLoading(userId);
     try {
@@ -178,6 +196,11 @@ export default function AdminUsuariosPage() {
                     Admin
                   </span>
                 )}
+                {user.is_draft_manager && (
+                  <span className="rounded bg-blue-500/20 px-2 py-0.5 text-xs font-medium text-blue-400">
+                    Draft
+                  </span>
+                )}
                 {!user.has_password && (
                   <span className="rounded bg-vpv-danger/20 px-2 py-0.5 text-xs font-medium text-vpv-danger">
                     Sin password
@@ -185,13 +208,20 @@ export default function AdminUsuariosPage() {
                 )}
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => handleToggleAdmin(user.id)}
                 disabled={actionLoading === user.id}
                 className="rounded border border-vpv-border px-2 py-1 text-xs text-vpv-text-muted transition-colors hover:text-vpv-text disabled:opacity-50"
               >
                 {user.is_admin ? "Quitar admin" : "Hacer admin"}
+              </button>
+              <button
+                onClick={() => handleToggleDraftManager(user.id)}
+                disabled={actionLoading === user.id}
+                className="rounded border border-vpv-border px-2 py-1 text-xs text-vpv-text-muted transition-colors hover:text-vpv-text disabled:opacity-50"
+              >
+                {user.is_draft_manager ? "Quitar draft" : "Gestor draft"}
               </button>
               <button
                 onClick={() => handleResetPassword(user.id)}
@@ -237,12 +267,17 @@ export default function AdminUsuariosPage() {
                         Admin
                       </span>
                     )}
+                    {user.is_draft_manager && (
+                      <span className="rounded bg-blue-500/20 px-2 py-0.5 text-xs font-medium text-blue-400">
+                        Draft
+                      </span>
+                    )}
                     {!user.has_password && (
                       <span className="rounded bg-vpv-danger/20 px-2 py-0.5 text-xs font-medium text-vpv-danger">
                         Sin password
                       </span>
                     )}
-                    {user.has_password && !user.is_admin && (
+                    {user.has_password && !user.is_admin && !user.is_draft_manager && (
                       <span className="text-xs text-vpv-text-muted">
                         Activo
                       </span>
@@ -257,6 +292,13 @@ export default function AdminUsuariosPage() {
                       className="rounded border border-vpv-border px-2 py-1 text-xs text-vpv-text-muted transition-colors hover:text-vpv-text disabled:opacity-50"
                     >
                       {user.is_admin ? "Quitar admin" : "Hacer admin"}
+                    </button>
+                    <button
+                      onClick={() => handleToggleDraftManager(user.id)}
+                      disabled={actionLoading === user.id}
+                      className="rounded border border-vpv-border px-2 py-1 text-xs text-vpv-text-muted transition-colors hover:text-vpv-text disabled:opacity-50"
+                    >
+                      {user.is_draft_manager ? "Quitar draft" : "Gestor draft"}
                     </button>
                     <button
                       onClick={() => handleResetPassword(user.id)}

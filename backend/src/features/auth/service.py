@@ -206,6 +206,22 @@ class AuthService:
             telegram_chat_id=user.telegram_chat_id,
         )
 
+    async def toggle_draft_manager(self, user_id: int) -> AdminUserResponse:
+        user = await self.auth_repo.toggle_draft_manager(user_id)
+        if user is None:
+            raise BusinessRuleError("Usuario no encontrado")
+        await self.session.commit()
+        return AdminUserResponse(
+            id=user.id,
+            username=user.username,
+            display_name=user.display_name,
+            email=user.email,
+            is_admin=user.is_admin,
+            is_draft_manager=user.is_draft_manager,
+            has_password=bool(user.password_hash),
+            telegram_chat_id=user.telegram_chat_id,
+        )
+
     async def reset_password(self, user_id: int, admin_id: int) -> InviteResponse:
         user = await self.auth_repo.get_user_by_id(user_id)
         if user is None:

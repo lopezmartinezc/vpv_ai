@@ -64,6 +64,19 @@ class AuthRepository:
         user.is_admin = not user.is_admin
         return user
 
+    async def toggle_draft_manager(self, user_id: int) -> User | None:
+        user = await self.get_user_by_id(user_id)
+        if user is None:
+            return None
+        stmt = (
+            update(User)
+            .where(User.id == user_id)
+            .values(is_draft_manager=not user.is_draft_manager)
+        )
+        await self.session.execute(stmt)
+        user.is_draft_manager = not user.is_draft_manager
+        return user
+
 
 class InviteRepository:
     def __init__(self, session: AsyncSession) -> None:

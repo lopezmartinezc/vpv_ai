@@ -113,6 +113,15 @@ async def toggle_admin(
     return await service.toggle_admin(user_id, int(admin["sub"]))
 
 
+@router.put("/admin/users/{user_id}/toggle-draft-manager", response_model=AdminUserResponse)
+async def toggle_draft_manager(
+    user_id: int,
+    admin: dict = Depends(get_current_admin),
+    service: AuthService = Depends(_get_service),
+) -> AdminUserResponse:
+    return await service.toggle_draft_manager(user_id)
+
+
 @router.post("/admin/users/{user_id}/reset-password", response_model=InviteResponse)
 async def reset_password(
     user_id: int,

@@ -43,7 +43,6 @@ const PARTICIPANT_COLORS = [
   { border: "border-l-teal-500", bg: "bg-teal-500/10", chip: "bg-teal-500", text: "text-teal-400" },
 ];
 
-
 function getColorForParticipant(
   participantId: number,
   participants: DraftParticipant[],
@@ -64,7 +63,7 @@ export default function GestionarDraftPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // Participants from draft detail (not loaded separately)
+  // Participants from draft detail
   const participants = draftDetail?.participants ?? [];
   const orderedParticipants = [...participants].sort(
     (a, b) => (a.draft_order ?? 999) - (b.draft_order ?? 999),
@@ -76,13 +75,15 @@ export default function GestionarDraftPage() {
   const [hasReorderChanges, setHasReorderChanges] = useState(false);
   const [savingReorder, setSavingReorder] = useState(false);
 
-  // Drag state
+  // Drag state (indices always refer to displayPicks)
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const dragNodeRef = useRef<HTMLDivElement | null>(null);
 
   // Participant order (editable copy)
   const [editableParticipants, setEditableParticipants] = useState<DraftParticipant[]>([]);
+
+  const isWinter = selectedPhase === "winter";
 
   // Auth guard
   useEffect(() => {
@@ -146,6 +147,120 @@ export default function GestionarDraftPage() {
     loadDraftDetail();
   }, [loadDraftDetail]);
 
+  // Filtered picks for display
+  const displayPicks = filterParticipantId
+    ? localPicks.filter((p) => p.participant_id === filterParticipantId)
+    : localPicks;
+
+  // --- Core reorder: applies a new filtered order back to global picks ---
+  function applyReorder(newDisplayOrder: DraftPickEntry[]) {
+    if (!filterParticipantId) {
+      // No filter: newDisplayOrder IS the new global order
+      recalculateGlobal(newDisplayOrder);
+    } else {
+      // With filter: put reordered picks back at their original global slots
+      const participantSlots: number[] = [];
+      localPicks.forEach((p, i) => {
+        if (p.participant_id === filterParticipantId) {
+          participantSlots.push(i);
+        }
+      });
+
+      const newGlobal = [...localPicks];
+      participantSlots.forEach((globalIdx, i) => {
+        newGlobal[globalIdx] = newDisplayOrder[i];
+      });
+      recalculateGlobal(newGlobal);
+    }
+  }
+
+  // Recalculate pick_number and round_number for all picks
+  function recalculateGlobal(newPicks: DraftPickEntry[]) {
+    const n = orderedParticipants.length || 1;
+
+    const recalculated = newPicks.map((pick, i) => ({
+      ...pick,
+      pick_number: i + 1,
+      round_number: isWinter ? 1 : Math.floor(i / n) + 1,
+    }));
+
+    setLocalPicks(recalculated);
+    setHasReorderChanges(true);
+  }
+
+  // --- Move pick up/down (works in both filtered and unfiltered views) ---
+  function movePick(displayIdx: number, direction: -1 | 1) {
+    const target = displayIdx + direction;
+    if (target < 0 || target >= displayPicks.length) return;
+    const newDisplay = [...displayPicks];
+    [newDisplay[displayIdx], newDisplay[target]] = [newDisplay[target], newDisplay[displayIdx]];
+    applyReorder(newDisplay);
+  }
+
+  // --- Change round number (preseason only) ---
+  function setPickRound(displayIdx: number, newRound: number) {
+    if (isWinter) return;
+    const maxRound = Math.ceil(localPicks.length / (orderedParticipants.length || 1));
+    const clamped = Math.max(1, Math.min(newRound, maxRound));
+    if (clamped === displayPicks[displayIdx].round_number) return;
+
+    // Move the pick to the target position in the filtered list
+    const newDisplay = [...displayPicks];
+    const [moved] = newDisplay.splice(displayIdx, 1);
+    // Insert at position = newRound - 1 (rounds are 1-indexed)
+    const insertAt = Math.min(clamped - 1, newDisplay.length);
+    newDisplay.splice(insertAt, 0, moved);
+    applyReorder(newDisplay);
+  }
+
+  // --- Drag and drop ---
+  function handleDragStart(e: React.DragEvent, displayIdx: number) {
+    setDragIndex(displayIdx);
+    dragNodeRef.current = e.currentTarget as HTMLDivElement;
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(displayIdx));
+    requestAnimationFrame(() => {
+      if (dragNodeRef.current) {
+        dragNodeRef.current.style.opacity = "0.4";
+      }
+    });
+  }
+
+  function handleDragOver(e: React.DragEvent, displayIdx: number) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (dragOverIndex !== displayIdx) {
+      setDragOverIndex(displayIdx);
+    }
+  }
+
+  function handleDrop(e: React.DragEvent, targetDisplayIdx: number) {
+    e.preventDefault();
+    if (dragIndex === null || dragIndex === targetDisplayIdx) {
+      resetDrag();
+      return;
+    }
+
+    const newDisplay = [...displayPicks];
+    const [moved] = newDisplay.splice(dragIndex, 1);
+    newDisplay.splice(targetDisplayIdx, 0, moved);
+    applyReorder(newDisplay);
+    resetDrag();
+  }
+
+  function handleDragEnd() {
+    if (dragNodeRef.current) {
+      dragNodeRef.current.style.opacity = "1";
+    }
+    resetDrag();
+  }
+
+  function resetDrag() {
+    setDragIndex(null);
+    setDragOverIndex(null);
+    dragNodeRef.current = null;
+  }
+
   // --- Participant order ---
   function moveParticipant(index: number, direction: -1 | 1) {
     const newList = [...editableParticipants];
@@ -196,82 +311,6 @@ export default function GestionarDraftPage() {
     }
   }
 
-  // --- Drag and drop ---
-  function handleDragStart(e: React.DragEvent, index: number) {
-    setDragIndex(index);
-    dragNodeRef.current = e.currentTarget as HTMLDivElement;
-    // Required for Firefox
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", String(index));
-    // Slight delay so the dragged element renders before opacity change
-    requestAnimationFrame(() => {
-      if (dragNodeRef.current) {
-        dragNodeRef.current.style.opacity = "0.4";
-      }
-    });
-  }
-
-  function handleDragOver(e: React.DragEvent, index: number) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    if (dragOverIndex !== index) {
-      setDragOverIndex(index);
-    }
-  }
-
-  function handleDrop(e: React.DragEvent, targetIndex: number) {
-    e.preventDefault();
-    if (dragIndex === null || dragIndex === targetIndex) {
-      resetDrag();
-      return;
-    }
-
-    const newPicks = [...localPicks];
-    const [moved] = newPicks.splice(dragIndex, 1);
-    newPicks.splice(targetIndex, 0, moved);
-    recalculatePicks(newPicks);
-    resetDrag();
-  }
-
-  function handleDragEnd() {
-    if (dragNodeRef.current) {
-      dragNodeRef.current.style.opacity = "1";
-    }
-    resetDrag();
-  }
-
-  function resetDrag() {
-    setDragIndex(null);
-    setDragOverIndex(null);
-    dragNodeRef.current = null;
-  }
-
-  // --- Move pick up/down ---
-  function movePick(index: number, direction: -1 | 1) {
-    const target = index + direction;
-    if (target < 0 || target >= localPicks.length) return;
-    const newPicks = [...localPicks];
-    [newPicks[index], newPicks[target]] = [newPicks[target], newPicks[index]];
-    recalculatePicks(newPicks);
-  }
-
-  // --- Recalculate pick numbers and rounds (participant stays the same) ---
-  function recalculatePicks(newPicks: DraftPickEntry[]) {
-    const n = orderedParticipants.length || 1;
-    const isWinter = selectedPhase === "winter";
-
-    const recalculated = newPicks.map((pick, i) => ({
-      ...pick,
-      pick_number: i + 1,
-      // Winter = single round of trades; preseason = rounds based on participant count
-      round_number: isWinter ? 1 : Math.floor(i / n) + 1,
-      // participant_id is NOT recalculated — it's who actually picked the player
-    }));
-
-    setLocalPicks(recalculated);
-    setHasReorderChanges(true);
-  }
-
   // --- Save reorder ---
   async function saveReorder() {
     const draftId = drafts?.drafts.find((d) => d.phase === selectedPhase)?.id;
@@ -313,14 +352,6 @@ export default function GestionarDraftPage() {
   }
 
   const currentDraft = drafts?.drafts.find((d) => d.phase === selectedPhase);
-
-  // Filter picks: when a participant is selected, show only their picks
-  const displayPicks = filterParticipantId
-    ? localPicks.filter((p) => p.participant_id === filterParticipantId)
-    : localPicks;
-
-  // Whether drag/reorder is allowed (not when filtering)
-  const canReorder = !filterParticipantId;
 
   return (
     <div className="space-y-6">
@@ -450,7 +481,7 @@ export default function GestionarDraftPage() {
         </section>
       )}
 
-      {/* Step 3: Picks reorder */}
+      {/* Step 3: Picks */}
       {currentDraft && draftDetail && (
         <section className="rounded-lg border border-vpv-card-border bg-vpv-card p-5">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -461,8 +492,8 @@ export default function GestionarDraftPage() {
               <p className="text-xs text-vpv-text-muted">
                 {PHASE_LABELS[selectedPhase]} &middot;{" "}
                 {TYPE_LABELS[currentDraft.draft_type]} &middot;{" "}
-                {localPicks.length} picks
-                {canReorder && " \u00b7 Arrastra o usa flechas para reordenar"}
+                {localPicks.length} picks &middot; Arrastra o usa flechas para reordenar
+                {!isWinter && filterParticipantId && " &middot; Edita la ronda para mover"}
               </p>
             </div>
             {hasReorderChanges && (
@@ -520,13 +551,6 @@ export default function GestionarDraftPage() {
             })}
           </div>
 
-          {filterParticipantId && (
-            <div className="mb-3 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-400">
-              Mostrando picks de {participants.find((p) => p.participant_id === filterParticipantId)?.display_name}.
-              Reordenar deshabilitado mientras filtras.
-            </div>
-          )}
-
           {/* Picks list */}
           {displayPicks.length === 0 ? (
             <p className="py-8 text-center text-sm text-vpv-text-muted">
@@ -537,8 +561,6 @@ export default function GestionarDraftPage() {
           ) : (
             <div className="space-y-px">
               {displayPicks.map((pick, displayIdx) => {
-                const isWinter = selectedPhase === "winter";
-
                 // Separator: preseason = by round, winter = by participant
                 const isFirstOfGroup = isWinter
                   ? displayIdx === 0 ||
@@ -546,17 +568,15 @@ export default function GestionarDraftPage() {
                   : displayIdx === 0 ||
                     displayPicks[displayIdx - 1].round_number !== pick.round_number;
 
-                // When filtering, we can't reorder so globalIdx doesn't matter for drag
-                const globalIdx = filterParticipantId
-                  ? localPicks.findIndex((p) => p.id === pick.id)
-                  : displayIdx;
-
-                const isDragOver = dragOverIndex === globalIdx && canReorder;
+                const isDragOver = dragOverIndex === displayIdx;
                 const colors = getColorForParticipant(pick.participant_id, participants);
+
+                // For preseason filtered view: show sequential "round" within participant
+                const filteredRound = filterParticipantId ? displayIdx + 1 : pick.round_number;
 
                 return (
                   <div key={pick.id}>
-                    {isFirstOfGroup && (
+                    {isFirstOfGroup && !filterParticipantId && (
                       <div className="pb-1 pt-4 first:pt-0">
                         <span className={`text-xs font-semibold uppercase tracking-wider ${isWinter ? colors.text : "text-vpv-text-muted"}`}>
                           {isWinter ? pick.display_name : `Ronda ${pick.round_number}`}
@@ -564,56 +584,52 @@ export default function GestionarDraftPage() {
                       </div>
                     )}
                     <div
-                      draggable={canReorder}
-                      onDragStart={(e) => canReorder && handleDragStart(e, globalIdx)}
-                      onDragOver={(e) => canReorder && handleDragOver(e, globalIdx)}
-                      onDrop={(e) => canReorder && handleDrop(e, globalIdx)}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, displayIdx)}
+                      onDragOver={(e) => handleDragOver(e, displayIdx)}
+                      onDrop={(e) => handleDrop(e, displayIdx)}
                       onDragEnd={handleDragEnd}
                       className={`group flex items-center gap-2 rounded-lg border-l-4 px-3 py-2.5 text-sm transition-all sm:gap-3 ${colors.border} ${
                         isDragOver
                           ? "bg-vpv-accent/10 ring-2 ring-vpv-accent/40"
                           : "bg-vpv-bg hover:bg-vpv-bg/80"
-                      } ${canReorder ? "cursor-grab active:cursor-grabbing" : ""}`}
+                      } cursor-grab active:cursor-grabbing`}
                     >
-                      {/* Grip handle (desktop only, only when can reorder) */}
-                      {canReorder && (
-                        <span className="hidden flex-shrink-0 text-vpv-text-muted/40 group-hover:text-vpv-text-muted sm:block">
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-                            <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zm0 5.5a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75zm.75 4.75a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75z" clipRule="evenodd" />
-                          </svg>
-                        </span>
-                      )}
+                      {/* Grip handle (desktop) */}
+                      <span className="hidden flex-shrink-0 text-vpv-text-muted/40 group-hover:text-vpv-text-muted sm:block">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+                          <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zm0 5.5a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75zm.75 4.75a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75z" clipRule="evenodd" />
+                        </svg>
+                      </span>
 
                       {/* Pick number */}
                       <span className="w-7 flex-shrink-0 text-center text-xs font-bold text-vpv-accent">
                         #{pick.pick_number}
                       </span>
 
-                      {/* Move arrows (always visible, only when can reorder) */}
-                      {canReorder && (
-                        <div className="flex flex-shrink-0 flex-col gap-0.5">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); movePick(globalIdx, -1); }}
-                            disabled={globalIdx === 0}
-                            className="rounded p-0.5 text-vpv-text-muted hover:bg-vpv-card hover:text-vpv-text disabled:opacity-20"
-                            title="Subir pick"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
-                              <path fillRule="evenodd" d="M11.78 9.78a.75.75 0 0 1-1.06 0L8 7.06 5.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06Z" clipRule="evenodd" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); movePick(globalIdx, 1); }}
-                            disabled={globalIdx === localPicks.length - 1}
-                            className="rounded p-0.5 text-vpv-text-muted hover:bg-vpv-card hover:text-vpv-text disabled:opacity-20"
-                            title="Bajar pick"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
-                              <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
-                            </svg>
-                          </button>
-                        </div>
-                      )}
+                      {/* Move arrows */}
+                      <div className="flex flex-shrink-0 flex-col gap-0.5">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); movePick(displayIdx, -1); }}
+                          disabled={displayIdx === 0}
+                          className="rounded p-0.5 text-vpv-text-muted hover:bg-vpv-card hover:text-vpv-text disabled:opacity-20"
+                          title="Subir pick"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+                            <path fillRule="evenodd" d="M11.78 9.78a.75.75 0 0 1-1.06 0L8 7.06 5.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06Z" clipRule="evenodd" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); movePick(displayIdx, 1); }}
+                          disabled={displayIdx === displayPicks.length - 1}
+                          className="rounded p-0.5 text-vpv-text-muted hover:bg-vpv-card hover:text-vpv-text disabled:opacity-20"
+                          title="Bajar pick"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+                            <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                          </svg>
+                        </button>
+                      </div>
 
                       {/* Position badge */}
                       <span
@@ -639,18 +655,38 @@ export default function GestionarDraftPage() {
                         {pick.team_name}
                       </span>
 
-                      {/* Participant badge (hidden in winter when not filtering, since grouped by participant) */}
+                      {/* Participant badge (always show when not filtering in winter, since grouped by participant) */}
                       {(!isWinter || filterParticipantId) && (
                         <span className={`flex-shrink-0 truncate rounded-full px-2 py-0.5 text-[10px] font-medium ${colors.bg} ${colors.text}`}>
                           {pick.display_name}
                         </span>
                       )}
 
-                      {/* Round indicator (preseason only) */}
+                      {/* Round: editable in preseason when filtering, read-only otherwise */}
                       {!isWinter && (
-                        <span className="w-8 flex-shrink-0 text-center text-[10px] text-vpv-text-muted">
-                          R{pick.round_number}
-                        </span>
+                        filterParticipantId ? (
+                          <div className="flex flex-shrink-0 items-center gap-0.5">
+                            <span className="text-[10px] text-vpv-text-muted">R</span>
+                            <input
+                              type="number"
+                              min={1}
+                              max={displayPicks.length}
+                              value={filteredRound}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value);
+                                if (!isNaN(val) && val >= 1) {
+                                  setPickRound(displayIdx, val);
+                                }
+                              }}
+                              className="w-10 rounded border border-vpv-border bg-vpv-card px-1 py-0.5 text-center text-xs text-vpv-text"
+                            />
+                          </div>
+                        ) : (
+                          <span className="w-8 flex-shrink-0 text-center text-[10px] text-vpv-text-muted">
+                            R{pick.round_number}
+                          </span>
+                        )
                       )}
                     </div>
                   </div>
@@ -698,7 +734,6 @@ function ParticipantOrderStandalone({ seasonId }: { seasonId: number }) {
   useEffect(() => {
     async function load() {
       try {
-        // Try loading from any existing draft
         for (const phase of ["preseason", "winter"]) {
           try {
             const detail = await apiClient.get<DraftDetailResponse>(
