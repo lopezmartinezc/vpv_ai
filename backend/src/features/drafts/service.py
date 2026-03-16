@@ -123,6 +123,7 @@ class DraftService:
                     player_name=pk.player_name,
                     position=pk.position,
                     team_name=pk.team_name,
+                    dropped_player_name=pk.dropped_player_name,
                 )
                 for pk in pick_rows
             ],
@@ -314,18 +315,15 @@ class DraftService:
         if num_participants == 0:
             raise BusinessRuleError("No hay participantes en esta temporada")
 
-        # Build ordered participant IDs by draft_order
-        ordered_pids = [
-            p.participant_id for p in sorted(participants, key=lambda x: x.draft_order or 999)
-        ]
-
-        # Build reorder entries: (pick_id, pick_number, round, participant_id)
-        entries: list[tuple[int, int, int, int]] = []
+        # Build reorder entries: (pick_id, pick_number, round)
+        # participant_id is NOT changed — it's a historical fact (who picked the player)
+        # Winter draft = single round (each participant trades variable picks)
+        is_winter = draft.phase == "winter"
+        entries: list[tuple[int, int, int]] = []
         for i, pick_id in enumerate(pick_ids):
             pick_number = i + 1
-            round_number = (pick_number - 1) // num_participants + 1
-            participant_id = _get_participant_for_pick(pick_number, draft.draft_type, ordered_pids)
-            entries.append((pick_id, pick_number, round_number, participant_id))
+            round_number = 1 if is_winter else (pick_number - 1) // num_participants + 1
+            entries.append((pick_id, pick_number, round_number))
 
         await self.repo.reorder_picks(draft_id, entries)
         await self.repo.session.commit()

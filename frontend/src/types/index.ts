@@ -215,6 +215,7 @@ export interface DraftPickEntry {
   player_name: string;
   position: string;
   team_name: string;
+  dropped_player_name: string | null;
 }
 
 export interface DraftDetailResponse {

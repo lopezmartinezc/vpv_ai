@@ -43,20 +43,6 @@ const PARTICIPANT_COLORS = [
   { border: "border-l-teal-500", bg: "bg-teal-500/10", chip: "bg-teal-500", text: "text-teal-400" },
 ];
 
-function getParticipantForPick(
-  pickNumber: number,
-  draftType: string,
-  orderedParticipants: DraftParticipant[],
-): DraftParticipant | undefined {
-  const n = orderedParticipants.length;
-  if (n === 0) return undefined;
-  const round = Math.floor((pickNumber - 1) / n) + 1;
-  let posInRound = (pickNumber - 1) % n;
-  if (draftType === "snake" && round % 2 === 0) {
-    posInRound = n - 1 - posInRound;
-  }
-  return orderedParticipants[posInRound];
-}
 
 function getColorForParticipant(
   participantId: number,
@@ -269,24 +255,18 @@ export default function GestionarDraftPage() {
     recalculatePicks(newPicks);
   }
 
-  // --- Recalculate pick numbers, rounds, and participant assignments ---
+  // --- Recalculate pick numbers and rounds (participant stays the same) ---
   function recalculatePicks(newPicks: DraftPickEntry[]) {
     const n = orderedParticipants.length || 1;
-    const draftType = draftDetail?.draft_type ?? "snake";
+    const isWinter = selectedPhase === "winter";
 
-    const recalculated = newPicks.map((pick, i) => {
-      const pickNumber = i + 1;
-      const roundNumber = Math.floor(i / n) + 1;
-      const assigned = getParticipantForPick(pickNumber, draftType, orderedParticipants);
-      return {
-        ...pick,
-        pick_number: pickNumber,
-        round_number: roundNumber,
-        participant_id: assigned?.participant_id ?? pick.participant_id,
-        display_name: assigned?.display_name ?? pick.display_name,
-        draft_order: assigned?.draft_order ?? pick.draft_order,
-      };
-    });
+    const recalculated = newPicks.map((pick, i) => ({
+      ...pick,
+      pick_number: i + 1,
+      // Winter = single round of trades; preseason = rounds based on participant count
+      round_number: isWinter ? 1 : Math.floor(i / n) + 1,
+      // participant_id is NOT recalculated — it's who actually picked the player
+    }));
 
     setLocalPicks(recalculated);
     setHasReorderChanges(true);
@@ -557,9 +537,14 @@ export default function GestionarDraftPage() {
           ) : (
             <div className="space-y-px">
               {displayPicks.map((pick, displayIdx) => {
-                const isFirstOfRound =
-                  displayIdx === 0 ||
-                  displayPicks[displayIdx - 1].round_number !== pick.round_number;
+                const isWinter = selectedPhase === "winter";
+
+                // Separator: preseason = by round, winter = by participant
+                const isFirstOfGroup = isWinter
+                  ? displayIdx === 0 ||
+                    displayPicks[displayIdx - 1].participant_id !== pick.participant_id
+                  : displayIdx === 0 ||
+                    displayPicks[displayIdx - 1].round_number !== pick.round_number;
 
                 // When filtering, we can't reorder so globalIdx doesn't matter for drag
                 const globalIdx = filterParticipantId
@@ -571,10 +556,10 @@ export default function GestionarDraftPage() {
 
                 return (
                   <div key={pick.id}>
-                    {isFirstOfRound && (
+                    {isFirstOfGroup && (
                       <div className="pb-1 pt-4 first:pt-0">
-                        <span className="text-xs font-semibold uppercase tracking-wider text-vpv-text-muted">
-                          Ronda {pick.round_number}
+                        <span className={`text-xs font-semibold uppercase tracking-wider ${isWinter ? colors.text : "text-vpv-text-muted"}`}>
+                          {isWinter ? pick.display_name : `Ronda ${pick.round_number}`}
                         </span>
                       </div>
                     )}
@@ -637,25 +622,36 @@ export default function GestionarDraftPage() {
                         {pick.position}
                       </span>
 
-                      {/* Player name */}
-                      <span className="min-w-0 flex-1 truncate font-medium text-vpv-text">
-                        {pick.player_name}
-                      </span>
+                      {/* Player name + dropped player for winter */}
+                      <div className="min-w-0 flex-1">
+                        <span className="truncate font-medium text-vpv-text">
+                          {pick.player_name}
+                        </span>
+                        {isWinter && pick.dropped_player_name && (
+                          <span className="ml-1.5 text-[10px] text-red-400/70">
+                            &larr; {pick.dropped_player_name}
+                          </span>
+                        )}
+                      </div>
 
                       {/* Team (hidden on mobile) */}
                       <span className="hidden flex-shrink-0 text-xs text-vpv-text-muted md:inline">
                         {pick.team_name}
                       </span>
 
-                      {/* Participant badge */}
-                      <span className={`flex-shrink-0 truncate rounded-full px-2 py-0.5 text-[10px] font-medium ${colors.bg} ${colors.text}`}>
-                        {pick.display_name}
-                      </span>
+                      {/* Participant badge (hidden in winter when not filtering, since grouped by participant) */}
+                      {(!isWinter || filterParticipantId) && (
+                        <span className={`flex-shrink-0 truncate rounded-full px-2 py-0.5 text-[10px] font-medium ${colors.bg} ${colors.text}`}>
+                          {pick.display_name}
+                        </span>
+                      )}
 
-                      {/* Round indicator (read-only) */}
-                      <span className="w-8 flex-shrink-0 text-center text-[10px] text-vpv-text-muted">
-                        R{pick.round_number}
-                      </span>
+                      {/* Round indicator (preseason only) */}
+                      {!isWinter && (
+                        <span className="w-8 flex-shrink-0 text-center text-[10px] text-vpv-text-muted">
+                          R{pick.round_number}
+                        </span>
+                      )}
                     </div>
                   </div>
                 );
