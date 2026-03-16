@@ -34,6 +34,7 @@ export default function AdminUsuariosPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [copiedToken, setCopiedToken] = useState<number | null>(null);
 
   // Season participants state
@@ -107,6 +108,7 @@ export default function AdminUsuariosPage() {
 
   async function handleToggleAdmin(userId: number) {
     setActionLoading(userId);
+    setActionError(null);
     try {
       const updated = await apiClient.put<AdminUser>(
         `/auth/admin/users/${userId}/toggle-admin`,
@@ -115,8 +117,9 @@ export default function AdminUsuariosPage() {
       setUsers((prev) =>
         prev.map((u) => (u.id === updated.id ? updated : u)),
       );
-    } catch {
-      // error
+    } catch (e) {
+      console.error("toggle-admin error:", e);
+      setActionError(e instanceof Error ? e.message : "Error al cambiar admin");
     } finally {
       setActionLoading(null);
     }
@@ -124,6 +127,7 @@ export default function AdminUsuariosPage() {
 
   async function handleToggleDraftManager(userId: number) {
     setActionLoading(userId);
+    setActionError(null);
     try {
       const updated = await apiClient.put<AdminUser>(
         `/auth/admin/users/${userId}/toggle-draft-manager`,
@@ -132,8 +136,9 @@ export default function AdminUsuariosPage() {
       setUsers((prev) =>
         prev.map((u) => (u.id === updated.id ? updated : u)),
       );
-    } catch {
-      // error
+    } catch (e) {
+      console.error("toggle-draft-manager error:", e);
+      setActionError(e instanceof Error ? e.message : "Error al cambiar gestor draft");
     } finally {
       setActionLoading(null);
     }
@@ -141,6 +146,7 @@ export default function AdminUsuariosPage() {
 
   async function handleResetPassword(userId: number) {
     setActionLoading(userId);
+    setActionError(null);
     try {
       const invite = await apiClient.post<{ token: string }>(
         `/auth/admin/users/${userId}/reset-password`,
@@ -150,8 +156,9 @@ export default function AdminUsuariosPage() {
       await navigator.clipboard.writeText(url);
       setCopiedToken(userId);
       setTimeout(() => setCopiedToken(null), 3000);
-    } catch {
-      // error
+    } catch (e) {
+      console.error("reset-password error:", e);
+      setActionError(e instanceof Error ? e.message : "Error al resetear password");
     } finally {
       setActionLoading(null);
     }
@@ -172,6 +179,11 @@ export default function AdminUsuariosPage() {
 
   return (
     <div className="space-y-6">
+    {actionError && (
+      <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+        {actionError}
+      </div>
+    )}
     <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
       <div className="border-b border-vpv-border px-4 py-3">
         <h2 className="font-semibold text-vpv-text">
