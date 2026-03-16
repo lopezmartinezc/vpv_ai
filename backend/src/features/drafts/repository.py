@@ -33,11 +33,13 @@ class DraftParticipantRow:
 
 @dataclass
 class DraftPickRow:
+    id: int
     pick_number: int
     round_number: int
     participant_id: int
     display_name: str
     draft_order: int | None
+    player_id: int
     player_name: str
     position: str
     team_name: str
@@ -126,11 +128,13 @@ class DraftRepository:
     async def get_picks(self, draft_id: int) -> list[DraftPickRow]:
         stmt = (
             select(
+                DraftPick.id,
                 DraftPick.pick_number,
                 DraftPick.round_number,
                 SeasonParticipant.id.label("participant_id"),
                 User.display_name,
                 SeasonParticipant.draft_order,
+                DraftPick.player_id,
                 Player.display_name.label("player_name"),
                 Player.position,
                 Team.name.label("team_name"),
@@ -149,11 +153,13 @@ class DraftRepository:
         result = await self.session.execute(stmt)
         return [
             DraftPickRow(
+                id=row.id,
                 pick_number=row.pick_number,
                 round_number=row.round_number,
                 participant_id=row.participant_id,
                 display_name=row.display_name,
                 draft_order=row.draft_order,
+                player_id=row.player_id,
                 player_name=row.player_name,
                 position=row.position,
                 team_name=row.team_name,
@@ -228,6 +234,31 @@ class DraftRepository:
             )
         )
         return result.rowcount > 0  # type: ignore[attr-defined]
+
+    async def reorder_picks(
+        self,
+        draft_id: int,
+        ordered_entries: list[tuple[int, int, int, int]],
+    ) -> None:
+        """Reorder all picks. Each entry: (pick_id, new_pick_number, new_round, new_participant_id)."""
+        # First set all pick_numbers to negative to avoid unique constraint conflicts
+        for pick_id, new_pick_number, _, _ in ordered_entries:
+            await self.session.execute(
+                update(DraftPick)
+                .where(DraftPick.id == pick_id, DraftPick.draft_id == draft_id)
+                .values(pick_number=-new_pick_number)
+            )
+        # Then set to final positive values with participant reassignment
+        for pick_id, new_pick_number, new_round, new_participant_id in ordered_entries:
+            await self.session.execute(
+                update(DraftPick)
+                .where(DraftPick.id == pick_id, DraftPick.draft_id == draft_id)
+                .values(
+                    pick_number=new_pick_number,
+                    round_number=new_round,
+                    participant_id=new_participant_id,
+                )
+            )
 
     async def get_picked_player_ids(self, draft_id: int) -> set[int]:
         stmt = select(DraftPick.player_id).where(DraftPick.draft_id == draft_id)

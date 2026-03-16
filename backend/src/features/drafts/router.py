@@ -12,6 +12,8 @@ from src.features.drafts.schemas import (
     DraftDetailResponse,
     DraftListResponse,
     PlayerSearchResponse,
+    ReorderPicksRequest,
+    ReorderPicksResponse,
     UpdateDraftOrderRequest,
 )
 from src.features.drafts.service import DraftService
@@ -81,7 +83,17 @@ async def add_pick(
     service: DraftService = Depends(_get_service),
     _user: dict = Depends(get_draft_manager),
 ) -> AddPickResponse:
-    return await service.add_pick(draft_id, body.participant_id, body.player_id)
+    return await service.add_pick(draft_id, body.player_id, body.participant_id)
+
+
+@router.put("/{draft_id}/picks/reorder", response_model=ReorderPicksResponse)
+async def reorder_picks(
+    draft_id: int,
+    body: ReorderPicksRequest,
+    service: DraftService = Depends(_get_service),
+    _user: dict = Depends(get_draft_manager),
+) -> ReorderPicksResponse:
+    return await service.reorder_picks(draft_id, body.pick_ids)
 
 
 @router.delete("/{draft_id}/picks/{pick_number}", response_model=DeletePickResponse)

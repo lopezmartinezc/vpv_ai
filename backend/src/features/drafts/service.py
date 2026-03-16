@@ -15,8 +15,32 @@ from src.features.drafts.schemas import (
     DraftSummary,
     PlayerSearchItem,
     PlayerSearchResponse,
+    ReorderPicksResponse,
 )
 from src.features.seasons.repository import SeasonRepository
+
+
+def _get_participant_for_pick(
+    pick_number: int,
+    draft_type: str,
+    ordered_participant_ids: list[int],
+) -> int:
+    """Return the participant_id for a given pick_number based on draft type.
+
+    Snake: odd rounds go 1→N, even rounds go N→1.
+    Linear: every round goes 1→N.
+    """
+    n = len(ordered_participant_ids)
+    if n == 0:
+        raise BusinessRuleError("No hay participantes")
+    round_number = (pick_number - 1) // n + 1
+    position_in_round = (pick_number - 1) % n
+
+    if draft_type == "snake" and round_number % 2 == 0:
+        # Even rounds are reversed
+        position_in_round = n - 1 - position_in_round
+
+    return ordered_participant_ids[position_in_round]
 
 
 class DraftService:
@@ -62,6 +86,16 @@ class DraftService:
         participant_rows = await self.repo.get_participants(season_id)
         pick_rows = await self.repo.get_picks(draft.id)
 
+        # Calculate next participant
+        next_pid: int | None = None
+        if participant_rows:
+            ordered_pids = [
+                p.participant_id
+                for p in sorted(participant_rows, key=lambda x: x.draft_order or 999)
+            ]
+            next_pick = len(pick_rows) + 1
+            next_pid = _get_participant_for_pick(next_pick, draft.draft_type, ordered_pids)
+
         return DraftDetailResponse(
             season_id=season_id,
             phase=draft.phase,
@@ -79,17 +113,20 @@ class DraftService:
             ],
             picks=[
                 DraftPickEntry(
+                    id=pk.id,
                     pick_number=pk.pick_number,
                     round_number=pk.round_number,
                     participant_id=pk.participant_id,
                     display_name=pk.display_name,
                     draft_order=pk.draft_order,
+                    player_id=pk.player_id,
                     player_name=pk.player_name,
                     position=pk.position,
                     team_name=pk.team_name,
                 )
                 for pk in pick_rows
             ],
+            next_participant_id=next_pid,
         )
 
     # -------------------------------------------------------------------
@@ -149,8 +186,8 @@ class DraftService:
     async def add_pick(
         self,
         draft_id: int,
-        participant_id: int,
         player_id: int,
+        participant_id: int | None = None,
     ) -> AddPickResponse:
         draft = await self.repo.get_draft_by_id(draft_id)
         if draft is None:
@@ -161,20 +198,32 @@ class DraftService:
         if player_id in picked:
             raise BusinessRuleError("Este jugador ya fue seleccionado en este draft")
 
-        # Validate participant belongs to the season
         participants = await self.repo.get_participants(draft.season_id)
-        valid_ids = {p.participant_id for p in participants}
-        if participant_id not in valid_ids:
-            raise BusinessRuleError("Participante no valido para esta temporada")
+        num_participants = len(participants)
+        if num_participants == 0:
+            raise BusinessRuleError("No hay participantes en esta temporada")
 
         # Calculate pick_number and round_number
         next_pick = await self.repo.get_max_pick_number(draft_id) + 1
-        num_participants = len(participants)
         round_number = (next_pick - 1) // num_participants + 1
+
+        # Auto-determine participant based on draft type + order
+        ordered_pids = [
+            p.participant_id for p in sorted(participants, key=lambda x: x.draft_order or 999)
+        ]
+        auto_participant_id = _get_participant_for_pick(next_pick, draft.draft_type, ordered_pids)
+
+        # Use provided participant_id if given, otherwise auto
+        final_participant_id = participant_id or auto_participant_id
+
+        # Validate participant belongs to the season
+        valid_ids = {p.participant_id for p in participants}
+        if final_participant_id not in valid_ids:
+            raise BusinessRuleError("Participante no valido para esta temporada")
 
         pick = await self.repo.add_pick(
             draft_id=draft_id,
-            participant_id=participant_id,
+            participant_id=final_participant_id,
             player_id=player_id,
             round_number=round_number,
             pick_number=next_pick,
@@ -242,3 +291,43 @@ class DraftService:
                 for r in rows
             ]
         )
+
+    async def reorder_picks(
+        self,
+        draft_id: int,
+        pick_ids: list[int],
+    ) -> ReorderPicksResponse:
+        draft = await self.repo.get_draft_by_id(draft_id)
+        if draft is None:
+            raise NotFoundError("Draft", draft_id)
+
+        # Validate that pick_ids match existing picks
+        existing_picks = await self.repo.get_picks(draft_id)
+        existing_ids = {p.id for p in existing_picks}
+        provided_ids = set(pick_ids)
+
+        if existing_ids != provided_ids:
+            raise BusinessRuleError("La lista de picks no coincide con los picks existentes")
+
+        participants = await self.repo.get_participants(draft.season_id)
+        num_participants = len(participants)
+        if num_participants == 0:
+            raise BusinessRuleError("No hay participantes en esta temporada")
+
+        # Build ordered participant IDs by draft_order
+        ordered_pids = [
+            p.participant_id for p in sorted(participants, key=lambda x: x.draft_order or 999)
+        ]
+
+        # Build reorder entries: (pick_id, pick_number, round, participant_id)
+        entries: list[tuple[int, int, int, int]] = []
+        for i, pick_id in enumerate(pick_ids):
+            pick_number = i + 1
+            round_number = (pick_number - 1) // num_participants + 1
+            participant_id = _get_participant_for_pick(pick_number, draft.draft_type, ordered_pids)
+            entries.append((pick_id, pick_number, round_number, participant_id))
+
+        await self.repo.reorder_picks(draft_id, entries)
+        await self.repo.session.commit()
+
+        return ReorderPicksResponse(reordered=len(pick_ids))

@@ -205,11 +205,13 @@ export interface DraftParticipant {
 }
 
 export interface DraftPickEntry {
+  id: number;
   pick_number: number;
   round_number: number;
   participant_id: number;
   display_name: string;
   draft_order: number | null;
+  player_id: number;
   player_name: string;
   position: string;
   team_name: string;
@@ -224,6 +226,7 @@ export interface DraftDetailResponse {
   completed_at: string | null;
   participants: DraftParticipant[];
   picks: DraftPickEntry[];
+  next_participant_id: number | null;
 }
 
 // Draft management

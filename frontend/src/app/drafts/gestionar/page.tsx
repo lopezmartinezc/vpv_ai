@@ -32,6 +32,55 @@ const POS_COLORS: Record<string, string> = {
   DEL: "bg-red-600/20 text-red-400",
 };
 
+// Consistent colors for participants
+const PARTICIPANT_COLORS = [
+  "border-l-blue-500",
+  "border-l-emerald-500",
+  "border-l-amber-500",
+  "border-l-red-500",
+  "border-l-purple-500",
+  "border-l-cyan-500",
+  "border-l-pink-500",
+  "border-l-orange-500",
+  "border-l-lime-500",
+  "border-l-indigo-500",
+  "border-l-teal-500",
+];
+const PARTICIPANT_BG = [
+  "bg-blue-500/10",
+  "bg-emerald-500/10",
+  "bg-amber-500/10",
+  "bg-red-500/10",
+  "bg-purple-500/10",
+  "bg-cyan-500/10",
+  "bg-pink-500/10",
+  "bg-orange-500/10",
+  "bg-lime-500/10",
+  "bg-indigo-500/10",
+  "bg-teal-500/10",
+];
+
+/**
+ * Given a pick position, draft type, and ordered participant list,
+ * return the participant who picks at that position.
+ */
+function getParticipantForPick(
+  pickNumber: number,
+  draftType: string,
+  orderedParticipants: DraftParticipant[],
+): DraftParticipant | undefined {
+  const n = orderedParticipants.length;
+  if (n === 0) return undefined;
+  const round = Math.floor((pickNumber - 1) / n) + 1;
+  let posInRound = (pickNumber - 1) % n;
+
+  if (draftType === "snake" && round % 2 === 0) {
+    posInRound = n - 1 - posInRound;
+  }
+
+  return orderedParticipants[posInRound];
+}
+
 export default function GestionarDraftPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
@@ -40,7 +89,9 @@ export default function GestionarDraftPage() {
   // State
   const [drafts, setDrafts] = useState<DraftListResponse | null>(null);
   const [selectedPhase, setSelectedPhase] = useState<string>("preseason");
-  const [draftDetail, setDraftDetail] = useState<DraftDetailResponse | null>(null);
+  const [draftDetail, setDraftDetail] = useState<DraftDetailResponse | null>(
+    null,
+  );
   const [participants, setParticipants] = useState<DraftParticipant[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,8 +104,20 @@ export default function GestionarDraftPage() {
   const [searchLoading, setSearchLoading] = useState(false);
   const searchTimeout = useRef<ReturnType<typeof setTimeout>>(null);
 
-  // Pick assignment
-  const [selectedParticipantId, setSelectedParticipantId] = useState<number | null>(null);
+  // Pick management (participant override — null means auto from draft order)
+  const [overrideParticipantId, setOverrideParticipantId] = useState<
+    number | null
+  >(null);
+  const [filterParticipantId, setFilterParticipantId] = useState<number | null>(
+    null,
+  );
+  const [localPicks, setLocalPicks] = useState<DraftPickEntry[]>([]);
+  const [hasReorderChanges, setHasReorderChanges] = useState(false);
+  const [savingReorder, setSavingReorder] = useState(false);
+
+  // Drag state
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   // Auth guard
   useEffect(() => {
@@ -62,6 +125,15 @@ export default function GestionarDraftPage() {
       router.push("/");
     }
   }, [user, authLoading, router]);
+
+  // Build participant color map
+  const participantColorMap = useCallback(() => {
+    const map: Record<number, number> = {};
+    participants.forEach((p, i) => {
+      map[p.participant_id] = i % PARTICIPANT_COLORS.length;
+    });
+    return map;
+  }, [participants]);
 
   // Load drafts when season changes
   const loadDrafts = useCallback(async () => {
@@ -73,7 +145,6 @@ export default function GestionarDraftPage() {
         `/drafts/${selectedSeason.id}`,
       );
       setDrafts(data);
-      // Also load participants
       const parts = await loadParticipants(selectedSeason.id);
       setParticipants(parts);
     } catch {
@@ -87,10 +158,10 @@ export default function GestionarDraftPage() {
     loadDrafts();
   }, [loadDrafts]);
 
-  async function loadParticipants(seasonId: number): Promise<DraftParticipant[]> {
-    // Get participants from any existing draft detail, or from the draft list endpoint
+  async function loadParticipants(
+    seasonId: number,
+  ): Promise<DraftParticipant[]> {
     try {
-      // Try to get detail of any phase to get participants
       const detail = await apiClient.get<DraftDetailResponse>(
         `/drafts/${seasonId}/preseason`,
       );
@@ -108,18 +179,30 @@ export default function GestionarDraftPage() {
   }
 
   // Load draft detail when phase changes
-  useEffect(() => {
+  const loadDraftDetail = useCallback(async () => {
     if (!selectedSeason || !drafts) return;
     const draft = drafts.drafts.find((d) => d.phase === selectedPhase);
     if (!draft) {
       setDraftDetail(null);
+      setLocalPicks([]);
       return;
     }
-    apiClient
-      .get<DraftDetailResponse>(`/drafts/${selectedSeason.id}/${selectedPhase}`)
-      .then(setDraftDetail)
-      .catch(() => setDraftDetail(null));
+    try {
+      const detail = await apiClient.get<DraftDetailResponse>(
+        `/drafts/${selectedSeason.id}/${selectedPhase}`,
+      );
+      setDraftDetail(detail);
+      setLocalPicks(detail.picks);
+      setHasReorderChanges(false);
+    } catch {
+      setDraftDetail(null);
+      setLocalPicks([]);
+    }
   }, [selectedSeason, drafts, selectedPhase]);
+
+  useEffect(() => {
+    loadDraftDetail();
+  }, [loadDraftDetail]);
 
   // --- Participant order ---
   function moveParticipant(index: number, direction: -1 | 1) {
@@ -127,7 +210,6 @@ export default function GestionarDraftPage() {
     const target = index + direction;
     if (target < 0 || target >= newList.length) return;
     [newList[index], newList[target]] = [newList[target], newList[index]];
-    // Reassign draft_order
     setParticipants(
       newList.map((p, i) => ({ ...p, draft_order: i + 1 })),
     );
@@ -144,8 +226,7 @@ export default function GestionarDraftPage() {
           draft_order: p.draft_order,
         })),
       });
-      setSuccess("Orden guardado");
-      setTimeout(() => setSuccess(null), 3000);
+      showSuccess("Orden guardado");
     } catch {
       setError("Error guardando orden");
     } finally {
@@ -163,8 +244,7 @@ export default function GestionarDraftPage() {
         `/drafts/${selectedSeason.id}`,
         { phase, draft_type: draftType },
       );
-      setSuccess(`Draft ${PHASE_LABELS[phase]} creado`);
-      setTimeout(() => setSuccess(null), 3000);
+      showSuccess(`Draft ${PHASE_LABELS[phase]} creado`);
       await loadDrafts();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error creando draft");
@@ -184,7 +264,9 @@ export default function GestionarDraftPage() {
     searchTimeout.current = setTimeout(async () => {
       setSearchLoading(true);
       try {
-        const draftId = drafts?.drafts.find((d) => d.phase === selectedPhase)?.id;
+        const draftId = drafts?.drafts.find(
+          (d) => d.phase === selectedPhase,
+        )?.id;
         if (!draftId) return;
         const posParam = searchPosition ? `&position=${searchPosition}` : "";
         const data = await apiClient.get<PlayerSearchResponse>(
@@ -201,29 +283,27 @@ export default function GestionarDraftPage() {
 
   // --- Add pick ---
   async function addPick(playerId: number) {
-    if (!selectedParticipantId) {
-      setError("Selecciona un participante primero");
-      return;
-    }
     const draftId = drafts?.drafts.find((d) => d.phase === selectedPhase)?.id;
     if (!draftId) return;
     setError(null);
     try {
+      const body: { player_id: number; participant_id?: number } = {
+        player_id: playerId,
+      };
+      if (overrideParticipantId) {
+        body.participant_id = overrideParticipantId;
+      }
       const pick = await apiClient.post<AddPickResponse>(
         `/drafts/${draftId}/picks`,
-        { participant_id: selectedParticipantId, player_id: playerId },
+        body,
       );
-      setSuccess(`Pick #${pick.pick_number}: ${pick.player_name} -> ${pick.display_name}`);
-      setTimeout(() => setSuccess(null), 3000);
+      showSuccess(
+        `Pick #${pick.pick_number}: ${pick.player_name} → ${pick.display_name}`,
+      );
       setSearchQuery("");
       setSearchResults([]);
-      // Reload detail
-      if (selectedSeason) {
-        const detail = await apiClient.get<DraftDetailResponse>(
-          `/drafts/${selectedSeason.id}/${selectedPhase}`,
-        );
-        setDraftDetail(detail);
-      }
+      setOverrideParticipantId(null);
+      await loadDraftDetail();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error añadiendo pick");
     }
@@ -236,17 +316,100 @@ export default function GestionarDraftPage() {
     setError(null);
     try {
       await apiClient.delete(`/drafts/${draftId}/picks/${pickNumber}`);
-      setSuccess(`Pick #${pickNumber} eliminado`);
-      setTimeout(() => setSuccess(null), 3000);
-      if (selectedSeason) {
-        const detail = await apiClient.get<DraftDetailResponse>(
-          `/drafts/${selectedSeason.id}/${selectedPhase}`,
-        );
-        setDraftDetail(detail);
-      }
+      showSuccess(`Pick #${pickNumber} eliminado`);
+      await loadDraftDetail();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error eliminando pick");
     }
+  }
+
+  // --- Drag and drop reorder ---
+  function handleDragStart(index: number) {
+    setDragIndex(index);
+  }
+
+  function handleDragOver(e: React.DragEvent, index: number) {
+    e.preventDefault();
+    setDragOverIndex(index);
+  }
+
+  function handleDrop(targetIndex: number) {
+    if (dragIndex === null || dragIndex === targetIndex) {
+      setDragIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+
+    const newPicks = [...localPicks];
+    const [moved] = newPicks.splice(dragIndex, 1);
+    newPicks.splice(targetIndex, 0, moved);
+
+    // Recalculate pick_number, round_number, and participant assignment
+    const numParticipants = participants.length || 1;
+    const activeDraft = drafts?.drafts.find((d) => d.phase === selectedPhase);
+    const draftType = activeDraft?.draft_type ?? "snake";
+    const orderedParts = [...participants].sort(
+      (a, b) => (a.draft_order ?? 999) - (b.draft_order ?? 999),
+    );
+
+    const recalculated = newPicks.map((pick, i) => {
+      const pickNumber = i + 1;
+      const assignedParticipant = getParticipantForPick(
+        pickNumber,
+        draftType,
+        orderedParts,
+      );
+      return {
+        ...pick,
+        pick_number: pickNumber,
+        round_number: Math.floor(i / numParticipants) + 1,
+        participant_id: assignedParticipant?.participant_id ?? pick.participant_id,
+        display_name: assignedParticipant?.display_name ?? pick.display_name,
+        draft_order: assignedParticipant?.draft_order ?? pick.draft_order,
+      };
+    });
+
+    setLocalPicks(recalculated);
+    setHasReorderChanges(true);
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }
+
+  function handleDragEnd() {
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }
+
+  // --- Save reorder ---
+  async function saveReorder() {
+    const draftId = drafts?.drafts.find((d) => d.phase === selectedPhase)?.id;
+    if (!draftId) return;
+    setSavingReorder(true);
+    setError(null);
+    try {
+      await apiClient.put(`/drafts/${draftId}/picks/reorder`, {
+        pick_ids: localPicks.map((p) => p.id),
+      });
+      showSuccess("Orden de picks guardado");
+      setHasReorderChanges(false);
+      await loadDraftDetail();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error guardando orden");
+    } finally {
+      setSavingReorder(false);
+    }
+  }
+
+  function cancelReorder() {
+    if (draftDetail) {
+      setLocalPicks(draftDetail.picks);
+    }
+    setHasReorderChanges(false);
+  }
+
+  function showSuccess(msg: string) {
+    setSuccess(msg);
+    setTimeout(() => setSuccess(null), 3000);
   }
 
   if (authLoading || seasonLoading) {
@@ -258,6 +421,12 @@ export default function GestionarDraftPage() {
   }
 
   const currentDraft = drafts?.drafts.find((d) => d.phase === selectedPhase);
+  const colorMap = participantColorMap();
+
+  // Filtered picks for display
+  const displayPicks = filterParticipantId
+    ? localPicks.filter((p) => p.participant_id === filterParticipantId)
+    : localPicks;
 
   return (
     <div className="space-y-6">
@@ -315,7 +484,9 @@ export default function GestionarDraftPage() {
               {participants.map((p, i) => (
                 <li
                   key={p.participant_id}
-                  className="flex items-center gap-3 rounded-lg bg-vpv-bg px-4 py-2"
+                  className={`flex items-center gap-3 rounded-lg border-l-4 bg-vpv-bg px-4 py-2 ${
+                    PARTICIPANT_COLORS[colorMap[p.participant_id] ?? 0]
+                  }`}
                 >
                   <span className="w-8 text-center text-sm font-bold text-vpv-accent">
                     {p.draft_order ?? i + 1}
@@ -328,8 +499,17 @@ export default function GestionarDraftPage() {
                     disabled={i === 0}
                     className="rounded p-1 text-vpv-text-muted hover:text-vpv-text disabled:opacity-30"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-                      <path fillRule="evenodd" d="M14.77 12.79a.75.75 0 01-1.06-.02L10 8.832 6.29 12.77a.75.75 0 11-1.08-1.04l4.25-4.5a.75.75 0 011.08 0l4.25 4.5a.75.75 0 01-.02 1.06z" clipRule="evenodd" />
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      className="h-4 w-4"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M14.77 12.79a.75.75 0 01-1.06-.02L10 8.832 6.29 12.77a.75.75 0 11-1.08-1.04l4.25-4.5a.75.75 0 011.08 0l4.25 4.5a.75.75 0 01-.02 1.06z"
+                        clipRule="evenodd"
+                      />
                     </svg>
                   </button>
                   <button
@@ -337,8 +517,17 @@ export default function GestionarDraftPage() {
                     disabled={i === participants.length - 1}
                     className="rounded p-1 text-vpv-text-muted hover:text-vpv-text disabled:opacity-30"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-                      <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      className="h-4 w-4"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                        clipRule="evenodd"
+                      />
                     </svg>
                   </button>
                 </li>
@@ -380,186 +569,322 @@ export default function GestionarDraftPage() {
         </section>
       )}
 
-      {/* Step 3: Pick registration */}
+      {/* Step 3: Picks management */}
       {currentDraft && (
         <section className="rounded-lg border border-vpv-card-border bg-vpv-card p-5">
-          <h2 className="mb-1 text-lg font-semibold text-vpv-text">
-            3. Registrar Picks
-          </h2>
-          <p className="mb-4 text-xs text-vpv-text-muted">
-            {PHASE_LABELS[selectedPhase]} &middot;{" "}
-            {TYPE_LABELS[currentDraft.draft_type]} &middot;{" "}
-            {draftDetail?.picks.length ?? 0} picks registrados
-          </p>
-
-          {/* Participant selector */}
-          <div className="mb-4">
-            <label className="mb-1 block text-xs font-medium text-vpv-text-muted">
-              Participante
-            </label>
-            <select
-              value={selectedParticipantId ?? ""}
-              onChange={(e) =>
-                setSelectedParticipantId(
-                  e.target.value ? Number(e.target.value) : null,
-                )
-              }
-              className="w-full rounded-lg border border-vpv-border bg-vpv-bg px-3 py-2 text-sm text-vpv-text"
-            >
-              <option value="">Selecciona participante...</option>
-              {participants.map((p) => (
-                <option key={p.participant_id} value={p.participant_id}>
-                  {p.draft_order ? `#${p.draft_order} ` : ""}
-                  {p.display_name}
-                </option>
-              ))}
-            </select>
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-vpv-text">
+                3. Picks
+              </h2>
+              <p className="text-xs text-vpv-text-muted">
+                {PHASE_LABELS[selectedPhase]} &middot;{" "}
+                {TYPE_LABELS[currentDraft.draft_type]} &middot;{" "}
+                {localPicks.length} picks
+              </p>
+            </div>
+            {hasReorderChanges && (
+              <div className="flex gap-2">
+                <button
+                  onClick={cancelReorder}
+                  className="rounded-lg border border-vpv-border px-3 py-1.5 text-xs font-medium text-vpv-text-muted transition-colors hover:text-vpv-text"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={saveReorder}
+                  disabled={savingReorder}
+                  className="rounded-lg bg-vpv-accent px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-vpv-accent/80 disabled:opacity-50"
+                >
+                  {savingReorder ? "Guardando..." : "Guardar orden"}
+                </button>
+              </div>
+            )}
           </div>
 
-          {/* Player search */}
-          <div className="mb-4 flex gap-2">
-            <div className="relative flex-1">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                placeholder="Buscar jugador..."
-                className="w-full rounded-lg border border-vpv-border bg-vpv-bg px-3 py-2 text-sm text-vpv-text placeholder:text-vpv-text-muted"
-              />
-              {searchLoading && (
-                <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-vpv-accent border-t-transparent" />
-                </div>
+          {/* Add pick section */}
+          <div className="mb-4 rounded-lg border border-vpv-border bg-vpv-bg p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-wider text-vpv-text-muted">
+                Añadir pick #{(draftDetail?.picks.length ?? 0) + 1}
+              </p>
+              {draftDetail?.next_participant_id && (
+                <p className="text-sm text-vpv-text">
+                  Turno de:{" "}
+                  <span className="font-semibold text-vpv-accent">
+                    {participants.find(
+                      (p) =>
+                        p.participant_id ===
+                        (overrideParticipantId ??
+                          draftDetail.next_participant_id),
+                    )?.display_name ?? "?"}
+                  </span>
+                  {!overrideParticipantId && (
+                    <button
+                      onClick={() =>
+                        setOverrideParticipantId(
+                          draftDetail.next_participant_id,
+                        )
+                      }
+                      className="ml-2 text-xs text-vpv-text-muted underline hover:text-vpv-text"
+                    >
+                      cambiar
+                    </button>
+                  )}
+                </p>
               )}
             </div>
-            <select
-              value={searchPosition}
-              onChange={(e) => {
-                setSearchPosition(e.target.value);
-                if (searchQuery.length >= 2) handleSearchChange(searchQuery);
-              }}
-              className="rounded-lg border border-vpv-border bg-vpv-bg px-3 py-2 text-sm text-vpv-text"
-            >
-              <option value="">Pos.</option>
-              <option value="POR">POR</option>
-              <option value="DEF">DEF</option>
-              <option value="MED">MED</option>
-              <option value="DEL">DEL</option>
-            </select>
+            {overrideParticipantId !== null && (
+              <div className="mb-3 flex items-center gap-2">
+                <select
+                  value={overrideParticipantId ?? ""}
+                  onChange={(e) =>
+                    setOverrideParticipantId(
+                      e.target.value ? Number(e.target.value) : null,
+                    )
+                  }
+                  className="flex-1 rounded-lg border border-vpv-border bg-vpv-card px-3 py-2 text-sm text-vpv-text"
+                >
+                  {participants.map((p) => (
+                    <option key={p.participant_id} value={p.participant_id}>
+                      {p.draft_order ? `#${p.draft_order} ` : ""}
+                      {p.display_name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => setOverrideParticipantId(null)}
+                  className="text-xs text-vpv-text-muted underline hover:text-vpv-text"
+                >
+                  auto
+                </button>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  placeholder="Buscar jugador..."
+                  className="w-full rounded-lg border border-vpv-border bg-vpv-card px-3 py-2 text-sm text-vpv-text placeholder:text-vpv-text-muted"
+                />
+                {searchLoading && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-vpv-accent border-t-transparent" />
+                  </div>
+                )}
+              </div>
+              <select
+                value={searchPosition}
+                onChange={(e) => {
+                  setSearchPosition(e.target.value);
+                  if (searchQuery.length >= 2) handleSearchChange(searchQuery);
+                }}
+                className="rounded-lg border border-vpv-border bg-vpv-card px-3 py-2 text-sm text-vpv-text"
+              >
+                <option value="">Pos.</option>
+                <option value="POR">POR</option>
+                <option value="DEF">DEF</option>
+                <option value="MED">MED</option>
+                <option value="DEL">DEL</option>
+              </select>
+            </div>
+
+            {/* Search results */}
+            {searchResults.length > 0 && (
+              <div className="mt-2 max-h-60 overflow-y-auto rounded-lg border border-vpv-border">
+                {searchResults.map((player) => (
+                  <button
+                    key={player.id}
+                    onClick={() =>
+                      !player.is_already_picked && addPick(player.id)
+                    }
+                    disabled={player.is_already_picked}
+                    className={`flex w-full items-center gap-3 border-b border-vpv-border px-4 py-2.5 text-left text-sm transition-colors last:border-b-0 ${
+                      player.is_already_picked
+                        ? "cursor-not-allowed opacity-40"
+                        : "hover:bg-vpv-card"
+                    }`}
+                  >
+                    <span
+                      className={`rounded px-1.5 py-0.5 text-xs font-medium ${POS_COLORS[player.position] ?? ""}`}
+                    >
+                      {player.position}
+                    </span>
+                    <span className="flex-1 text-vpv-text">
+                      {player.display_name}
+                    </span>
+                    <span className="text-xs text-vpv-text-muted">
+                      {player.team_name}
+                    </span>
+                    {player.is_already_picked && (
+                      <span className="text-xs text-red-400">Elegido</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Search results */}
-          {searchResults.length > 0 && (
-            <div className="mb-4 max-h-60 overflow-y-auto rounded-lg border border-vpv-border">
-              {searchResults.map((player) => (
+          {/* Filter by participant */}
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            <button
+              onClick={() => setFilterParticipantId(null)}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                filterParticipantId === null
+                  ? "bg-vpv-accent text-white"
+                  : "bg-vpv-bg text-vpv-text-muted hover:text-vpv-text"
+              }`}
+            >
+              Todos ({localPicks.length})
+            </button>
+            {participants.map((p) => {
+              const count = localPicks.filter(
+                (pk) => pk.participant_id === p.participant_id,
+              ).length;
+              return (
                 <button
-                  key={player.id}
-                  onClick={() => !player.is_already_picked && addPick(player.id)}
-                  disabled={player.is_already_picked}
-                  className={`flex w-full items-center gap-3 border-b border-vpv-border px-4 py-2.5 text-left text-sm transition-colors last:border-b-0 ${
-                    player.is_already_picked
-                      ? "cursor-not-allowed opacity-40"
-                      : "hover:bg-vpv-bg"
+                  key={p.participant_id}
+                  onClick={() =>
+                    setFilterParticipantId(
+                      filterParticipantId === p.participant_id
+                        ? null
+                        : p.participant_id,
+                    )
+                  }
+                  className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                    filterParticipantId === p.participant_id
+                      ? "bg-vpv-accent text-white"
+                      : `${PARTICIPANT_BG[colorMap[p.participant_id] ?? 0]} text-vpv-text-muted hover:text-vpv-text`
                   }`}
                 >
-                  <span
-                    className={`rounded px-1.5 py-0.5 text-xs font-medium ${POS_COLORS[player.position] ?? ""}`}
-                  >
-                    {player.position}
-                  </span>
-                  <span className="flex-1 text-vpv-text">
-                    {player.display_name}
-                  </span>
-                  <span className="text-xs text-vpv-text-muted">
-                    {player.team_name}
-                  </span>
-                  {player.is_already_picked && (
-                    <span className="text-xs text-red-400">Elegido</span>
-                  )}
+                  {p.display_name} ({count})
                 </button>
-              ))}
+              );
+            })}
+          </div>
+
+          {/* Picks list — draggable */}
+          {displayPicks.length === 0 ? (
+            <p className="py-4 text-center text-sm text-vpv-text-muted">
+              {localPicks.length === 0
+                ? "No hay picks registrados todavia."
+                : "Sin picks para este participante."}
+            </p>
+          ) : (
+            <div className="space-y-0.5">
+              {/* Round headers interleaved */}
+              {displayPicks.map((pick, displayIdx) => {
+                const isFirstOfRound =
+                  displayIdx === 0 ||
+                  displayPicks[displayIdx - 1].round_number !==
+                    pick.round_number;
+                const globalIdx = filterParticipantId
+                  ? localPicks.findIndex((p) => p.id === pick.id)
+                  : displayIdx;
+                const isDragging = dragIndex === globalIdx;
+                const isDragOver = dragOverIndex === globalIdx;
+                const canDrag = !filterParticipantId; // Only drag when showing all
+
+                return (
+                  <div key={pick.id}>
+                    {isFirstOfRound && (
+                      <div className="pb-0.5 pt-3 first:pt-0">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted">
+                          Ronda {pick.round_number}
+                        </span>
+                      </div>
+                    )}
+                    <div
+                      draggable={canDrag}
+                      onDragStart={() => canDrag && handleDragStart(globalIdx)}
+                      onDragOver={(e) =>
+                        canDrag && handleDragOver(e, globalIdx)
+                      }
+                      onDrop={() => canDrag && handleDrop(globalIdx)}
+                      onDragEnd={handleDragEnd}
+                      className={`flex items-center gap-2 rounded-lg border-l-4 px-3 py-2 text-sm transition-all ${
+                        PARTICIPANT_COLORS[
+                          colorMap[pick.participant_id] ?? 0
+                        ]
+                      } ${
+                        isDragging
+                          ? "opacity-40"
+                          : isDragOver
+                            ? "bg-vpv-accent/10 ring-1 ring-vpv-accent/30"
+                            : "bg-vpv-bg"
+                      } ${canDrag ? "cursor-grab active:cursor-grabbing" : ""}`}
+                    >
+                      {/* Pick number */}
+                      <span className="w-7 flex-shrink-0 text-center text-xs font-bold text-vpv-accent">
+                        {pick.pick_number}
+                      </span>
+
+                      {/* Drag handle */}
+                      {canDrag && (
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 20 20"
+                          fill="currentColor"
+                          className="h-4 w-4 flex-shrink-0 text-vpv-text-muted/50"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zm0 5A.75.75 0 012.75 9h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 9.75zm0 5A.75.75 0 012.75 14h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      )}
+
+                      {/* Position badge */}
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${POS_COLORS[pick.position] ?? ""}`}
+                      >
+                        {pick.position}
+                      </span>
+
+                      {/* Player name */}
+                      <span className="flex-1 truncate font-medium text-vpv-text">
+                        {pick.player_name}
+                      </span>
+
+                      {/* Team */}
+                      <span className="hidden text-xs text-vpv-text-muted sm:inline">
+                        {pick.team_name}
+                      </span>
+
+                      {/* Participant name */}
+                      <span className="truncate text-xs text-vpv-text-muted">
+                        {pick.display_name}
+                      </span>
+
+                      {/* Delete button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deletePick(pick.pick_number);
+                        }}
+                        className="flex-shrink-0 rounded p-1 text-red-400/40 transition-colors hover:text-red-400"
+                        title="Eliminar pick"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 20 20"
+                          fill="currentColor"
+                          className="h-3.5 w-3.5"
+                        >
+                          <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
-
-          {/* Picks table */}
-          <PicksTable
-            picks={draftDetail?.picks ?? []}
-            onDelete={deletePick}
-          />
         </section>
       )}
-    </div>
-  );
-}
-
-function PicksTable({
-  picks,
-  onDelete,
-}: {
-  picks: DraftPickEntry[];
-  onDelete: (pickNumber: number) => void;
-}) {
-  if (picks.length === 0) {
-    return (
-      <p className="text-sm text-vpv-text-muted">
-        No hay picks registrados todavia.
-      </p>
-    );
-  }
-
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-vpv-border text-left text-xs text-vpv-text-muted">
-            <th className="px-3 py-2">#</th>
-            <th className="px-3 py-2">Ronda</th>
-            <th className="px-3 py-2">Participante</th>
-            <th className="px-3 py-2">Jugador</th>
-            <th className="px-3 py-2">Pos</th>
-            <th className="px-3 py-2">Equipo</th>
-            <th className="px-3 py-2" />
-          </tr>
-        </thead>
-        <tbody>
-          {picks.map((pick) => (
-            <tr
-              key={pick.pick_number}
-              className="border-b border-vpv-border/50 text-vpv-text"
-            >
-              <td className="px-3 py-2 font-medium text-vpv-accent">
-                {pick.pick_number}
-              </td>
-              <td className="px-3 py-2 text-vpv-text-muted">
-                R{pick.round_number}
-              </td>
-              <td className="px-3 py-2">{pick.display_name}</td>
-              <td className="px-3 py-2 font-medium">{pick.player_name}</td>
-              <td className="px-3 py-2">
-                <span
-                  className={`rounded px-1.5 py-0.5 text-xs font-medium ${POS_COLORS[pick.position] ?? ""}`}
-                >
-                  {pick.position}
-                </span>
-              </td>
-              <td className="px-3 py-2 text-vpv-text-muted">
-                {pick.team_name}
-              </td>
-              <td className="px-3 py-2">
-                <button
-                  onClick={() => onDelete(pick.pick_number)}
-                  className="rounded p-1 text-red-400/60 transition-colors hover:text-red-400"
-                  title="Eliminar pick"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-                    <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022 1.005 11.07A2.75 2.75 0 007.768 19.5h4.464a2.75 2.75 0 002.748-2.479l1.005-11.07.15.022a.75.75 0 10.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 01.7.797l-.5 5.5a.75.75 0 01-1.495-.137l.5-5.5a.75.75 0 01.796-.66zm2.84 0a.75.75 0 01.795.66l.5 5.5a.75.75 0 01-1.495.137l-.5-5.5a.75.75 0 01.7-.797z" clipRule="evenodd" />
-                  </svg>
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }

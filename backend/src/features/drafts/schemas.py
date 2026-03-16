@@ -27,11 +27,13 @@ class DraftParticipant(BaseModel):
 
 
 class DraftPickEntry(BaseModel):
+    id: int
     pick_number: int
     round_number: int
     participant_id: int
     display_name: str
     draft_order: int | None
+    player_id: int
     player_name: str
     position: str
     team_name: str
@@ -46,6 +48,7 @@ class DraftDetailResponse(BaseModel):
     completed_at: datetime | None
     participants: list[DraftParticipant]
     picks: list[DraftPickEntry]
+    next_participant_id: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -76,8 +79,8 @@ class CreateDraftResponse(BaseModel):
 
 
 class AddPickRequest(BaseModel):
-    participant_id: int
     player_id: int
+    participant_id: int | None = None  # Auto-determined by draft order if omitted
 
 
 class AddPickResponse(BaseModel):
@@ -92,6 +95,14 @@ class AddPickResponse(BaseModel):
 
 class DeletePickResponse(BaseModel):
     deleted_pick_number: int
+
+
+class ReorderPicksRequest(BaseModel):
+    pick_ids: list[int]  # DraftPick IDs in desired order
+
+
+class ReorderPicksResponse(BaseModel):
+    reordered: int
 
 
 class PlayerSearchItem(BaseModel):
