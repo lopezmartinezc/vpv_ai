@@ -100,7 +100,7 @@ ConfirmScreen {
 #confirm-dialog {
     width: 60;
     height: auto;
-    max-height: 16;
+    max-height: 20;
     border: thick $error;
     background: $surface;
     padding: 2 4;
