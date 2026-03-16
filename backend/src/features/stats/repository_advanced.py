@@ -253,7 +253,7 @@ class AdvancedStatsRepository:
         if position:
             qualifying = qualifying.where(PlayerStat.position == position)
 
-        qualifying = (
+        qualifying_sub = (
             qualifying.group_by(PlayerStat.player_id)
             .having(func.count(PlayerStat.id) >= min_played)
             .subquery()
@@ -270,7 +270,7 @@ class AdvancedStatsRepository:
                 Matchday.season_id == season_id,
                 Matchday.counts.is_(True),
                 PlayerStat.played.is_(True),
-                PlayerStat.player_id.in_(select(qualifying.c.player_id)),
+                PlayerStat.player_id.in_(select(qualifying_sub.c.player_id)),
             )
             .order_by(PlayerStat.player_id, Matchday.number)
         )

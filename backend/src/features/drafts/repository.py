@@ -227,7 +227,7 @@ class DraftRepository:
                 DraftPick.pick_number == pick_number,
             )
         )
-        return result.rowcount > 0
+        return result.rowcount > 0  # type: ignore[attr-defined]
 
     async def get_picked_player_ids(self, draft_id: int) -> set[int]:
         stmt = select(DraftPick.player_id).where(DraftPick.draft_id == draft_id)
