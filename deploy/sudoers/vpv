@@ -1,0 +1,4 @@
+# /etc/sudoers.d/vpv
+# Permite al usuario vpv reiniciar el servicio backend sin password.
+# Instalar: sudo cp /opt/vpv/deploy/sudoers/vpv /etc/sudoers.d/vpv && sudo chmod 440 /etc/sudoers.d/vpv
+vpv ALL=(root) NOPASSWD: /usr/bin/systemctl restart vpv-backend, /usr/bin/systemctl stop vpv-backend, /usr/bin/systemctl start vpv-backend, /usr/bin/systemctl status vpv-backend
