@@ -4,18 +4,13 @@ from __future__ import annotations
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
+from textual.events import Key
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
 
 class ConfirmScreen(ModalScreen[bool]):
     """Modal that asks for confirmation before running a destructive operation."""
-
-    BINDINGS = [
-        ("y", "confirm", "Confirmar"),
-        ("n", "cancel", "Cancelar"),
-        ("escape", "cancel", "Cancelar"),
-    ]
 
     def __init__(self, operation_name: str, description: str) -> None:
         super().__init__()
@@ -31,8 +26,10 @@ class ConfirmScreen(ModalScreen[bool]):
             yield Static("¿Estás seguro de que quieres continuar?")
             yield Static("[yellow]y = confirmar, n/escape = cancelar[/yellow]")
 
-    def action_confirm(self) -> None:
-        self.dismiss(True)
-
-    def action_cancel(self) -> None:
-        self.dismiss(False)
+    def on_key(self, event: Key) -> None:
+        if event.key == "y":
+            event.prevent_default()
+            self.dismiss(True)
+        elif event.key in ("n", "escape"):
+            event.prevent_default()
+            self.dismiss(False)
