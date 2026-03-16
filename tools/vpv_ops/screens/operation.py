@@ -19,7 +19,7 @@ class OperationScreen(Screen):
 
     BINDINGS = [
         ("escape", "go_back", "Volver"),
-        ("r", "run_op", "Ejecutar"),
+        ("f5", "run_op", "Ejecutar"),
     ]
 
     def __init__(self, operation: Operation) -> None:
@@ -71,7 +71,7 @@ class OperationScreen(Screen):
 
     def on_mount(self) -> None:
         log = self.query_one("#log-panel", RichLog)
-        log.write("[yellow]Pulsa r para ejecutar, escape para volver.[/yellow]")
+        log.write("[yellow]Pulsa F5 para ejecutar, escape para volver.[/yellow]")
 
     def _get_args(self) -> dict[str, str]:
         args: dict[str, str] = {}

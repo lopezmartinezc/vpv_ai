@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.containers import Vertical, Horizontal
+from textual.containers import Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Static, Button
+from textual.widgets import Static
 
 
 class ConfirmScreen(ModalScreen[bool]):
     """Modal that asks for confirmation before running a destructive operation."""
+
+    BINDINGS = [
+        ("y", "confirm", "Confirmar"),
+        ("n", "cancel", "Cancelar"),
+        ("escape", "cancel", "Cancelar"),
+    ]
 
     def __init__(self, operation_name: str, description: str) -> None:
         super().__init__()
@@ -18,14 +24,15 @@ class ConfirmScreen(ModalScreen[bool]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="confirm-dialog"):
-            yield Static(f"[bold red]⚠ Operación destructiva[/bold red]")
+            yield Static("[bold red]⚠ Operación destructiva[/bold red]")
             yield Static(f"[bold]{self.operation_name}[/bold]")
             yield Static(self.op_description)
             yield Static("")
             yield Static("¿Estás seguro de que quieres continuar?")
-            with Horizontal(id="confirm-buttons"):
-                yield Button("Confirmar", variant="error", id="btn-confirm")
-                yield Button("Cancelar", variant="default", id="btn-cancel")
+            yield Static("[yellow]y = confirmar, n/escape = cancelar[/yellow]")
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        self.dismiss(event.button.id == "btn-confirm")
+    def action_confirm(self) -> None:
+        self.dismiss(True)
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
