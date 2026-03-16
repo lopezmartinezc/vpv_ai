@@ -326,9 +326,7 @@ class DraftService:
             ]
         else:
             pick_map = {p.id: p for p in existing_picks}
-            participant_order = {
-                p.participant_id: (p.draft_order or 999) for p in participants
-            }
+            participant_order = {p.participant_id: (p.draft_order or 999) for p in participants}
 
             # Assign rounds based on position in input order
             rounds: dict[int, list[int]] = {}
@@ -343,9 +341,7 @@ class DraftService:
                 round_picks = rounds[rnd]
                 reverse = draft.draft_type == "snake" and rnd % 2 == 0
                 round_picks.sort(
-                    key=lambda pid: participant_order.get(
-                        pick_map[pid].participant_id, 999
-                    ),
+                    key=lambda pid: participant_order.get(pick_map[pid].participant_id, 999),
                     reverse=reverse,
                 )
                 for pid in round_picks:
