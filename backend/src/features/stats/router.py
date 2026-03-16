@@ -266,9 +266,7 @@ async def get_compare_players(
     return await service.get_compare_players(season_id, parsed)
 
 
-@router.get(
-    "/{season_id}/players/{player_id}/splits", response_model=PlayerSplitsResponse
-)
+@router.get("/{season_id}/players/{player_id}/splits", response_model=PlayerSplitsResponse)
 async def get_player_splits(
     season_id: int,
     player_id: int,

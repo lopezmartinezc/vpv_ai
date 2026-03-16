@@ -242,7 +242,7 @@ export default function AdminJugadoresPage() {
   // Patch helpers
   // ---------------------------------------------------------------------------
 
-  async function patchPlayer(
+  const patchPlayer = useCallback(async function patchPlayer(
     playerId: number,
     body: { team_id?: number; position?: string },
   ) {
@@ -275,22 +275,20 @@ export default function AdminJugadoresPage() {
     } finally {
       setSavingMap((prev) => ({ ...prev, [playerId]: false }));
     }
-  }
+  }, []);
 
   const handleSavePosition = useCallback(
     async (playerId: number, position: Position) => {
       await patchPlayer(playerId, { position });
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [patchPlayer],
   );
 
   const handleSaveTeam = useCallback(
     async (playerId: number, teamId: number) => {
       await patchPlayer(playerId, { team_id: teamId });
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [patchPlayer],
   );
 
   // ---------------------------------------------------------------------------

@@ -133,9 +133,7 @@ class DraftService:
 
         existing = await self.repo.get_draft(season_id, phase)
         if existing is not None:
-            raise BusinessRuleError(
-                f"Ya existe un draft para temporada {season_id} fase {phase}"
-            )
+            raise BusinessRuleError(f"Ya existe un draft para temporada {season_id} fase {phase}")
 
         draft = await self.repo.create_draft(season_id, phase, draft_type)
         await self.repo.session.commit()

@@ -175,14 +175,10 @@ class AdvancedStatsRepository:
                 PlayerStat.position,
                 Team.name.label("team_name"),
                 md_count.label("matchdays_played"),
-                func.coalesce(func.sum(PlayerStat.minutes_played), 0).label(
-                    "minutes_played"
-                ),
+                func.coalesce(func.sum(PlayerStat.minutes_played), 0).label("minutes_played"),
                 total_pts.label("total_points"),
                 func.avg(func.cast(PlayerStat.pts_total, Float)).label("avg_points"),
-                func.stddev_samp(func.cast(PlayerStat.pts_total, Float)).label(
-                    "std_dev"
-                ),
+                func.stddev_samp(func.cast(PlayerStat.pts_total, Float)).label("std_dev"),
                 p10.label("p10"),
                 p50.label("p50"),
                 p90.label("p90"),
@@ -372,9 +368,7 @@ class AdvancedStatsRepository:
         stmt = (
             select(
                 DraftPick.pick_number,
-                func.avg(func.cast(season_pts.c.total, Float)).label(
-                    "avg_total_points"
-                ),
+                func.avg(func.cast(season_pts.c.total, Float)).label("avg_total_points"),
                 func.count().label("sample_count"),
             )
             .join(Draft, DraftPick.draft_id == Draft.id)
@@ -388,9 +382,7 @@ class AdvancedStatsRepository:
         if season_ids:
             stmt = stmt.where(Draft.season_id.in_(season_ids))
 
-        stmt = stmt.group_by(DraftPick.pick_number).order_by(
-            DraftPick.pick_number
-        )
+        stmt = stmt.group_by(DraftPick.pick_number).order_by(DraftPick.pick_number)
 
         result = await self.session.execute(stmt)
         return [
@@ -425,9 +417,7 @@ class AdvancedStatsRepository:
             select(
                 DraftPick.round_number,
                 Player.position,
-                func.avg(func.cast(season_pts.c.total, Float)).label(
-                    "avg_total_points"
-                ),
+                func.avg(func.cast(season_pts.c.total, Float)).label("avg_total_points"),
                 func.count().label("pick_count"),
             )
             .join(Draft, DraftPick.draft_id == Draft.id)
@@ -439,9 +429,8 @@ class AdvancedStatsRepository:
         if season_ids:
             stmt = stmt.where(Draft.season_id.in_(season_ids))
 
-        stmt = (
-            stmt.group_by(DraftPick.round_number, Player.position)
-            .order_by(DraftPick.round_number, Player.position)
+        stmt = stmt.group_by(DraftPick.round_number, Player.position).order_by(
+            DraftPick.round_number, Player.position
         )
 
         result = await self.session.execute(stmt)
@@ -507,9 +496,7 @@ class AdvancedStatsRepository:
     # Phase 4 — Context analysis
     # ------------------------------------------------------------------
 
-    async def get_player_splits(
-        self, season_id: int, player_id: int
-    ) -> list[PlayerSplitRow]:
+    async def get_player_splits(self, season_id: int, player_id: int) -> list[PlayerSplitRow]:
         """Home/away split stats for a single player in a season."""
         location = case(
             (Match.home_team_id == Player.team_id, "home"),
@@ -586,21 +573,18 @@ class AdvancedStatsRepository:
         )
 
         # Top player per team (window function)
-        ranked = (
-            select(
-                player_total.c.player_id,
-                player_total.c.display_name,
-                player_total.c.team_id,
-                player_total.c.total,
-                func.row_number()
-                .over(
-                    partition_by=player_total.c.team_id,
-                    order_by=player_total.c.total.desc(),
-                )
-                .label("rn"),
+        ranked = select(
+            player_total.c.player_id,
+            player_total.c.display_name,
+            player_total.c.team_id,
+            player_total.c.total,
+            func.row_number()
+            .over(
+                partition_by=player_total.c.team_id,
+                order_by=player_total.c.total.desc(),
             )
-            .subquery()
-        )
+            .label("rn"),
+        ).subquery()
 
         stmt = (
             select(
@@ -614,7 +598,9 @@ class AdvancedStatsRepository:
             .join(team_total, ranked.c.team_id == team_total.c.team_id)
             .where(ranked.c.rn == 1)
             .order_by(
-                (func.cast(ranked.c.total, Float) / func.cast(team_total.c.team_total, Float)).desc()
+                (
+                    func.cast(ranked.c.total, Float) / func.cast(team_total.c.team_total, Float)
+                ).desc()
             )
         )
 

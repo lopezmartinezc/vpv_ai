@@ -133,12 +133,8 @@ class AdvancedStatsService:
         3. Compute CI, pp90, form, trend in Python
         """
         # Run both queries
-        rows = await self.repo.get_advanced_player_stats(
-            season_id, min_played, position
-        )
-        md_points = await self.repo.get_player_matchday_points(
-            season_id, min_played, position
-        )
+        rows = await self.repo.get_advanced_player_stats(season_id, min_played, position)
+        md_points = await self.repo.get_player_matchday_points(season_id, min_played, position)
 
         # Group matchday points by player_id
         points_by_player: dict[int, list[float]] = defaultdict(list)
@@ -165,11 +161,7 @@ class AdvancedStatsService:
         cv = std / avg if avg > 0 else 0.0
 
         # Points per 90 minutes
-        pp90 = (
-            (row.total_points / row.minutes_played) * 90.0
-            if row.minutes_played > 0
-            else 0.0
-        )
+        pp90 = (row.total_points / row.minutes_played) * 90.0 if row.minutes_played > 0 else 0.0
 
         # 95% confidence interval
         if n >= 2 and std > 0:
@@ -332,9 +324,7 @@ class AdvancedStatsService:
     # Phase 3 — Draft history
     # ------------------------------------------------------------------
 
-    async def get_draft_history(
-        self, season_ids: list[int] | None = None
-    ) -> DraftHistoryResponse:
+    async def get_draft_history(self, season_ids: list[int] | None = None) -> DraftHistoryResponse:
         """Compute draft analytics: pick value curve, bust/steal rates."""
         pick_values = await self.repo.get_draft_pick_values(season_ids)
         pos_by_round = await self.repo.get_draft_position_by_round(season_ids)
@@ -382,9 +372,7 @@ class AdvancedStatsService:
         ranges = [("1-3", 1, 3), ("4-6", 4, 6)]
         result: list[RateEntry] = []
         for label, r_min, r_max in ranges:
-            round_picks = [
-                p for p in picks if r_min <= p.round_number <= r_max
-            ]
+            round_picks = [p for p in picks if r_min <= p.round_number <= r_max]
             if not round_picks:
                 continue
             busts = sum(1 for p in round_picks if p.total_points < median)
@@ -414,14 +402,10 @@ class AdvancedStatsService:
         ranges = [("20-26", 20, 26), ("15-19", 15, 19)]
         result: list[RateEntry] = []
         for label, r_min, r_max in ranges:
-            round_picks = [
-                p for p in picks if r_min <= p.round_number <= r_max
-            ]
+            round_picks = [p for p in picks if r_min <= p.round_number <= r_max]
             if not round_picks:
                 continue
-            steals = sum(
-                1 for p in round_picks if p.total_points > early_median
-            )
+            steals = sum(1 for p in round_picks if p.total_points > early_median)
             result.append(
                 RateEntry(
                     round_range=label,
@@ -435,9 +419,7 @@ class AdvancedStatsService:
     # Phase 4 — Context analysis
     # ------------------------------------------------------------------
 
-    async def get_player_splits(
-        self, season_id: int, player_id: int
-    ) -> PlayerSplitsResponse:
+    async def get_player_splits(self, season_id: int, player_id: int) -> PlayerSplitsResponse:
         """Home/away splits for a single player."""
         rows = await self.repo.get_player_splits(season_id, player_id)
 
@@ -486,9 +468,7 @@ class AdvancedStatsService:
                     top_player_id=r.top_player_id,
                     top_player_points=r.top_player_points,
                     team_total_points=r.team_total,
-                    dependency_pct=round(
-                        r.top_player_points / r.team_total * 100, 1
-                    )
+                    dependency_pct=round(r.top_player_points / r.team_total * 100, 1)
                     if r.team_total > 0
                     else 0.0,
                 )
@@ -506,9 +486,7 @@ class AdvancedStatsService:
             return ComparePlayersResponse(season_id=season_id, players=[])
 
         # Also need form_5 — fetch matchday points for these players
-        md_points = await self.repo.get_player_matchday_points(
-            season_id, min_played=1
-        )
+        md_points = await self.repo.get_player_matchday_points(season_id, min_played=1)
         points_by_player: dict[int, list[float]] = defaultdict(list)
         for mp in md_points:
             if mp.player_id in player_ids:
@@ -526,15 +504,17 @@ class AdvancedStatsService:
             pts = points_by_player.get(r.player_id, [])
             form = _ewma(pts[-5:]) if len(pts) >= 5 else r.avg_points
 
-            raw.append({
-                "row": r,
-                "goals_rate": goals_rate,
-                "assists_rate": assists_rate,
-                "avg_points": r.avg_points,
-                "consistency": consistency,
-                "pp90": pp90,
-                "form": form,
-            })
+            raw.append(
+                {
+                    "row": r,
+                    "goals_rate": goals_rate,
+                    "assists_rate": assists_rate,
+                    "avg_points": r.avg_points,
+                    "consistency": consistency,
+                    "pp90": pp90,
+                    "form": form,
+                }
+            )
 
         # Find max for each axis to normalize 0-100
         axes = ["goals_rate", "assists_rate", "avg_points", "consistency", "pp90", "form"]

@@ -1480,6 +1480,7 @@ function ContextoTab({
   // Fetch comparison when IDs change (2+ selected)
   useEffect(() => {
     if (compareIds.length < 2) {
+      /* eslint-disable-next-line react-hooks/set-state-in-effect -- clearing stale data when selection drops below threshold */
       setCompareData([]);
       return;
     }
