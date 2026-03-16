@@ -1,20 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { useSeason } from "@/contexts/season-context";
 import { apiClient } from "@/lib/api-client";
 import { SeasonSelector } from "@/components/layout/season-selector";
 import type {
-  AddPickResponse,
   CreateDraftResponse,
   DraftDetailResponse,
   DraftListResponse,
   DraftParticipant,
   DraftPickEntry,
-  PlayerSearchItem,
-  PlayerSearchResponse,
 } from "@/types";
 
 const PHASE_LABELS: Record<string, string> = {
@@ -32,7 +29,6 @@ const POS_COLORS: Record<string, string> = {
   DEL: "bg-red-600/20 text-red-400",
 };
 
-// Consistent colors for participants
 const PARTICIPANT_COLORS = [
   "border-l-blue-500",
   "border-l-emerald-500",
@@ -60,10 +56,6 @@ const PARTICIPANT_BG = [
   "bg-teal-500/10",
 ];
 
-/**
- * Given a pick position, draft type, and ordered participant list,
- * return the participant who picks at that position.
- */
 function getParticipantForPick(
   pickNumber: number,
   draftType: string,
@@ -73,11 +65,9 @@ function getParticipantForPick(
   if (n === 0) return undefined;
   const round = Math.floor((pickNumber - 1) / n) + 1;
   let posInRound = (pickNumber - 1) % n;
-
   if (draftType === "snake" && round % 2 === 0) {
     posInRound = n - 1 - posInRound;
   }
-
   return orderedParticipants[posInRound];
 }
 
@@ -86,7 +76,6 @@ export default function GestionarDraftPage() {
   const { user, loading: authLoading } = useAuth();
   const { selectedSeason, loading: seasonLoading } = useSeason();
 
-  // State
   const [drafts, setDrafts] = useState<DraftListResponse | null>(null);
   const [selectedPhase, setSelectedPhase] = useState<string>("preseason");
   const [draftDetail, setDraftDetail] = useState<DraftDetailResponse | null>(
@@ -97,17 +86,7 @@ export default function GestionarDraftPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // Player search
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchPosition, setSearchPosition] = useState<string>("");
-  const [searchResults, setSearchResults] = useState<PlayerSearchItem[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const searchTimeout = useRef<ReturnType<typeof setTimeout>>(null);
-
-  // Pick management (participant override — null means auto from draft order)
-  const [overrideParticipantId, setOverrideParticipantId] = useState<
-    number | null
-  >(null);
+  // Pick reorder state
   const [filterParticipantId, setFilterParticipantId] = useState<number | null>(
     null,
   );
@@ -126,7 +105,6 @@ export default function GestionarDraftPage() {
     }
   }, [user, authLoading, router]);
 
-  // Build participant color map
   const participantColorMap = useCallback(() => {
     const map: Record<number, number> = {};
     participants.forEach((p, i) => {
@@ -135,7 +113,7 @@ export default function GestionarDraftPage() {
     return map;
   }, [participants]);
 
-  // Load drafts when season changes
+  // Load drafts
   const loadDrafts = useCallback(async () => {
     if (!selectedSeason) return;
     setLoading(true);
@@ -178,7 +156,7 @@ export default function GestionarDraftPage() {
     }
   }
 
-  // Load draft detail when phase changes
+  // Load draft detail
   const loadDraftDetail = useCallback(async () => {
     if (!selectedSeason || !drafts) return;
     const draft = drafts.drafts.find((d) => d.phase === selectedPhase);
@@ -253,76 +231,6 @@ export default function GestionarDraftPage() {
     }
   }
 
-  // --- Player search ---
-  function handleSearchChange(q: string) {
-    setSearchQuery(q);
-    if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    if (!draftDetail || q.length < 2) {
-      setSearchResults([]);
-      return;
-    }
-    searchTimeout.current = setTimeout(async () => {
-      setSearchLoading(true);
-      try {
-        const draftId = drafts?.drafts.find(
-          (d) => d.phase === selectedPhase,
-        )?.id;
-        if (!draftId) return;
-        const posParam = searchPosition ? `&position=${searchPosition}` : "";
-        const data = await apiClient.get<PlayerSearchResponse>(
-          `/drafts/${draftId}/players/search?q=${encodeURIComponent(q)}${posParam}`,
-        );
-        setSearchResults(data.players);
-      } catch {
-        setSearchResults([]);
-      } finally {
-        setSearchLoading(false);
-      }
-    }, 300);
-  }
-
-  // --- Add pick ---
-  async function addPick(playerId: number) {
-    const draftId = drafts?.drafts.find((d) => d.phase === selectedPhase)?.id;
-    if (!draftId) return;
-    setError(null);
-    try {
-      const body: { player_id: number; participant_id?: number } = {
-        player_id: playerId,
-      };
-      if (overrideParticipantId) {
-        body.participant_id = overrideParticipantId;
-      }
-      const pick = await apiClient.post<AddPickResponse>(
-        `/drafts/${draftId}/picks`,
-        body,
-      );
-      showSuccess(
-        `Pick #${pick.pick_number}: ${pick.player_name} → ${pick.display_name}`,
-      );
-      setSearchQuery("");
-      setSearchResults([]);
-      setOverrideParticipantId(null);
-      await loadDraftDetail();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Error añadiendo pick");
-    }
-  }
-
-  // --- Delete pick ---
-  async function deletePick(pickNumber: number) {
-    const draftId = drafts?.drafts.find((d) => d.phase === selectedPhase)?.id;
-    if (!draftId) return;
-    setError(null);
-    try {
-      await apiClient.delete(`/drafts/${draftId}/picks/${pickNumber}`);
-      showSuccess(`Pick #${pickNumber} eliminado`);
-      await loadDraftDetail();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Error eliminando pick");
-    }
-  }
-
   // --- Drag and drop reorder ---
   function handleDragStart(index: number) {
     setDragIndex(index);
@@ -344,7 +252,36 @@ export default function GestionarDraftPage() {
     const [moved] = newPicks.splice(dragIndex, 1);
     newPicks.splice(targetIndex, 0, moved);
 
-    // Recalculate pick_number, round_number, and participant assignment
+    recalculatePicks(newPicks);
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }
+
+  function handleDragEnd() {
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }
+
+  // --- Move pick up/down (alternative to drag) ---
+  function movePick(index: number, direction: -1 | 1) {
+    const target = index + direction;
+    if (target < 0 || target >= localPicks.length) return;
+    const newPicks = [...localPicks];
+    [newPicks[index], newPicks[target]] = [newPicks[target], newPicks[index]];
+    recalculatePicks(newPicks);
+  }
+
+  // --- Edit round number manually ---
+  function setPickRound(index: number, newRound: number) {
+    if (newRound < 1) return;
+    const updated = [...localPicks];
+    updated[index] = { ...updated[index], round_number: newRound };
+    setLocalPicks(updated);
+    setHasReorderChanges(true);
+  }
+
+  // --- Recalculate pick numbers and participant assignments ---
+  function recalculatePicks(newPicks: DraftPickEntry[]) {
     const numParticipants = participants.length || 1;
     const activeDraft = drafts?.drafts.find((d) => d.phase === selectedPhase);
     const draftType = activeDraft?.draft_type ?? "snake";
@@ -363,7 +300,8 @@ export default function GestionarDraftPage() {
         ...pick,
         pick_number: pickNumber,
         round_number: Math.floor(i / numParticipants) + 1,
-        participant_id: assignedParticipant?.participant_id ?? pick.participant_id,
+        participant_id:
+          assignedParticipant?.participant_id ?? pick.participant_id,
         display_name: assignedParticipant?.display_name ?? pick.display_name,
         draft_order: assignedParticipant?.draft_order ?? pick.draft_order,
       };
@@ -371,13 +309,6 @@ export default function GestionarDraftPage() {
 
     setLocalPicks(recalculated);
     setHasReorderChanges(true);
-    setDragIndex(null);
-    setDragOverIndex(null);
-  }
-
-  function handleDragEnd() {
-    setDragIndex(null);
-    setDragOverIndex(null);
   }
 
   // --- Save reorder ---
@@ -423,7 +354,6 @@ export default function GestionarDraftPage() {
   const currentDraft = drafts?.drafts.find((d) => d.phase === selectedPhase);
   const colorMap = participantColorMap();
 
-  // Filtered picks for display
   const displayPicks = filterParticipantId
     ? localPicks.filter((p) => p.participant_id === filterParticipantId)
     : localPicks;
@@ -569,18 +499,19 @@ export default function GestionarDraftPage() {
         </section>
       )}
 
-      {/* Step 3: Picks management */}
+      {/* Step 3: Picks reorder */}
       {currentDraft && (
         <section className="rounded-lg border border-vpv-card-border bg-vpv-card p-5">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold text-vpv-text">
-                3. Picks
+                3. Reordenar Picks
               </h2>
               <p className="text-xs text-vpv-text-muted">
                 {PHASE_LABELS[selectedPhase]} &middot;{" "}
                 {TYPE_LABELS[currentDraft.draft_type]} &middot;{" "}
-                {localPicks.length} picks
+                {localPicks.length} picks &middot; Arrastra o usa las flechas
+                para mover
               </p>
             </div>
             {hasReorderChanges && (
@@ -596,133 +527,8 @@ export default function GestionarDraftPage() {
                   disabled={savingReorder}
                   className="rounded-lg bg-vpv-accent px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-vpv-accent/80 disabled:opacity-50"
                 >
-                  {savingReorder ? "Guardando..." : "Guardar orden"}
+                  {savingReorder ? "Guardando..." : "Guardar cambios"}
                 </button>
-              </div>
-            )}
-          </div>
-
-          {/* Add pick section */}
-          <div className="mb-4 rounded-lg border border-vpv-border bg-vpv-bg p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <p className="text-xs font-semibold uppercase tracking-wider text-vpv-text-muted">
-                Añadir pick #{(draftDetail?.picks.length ?? 0) + 1}
-              </p>
-              {draftDetail?.next_participant_id && (
-                <p className="text-sm text-vpv-text">
-                  Turno de:{" "}
-                  <span className="font-semibold text-vpv-accent">
-                    {participants.find(
-                      (p) =>
-                        p.participant_id ===
-                        (overrideParticipantId ??
-                          draftDetail.next_participant_id),
-                    )?.display_name ?? "?"}
-                  </span>
-                  {!overrideParticipantId && (
-                    <button
-                      onClick={() =>
-                        setOverrideParticipantId(
-                          draftDetail.next_participant_id,
-                        )
-                      }
-                      className="ml-2 text-xs text-vpv-text-muted underline hover:text-vpv-text"
-                    >
-                      cambiar
-                    </button>
-                  )}
-                </p>
-              )}
-            </div>
-            {overrideParticipantId !== null && (
-              <div className="mb-3 flex items-center gap-2">
-                <select
-                  value={overrideParticipantId ?? ""}
-                  onChange={(e) =>
-                    setOverrideParticipantId(
-                      e.target.value ? Number(e.target.value) : null,
-                    )
-                  }
-                  className="flex-1 rounded-lg border border-vpv-border bg-vpv-card px-3 py-2 text-sm text-vpv-text"
-                >
-                  {participants.map((p) => (
-                    <option key={p.participant_id} value={p.participant_id}>
-                      {p.draft_order ? `#${p.draft_order} ` : ""}
-                      {p.display_name}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  onClick={() => setOverrideParticipantId(null)}
-                  className="text-xs text-vpv-text-muted underline hover:text-vpv-text"
-                >
-                  auto
-                </button>
-              </div>
-            )}
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => handleSearchChange(e.target.value)}
-                  placeholder="Buscar jugador..."
-                  className="w-full rounded-lg border border-vpv-border bg-vpv-card px-3 py-2 text-sm text-vpv-text placeholder:text-vpv-text-muted"
-                />
-                {searchLoading && (
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-vpv-accent border-t-transparent" />
-                  </div>
-                )}
-              </div>
-              <select
-                value={searchPosition}
-                onChange={(e) => {
-                  setSearchPosition(e.target.value);
-                  if (searchQuery.length >= 2) handleSearchChange(searchQuery);
-                }}
-                className="rounded-lg border border-vpv-border bg-vpv-card px-3 py-2 text-sm text-vpv-text"
-              >
-                <option value="">Pos.</option>
-                <option value="POR">POR</option>
-                <option value="DEF">DEF</option>
-                <option value="MED">MED</option>
-                <option value="DEL">DEL</option>
-              </select>
-            </div>
-
-            {/* Search results */}
-            {searchResults.length > 0 && (
-              <div className="mt-2 max-h-60 overflow-y-auto rounded-lg border border-vpv-border">
-                {searchResults.map((player) => (
-                  <button
-                    key={player.id}
-                    onClick={() =>
-                      !player.is_already_picked && addPick(player.id)
-                    }
-                    disabled={player.is_already_picked}
-                    className={`flex w-full items-center gap-3 border-b border-vpv-border px-4 py-2.5 text-left text-sm transition-colors last:border-b-0 ${
-                      player.is_already_picked
-                        ? "cursor-not-allowed opacity-40"
-                        : "hover:bg-vpv-card"
-                    }`}
-                  >
-                    <span
-                      className={`rounded px-1.5 py-0.5 text-xs font-medium ${POS_COLORS[player.position] ?? ""}`}
-                    >
-                      {player.position}
-                    </span>
-                    <span className="flex-1 text-vpv-text">
-                      {player.display_name}
-                    </span>
-                    <span className="text-xs text-vpv-text-muted">
-                      {player.team_name}
-                    </span>
-                    {player.is_already_picked && (
-                      <span className="text-xs text-red-400">Elegido</span>
-                    )}
-                  </button>
-                ))}
               </div>
             )}
           </div>
@@ -765,7 +571,7 @@ export default function GestionarDraftPage() {
             })}
           </div>
 
-          {/* Picks list — draggable */}
+          {/* Picks list */}
           {displayPicks.length === 0 ? (
             <p className="py-4 text-center text-sm text-vpv-text-muted">
               {localPicks.length === 0
@@ -774,7 +580,6 @@ export default function GestionarDraftPage() {
             </p>
           ) : (
             <div className="space-y-0.5">
-              {/* Round headers interleaved */}
               {displayPicks.map((pick, displayIdx) => {
                 const isFirstOfRound =
                   displayIdx === 0 ||
@@ -785,7 +590,7 @@ export default function GestionarDraftPage() {
                   : displayIdx;
                 const isDragging = dragIndex === globalIdx;
                 const isDragOver = dragOverIndex === globalIdx;
-                const canDrag = !filterParticipantId; // Only drag when showing all
+                const canDrag = !filterParticipantId;
 
                 return (
                   <div key={pick.id}>
@@ -821,21 +626,48 @@ export default function GestionarDraftPage() {
                         {pick.pick_number}
                       </span>
 
-                      {/* Drag handle */}
-                      {canDrag && (
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 20 20"
-                          fill="currentColor"
-                          className="h-4 w-4 flex-shrink-0 text-vpv-text-muted/50"
+                      {/* Move arrows */}
+                      <div className="flex flex-shrink-0 flex-col">
+                        <button
+                          onClick={() => movePick(globalIdx, -1)}
+                          disabled={globalIdx === 0 || !!filterParticipantId}
+                          className="text-vpv-text-muted/50 hover:text-vpv-text disabled:opacity-20"
                         >
-                          <path
-                            fillRule="evenodd"
-                            d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zm0 5A.75.75 0 012.75 9h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 9.75zm0 5A.75.75 0 012.75 14h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                      )}
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 16 16"
+                            fill="currentColor"
+                            className="h-3 w-3"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M11.78 9.78a.75.75 0 0 1-1.06 0L8 7.06 5.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06Z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => movePick(globalIdx, 1)}
+                          disabled={
+                            globalIdx === localPicks.length - 1 ||
+                            !!filterParticipantId
+                          }
+                          className="text-vpv-text-muted/50 hover:text-vpv-text disabled:opacity-20"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 16 16"
+                            fill="currentColor"
+                            className="h-3 w-3"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                        </button>
+                      </div>
 
                       {/* Position badge */}
                       <span
@@ -859,24 +691,21 @@ export default function GestionarDraftPage() {
                         {pick.display_name}
                       </span>
 
-                      {/* Delete button */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deletePick(pick.pick_number);
-                        }}
-                        className="flex-shrink-0 rounded p-1 text-red-400/40 transition-colors hover:text-red-400"
-                        title="Eliminar pick"
-                      >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 20 20"
-                          fill="currentColor"
-                          className="h-3.5 w-3.5"
-                        >
-                          <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                        </svg>
-                      </button>
+                      {/* Editable round */}
+                      <div className="flex flex-shrink-0 items-center gap-1">
+                        <span className="text-[10px] text-vpv-text-muted">
+                          R
+                        </span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={pick.round_number}
+                          onChange={(e) =>
+                            setPickRound(globalIdx, parseInt(e.target.value) || 1)
+                          }
+                          className="w-8 rounded border border-vpv-border bg-vpv-card px-1 py-0.5 text-center text-[10px] text-vpv-text"
+                        />
+                      </div>
                     </div>
                   </div>
                 );
