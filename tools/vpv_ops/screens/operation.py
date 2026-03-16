@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import queue
 import subprocess
+import threading
 
 from textual.app import ComposeResult
 from textual.containers import Vertical, Horizontal
 from textual.screen import Screen
 from textual.widgets import Static, Button, Input, Checkbox, RichLog, Header, Footer
-from textual.worker import Worker, get_current_worker
 
 from vpv_ops.executor import build_command
 from vpv_ops.models.registry import Operation
 from vpv_ops.screens.confirm import ConfirmScreen
+
+_SENTINEL = object()
 
 
 class OperationScreen(Screen):
@@ -27,18 +30,17 @@ class OperationScreen(Screen):
         super().__init__()
         self.operation = operation
         self._running = False
-        self._worker: Worker | None = None
+        self._queue: queue.Queue = queue.Queue()
+        self._timer = None
 
     def compose(self) -> ComposeResult:
         op = self.operation
         yield Header()
 
-        # Operation header
         with Vertical(id="op-header"):
             yield Static(f"[bold]{op.name}[/bold]")
             yield Static(op.description)
 
-        # Badges
         badges: list[str] = []
         for conn in op.connections:
             cls = "badge-mysql" if conn == "mysql" else "badge-pg"
@@ -51,7 +53,6 @@ class OperationScreen(Screen):
         with Horizontal(id="op-badges"):
             yield Static("  ".join(badges) if badges else "")
 
-        # Parameters
         with Vertical(id="params-container"):
             for param in op.parameters:
                 placeholder = f"{param.label}"
@@ -65,25 +66,21 @@ class OperationScreen(Screen):
                     id=f"param-{param.name}",
                 )
 
-            # Dry-run checkbox
             if op.dry_run_flag:
                 if op.dry_run_flag == "--apply":
                     yield Checkbox("Dry-run (no aplicar cambios)", value=True, id="chk-dry-run")
                 else:
                     yield Checkbox("Dry-run", value=False, id="chk-dry-run")
 
-        # Buttons
         with Horizontal(id="buttons-bar"):
             yield Button("Ejecutar", variant="success", id="btn-run")
             yield Button("Volver", variant="default", id="btn-back")
 
-        # Log output
         yield RichLog(id="log-panel", highlight=True, markup=True, wrap=True)
 
         yield Footer()
 
     def _get_args(self) -> dict[str, str]:
-        """Collect parameter values from Input widgets."""
         args: dict[str, str] = {}
         for param in self.operation.parameters:
             widget = self.query_one(f"#param-{param.name}", Input)
@@ -92,7 +89,6 @@ class OperationScreen(Screen):
         return args
 
     def _get_dry_run(self) -> bool:
-        """Check if dry-run is enabled."""
         try:
             chk = self.query_one("#chk-dry-run", Checkbox)
             return chk.value
@@ -103,7 +99,6 @@ class OperationScreen(Screen):
         if event.button.id == "btn-back":
             self.app.pop_screen()
             return
-
         if event.button.id == "btn-run":
             self._try_run()
 
@@ -112,7 +107,6 @@ class OperationScreen(Screen):
             self._execute()
 
     def _try_run(self) -> None:
-        """Shared logic for button press and keybinding."""
         if self._running:
             return
         dry_run = self._get_dry_run()
@@ -123,6 +117,25 @@ class OperationScreen(Screen):
             )
         else:
             self._execute()
+
+    def _poll_queue(self) -> None:
+        """Called by timer on the main thread — drain the queue into RichLog."""
+        log = self.query_one("#log-panel", RichLog)
+        while True:
+            try:
+                item = self._queue.get_nowait()
+            except queue.Empty:
+                break
+            if item is _SENTINEL:
+                self._running = False
+                btn = self.query_one("#btn-run", Button)
+                btn.disabled = False
+                btn.label = "Ejecutar"
+                if self._timer is not None:
+                    self._timer.stop()
+                    self._timer = None
+                break
+            log.write(item)
 
     def _execute(self) -> None:
         self._running = True
@@ -138,20 +151,16 @@ class OperationScreen(Screen):
         op = self.operation
         cmd = build_command(op, args, dry_run)
 
-        def _write(text: str) -> None:
-            self.call_from_thread(log.write, text)
+        # Clear queue and start polling timer (10 times/sec)
+        while not self._queue.empty():
+            self._queue.get_nowait()
+        self._timer = self.set_interval(0.1, self._poll_queue)
 
-        def _finish() -> None:
-            self._running = False
-            btn.disabled = False
-            btn.label = "Ejecutar"
-
-        def _thread_run() -> None:
-            worker = get_current_worker()
-
-            _write(f"$ {' '.join(cmd)}")
-            _write(f"  cwd: {op.abs_cwd}")
-            _write("")
+        def _run_subprocess() -> None:
+            q = self._queue
+            q.put(f"$ {' '.join(cmd)}")
+            q.put(f"  cwd: {op.abs_cwd}")
+            q.put("")
 
             try:
                 proc = subprocess.Popen(
@@ -165,30 +174,29 @@ class OperationScreen(Screen):
                 )
                 assert proc.stdout is not None
                 for line in proc.stdout:
-                    if worker.is_cancelled:
-                        proc.kill()
-                        break
-                    _write(line.rstrip())
+                    q.put(line.rstrip())
                 proc.wait()
 
-                _write("")
+                q.put("")
                 if proc.returncode == 0:
-                    _write("[green]Completado exitosamente[/green]")
+                    q.put("[green]Completado exitosamente[/green]")
                 else:
-                    _write(f"[red]Error: código de salida {proc.returncode}[/red]")
+                    q.put(f"[red]Error: código de salida {proc.returncode}[/red]")
 
             except FileNotFoundError as exc:
-                _write(f"[red]Error: comando no encontrado — {exc}[/red]")
+                q.put(f"[red]Error: comando no encontrado — {exc}[/red]")
             except PermissionError as exc:
-                _write(f"[red]Error: permiso denegado — {exc}[/red]")
+                q.put(f"[red]Error: permiso denegado — {exc}[/red]")
             finally:
-                self.call_from_thread(_finish)
+                q.put(_SENTINEL)
 
-        self._worker = self.run_worker(_thread_run, thread=True)
+        thread = threading.Thread(target=_run_subprocess, daemon=True)
+        thread.start()
 
     def action_run_op(self) -> None:
-        """Keybinding 'r' to execute the operation."""
         self._try_run()
 
     def action_go_back(self) -> None:
+        if self._timer is not None:
+            self._timer.stop()
         self.app.pop_screen()
