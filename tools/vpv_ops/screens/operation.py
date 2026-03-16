@@ -2,20 +2,16 @@
 
 from __future__ import annotations
 
-import queue
 import subprocess
-import threading
 
 from textual.app import ComposeResult
 from textual.containers import Vertical, Horizontal
 from textual.screen import Screen
-from textual.widgets import Static, Button, Input, Checkbox, RichLog, Header, Footer
+from textual.widgets import Static, Input, Checkbox, RichLog, Header, Footer
 
 from vpv_ops.executor import build_command
 from vpv_ops.models.registry import Operation
 from vpv_ops.screens.confirm import ConfirmScreen
-
-_SENTINEL = object()
 
 
 class OperationScreen(Screen):
@@ -29,10 +25,6 @@ class OperationScreen(Screen):
     def __init__(self, operation: Operation) -> None:
         super().__init__()
         self.operation = operation
-        self._running = False
-        self._ready = False
-        self._queue: queue.Queue = queue.Queue()
-        self._timer = None
 
     def compose(self) -> ComposeResult:
         op = self.operation
@@ -73,21 +65,13 @@ class OperationScreen(Screen):
                 else:
                     yield Checkbox("Dry-run", value=False, id="chk-dry-run")
 
-        with Horizontal(id="buttons-bar"):
-            yield Button("Ejecutar", variant="success", id="btn-run")
-            yield Button("Volver", variant="default", id="btn-back")
-
         yield RichLog(id="log-panel", highlight=True, markup=True, wrap=True)
 
         yield Footer()
 
     def on_mount(self) -> None:
         log = self.query_one("#log-panel", RichLog)
-        log.write("[yellow]Listo. Pulsa r para ejecutar.[/yellow]")
-        self.set_timer(0.3, self._mark_ready)
-
-    def _mark_ready(self) -> None:
-        self._ready = True
+        log.write("[yellow]Pulsa r para ejecutar, escape para volver.[/yellow]")
 
     def _get_args(self) -> dict[str, str]:
         args: dict[str, str] = {}
@@ -104,20 +88,50 @@ class OperationScreen(Screen):
         except Exception:
             return False
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "btn-back":
-            self.app.pop_screen()
-            return
-        if event.button.id == "btn-run":
-            self._try_run()
-
     def _on_confirm(self, confirmed: bool) -> None:
         if confirmed:
             self._execute()
 
-    def _try_run(self) -> None:
-        if self._running or not self._ready:
-            return
+    def _execute(self) -> None:
+        log = self.query_one("#log-panel", RichLog)
+        log.clear()
+
+        args = self._get_args()
+        dry_run = self._get_dry_run()
+        op = self.operation
+        cmd = build_command(op, args, dry_run)
+
+        log.write(f"$ {' '.join(cmd)}")
+        log.write(f"  cwd: {op.abs_cwd}")
+        log.write("")
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                cwd=op.abs_cwd,
+                env=op.resolved_env,
+                timeout=300,
+            )
+            output = result.stdout + result.stderr
+            for line in output.splitlines():
+                log.write(line)
+
+            log.write("")
+            if result.returncode == 0:
+                log.write("[green]Completado exitosamente[/green]")
+            else:
+                log.write(f"[red]Error: código de salida {result.returncode}[/red]")
+
+        except subprocess.TimeoutExpired:
+            log.write("[red]Error: timeout (5 min)[/red]")
+        except FileNotFoundError as exc:
+            log.write(f"[red]Error: comando no encontrado — {exc}[/red]")
+        except PermissionError as exc:
+            log.write(f"[red]Error: permiso denegado — {exc}[/red]")
+
+    def action_run_op(self) -> None:
         dry_run = self._get_dry_run()
         if self.operation.destructive and not dry_run:
             self.app.push_screen(
@@ -127,85 +141,5 @@ class OperationScreen(Screen):
         else:
             self._execute()
 
-    def _poll_queue(self) -> None:
-        """Called by timer on the main thread — drain the queue into RichLog."""
-        log = self.query_one("#log-panel", RichLog)
-        while True:
-            try:
-                item = self._queue.get_nowait()
-            except queue.Empty:
-                break
-            if item is _SENTINEL:
-                self._running = False
-                btn = self.query_one("#btn-run", Button)
-                btn.disabled = False
-                btn.label = "Ejecutar"
-                if self._timer is not None:
-                    self._timer.stop()
-                    self._timer = None
-                break
-            log.write(item)
-
-    def _execute(self) -> None:
-        self._running = True
-        log = self.query_one("#log-panel", RichLog)
-        log.clear()
-
-        btn = self.query_one("#btn-run", Button)
-        btn.disabled = True
-        btn.label = "Ejecutando..."
-
-        args = self._get_args()
-        dry_run = self._get_dry_run()
-        op = self.operation
-        cmd = build_command(op, args, dry_run)
-
-        # Clear queue and start polling timer (10 times/sec)
-        while not self._queue.empty():
-            self._queue.get_nowait()
-        self._timer = self.set_interval(0.1, self._poll_queue)
-
-        def _run_subprocess() -> None:
-            q = self._queue
-            q.put(f"$ {' '.join(cmd)}")
-            q.put(f"  cwd: {op.abs_cwd}")
-            q.put("")
-
-            try:
-                proc = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    cwd=op.abs_cwd,
-                    env=op.resolved_env,
-                    text=True,
-                    bufsize=1,
-                )
-                assert proc.stdout is not None
-                for line in proc.stdout:
-                    q.put(line.rstrip())
-                proc.wait()
-
-                q.put("")
-                if proc.returncode == 0:
-                    q.put("[green]Completado exitosamente[/green]")
-                else:
-                    q.put(f"[red]Error: código de salida {proc.returncode}[/red]")
-
-            except FileNotFoundError as exc:
-                q.put(f"[red]Error: comando no encontrado — {exc}[/red]")
-            except PermissionError as exc:
-                q.put(f"[red]Error: permiso denegado — {exc}[/red]")
-            finally:
-                q.put(_SENTINEL)
-
-        thread = threading.Thread(target=_run_subprocess, daemon=True)
-        thread.start()
-
-    def action_run_op(self) -> None:
-        self._try_run()
-
     def action_go_back(self) -> None:
-        if self._timer is not None:
-            self._timer.stop()
         self.app.pop_screen()
