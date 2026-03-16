@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import subprocess
+
+logging.basicConfig(
+    filename="/tmp/vpv_ops_debug.log",
+    level=logging.DEBUG,
+    format="%(asctime)s %(message)s",
+)
+_log = logging.getLogger("vpv_ops")
 
 from textual.app import ComposeResult
 from textual.containers import Vertical, Horizontal
@@ -155,10 +163,18 @@ class OperationScreen(Screen):
         btn.label = "Ejecutar"
 
     def _execute(self) -> None:
+        _log.debug("_execute called for %s", self.operation.id)
+        try:
+            self._do_execute()
+        except Exception:
+            _log.exception("_execute crashed")
+
+    def _do_execute(self) -> None:
         self._running = True
         log = self.query_one("#log-panel", RichLog)
         log.clear()
         log.write("[yellow]Iniciando...[/yellow]")
+        _log.debug("wrote Iniciando to log")
 
         btn = self.query_one("#btn-run", Button)
         btn.disabled = True
@@ -214,9 +230,11 @@ class OperationScreen(Screen):
 
     def action_run_op(self) -> None:
         """Keybinding 'r' to execute the operation."""
+        _log.debug("action_run_op called, _running=%s", self._running)
         if self._running:
             return
         dry_run = self._get_dry_run()
+        _log.debug("dry_run=%s, destructive=%s", dry_run, self.operation.destructive)
         if self.operation.destructive and not dry_run:
             self.app.push_screen(
                 ConfirmScreen(self.operation.name, self.operation.description),
