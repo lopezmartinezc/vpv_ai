@@ -271,7 +271,7 @@ OPERATIONS: list[Operation] = [
         category=CAT_DATABASE,
         name="Health check",
         description="Verifica que backend y frontend responden.",
-        command_template='echo "Backend:" && curl -sf http://localhost:8000/api/health && echo && echo "Frontend:" && curl -sf -o /dev/null -w "HTTP %{{http_code}}" http://localhost:3000 && echo',
+        command_template='echo "Backend:" && curl -sf http://localhost:8000/api/health && echo && echo "Frontend:" && curl -sf -o /dev/null -w "HTTP %{http_code}" http://localhost:3000 && echo',
         shell=True,
     ),
     Operation(
