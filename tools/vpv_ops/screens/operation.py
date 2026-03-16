@@ -80,6 +80,10 @@ class OperationScreen(Screen):
 
         yield Footer()
 
+    def on_mount(self) -> None:
+        log = self.query_one("#log-panel", RichLog)
+        log.write("[yellow]Listo. Pulsa r para ejecutar.[/yellow]")
+
     def _get_args(self) -> dict[str, str]:
         args: dict[str, str] = {}
         for param in self.operation.parameters:
@@ -194,6 +198,8 @@ class OperationScreen(Screen):
         thread.start()
 
     def action_run_op(self) -> None:
+        log = self.query_one("#log-panel", RichLog)
+        log.write("[cyan]r pulsado — ejecutando...[/cyan]")
         self._try_run()
 
     def action_go_back(self) -> None:
