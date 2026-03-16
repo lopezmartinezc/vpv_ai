@@ -6,6 +6,7 @@ import subprocess
 
 from textual.app import ComposeResult
 from textual.containers import Vertical, Horizontal
+from textual.events import Key
 from textual.screen import Screen
 from textual.widgets import Static, Input, Checkbox, RichLog, Header, Footer
 
@@ -21,6 +22,14 @@ class OperationScreen(Screen):
         ("escape", "go_back", "Volver"),
         ("f5", "run_op", "Ejecutar"),
     ]
+
+    def on_key(self, event: Key) -> None:
+        if event.key == "f5":
+            event.prevent_default()
+            self._run()
+        elif event.key == "escape":
+            event.prevent_default()
+            self.app.pop_screen()
 
     def __init__(self, operation: Operation) -> None:
         super().__init__()
@@ -131,7 +140,7 @@ class OperationScreen(Screen):
         except PermissionError as exc:
             log.write(f"[red]Error: permiso denegado — {exc}[/red]")
 
-    def action_run_op(self) -> None:
+    def _run(self) -> None:
         dry_run = self._get_dry_run()
         if self.operation.destructive and not dry_run:
             self.app.push_screen(
@@ -140,6 +149,3 @@ class OperationScreen(Screen):
             )
         else:
             self._execute()
-
-    def action_go_back(self) -> None:
-        self.app.pop_screen()
