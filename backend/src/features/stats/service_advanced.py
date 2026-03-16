@@ -8,18 +8,18 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
+from typing import ClassVar
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.stats.repository_advanced import (
     AdvancedPlayerRow,
     AdvancedStatsRepository,
-    PlayerMatchdayPoints,
     PositionPlayerRow,
 )
 from src.features.stats.schemas_advanced import (
-    AdvancedPlayerStat,
     AdvancedPlayersResponse,
+    AdvancedPlayerStat,
     ComparePlayerAxis,
     ComparePlayersResponse,
     DraftHistoryResponse,
@@ -35,7 +35,6 @@ from src.features.stats.schemas_advanced import (
     TeamDependencyEntry,
     TeamDependencyResponse,
 )
-
 
 # ---------------------------------------------------------------------------
 # t-distribution critical values for 95% CI (two-tailed, alpha=0.025)
@@ -224,13 +223,10 @@ class AdvancedStatsService:
     # Phase 2 — Position value analysis
     # ------------------------------------------------------------------
 
-    # Typical number of players drafted per position (11 participants × 26 players)
-    # POR: ~3-4 per participant → ~33-44 total drafted
-    # DEF: ~8-9 → ~88-99
-    # MED: ~8-9 → ~88-99
-    # DEL: ~6-7 → ~66-77
+    # Typical number of players drafted per position (11 participants x 26 players)
+    # POR: ~3-4 per participant, DEF: ~8-9, MED: ~8-9, DEL: ~6-7
     # Replacement level = (N+1)th player, where N = typical drafted count
-    _TYPICAL_DRAFTED: dict[str, int] = {"POR": 35, "DEF": 90, "MED": 90, "DEL": 70}
+    _TYPICAL_DRAFTED: ClassVar[dict[str, int]] = {"POR": 35, "DEF": 90, "MED": 90, "DEL": 70}
 
     async def get_position_value(
         self, season_id: int, min_played: int = 3
@@ -449,8 +445,9 @@ class AdvancedStatsService:
         display_name = rows[0].location if not rows else ""
         # We need the player name — get it from the split rows context
         # Since splits don't carry the name, fetch from the advanced stats
-        from src.shared.models.player import Player
         from sqlalchemy import select
+
+        from src.shared.models.player import Player
 
         result = await self.repo.session.execute(
             select(Player.display_name).where(Player.id == player_id)

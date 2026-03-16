@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import Float, SmallInteger, case, func, select
+from sqlalchemy import Float, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.shared.models.draft import Draft, DraftPick
@@ -17,7 +17,6 @@ from src.shared.models.matchday import Match, Matchday
 from src.shared.models.player import Player
 from src.shared.models.player_stat import PlayerStat
 from src.shared.models.team import Team
-
 
 # ---------------------------------------------------------------------------
 # Dataclasses

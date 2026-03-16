@@ -18,15 +18,6 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.stats.repository import MatchdayScoreRow, StatsRepository
-from src.features.stats.schemas_advanced import (
-    AdvancedPlayersResponse,
-    ComparePlayersResponse,
-    DraftHistoryResponse,
-    PlayerSplitsResponse,
-    PositionValueResponse,
-    TeamDependencyResponse,
-)
-from src.features.stats.service_advanced import AdvancedStatsService
 from src.features.stats.schemas import (
     EvolutionEntry,
     FormationUsage,
@@ -40,6 +31,15 @@ from src.features.stats.schemas import (
     PlayerStatsResponse,
     RecordEntry,
 )
+from src.features.stats.schemas_advanced import (
+    AdvancedPlayersResponse,
+    ComparePlayersResponse,
+    DraftHistoryResponse,
+    PlayerSplitsResponse,
+    PositionValueResponse,
+    TeamDependencyResponse,
+)
+from src.features.stats.service_advanced import AdvancedStatsService
 from src.shared.dependencies import get_current_admin, get_db
 
 router = APIRouter(prefix="/stats", tags=["stats"])
