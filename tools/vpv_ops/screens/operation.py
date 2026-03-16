@@ -2,19 +2,10 @@
 
 from __future__ import annotations
 
-import logging
 import subprocess
-
-logging.basicConfig(
-    filename="/tmp/vpv_ops_debug.log",
-    level=logging.DEBUG,
-    format="%(asctime)s %(message)s",
-)
-_log = logging.getLogger("vpv_ops")
 
 from textual.app import ComposeResult
 from textual.containers import Vertical, Horizontal
-from textual.message import Message
 from textual.screen import Screen
 from textual.widgets import Static, Button, Input, Checkbox, RichLog, Header, Footer
 from textual.worker import Worker, get_current_worker
@@ -31,20 +22,6 @@ class OperationScreen(Screen):
         ("escape", "go_back", "Volver"),
         ("r", "run_op", "Ejecutar"),
     ]
-
-    class LogLine(Message):
-        """Thread-safe message to append a line to the log."""
-
-        def __init__(self, text: str) -> None:
-            super().__init__()
-            self.text = text
-
-    class RunFinished(Message):
-        """Thread-safe message indicating the run completed."""
-
-        def __init__(self, return_code: int) -> None:
-            super().__init__()
-            self.return_code = return_code
 
     def __init__(self, operation: Operation) -> None:
         super().__init__()
@@ -105,10 +82,6 @@ class OperationScreen(Screen):
 
         yield Footer()
 
-    def on_mount(self) -> None:
-        """Focus the run button when screen mounts."""
-        self.query_one("#btn-run", Button).focus()
-
     def _get_args(self) -> dict[str, str]:
         """Collect parameter values from Input widgets."""
         args: dict[str, str] = {}
@@ -132,49 +105,29 @@ class OperationScreen(Screen):
             return
 
         if event.button.id == "btn-run":
-            if self._running:
-                return
-
-            dry_run = self._get_dry_run()
-
-            # If destructive and not dry-run, ask confirmation
-            if self.operation.destructive and not dry_run:
-                self.app.push_screen(
-                    ConfirmScreen(self.operation.name, self.operation.description),
-                    callback=self._on_confirm,
-                )
-            else:
-                self._execute()
+            self._try_run()
 
     def _on_confirm(self, confirmed: bool) -> None:
         if confirmed:
             self._execute()
 
-    def on_operation_screen_log_line(self, message: LogLine) -> None:
-        """Handle log line messages from the worker thread."""
-        log = self.query_one("#log-panel", RichLog)
-        log.write(message.text)
-
-    def on_operation_screen_run_finished(self, message: RunFinished) -> None:
-        """Handle run completion from the worker thread."""
-        self._running = False
-        btn = self.query_one("#btn-run", Button)
-        btn.disabled = False
-        btn.label = "Ejecutar"
+    def _try_run(self) -> None:
+        """Shared logic for button press and keybinding."""
+        if self._running:
+            return
+        dry_run = self._get_dry_run()
+        if self.operation.destructive and not dry_run:
+            self.app.push_screen(
+                ConfirmScreen(self.operation.name, self.operation.description),
+                callback=self._on_confirm,
+            )
+        else:
+            self._execute()
 
     def _execute(self) -> None:
-        _log.debug("_execute called for %s", self.operation.id)
-        try:
-            self._do_execute()
-        except Exception:
-            _log.exception("_execute crashed")
-
-    def _do_execute(self) -> None:
         self._running = True
         log = self.query_one("#log-panel", RichLog)
         log.clear()
-        log.write("[yellow]Iniciando...[/yellow]")
-        _log.debug("wrote Iniciando to log")
 
         btn = self.query_one("#btn-run", Button)
         btn.disabled = True
@@ -185,12 +138,20 @@ class OperationScreen(Screen):
         op = self.operation
         cmd = build_command(op, args, dry_run)
 
+        def _write(text: str) -> None:
+            self.call_from_thread(log.write, text)
+
+        def _finish() -> None:
+            self._running = False
+            btn.disabled = False
+            btn.label = "Ejecutar"
+
         def _thread_run() -> None:
             worker = get_current_worker()
 
-            self.post_message(self.LogLine(f"$ {' '.join(cmd)}"))
-            self.post_message(self.LogLine(f"  cwd: {op.abs_cwd}"))
-            self.post_message(self.LogLine(""))
+            _write(f"$ {' '.join(cmd)}")
+            _write(f"  cwd: {op.abs_cwd}")
+            _write("")
 
             try:
                 proc = subprocess.Popen(
@@ -207,41 +168,27 @@ class OperationScreen(Screen):
                     if worker.is_cancelled:
                         proc.kill()
                         break
-                    self.post_message(self.LogLine(line.rstrip()))
+                    _write(line.rstrip())
                 proc.wait()
 
-                self.post_message(self.LogLine(""))
+                _write("")
                 if proc.returncode == 0:
-                    self.post_message(self.LogLine("[green]Completado exitosamente[/green]"))
+                    _write("[green]Completado exitosamente[/green]")
                 else:
-                    self.post_message(
-                        self.LogLine(f"[red]Error: código de salida {proc.returncode}[/red]")
-                    )
-                self.post_message(self.RunFinished(proc.returncode))
+                    _write(f"[red]Error: código de salida {proc.returncode}[/red]")
 
             except FileNotFoundError as exc:
-                self.post_message(self.LogLine(f"[red]Error: comando no encontrado — {exc}[/red]"))
-                self.post_message(self.RunFinished(127))
+                _write(f"[red]Error: comando no encontrado — {exc}[/red]")
             except PermissionError as exc:
-                self.post_message(self.LogLine(f"[red]Error: permiso denegado — {exc}[/red]"))
-                self.post_message(self.RunFinished(126))
+                _write(f"[red]Error: permiso denegado — {exc}[/red]")
+            finally:
+                self.call_from_thread(_finish)
 
         self._worker = self.run_worker(_thread_run, thread=True)
 
     def action_run_op(self) -> None:
         """Keybinding 'r' to execute the operation."""
-        _log.debug("action_run_op called, _running=%s", self._running)
-        if self._running:
-            return
-        dry_run = self._get_dry_run()
-        _log.debug("dry_run=%s, destructive=%s", dry_run, self.operation.destructive)
-        if self.operation.destructive and not dry_run:
-            self.app.push_screen(
-                ConfirmScreen(self.operation.name, self.operation.description),
-                callback=self._on_confirm,
-            )
-        else:
-            self._execute()
+        self._try_run()
 
     def action_go_back(self) -> None:
         self.app.pop_screen()
