@@ -123,6 +123,7 @@ class DraftService:
                     player_name=pk.player_name,
                     position=pk.position,
                     team_name=pk.team_name,
+                    photo_path=pk.photo_path,
                     dropped_player_name=pk.dropped_player_name,
                 )
                 for pk in pick_rows

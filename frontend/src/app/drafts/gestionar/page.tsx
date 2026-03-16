@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { useSeason } from "@/contexts/season-context";
 import { apiClient } from "@/lib/api-client";
 import { SeasonSelector } from "@/components/layout/season-selector";
+import { PlayerAvatar } from "@/components/ui/player-avatar";
 import type {
   CreateDraftResponse,
   DraftDetailResponse,
@@ -667,6 +668,9 @@ export default function GestionarDraftPage() {
                           </button>
                         </div>
                       )}
+
+                      {/* Player photo */}
+                      <PlayerAvatar photoPath={pick.photo_path} name={pick.player_name} size={28} />
 
                       {/* Position badge */}
                       <span

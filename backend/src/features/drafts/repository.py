@@ -43,6 +43,7 @@ class DraftPickRow:
     player_name: str
     position: str
     team_name: str
+    photo_path: str | None
     dropped_player_name: str | None
 
 
@@ -143,6 +144,7 @@ class DraftRepository:
                 Player.display_name.label("player_name"),
                 Player.position,
                 Team.name.label("team_name"),
+                Player.photo_path,
                 dropped_player.display_name.label("dropped_player_name"),
             )
             .join(
@@ -170,6 +172,7 @@ class DraftRepository:
                 player_name=row.player_name,
                 position=row.position,
                 team_name=row.team_name,
+                photo_path=row.photo_path,
                 dropped_player_name=row.dropped_player_name,
             )
             for row in result.all()

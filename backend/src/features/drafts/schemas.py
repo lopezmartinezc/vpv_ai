@@ -37,6 +37,7 @@ class DraftPickEntry(BaseModel):
     player_name: str
     position: str
     team_name: str
+    photo_path: str | None = None
     dropped_player_name: str | None = None
 
 

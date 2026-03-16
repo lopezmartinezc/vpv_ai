@@ -51,6 +51,7 @@ CREATE TABLE users (
     display_name    VARCHAR(100) NOT NULL,
     email           VARCHAR(150),
     is_admin        BOOLEAN      NOT NULL DEFAULT FALSE,
+    is_draft_manager BOOLEAN     NOT NULL DEFAULT FALSE,
     telegram_chat_id VARCHAR(50),
     created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
