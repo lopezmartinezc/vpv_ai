@@ -21,6 +21,7 @@ class OperationScreen(Screen):
 
     BINDINGS = [
         ("escape", "go_back", "Volver"),
+        ("r", "run_op", "Ejecutar"),
     ]
 
     class LogLine(Message):
@@ -95,6 +96,10 @@ class OperationScreen(Screen):
         yield RichLog(id="log-panel", highlight=True, markup=True, wrap=True)
 
         yield Footer()
+
+    def on_mount(self) -> None:
+        """Focus the run button when screen mounts."""
+        self.query_one("#btn-run", Button).focus()
 
     def _get_args(self) -> dict[str, str]:
         """Collect parameter values from Input widgets."""
@@ -206,6 +211,19 @@ class OperationScreen(Screen):
                 self.post_message(self.RunFinished(126))
 
         self._worker = self.run_worker(_thread_run, thread=True)
+
+    def action_run_op(self) -> None:
+        """Keybinding 'r' to execute the operation."""
+        if self._running:
+            return
+        dry_run = self._get_dry_run()
+        if self.operation.destructive and not dry_run:
+            self.app.push_screen(
+                ConfirmScreen(self.operation.name, self.operation.description),
+                callback=self._on_confirm,
+            )
+        else:
+            self._execute()
 
     def action_go_back(self) -> None:
         self.app.pop_screen()
