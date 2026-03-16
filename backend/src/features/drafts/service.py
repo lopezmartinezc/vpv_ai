@@ -317,13 +317,40 @@ class DraftService:
 
         # Build reorder entries: (pick_id, pick_number, round)
         # participant_id is NOT changed — it's a historical fact (who picked the player)
-        # Winter draft = single round (each participant trades variable picks)
+        # Within each round, picks are sorted by draft_order (snake reverses even rounds)
         is_winter = draft.phase == "winter"
-        entries: list[tuple[int, int, int]] = []
-        for i, pick_id in enumerate(pick_ids):
-            pick_number = i + 1
-            round_number = 1 if is_winter else (pick_number - 1) // num_participants + 1
-            entries.append((pick_id, pick_number, round_number))
+
+        if is_winter:
+            entries: list[tuple[int, int, int]] = [
+                (pick_id, i + 1, 1) for i, pick_id in enumerate(pick_ids)
+            ]
+        else:
+            pick_map = {p.id: p for p in existing_picks}
+            participant_order = {
+                p.participant_id: (p.draft_order or 999) for p in participants
+            }
+
+            # Assign rounds based on position in input order
+            rounds: dict[int, list[int]] = {}
+            for i, pick_id in enumerate(pick_ids):
+                rnd = i // num_participants + 1
+                rounds.setdefault(rnd, []).append(pick_id)
+
+            # Sort within each round by draft_order
+            entries = []
+            pick_num = 1
+            for rnd in sorted(rounds):
+                round_picks = rounds[rnd]
+                reverse = draft.draft_type == "snake" and rnd % 2 == 0
+                round_picks.sort(
+                    key=lambda pid: participant_order.get(
+                        pick_map[pid].participant_id, 999
+                    ),
+                    reverse=reverse,
+                )
+                for pid in round_picks:
+                    entries.append((pid, pick_num, rnd))
+                    pick_num += 1
 
         await self.repo.reorder_picks(draft_id, entries)
         await self.repo.session.commit()

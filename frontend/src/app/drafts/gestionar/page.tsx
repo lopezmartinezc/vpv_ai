@@ -175,16 +175,44 @@ export default function GestionarDraftPage() {
   }
 
   // Recalculate pick_number and round_number for all picks
+  // Within each round, picks are sorted by draft_order (snake reverses even rounds)
   function recalculateGlobal(newPicks: DraftPickEntry[]) {
     const n = orderedParticipants.length || 1;
 
-    const recalculated = newPicks.map((pick, i) => ({
+    if (isWinter) {
+      setLocalPicks(
+        newPicks.map((pick, i) => ({ ...pick, pick_number: i + 1, round_number: 1 })),
+      );
+      setHasReorderChanges(true);
+      return;
+    }
+
+    // Step 1: assign round numbers based on position
+    const withRounds = newPicks.map((pick, i) => ({
       ...pick,
-      pick_number: i + 1,
-      round_number: isWinter ? 1 : Math.floor(i / n) + 1,
+      round_number: Math.floor(i / n) + 1,
     }));
 
-    setLocalPicks(recalculated);
+    // Step 2: group by round, sort within round by draft_order
+    const draftType = draftDetail?.draft_type ?? "snake";
+    const roundMap = new Map<number, DraftPickEntry[]>();
+    for (const pick of withRounds) {
+      if (!roundMap.has(pick.round_number)) roundMap.set(pick.round_number, []);
+      roundMap.get(pick.round_number)!.push(pick);
+    }
+
+    const sorted: DraftPickEntry[] = [];
+    for (const roundNum of [...roundMap.keys()].sort((a, b) => a - b)) {
+      const roundPicks = roundMap.get(roundNum)!;
+      roundPicks.sort((a, b) => {
+        const da = a.draft_order ?? 999;
+        const db = b.draft_order ?? 999;
+        return draftType === "snake" && roundNum % 2 === 0 ? db - da : da - db;
+      });
+      sorted.push(...roundPicks);
+    }
+
+    setLocalPicks(sorted.map((pick, i) => ({ ...pick, pick_number: i + 1 })));
     setHasReorderChanges(true);
   }
 
