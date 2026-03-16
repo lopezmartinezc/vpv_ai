@@ -111,16 +111,22 @@ class OperationScreen(Screen):
             self._execute()
 
     def _try_run(self) -> None:
+        log = self.query_one("#log-panel", RichLog)
+        log.write(f"[dim]_try_run: _running={self._running}[/dim]")
         if self._running:
             return
         dry_run = self._get_dry_run()
+        log.write(f"[dim]dry_run={dry_run}, destructive={self.operation.destructive}[/dim]")
         if self.operation.destructive and not dry_run:
             self.app.push_screen(
                 ConfirmScreen(self.operation.name, self.operation.description),
                 callback=self._on_confirm,
             )
         else:
-            self._execute()
+            try:
+                self._execute()
+            except Exception as exc:
+                log.write(f"[red]_execute crashed: {exc}[/red]")
 
     def _poll_queue(self) -> None:
         """Called by timer on the main thread — drain the queue into RichLog."""
