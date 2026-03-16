@@ -27,6 +27,20 @@ import type {
   MatchdayAverageEntry,
   RecordEntry,
   LeagueStatsResponse,
+  AdvancedPlayerStat,
+  AdvancedPlayersResponse,
+  PositionAnalysis,
+  PositionValueResponse,
+  DraftHistoryResponse,
+  PickValuePoint,
+  PositionRoundValue,
+  RateEntry,
+  TeamDependencyEntry,
+  TeamDependencyResponse,
+  ComparePlayerAxis,
+  ComparePlayersResponse,
+  PlayerSplit,
+  PlayerSplitsResponse,
 } from "@/types";
 
 // ---------------------------------------------------------------------------
@@ -37,6 +51,7 @@ const STAT_TABS = [
   { key: "jugadores", label: "Jugadores" },
   { key: "participantes", label: "Participantes" },
   { key: "liga", label: "Liga" },
+  { key: "avanzado", label: "Avanzado" },
 ] as const;
 
 type StatTab = (typeof STAT_TABS)[number]["key"];
@@ -793,6 +808,1059 @@ function LeagueTab({
 }
 
 // ---------------------------------------------------------------------------
+// Advanced Tab
+// ---------------------------------------------------------------------------
+
+const ADV_POS_FILTERS = ["Todos", "POR", "DEF", "MED", "DEL"] as const;
+
+type AdvSortKey = keyof AdvancedPlayerStat;
+
+function TrendIcon({ trend }: { trend: "rising" | "stable" | "falling" }) {
+  if (trend === "rising")
+    return <span className="text-green-400" title="Tendencia al alza">&#9650;</span>;
+  if (trend === "falling")
+    return <span className="text-red-400" title="Tendencia a la baja">&#9660;</span>;
+  return <span className="text-vpv-text-muted" title="Estable">&#9654;</span>;
+}
+
+function CvBadge({ cv }: { cv: number }) {
+  const color =
+    cv < 0.3
+      ? "text-green-400"
+      : cv < 0.5
+        ? "text-amber-400"
+        : "text-red-400";
+  return <span className={`tabular-nums ${color}`}>{cv.toFixed(2)}</span>;
+}
+
+function AdvancedTab({ players }: { players: AdvancedPlayerStat[] }) {
+  const [posFilter, setPosFilter] = useState<string>("Todos");
+  const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState<AdvSortKey>("total_points");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  const handleSort = (key: AdvSortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  };
+
+  const filtered = useMemo(() => {
+    let list = players;
+    if (posFilter !== "Todos") {
+      list = list.filter((p) => p.position === posFilter);
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (p) =>
+          p.display_name.toLowerCase().includes(q) ||
+          p.team_name.toLowerCase().includes(q),
+      );
+    }
+    return sorted(list, sortKey, sortDir);
+  }, [players, posFilter, search, sortKey, sortDir]);
+
+  const cols: { key: AdvSortKey; label: string; short: string; title: string }[] = [
+    { key: "matchdays_played", label: "PJ", short: "PJ", title: "Partidos jugados" },
+    { key: "avg_points", label: "PPM", short: "PPM", title: "Puntos por partido" },
+    { key: "std_dev", label: "σ", short: "σ", title: "Desviacion estandar" },
+    { key: "cv", label: "CV", short: "CV", title: "Coef. variacion (menor = mas consistente)" },
+    { key: "p10", label: "P10", short: "P10", title: "Percentil 10 (peor caso)" },
+    { key: "p50", label: "P50", short: "P50", title: "Mediana" },
+    { key: "p90", label: "P90", short: "P90", title: "Percentil 90 (mejor caso)" },
+    { key: "pp90", label: "pp90", short: "pp90", title: "Puntos por 90 minutos" },
+    { key: "ci_lower", label: "CI-", short: "CI-", title: "Intervalo confianza 95% (inferior)" },
+    { key: "ci_upper", label: "CI+", short: "CI+", title: "Intervalo confianza 95% (superior)" },
+    { key: "form_5", label: "Form", short: "Form", title: "Media ponderada ultimos 5 partidos" },
+    { key: "total_points", label: "Total", short: "Tot", title: "Puntos totales" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex gap-1">
+          {ADV_POS_FILTERS.map((pos) => (
+            <button
+              key={pos}
+              onClick={() => setPosFilter(pos)}
+              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                posFilter === pos
+                  ? "bg-vpv-accent text-white"
+                  : "bg-vpv-card text-vpv-text-muted hover:text-vpv-text"
+              }`}
+            >
+              {pos}
+            </button>
+          ))}
+        </div>
+        <input
+          type="text"
+          placeholder="Buscar jugador o equipo..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="rounded border border-vpv-border bg-vpv-bg px-3 py-1.5 text-sm text-vpv-text placeholder:text-vpv-text-muted"
+        />
+        <span className="text-xs text-vpv-text-muted">
+          {filtered.length} jugadores
+        </span>
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto rounded-lg border border-vpv-border">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-vpv-border bg-vpv-card">
+              <th className="sticky left-0 z-10 bg-vpv-card px-3 py-2 text-left text-xs font-semibold uppercase text-vpv-text-muted">
+                Jugador
+              </th>
+              <th className="px-2 py-2 text-left text-xs font-semibold uppercase text-vpv-text-muted">
+                Pos
+              </th>
+              {cols.map((col) => (
+                <th
+                  key={col.key}
+                  onClick={() => handleSort(col.key)}
+                  title={col.title}
+                  className="cursor-pointer px-2 py-2 text-right text-xs font-semibold uppercase text-vpv-text-muted hover:text-vpv-text"
+                >
+                  {col.short}
+                  {sortKey === col.key && (
+                    <span className="ml-0.5">
+                      {sortDir === "asc" ? "▲" : "▼"}
+                    </span>
+                  )}
+                </th>
+              ))}
+              <th className="px-2 py-2 text-center text-xs font-semibold uppercase text-vpv-text-muted">
+                Trend
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((p) => (
+              <tr
+                key={p.player_id}
+                className="border-b border-vpv-border last:border-0 hover:bg-vpv-bg/50"
+              >
+                <td className="sticky left-0 z-10 bg-vpv-bg px-3 py-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate font-medium text-vpv-text" title={p.display_name}>
+                      {p.display_name}
+                    </span>
+                    <span className="hidden truncate text-xs text-vpv-text-muted sm:inline">
+                      {p.team_name}
+                    </span>
+                  </div>
+                </td>
+                <td className="px-2 py-1.5">
+                  <span
+                    className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${POS_COLOR[p.position] ?? ""}`}
+                  >
+                    {p.position}
+                  </span>
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-vpv-text-muted">
+                  {p.matchdays_played}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums font-medium text-vpv-accent">
+                  {p.avg_points.toFixed(1)}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-vpv-text-muted">
+                  {p.std_dev.toFixed(1)}
+                </td>
+                <td className="px-2 py-1.5 text-right">
+                  <CvBadge cv={p.cv} />
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-red-400">
+                  {p.p10.toFixed(0)}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-vpv-text">
+                  {p.p50.toFixed(0)}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-green-400">
+                  {p.p90.toFixed(0)}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-vpv-text-muted">
+                  {p.pp90.toFixed(1)}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-vpv-text-muted">
+                  {p.ci_lower.toFixed(1)}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-vpv-text-muted">
+                  {p.ci_upper.toFixed(1)}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-vpv-text">
+                  {p.form_5 !== null ? p.form_5.toFixed(1) : "—"}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums font-medium text-vpv-text">
+                  {p.total_points}
+                </td>
+                <td className="px-2 py-1.5 text-center">
+                  <TrendIcon trend={p.trend} />
+                </td>
+              </tr>
+            ))}
+            {filtered.length === 0 && (
+              <tr>
+                <td
+                  colSpan={cols.length + 3}
+                  className="px-4 py-6 text-center text-vpv-text-muted"
+                >
+                  Sin resultados
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Legend */}
+      <div className="flex flex-wrap gap-4 text-xs text-vpv-text-muted">
+        <span>PPM = puntos/partido</span>
+        <span>σ = desviacion estandar</span>
+        <span>CV = coef. variacion</span>
+        <span>P10/P50/P90 = percentiles</span>
+        <span>pp90 = puntos por 90 min</span>
+        <span>CI = intervalo confianza 95%</span>
+        <span>Form = media ponderada ultimos 5</span>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Positions Tab (Phase 2)
+// ---------------------------------------------------------------------------
+
+const TIER_COLORS: Record<number, string> = {
+  1: "border-amber-500/50 bg-amber-500/10",
+  2: "border-blue-500/50 bg-blue-500/10",
+  3: "border-emerald-500/50 bg-emerald-500/10",
+  4: "border-zinc-500/50 bg-zinc-500/10",
+};
+
+const TIER_LABEL_COLORS: Record<number, string> = {
+  1: "text-amber-400",
+  2: "text-blue-400",
+  3: "text-emerald-400",
+  4: "text-zinc-400",
+};
+
+function PositionsTab({ positions }: { positions: PositionAnalysis[] }) {
+  if (positions.length === 0) {
+    return (
+      <p className="py-6 text-center text-vpv-text-muted">
+        Sin datos de posiciones
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {positions.map((pos) => (
+          <div
+            key={pos.position}
+            className="rounded-lg border border-vpv-border bg-vpv-card p-3"
+          >
+            <div className="flex items-center justify-between">
+              <span
+                className={`rounded px-1.5 py-0.5 text-xs font-bold ${POS_COLOR[pos.position] ?? ""}`}
+              >
+                {pos.position}
+              </span>
+              <span className="text-xs text-vpv-text-muted">
+                {pos.player_count} jugadores
+              </span>
+            </div>
+            <div className="mt-2 space-y-1 text-xs">
+              <div className="flex justify-between">
+                <span className="text-vpv-text-muted">Reemplazo</span>
+                <span className="tabular-nums text-vpv-text">
+                  {pos.replacement_level.toFixed(0)} pts
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-vpv-text-muted">Media</span>
+                <span className="tabular-nums text-vpv-text">
+                  {pos.avg_points.toFixed(0)} pts
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-vpv-text-muted">Escasez</span>
+                <span
+                  className={`tabular-nums font-medium ${
+                    pos.scarcity_index < 0.05
+                      ? "text-red-400"
+                      : pos.scarcity_index < 0.1
+                        ? "text-amber-400"
+                        : "text-green-400"
+                  }`}
+                >
+                  {(pos.scarcity_index * 100).toFixed(1)}%
+                </span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tier breakdown per position */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        {positions.map((pos) => (
+          <div
+            key={pos.position}
+            className="rounded-lg border border-vpv-border bg-vpv-bg p-4"
+          >
+            <h3 className="mb-3 text-sm font-semibold text-vpv-text">
+              <span
+                className={`mr-2 rounded px-1.5 py-0.5 text-xs font-bold ${POS_COLOR[pos.position] ?? ""}`}
+              >
+                {pos.position}
+              </span>
+              Tiers
+            </h3>
+            <div className="space-y-2">
+              {pos.tiers.map((tier) => (
+                <div
+                  key={tier.tier}
+                  className={`rounded border p-2 ${TIER_COLORS[tier.tier] ?? ""}`}
+                >
+                  <div className="mb-1 flex items-center justify-between">
+                    <span
+                      className={`text-xs font-semibold ${TIER_LABEL_COLORS[tier.tier] ?? ""}`}
+                    >
+                      T{tier.tier} — {tier.label}
+                    </span>
+                    <span className="text-[10px] text-vpv-text-muted">
+                      {tier.min_points.toFixed(0)}–{tier.max_points.toFixed(0)}{" "}
+                      pts
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {tier.players.map((p) => (
+                      <span
+                        key={p.player_id}
+                        className="inline-flex items-center gap-1 rounded bg-vpv-bg/60 px-1.5 py-0.5 text-[11px]"
+                        title={`${p.display_name} (${p.team_name}) — PAR: ${p.par > 0 ? "+" : ""}${p.par.toFixed(0)}`}
+                      >
+                        <span className="truncate text-vpv-text">
+                          {p.display_name}
+                        </span>
+                        <span
+                          className={`tabular-nums font-medium ${
+                            p.par > 0 ? "text-green-400" : "text-red-400"
+                          }`}
+                        >
+                          {p.par > 0 ? "+" : ""}
+                          {p.par.toFixed(0)}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Legend */}
+      <div className="flex flex-wrap gap-4 text-xs text-vpv-text-muted">
+        <span>PAR = puntos sobre nivel de reemplazo</span>
+        <span>Escasez = % jugadores elite vs total</span>
+        <span>Nivel reemplazo = jugador N+1 (no drafteado)</span>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Draft Tab (Phase 3)
+// ---------------------------------------------------------------------------
+
+function DraftTab({ data }: { data: DraftHistoryResponse }) {
+  const { pick_value_curve, position_by_round, bust_rate, steal_rate } = data;
+
+  // Group position_by_round by round for heatmap
+  const rounds = useMemo(() => {
+    const map = new Map<number, Map<string, PositionRoundValue>>();
+    for (const pr of position_by_round) {
+      if (!map.has(pr.round_number)) map.set(pr.round_number, new Map());
+      map.get(pr.round_number)!.set(pr.position, pr);
+    }
+    return map;
+  }, [position_by_round]);
+
+  const roundNumbers = useMemo(
+    () => [...rounds.keys()].sort((a, b) => a - b),
+    [rounds],
+  );
+  const positions = ["POR", "DEF", "MED", "DEL"];
+
+  // Find max avg for color scale
+  const maxAvg = useMemo(
+    () => Math.max(...position_by_round.map((pr) => pr.avg_total_points), 1),
+    [position_by_round],
+  );
+
+  return (
+    <div className="space-y-6">
+      {/* Pick Value Curve */}
+      <div className="rounded-lg border border-vpv-border bg-vpv-card p-4">
+        <h3 className="mb-3 text-sm font-semibold text-vpv-text">
+          Curva de Valor por Pick
+        </h3>
+        {pick_value_curve.length > 0 ? (
+          <PickValueChart points={pick_value_curve} />
+        ) : (
+          <p className="text-sm text-vpv-text-muted">Sin datos de draft</p>
+        )}
+      </div>
+
+      {/* Position by Round Heatmap */}
+      {roundNumbers.length > 0 && (
+        <div className="rounded-lg border border-vpv-border bg-vpv-card p-4">
+          <h3 className="mb-3 text-sm font-semibold text-vpv-text">
+            Rendimiento por Posicion y Ronda
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-vpv-border">
+                  <th className="px-2 py-1.5 text-left text-vpv-text-muted">
+                    Ronda
+                  </th>
+                  {positions.map((pos) => (
+                    <th
+                      key={pos}
+                      className="px-2 py-1.5 text-center text-vpv-text-muted"
+                    >
+                      {pos}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {roundNumbers.map((rn) => (
+                  <tr
+                    key={rn}
+                    className="border-b border-vpv-border/50 last:border-0"
+                  >
+                    <td className="px-2 py-1 font-medium text-vpv-text-muted">
+                      R{rn}
+                    </td>
+                    {positions.map((pos) => {
+                      const val = rounds.get(rn)?.get(pos);
+                      if (!val)
+                        return (
+                          <td
+                            key={pos}
+                            className="px-2 py-1 text-center text-vpv-text-muted"
+                          >
+                            —
+                          </td>
+                        );
+                      const intensity = Math.min(
+                        val.avg_total_points / maxAvg,
+                        1,
+                      );
+                      const bg =
+                        intensity > 0.7
+                          ? "bg-green-500/30"
+                          : intensity > 0.4
+                            ? "bg-amber-500/20"
+                            : "bg-red-500/15";
+                      return (
+                        <td
+                          key={pos}
+                          className={`px-2 py-1 text-center tabular-nums ${bg}`}
+                          title={`${val.pick_count} picks`}
+                        >
+                          {val.avg_total_points.toFixed(0)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Bust & Steal Rates */}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <RateCard
+          title="Bust Rate"
+          subtitle="Picks tempranos que rinden bajo la mediana"
+          entries={bust_rate}
+          colorClass="text-red-400"
+        />
+        <RateCard
+          title="Steal Rate"
+          subtitle="Picks tardios que superan mediana de rondas 1-3"
+          entries={steal_rate}
+          colorClass="text-green-400"
+        />
+      </div>
+
+      {/* Legend */}
+      <div className="flex flex-wrap gap-4 text-xs text-vpv-text-muted">
+        <span>Curva = avg puntos temporada por pick (todas las temporadas)</span>
+        <span>Bust = pick rondas 1-3 bajo mediana global</span>
+        <span>Steal = pick rondas 15+ sobre mediana rondas 1-3</span>
+      </div>
+    </div>
+  );
+}
+
+/** SVG bar chart for pick value curve. */
+function PickValueChart({ points }: { points: PickValuePoint[] }) {
+  const maxPts = Math.max(...points.map((p) => p.avg_total_points), 1);
+  const chartH = 160;
+  const barW = Math.max(4, Math.min(12, 600 / points.length));
+  const chartW = points.length * (barW + 2) + 20;
+
+  return (
+    <div className="overflow-x-auto">
+      <svg
+        width={chartW}
+        height={chartH + 30}
+        className="text-vpv-text"
+        viewBox={`0 0 ${chartW} ${chartH + 30}`}
+      >
+        {points.map((p, i) => {
+          const h = (p.avg_total_points / maxPts) * chartH;
+          const x = i * (barW + 2) + 10;
+          const y = chartH - h;
+          return (
+            <g key={p.pick_number}>
+              <rect
+                x={x}
+                y={y}
+                width={barW}
+                height={h}
+                rx={1}
+                className="fill-vpv-accent/70 hover:fill-vpv-accent"
+              >
+                <title>
+                  Pick {p.pick_number}: {p.avg_total_points.toFixed(0)} pts
+                  (n={p.sample_count})
+                </title>
+              </rect>
+              {p.pick_number % 5 === 0 && (
+                <text
+                  x={x + barW / 2}
+                  y={chartH + 15}
+                  textAnchor="middle"
+                  className="fill-current text-[9px] text-vpv-text-muted"
+                >
+                  {p.pick_number}
+                </text>
+              )}
+            </g>
+          );
+        })}
+        {/* Y-axis labels */}
+        <text
+          x={4}
+          y={10}
+          className="fill-current text-[9px] text-vpv-text-muted"
+        >
+          {maxPts.toFixed(0)}
+        </text>
+        <text
+          x={4}
+          y={chartH}
+          className="fill-current text-[9px] text-vpv-text-muted"
+        >
+          0
+        </text>
+      </svg>
+    </div>
+  );
+}
+
+function RateCard({
+  title,
+  subtitle,
+  entries,
+  colorClass,
+}: {
+  title: string;
+  subtitle: string;
+  entries: RateEntry[];
+  colorClass: string;
+}) {
+  return (
+    <div className="rounded-lg border border-vpv-border bg-vpv-card p-4">
+      <h4 className="text-sm font-semibold text-vpv-text">{title}</h4>
+      <p className="mb-3 text-xs text-vpv-text-muted">{subtitle}</p>
+      {entries.length === 0 ? (
+        <p className="text-xs text-vpv-text-muted">Sin datos</p>
+      ) : (
+        <div className="space-y-2">
+          {entries.map((e) => (
+            <div key={e.round_range} className="flex items-center justify-between">
+              <span className="text-xs text-vpv-text-muted">
+                Rondas {e.round_range}
+              </span>
+              <div className="flex items-center gap-2">
+                <span className={`text-sm font-semibold tabular-nums ${colorClass}`}>
+                  {e.rate_pct.toFixed(1)}%
+                </span>
+                <span className="text-[10px] text-vpv-text-muted">
+                  ({e.total_picks} picks)
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Contexto Tab (Phase 4)
+// ---------------------------------------------------------------------------
+
+function ContextoTab({
+  seasonId,
+  dependency,
+  advancedPlayers,
+}: {
+  seasonId: number;
+  dependency: TeamDependencyEntry[];
+  advancedPlayers: AdvancedPlayerStat[];
+}) {
+  // Compare state
+  const [compareIds, setCompareIds] = useState<number[]>([]);
+  const [compareData, setCompareData] = useState<ComparePlayerAxis[]>([]);
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [compareSearch, setCompareSearch] = useState("");
+
+  // Splits state
+  const [splitPlayerId, setSplitPlayerId] = useState<number | null>(null);
+  const [splits, setSplits] = useState<PlayerSplit[]>([]);
+  const [splitPlayerName, setSplitPlayerName] = useState("");
+  const [splitLoading, setSplitLoading] = useState(false);
+
+  const filteredPlayers = useMemo(() => {
+    if (!compareSearch.trim()) return [];
+    const q = compareSearch.toLowerCase();
+    return advancedPlayers
+      .filter(
+        (p) =>
+          p.display_name.toLowerCase().includes(q) ||
+          p.team_name.toLowerCase().includes(q),
+      )
+      .slice(0, 10);
+  }, [advancedPlayers, compareSearch]);
+
+  const addCompare = (id: number) => {
+    if (compareIds.length < 3 && !compareIds.includes(id)) {
+      setCompareIds((prev) => [...prev, id]);
+    }
+    setCompareSearch("");
+  };
+
+  const removeCompare = (id: number) => {
+    setCompareIds((prev) => prev.filter((x) => x !== id));
+    setCompareData((prev) => prev.filter((p) => p.player_id !== id));
+  };
+
+  // Fetch comparison when IDs change (2+ selected)
+  useEffect(() => {
+    if (compareIds.length < 2) {
+      setCompareData([]);
+      return;
+    }
+    let cancelled = false;
+    setCompareLoading(true);
+    apiClient
+      .get<ComparePlayersResponse>(
+        `/stats/${seasonId}/players/compare?player_ids=${compareIds.join(",")}`,
+      )
+      .then((data) => {
+        if (!cancelled) setCompareData(data.players);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setCompareLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [seasonId, compareIds]);
+
+  // Fetch splits
+  const fetchSplits = (playerId: number, name: string) => {
+    setSplitPlayerId(playerId);
+    setSplitPlayerName(name);
+    setSplitLoading(true);
+    apiClient
+      .get<PlayerSplitsResponse>(
+        `/stats/${seasonId}/players/${playerId}/splits`,
+      )
+      .then((data) => setSplits(data.splits))
+      .catch(() => setSplits([]))
+      .finally(() => setSplitLoading(false));
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Team Dependency */}
+      <div className="rounded-lg border border-vpv-border bg-vpv-card p-4">
+        <h3 className="mb-3 text-sm font-semibold text-vpv-text">
+          Dependencia de Equipo
+        </h3>
+        <p className="mb-3 text-xs text-vpv-text-muted">
+          % de puntos fantasy del equipo que aporta un solo jugador
+        </p>
+        {dependency.length === 0 ? (
+          <p className="text-sm text-vpv-text-muted">Sin datos</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-vpv-border text-left text-xs text-vpv-text-muted">
+                  <th className="px-2 py-1.5">Equipo</th>
+                  <th className="px-2 py-1.5">Jugador Top</th>
+                  <th className="px-2 py-1.5 text-right">Pts Jugador</th>
+                  <th className="px-2 py-1.5 text-right">Pts Equipo</th>
+                  <th className="px-2 py-1.5 text-right">Dependencia</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dependency.map((d) => (
+                  <tr
+                    key={d.team_name}
+                    className="border-b border-vpv-border/50 last:border-0 hover:bg-vpv-bg/50"
+                  >
+                    <td className="px-2 py-1.5 font-medium text-vpv-text">
+                      {d.team_name}
+                    </td>
+                    <td
+                      className="cursor-pointer px-2 py-1.5 text-vpv-accent hover:underline"
+                      onClick={() =>
+                        fetchSplits(d.top_player_id, d.top_player_name)
+                      }
+                    >
+                      {d.top_player_name}
+                    </td>
+                    <td className="px-2 py-1.5 text-right tabular-nums text-vpv-text-muted">
+                      {d.top_player_points}
+                    </td>
+                    <td className="px-2 py-1.5 text-right tabular-nums text-vpv-text-muted">
+                      {d.team_total_points}
+                    </td>
+                    <td className="px-2 py-1.5 text-right">
+                      <span
+                        className={`tabular-nums font-medium ${
+                          d.dependency_pct > 20
+                            ? "text-red-400"
+                            : d.dependency_pct > 15
+                              ? "text-amber-400"
+                              : "text-green-400"
+                        }`}
+                      >
+                        {d.dependency_pct.toFixed(1)}%
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Player Splits */}
+      {splitPlayerId && (
+        <div className="rounded-lg border border-vpv-border bg-vpv-card p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-vpv-text">
+              Splits: {splitPlayerName}
+            </h3>
+            <button
+              onClick={() => setSplitPlayerId(null)}
+              className="text-xs text-vpv-text-muted hover:text-vpv-text"
+            >
+              Cerrar
+            </button>
+          </div>
+          {splitLoading ? (
+            <div className="h-8 animate-pulse rounded bg-vpv-border" />
+          ) : splits.length === 0 ? (
+            <p className="text-sm text-vpv-text-muted">Sin datos de splits</p>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {splits.map((s) => (
+                <div
+                  key={s.location}
+                  className={`rounded-lg border p-3 ${
+                    s.location === "home"
+                      ? "border-blue-500/30 bg-blue-500/10"
+                      : "border-amber-500/30 bg-amber-500/10"
+                  }`}
+                >
+                  <div className="mb-2 text-xs font-semibold uppercase text-vpv-text-muted">
+                    {s.location === "home" ? "Local" : "Visitante"}
+                  </div>
+                  <div className="grid grid-cols-2 gap-1 text-xs">
+                    <span className="text-vpv-text-muted">Partidos</span>
+                    <span className="text-right tabular-nums text-vpv-text">
+                      {s.matches}
+                    </span>
+                    <span className="text-vpv-text-muted">Media pts</span>
+                    <span className="text-right tabular-nums font-medium text-vpv-accent">
+                      {s.avg_points.toFixed(1)}
+                    </span>
+                    <span className="text-vpv-text-muted">Total pts</span>
+                    <span className="text-right tabular-nums text-vpv-text">
+                      {s.total_points}
+                    </span>
+                    <span className="text-vpv-text-muted">Goles</span>
+                    <span className="text-right tabular-nums text-vpv-text">
+                      {s.goals}
+                    </span>
+                    <span className="text-vpv-text-muted">Asistencias</span>
+                    <span className="text-right tabular-nums text-vpv-text">
+                      {s.assists}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Player Comparison Radar */}
+      <div className="rounded-lg border border-vpv-border bg-vpv-card p-4">
+        <h3 className="mb-3 text-sm font-semibold text-vpv-text">
+          Comparar Jugadores (max 3)
+        </h3>
+
+        {/* Selected players */}
+        <div className="mb-3 flex flex-wrap gap-2">
+          {compareIds.map((id) => {
+            const p = advancedPlayers.find((ap) => ap.player_id === id);
+            return (
+              <span
+                key={id}
+                className="inline-flex items-center gap-1 rounded bg-vpv-accent/20 px-2 py-1 text-xs text-vpv-accent"
+              >
+                {p?.display_name ?? `#${id}`}
+                <button
+                  onClick={() => removeCompare(id)}
+                  className="ml-1 text-vpv-text-muted hover:text-red-400"
+                >
+                  &times;
+                </button>
+              </span>
+            );
+          })}
+        </div>
+
+        {/* Search to add */}
+        {compareIds.length < 3 && (
+          <div className="relative mb-3">
+            <input
+              type="text"
+              value={compareSearch}
+              onChange={(e) => setCompareSearch(e.target.value)}
+              placeholder="Buscar jugador para comparar..."
+              className="w-full rounded border border-vpv-border bg-vpv-bg px-3 py-1.5 text-sm text-vpv-text placeholder:text-vpv-text-muted"
+            />
+            {filteredPlayers.length > 0 && (
+              <div className="absolute z-20 mt-1 max-h-40 w-full overflow-y-auto rounded border border-vpv-border bg-vpv-card shadow-lg">
+                {filteredPlayers.map((p) => (
+                  <button
+                    key={p.player_id}
+                    onClick={() => addCompare(p.player_id)}
+                    className="flex w-full items-center justify-between px-3 py-1.5 text-left text-sm hover:bg-vpv-bg"
+                  >
+                    <span className="text-vpv-text">{p.display_name}</span>
+                    <span className="text-xs text-vpv-text-muted">
+                      {p.position} — {p.team_name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Radar chart */}
+        {compareLoading ? (
+          <div className="h-40 animate-pulse rounded bg-vpv-border" />
+        ) : compareData.length >= 2 ? (
+          <RadarChart players={compareData} />
+        ) : (
+          <p className="py-4 text-center text-xs text-vpv-text-muted">
+            Selecciona al menos 2 jugadores para comparar
+          </p>
+        )}
+      </div>
+
+      {/* Legend */}
+      <div className="flex flex-wrap gap-4 text-xs text-vpv-text-muted">
+        <span>Dependencia = % puntos equipo de un jugador</span>
+        <span>Splits = rendimiento local vs visitante</span>
+        <span>Radar: 6 ejes normalizados 0-100 entre los comparados</span>
+      </div>
+    </div>
+  );
+}
+
+/** SVG radar chart for player comparison. */
+const RADAR_AXES = [
+  { key: "goals_rate", label: "Goles" },
+  { key: "assists_rate", label: "Asist." },
+  { key: "avg_points", label: "Media" },
+  { key: "consistency", label: "Consist." },
+  { key: "pp90", label: "pp90" },
+  { key: "form", label: "Forma" },
+] as const;
+
+const RADAR_COLORS = ["#60a5fa", "#f97316", "#34d399"];
+
+function RadarChart({ players }: { players: ComparePlayerAxis[] }) {
+  const cx = 150;
+  const cy = 150;
+  const r = 120;
+  const levels = 5;
+  const n = RADAR_AXES.length;
+  const angleStep = (2 * Math.PI) / n;
+
+  const getPoint = (angle: number, value: number) => ({
+    x: cx + (r * value) / 100 * Math.cos(angle - Math.PI / 2),
+    y: cy + (r * value) / 100 * Math.sin(angle - Math.PI / 2),
+  });
+
+  return (
+    <div className="flex flex-col items-center gap-3">
+      <svg width={300} height={300} viewBox="0 0 300 300" className="max-w-full">
+        {/* Grid */}
+        {Array.from({ length: levels }, (_, i) => {
+          const lvl = ((i + 1) / levels) * 100;
+          const points = Array.from({ length: n }, (_, j) => {
+            const p = getPoint(j * angleStep, lvl);
+            return `${p.x},${p.y}`;
+          }).join(" ");
+          return (
+            <polygon
+              key={i}
+              points={points}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={0.5}
+              className="text-vpv-border"
+            />
+          );
+        })}
+
+        {/* Axes */}
+        {RADAR_AXES.map((_, i) => {
+          const p = getPoint(i * angleStep, 100);
+          return (
+            <line
+              key={i}
+              x1={cx}
+              y1={cy}
+              x2={p.x}
+              y2={p.y}
+              stroke="currentColor"
+              strokeWidth={0.5}
+              className="text-vpv-border"
+            />
+          );
+        })}
+
+        {/* Labels */}
+        {RADAR_AXES.map((ax, i) => {
+          const p = getPoint(i * angleStep, 115);
+          return (
+            <text
+              key={ax.key}
+              x={p.x}
+              y={p.y}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              className="fill-current text-[10px] text-vpv-text-muted"
+            >
+              {ax.label}
+            </text>
+          );
+        })}
+
+        {/* Player polygons */}
+        {players.map((player, pi) => {
+          const points = RADAR_AXES.map((ax, i) => {
+            const val = player[ax.key as keyof ComparePlayerAxis] as number;
+            const p = getPoint(i * angleStep, val);
+            return `${p.x},${p.y}`;
+          }).join(" ");
+          return (
+            <polygon
+              key={player.player_id}
+              points={points}
+              fill={RADAR_COLORS[pi]}
+              fillOpacity={0.15}
+              stroke={RADAR_COLORS[pi]}
+              strokeWidth={2}
+            />
+          );
+        })}
+
+        {/* Player dots */}
+        {players.map((player, pi) =>
+          RADAR_AXES.map((ax, i) => {
+            const val = player[ax.key as keyof ComparePlayerAxis] as number;
+            const p = getPoint(i * angleStep, val);
+            return (
+              <circle
+                key={`${player.player_id}-${ax.key}`}
+                cx={p.x}
+                cy={p.y}
+                r={3}
+                fill={RADAR_COLORS[pi]}
+              >
+                <title>
+                  {player.display_name}: {ax.label} = {val.toFixed(0)}
+                </title>
+              </circle>
+            );
+          }),
+        )}
+      </svg>
+
+      {/* Legend */}
+      <div className="flex gap-4">
+        {players.map((p, i) => (
+          <div key={p.player_id} className="flex items-center gap-1.5 text-xs">
+            <div
+              className="h-2.5 w-2.5 rounded-full"
+              style={{ backgroundColor: RADAR_COLORS[i] }}
+            />
+            <span className="text-vpv-text">{p.display_name}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main Page
 // ---------------------------------------------------------------------------
 
@@ -814,6 +1882,13 @@ export default function AdminEstadisticasPage() {
     MatchdayAverageEntry[]
   >([]);
   const [records, setRecords] = useState<RecordEntry[]>([]);
+  const [advancedPlayers, setAdvancedPlayers] = useState<AdvancedPlayerStat[]>(
+    [],
+  );
+  const [positionData, setPositionData] = useState<PositionAnalysis[]>([]);
+  const [draftData, setDraftData] = useState<DraftHistoryResponse | null>(null);
+  const [dependencyData, setDependencyData] = useState<TeamDependencyEntry[]>([]);
+  const [advSubTab, setAdvSubTab] = useState<"valoracion" | "posiciones" | "draft" | "contexto">("valoracion");
   const [tabLoading, setTabLoading] = useState(false);
 
   const fetchSeasons = useCallback(async () => {
@@ -862,6 +1937,24 @@ export default function AdminEstadisticasPage() {
           setMostLinedUp(data.most_lined_up);
           setMatchdayAverages(data.matchday_averages);
           setRecords(data.records);
+        } else if (tab === "avanzado") {
+          // Fetch all advanced sub-tab data in parallel
+          const [advData, posData, draftRes, depData] = await Promise.all([
+            apiClient.get<AdvancedPlayersResponse>(
+              `/stats/${seasonId}/players/advanced`,
+            ),
+            apiClient.get<PositionValueResponse>(
+              `/stats/${seasonId}/positions/value`,
+            ),
+            apiClient.get<DraftHistoryResponse>(`/stats/draft-history`),
+            apiClient.get<TeamDependencyResponse>(
+              `/stats/${seasonId}/teams/dependency`,
+            ),
+          ]);
+          setAdvancedPlayers(advData.players);
+          setPositionData(posData.positions);
+          setDraftData(draftRes);
+          setDependencyData(depData.entries);
         }
       } catch (err) {
         setError(
@@ -958,6 +2051,48 @@ export default function AdminEstadisticasPage() {
               matchdayAverages={matchdayAverages}
               records={records}
             />
+          )}
+          {activeTab === "avanzado" && (
+            <div className="space-y-4">
+              {/* Advanced sub-tabs */}
+              <div className="flex gap-1">
+                {([
+                  { key: "valoracion", label: "Valoracion" },
+                  { key: "posiciones", label: "Posiciones" },
+                  { key: "draft", label: "Draft" },
+                  { key: "contexto", label: "Contexto" },
+                ] as const).map(({ key, label }) => (
+                  <button
+                    key={key}
+                    onClick={() => setAdvSubTab(key)}
+                    className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                      advSubTab === key
+                        ? "bg-vpv-accent text-white"
+                        : "bg-vpv-card text-vpv-text-muted hover:text-vpv-text"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {advSubTab === "valoracion" && (
+                <AdvancedTab players={advancedPlayers} />
+              )}
+              {advSubTab === "posiciones" && (
+                <PositionsTab positions={positionData} />
+              )}
+              {advSubTab === "draft" && draftData && (
+                <DraftTab data={draftData} />
+              )}
+              {advSubTab === "contexto" && selectedSeasonId && (
+                <ContextoTab
+                  seasonId={selectedSeasonId}
+                  dependency={dependencyData}
+                  advancedPlayers={advancedPlayers}
+                />
+              )}
+            </div>
           )}
         </>
       )}

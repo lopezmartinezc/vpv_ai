@@ -431,3 +431,144 @@ export interface LeagueStatsResponse {
   matchday_averages: MatchdayAverageEntry[];
   records: RecordEntry[];
 }
+
+// Advanced stats (admin) — matches backend/src/features/stats/schemas_advanced.py
+
+export interface AdvancedPlayerStat {
+  player_id: number;
+  display_name: string;
+  photo_path: string | null;
+  position: string;
+  team_name: string;
+  matchdays_played: number;
+  minutes_played: number;
+  total_points: number;
+  avg_points: number;
+  std_dev: number;
+  cv: number;
+  p10: number;
+  p50: number;
+  p90: number;
+  pp90: number;
+  ci_lower: number;
+  ci_upper: number;
+  form_5: number | null;
+  trend: "rising" | "stable" | "falling";
+}
+
+export interface AdvancedPlayersResponse {
+  season_id: number;
+  players: AdvancedPlayerStat[];
+}
+
+// Position value analysis (Phase 2)
+
+export interface PositionTierPlayer {
+  player_id: number;
+  display_name: string;
+  team_name: string;
+  total_points: number;
+  par: number;
+}
+
+export interface PositionTier {
+  tier: number;
+  label: string;
+  min_points: number;
+  max_points: number;
+  players: PositionTierPlayer[];
+}
+
+export interface PositionAnalysis {
+  position: string;
+  player_count: number;
+  replacement_level: number;
+  avg_points: number;
+  median_points: number;
+  scarcity_index: number;
+  tiers: PositionTier[];
+}
+
+export interface PositionValueResponse {
+  season_id: number;
+  positions: PositionAnalysis[];
+}
+
+// Draft history (Phase 3)
+
+export interface PickValuePoint {
+  pick_number: number;
+  avg_total_points: number;
+  sample_count: number;
+}
+
+export interface PositionRoundValue {
+  round_number: number;
+  position: string;
+  avg_total_points: number;
+  pick_count: number;
+}
+
+export interface RateEntry {
+  round_range: string;
+  rate_pct: number;
+  total_picks: number;
+}
+
+export interface DraftHistoryResponse {
+  pick_value_curve: PickValuePoint[];
+  position_by_round: PositionRoundValue[];
+  bust_rate: RateEntry[];
+  steal_rate: RateEntry[];
+}
+
+// Context analysis (Phase 4)
+
+export interface PlayerSplit {
+  location: "home" | "away";
+  matches: number;
+  avg_points: number;
+  total_points: number;
+  goals: number;
+  assists: number;
+}
+
+export interface PlayerSplitsResponse {
+  player_id: number;
+  display_name: string;
+  season_id: number;
+  splits: PlayerSplit[];
+}
+
+export interface TeamDependencyEntry {
+  team_name: string;
+  top_player_name: string;
+  top_player_id: number;
+  top_player_points: number;
+  team_total_points: number;
+  dependency_pct: number;
+}
+
+export interface TeamDependencyResponse {
+  season_id: number;
+  entries: TeamDependencyEntry[];
+}
+
+export interface ComparePlayerAxis {
+  player_id: number;
+  display_name: string;
+  photo_path: string | null;
+  position: string;
+  team_name: string;
+  goals_rate: number;
+  assists_rate: number;
+  avg_points: number;
+  consistency: number;
+  pp90: number;
+  form: number;
+}
+
+export interface ComparePlayersResponse {
+  season_id: number;
+  players: ComparePlayerAxis[];
+}
