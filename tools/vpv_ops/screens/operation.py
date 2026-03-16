@@ -27,7 +27,7 @@ class OperationScreen(Screen):
         if event.key == "f5":
             event.prevent_default()
             self._run()
-        elif event.key == "escape":
+        elif event.key in ("escape", "ctrl+q"):
             event.prevent_default()
             self.app.pop_screen()
 
@@ -80,7 +80,7 @@ class OperationScreen(Screen):
 
     def on_mount(self) -> None:
         log = self.query_one("#log-panel", RichLog)
-        log.write("[yellow]Pulsa F5 para ejecutar, escape para volver.[/yellow]")
+        log.write("[yellow]F5 = ejecutar | escape/ctrl+q = volver[/yellow]")
 
     def _get_args(self) -> dict[str, str]:
         args: dict[str, str] = {}
