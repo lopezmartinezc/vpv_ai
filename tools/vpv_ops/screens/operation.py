@@ -131,19 +131,30 @@ class OperationScreen(Screen):
 
         args = self._get_args()
         dry_run = self._get_dry_run()
+        op = self.operation
 
-        async def _run() -> None:
+        def _thread_run() -> None:
+            import asyncio
+
             def on_output(text: str) -> None:
-                log.write(text)
+                self.app.call_from_thread(log.write, text)
 
             def on_complete(return_code: int) -> None:
-                self._running = False
-                btn.disabled = False
-                btn.label = "Ejecutar"
+                def _finish() -> None:
+                    self._running = False
+                    btn.disabled = False
+                    btn.label = "Ejecutar"
+                self.app.call_from_thread(_finish)
 
-            await run_operation(self.operation, args, dry_run, on_output, on_complete)
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(
+                    run_operation(op, args, dry_run, on_output, on_complete)
+                )
+            finally:
+                loop.close()
 
-        self._worker = self.run_worker(_run())
+        self._worker = self.run_worker(_thread_run, thread=True)
 
     def action_go_back(self) -> None:
         self.app.pop_screen()
