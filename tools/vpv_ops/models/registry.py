@@ -265,6 +265,33 @@ OPERATIONS: list[Operation] = [
         destructive=True,
         shell=True,
     ),
+    Operation(
+        id="services.restart_all",
+        category=CAT_SERVICES,
+        name="Restart all",
+        description="Reinicia backend (systemctl) y frontend (pm2).",
+        command_template="sudo systemctl restart vpv-backend && echo 'Backend reiniciado' && pm2 restart vpv-frontend && echo 'Frontend reiniciado'",
+        destructive=True,
+        shell=True,
+    ),
+    Operation(
+        id="services.build_frontend",
+        category=CAT_SERVICES,
+        name="Build + restart frontend",
+        description="npm run build en frontend y reinicia con pm2.",
+        command_template="cd /opt/vpv/frontend && npm run build && pm2 restart vpv-frontend",
+        destructive=True,
+        shell=True,
+    ),
+    Operation(
+        id="services.deploy",
+        category=CAT_SERVICES,
+        name="Deploy (pull + build + restart)",
+        description="git pull, build frontend, restart backend y frontend.",
+        command_template="cd /opt/vpv && git pull && cd frontend && npm run build && pm2 restart vpv-frontend && sudo systemctl restart vpv-backend && echo 'Deploy completado'",
+        destructive=True,
+        shell=True,
+    ),
     # --- Database ---
     Operation(
         id="db.health_check",
