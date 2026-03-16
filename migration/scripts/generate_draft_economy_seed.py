@@ -147,9 +147,9 @@ def main() -> None:
 def run(conn: psycopg.Connection, mysql_conn: mysql.connector.MySQLConnection) -> None:
     cur = conn.cursor()
 
-    # Clean existing data (in case of re-run)
-    cur.execute("DELETE FROM draft_picks")
-    cur.execute("DELETE FROM drafts")
+    # Clean existing data for season 8 (in case of re-run)
+    cur.execute("DELETE FROM draft_picks WHERE draft_id IN (SELECT id FROM drafts WHERE season_id = %s)", (SEASON_ID,))
+    cur.execute("DELETE FROM drafts WHERE season_id = %s", (SEASON_ID,))
     cur.execute("DELETE FROM transactions WHERE season_id = %s", (SEASON_ID,))
     print("Cleaned existing draft/transaction data.")
 

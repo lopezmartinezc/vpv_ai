@@ -32,6 +32,7 @@ Step 3: Post-migration scripts (migration/.venv — needs MySQL)
   python -m scripts.fix_winter_draft_drops --apply
   cd ../migration/scripts
   python generate_draft_economy_seed.py --apply
+  python generate_historical_drafts.py --apply
   deactivate
 
 Step 4: Backend scripts (backend/.venv — no MySQL needed)
