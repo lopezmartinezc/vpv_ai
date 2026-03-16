@@ -27,6 +27,7 @@ class UserResponse(BaseModel):
     display_name: str
     email: str | None
     is_admin: bool
+    is_draft_manager: bool
 
 
 class InviteCreateRequest(BaseModel):
@@ -64,5 +65,6 @@ class AdminUserResponse(BaseModel):
     display_name: str
     email: str | None
     is_admin: bool
+    is_draft_manager: bool
     has_password: bool
     telegram_chat_id: str | None

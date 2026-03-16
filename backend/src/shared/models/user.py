@@ -20,6 +20,7 @@ class User(TimestampMixin, Base):
     display_name: Mapped[str] = mapped_column(String(100), nullable=False)
     email: Mapped[str | None] = mapped_column(String(150))
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_draft_manager: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     telegram_chat_id: Mapped[str | None] = mapped_column(String(50))
 
     participations: Mapped[list[SeasonParticipant]] = relationship(

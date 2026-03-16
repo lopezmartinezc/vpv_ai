@@ -13,6 +13,7 @@ interface AuthUser {
   username: string;
   displayName: string;
   isAdmin: boolean;
+  isDraftManager: boolean;
 }
 
 interface AuthContextValue {
@@ -60,6 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             username: payload.username as string,
             displayName: payload.username as string,
             isAdmin: payload.is_admin as boolean,
+            isDraftManager: (payload.is_draft_manager as boolean) || false,
           });
         } else {
           localStorage.removeItem("vpv_token");
@@ -92,6 +94,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         username: payload.username as string,
         displayName: payload.username as string,
         isAdmin: payload.is_admin as boolean,
+        isDraftManager: (payload.is_draft_manager as boolean) || false,
       });
       return true;
     } catch {

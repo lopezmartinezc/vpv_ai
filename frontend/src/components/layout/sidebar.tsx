@@ -166,23 +166,40 @@ export function Sidebar({
             </>
           )}
 
-          {user?.isAdmin && (
+          {(user?.isAdmin || user?.isDraftManager) && (
             <>
               <div className="my-3 border-t border-vpv-border" />
-              <ul>
-                <li>
-                  <Link
-                    href="/admin"
-                    className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                      pathname.startsWith("/admin")
-                        ? "bg-vpv-accent/10 text-vpv-accent"
-                        : "text-vpv-text-muted hover:bg-vpv-bg hover:text-vpv-text"
-                    }`}
-                  >
-                    <NavIcon name="shield" className="h-5 w-5" />
-                    Admin
-                  </Link>
-                </li>
+              <ul className="space-y-1">
+                {user.isDraftManager && !user.isAdmin && (
+                  <li>
+                    <Link
+                      href="/drafts/gestionar"
+                      className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                        pathname.startsWith("/drafts/gestionar")
+                          ? "bg-vpv-accent/10 text-vpv-accent"
+                          : "text-vpv-text-muted hover:bg-vpv-bg hover:text-vpv-text"
+                      }`}
+                    >
+                      <NavIcon name="clipboard" className="h-5 w-5" />
+                      Gestionar Draft
+                    </Link>
+                  </li>
+                )}
+                {user.isAdmin && (
+                  <li>
+                    <Link
+                      href="/admin"
+                      className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                        pathname.startsWith("/admin")
+                          ? "bg-vpv-accent/10 text-vpv-accent"
+                          : "text-vpv-text-muted hover:bg-vpv-bg hover:text-vpv-text"
+                      }`}
+                    >
+                      <NavIcon name="shield" className="h-5 w-5" />
+                      Admin
+                    </Link>
+                  </li>
+                )}
               </ul>
             </>
           )}

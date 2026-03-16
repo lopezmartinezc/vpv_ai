@@ -37,6 +37,7 @@ def _create_token(user: User) -> str:
         "sub": str(user.id),
         "username": user.username,
         "is_admin": user.is_admin,
+        "is_draft_manager": user.is_draft_manager,
         "exp": expire,
     }
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
@@ -56,6 +57,7 @@ def _user_response(user: User) -> UserResponse:
         display_name=user.display_name,
         email=user.email,
         is_admin=user.is_admin,
+        is_draft_manager=user.is_draft_manager,
     )
 
 
@@ -179,6 +181,7 @@ class AuthService:
                 display_name=u.display_name,
                 email=u.email,
                 is_admin=u.is_admin,
+                is_draft_manager=u.is_draft_manager,
                 has_password=bool(u.password_hash),
                 telegram_chat_id=u.telegram_chat_id,
             )
@@ -198,6 +201,7 @@ class AuthService:
             display_name=user.display_name,
             email=user.email,
             is_admin=user.is_admin,
+            is_draft_manager=user.is_draft_manager,
             has_password=bool(user.password_hash),
             telegram_chat_id=user.telegram_chat_id,
         )

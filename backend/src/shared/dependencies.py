@@ -25,4 +25,12 @@ async def get_current_admin(
     return user
 
 
-__all__ = ["get_current_admin", "get_current_user", "get_db"]
+async def get_draft_manager(
+    user: dict = Depends(get_current_user),
+) -> dict:
+    if not user.get("is_admin") and not user.get("is_draft_manager"):
+        raise AuthorizationError("Se requieren permisos de gestor de draft")
+    return user
+
+
+__all__ = ["get_current_admin", "get_current_user", "get_db", "get_draft_manager"]

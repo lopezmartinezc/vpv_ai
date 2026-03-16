@@ -226,6 +226,38 @@ export interface DraftDetailResponse {
   picks: DraftPickEntry[];
 }
 
+// Draft management
+export interface CreateDraftResponse {
+  id: number;
+  season_id: number;
+  phase: string;
+  draft_type: string;
+  status: string;
+}
+
+export interface AddPickResponse {
+  pick_number: number;
+  round_number: number;
+  participant_id: number;
+  display_name: string;
+  player_name: string;
+  position: string;
+  team_name: string;
+}
+
+export interface PlayerSearchItem {
+  id: number;
+  display_name: string;
+  position: string;
+  team_name: string;
+  photo_path: string | null;
+  is_already_picked: boolean;
+}
+
+export interface PlayerSearchResponse {
+  players: PlayerSearchItem[];
+}
+
 // Economy
 export interface ParticipantBalance {
   participant_id: number;

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.shared.models.draft import Draft, DraftPick
@@ -160,3 +160,138 @@ class DraftRepository:
             )
             for row in result.all()
         ]
+
+    # -------------------------------------------------------------------
+    # Write operations
+    # -------------------------------------------------------------------
+
+    async def update_participant_orders(
+        self,
+        season_id: int,
+        orders: list[tuple[int, int]],
+    ) -> None:
+        for participant_id, draft_order in orders:
+            await self.session.execute(
+                update(SeasonParticipant)
+                .where(
+                    SeasonParticipant.id == participant_id,
+                    SeasonParticipant.season_id == season_id,
+                )
+                .values(draft_order=draft_order)
+            )
+
+    async def create_draft(
+        self,
+        season_id: int,
+        phase: str,
+        draft_type: str,
+    ) -> Draft:
+        draft = Draft(
+            season_id=season_id,
+            phase=phase,
+            draft_type=draft_type,
+            status="pending",
+        )
+        self.session.add(draft)
+        await self.session.flush()
+        return draft
+
+    async def get_draft_by_id(self, draft_id: int) -> Draft | None:
+        stmt = select(Draft).where(Draft.id == draft_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def add_pick(
+        self,
+        draft_id: int,
+        participant_id: int,
+        player_id: int,
+        round_number: int,
+        pick_number: int,
+    ) -> DraftPick:
+        pick = DraftPick(
+            draft_id=draft_id,
+            participant_id=participant_id,
+            player_id=player_id,
+            round_number=round_number,
+            pick_number=pick_number,
+        )
+        self.session.add(pick)
+        await self.session.flush()
+        return pick
+
+    async def delete_pick(self, draft_id: int, pick_number: int) -> bool:
+        result = await self.session.execute(
+            delete(DraftPick).where(
+                DraftPick.draft_id == draft_id,
+                DraftPick.pick_number == pick_number,
+            )
+        )
+        return result.rowcount > 0
+
+    async def get_picked_player_ids(self, draft_id: int) -> set[int]:
+        stmt = select(DraftPick.player_id).where(DraftPick.draft_id == draft_id)
+        result = await self.session.execute(stmt)
+        return {row[0] for row in result.all()}
+
+    async def get_pick_count(self, draft_id: int) -> int:
+        stmt = select(func.count(DraftPick.id)).where(DraftPick.draft_id == draft_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one()
+
+    async def get_max_pick_number(self, draft_id: int) -> int:
+        stmt = select(func.coalesce(func.max(DraftPick.pick_number), 0)).where(
+            DraftPick.draft_id == draft_id
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one()
+
+    async def search_players(
+        self,
+        season_id: int,
+        picked_ids: set[int],
+        query: str,
+        position: str | None,
+        limit: int = 20,
+    ) -> list[PlayerSearchRow]:
+        stmt = (
+            select(
+                Player.id,
+                Player.display_name,
+                Player.position,
+                Team.name.label("team_name"),
+                Player.photo_path,
+            )
+            .join(Team, Player.team_id == Team.id)
+            .where(Player.season_id == season_id)
+        )
+
+        if query:
+            stmt = stmt.where(Player.display_name.ilike(f"%{query}%"))
+        if position:
+            stmt = stmt.where(Player.position == position)
+
+        stmt = stmt.order_by(Player.display_name.asc()).limit(limit)
+        result = await self.session.execute(stmt)
+
+        return [
+            PlayerSearchRow(
+                id=row.id,
+                display_name=row.display_name,
+                position=row.position,
+                team_name=row.team_name,
+                photo_path=row.photo_path,
+                is_already_picked=row.id in picked_ids,
+            )
+            for row in result.all()
+        ]
+
+
+@dataclass
+class PlayerSearchRow:
+    id: int
+    display_name: str
+    position: str
+    team_name: str
+    photo_path: str | None
+    is_already_picked: bool
