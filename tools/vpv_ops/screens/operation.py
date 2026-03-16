@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import subprocess
+
 from textual.app import ComposeResult
 from textual.containers import Vertical, Horizontal
 from textual.screen import Screen
 from textual.widgets import Static, Button, Input, Checkbox, RichLog, Header, Footer
 from textual.worker import Worker
 
-from vpv_ops.executor import run_operation
+from vpv_ops.executor import build_command
 from vpv_ops.models.registry import Operation
 from vpv_ops.screens.confirm import ConfirmScreen
 
@@ -132,27 +134,51 @@ class OperationScreen(Screen):
         args = self._get_args()
         dry_run = self._get_dry_run()
         op = self.operation
+        cmd = build_command(op, args, dry_run)
+
+        def _write(text: str) -> None:
+            self.app.call_from_thread(log.write, text)
+
+        def _finish(return_code: int) -> None:
+            def _done() -> None:
+                self._running = False
+                btn.disabled = False
+                btn.label = "Ejecutar"
+            self.app.call_from_thread(_done)
 
         def _thread_run() -> None:
-            import asyncio
+            _write(f"$ {' '.join(cmd)}")
+            _write(f"  cwd: {op.abs_cwd}")
+            _write("")
 
-            def on_output(text: str) -> None:
-                self.app.call_from_thread(log.write, text)
-
-            def on_complete(return_code: int) -> None:
-                def _finish() -> None:
-                    self._running = False
-                    btn.disabled = False
-                    btn.label = "Ejecutar"
-                self.app.call_from_thread(_finish)
-
-            loop = asyncio.new_event_loop()
             try:
-                loop.run_until_complete(
-                    run_operation(op, args, dry_run, on_output, on_complete)
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    cwd=op.abs_cwd,
+                    env=op.resolved_env,
+                    text=True,
+                    bufsize=1,
                 )
-            finally:
-                loop.close()
+                assert proc.stdout is not None
+                for line in proc.stdout:
+                    _write(line.rstrip())
+                proc.wait()
+
+                _write("")
+                if proc.returncode == 0:
+                    _write("[green]Completado exitosamente[/green]")
+                else:
+                    _write(f"[red]Error: código de salida {proc.returncode}[/red]")
+                _finish(proc.returncode)
+
+            except FileNotFoundError as exc:
+                _write(f"[red]Error: comando no encontrado — {exc}[/red]")
+                _finish(127)
+            except PermissionError as exc:
+                _write(f"[red]Error: permiso denegado — {exc}[/red]")
+                _finish(126)
 
         self._worker = self.run_worker(_thread_run, thread=True)
 
