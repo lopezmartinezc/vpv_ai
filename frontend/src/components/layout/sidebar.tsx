@@ -170,7 +170,7 @@ export function Sidebar({
             <>
               <div className="my-3 border-t border-vpv-border" />
               <ul className="space-y-1">
-                {user.isDraftManager && !user.isAdmin && (
+                {(user.isDraftManager || user.isAdmin) && (
                   <li>
                     <Link
                       href="/drafts/gestionar"
