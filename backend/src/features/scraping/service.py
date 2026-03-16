@@ -60,7 +60,9 @@ class ScrapingService:
     # Public API
     # ------------------------------------------------------------------
 
-    async def scrape_matchday(self, season_id: int, matchday_number: int) -> dict[str, object]:
+    async def scrape_matchday(  # noqa: C901
+        self, season_id: int, matchday_number: int,
+    ) -> dict[str, object]:
         """Scrape all player stats for every match in *matchday_number*.
 
         Flow
@@ -83,6 +85,7 @@ class ScrapingService:
         """
         rules = await self.repo.get_scoring_rules(season_id)
         engine = ScoringEngine(rules)
+        season = await self.repo.get_season(season_id)
 
         matchday = await self.repo.get_matchday(season_id, matchday_number)
         if matchday is None:
@@ -222,6 +225,17 @@ class ScrapingService:
         if all_ok and counting_matches:
             await self.repo.update_season_matchday_scanned(season_id, matchday_number)
 
+        # Advance matchday_current to next matchday when this one is complete.
+        if all_ok and counting_matches and season and matchday_number == season.matchday_current:
+            next_md = matchday_number + 1
+            if next_md <= (season.matchday_end or 38):
+                await self.repo.update_season_matchday_current(season_id, next_md)
+                logger.info(
+                    "scrape_matchday: advanced matchday_current %d -> %d",
+                    matchday_number,
+                    next_md,
+                )
+
         summary: dict[str, object] = {
             "processed": total_processed,
             "skipped": total_skipped,
@@ -334,6 +348,30 @@ class ScrapingService:
             await self.repo.mark_match_stats_ok(match_id)
 
         await self._aggregator.aggregate_matchday(matchday_id)
+
+        # Check if all counting matches are now done → advance matchday.
+        if total_errors == 0:
+            refreshed = await self.repo.get_matches_for_matchday(matchday_id)
+            counting = [m for m in refreshed if m.counts]
+            all_ok = all(m.stats_ok for m in counting)
+            if all_ok and counting:
+                await self.repo.mark_matchday_stats_ok(matchday_id)
+                await self.repo.update_matchday_status(matchday_id, "finished")
+
+                season = await self.repo.get_season(season_id)
+                if season and matchday_number == season.matchday_current:
+                    next_md = matchday_number + 1
+                    if next_md <= (season.matchday_end or 38):
+                        await self.repo.update_season_matchday_current(season_id, next_md)
+                        logger.info(
+                            "scrape_match_players: advanced matchday_current %d -> %d",
+                            matchday_number,
+                            next_md,
+                        )
+
+                economy_svc = EconomyService(self.session)
+                await economy_svc.generate_weekly_payments(season_id, matchday_id)
+                await self.repo.update_season_matchday_scanned(season_id, matchday_number)
 
         summary: dict[str, object] = {
             "processed": total_processed,

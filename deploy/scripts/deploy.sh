@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Liga VPV — Deploy script
-# Usage: sudo -u vpv /opt/vpv/deploy/scripts/deploy.sh
+# Usage: sudo su - vpv -c "/opt/vpv/deploy/scripts/deploy.sh"
 # /opt/vpv IS the git repo — no separate repo/ directory.
 set -euo pipefail
 
@@ -20,7 +20,7 @@ cd "$APP_DIR/backend"
 .venv/bin/pip install --quiet .
 
 echo "--- Backend: run migrations ---"
-.venv/bin/alembic upgrade head
+PYTHONPATH="$APP_DIR/backend" .venv/bin/alembic upgrade head
 
 echo "--- Backend: restart ---"
 sudo systemctl restart vpv-backend

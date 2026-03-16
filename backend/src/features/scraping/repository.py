@@ -45,6 +45,12 @@ class ScrapingRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_season(self, season_id: int) -> Season | None:
+        """Return a season by primary key."""
+        stmt = select(Season).where(Season.id == season_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def get_scoring_rules(
         self, season_id: int
     ) -> dict[str, dict[str | None, Decimal | None]]:

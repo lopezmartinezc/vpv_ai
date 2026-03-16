@@ -148,7 +148,7 @@ ssh root@<IP_SERVIDOR>
 
 ```bash
 sudo dnf update -y
-sudo dnf install -y wget curl git vim nano
+sudo dnf install -y wget curl git vim
 ```
 
 ### 3.3. Configurar hostname
@@ -191,7 +191,7 @@ Si el particionado es diferente y necesitas ajustar, consulta un especialista en
 sudo dnf install -y dnf-automatic
 
 # Editar configuración
-sudo nano /etc/dnf/automatic.conf
+sudo vim /etc/dnf/automatic.conf
 
 # Cambiar estas líneas:
 # apply_updates = yes      (aplicar actualizaciones automáticamente)
@@ -240,7 +240,7 @@ ssh admin@<IP_SERVIDOR>
 Una vez que confirmes que puedes conectar con clave SSH:
 
 ```bash
-sudo nano /etc/ssh/sshd_config
+sudo vim /etc/ssh/sshd_config
 
 # Cambiar estas lineas:
 Port 2222                      # Puerto no estandar
@@ -303,7 +303,7 @@ getenforce
 # Esperado: Enforcing (si no, continúa)
 
 # Si está en Permissive o Disabled:
-sudo nano /etc/selinux/config
+sudo vim /etc/selinux/config
 
 # Cambiar:
 SELINUX=enforcing
@@ -328,7 +328,7 @@ Protege contra ataques de fuerza bruta en SSH.
 sudo dnf install -y fail2ban
 
 # Configurar para SSH
-sudo nano /etc/fail2ban/jail.local
+sudo vim /etc/fail2ban/jail.local
 
 # Añadir:
 [DEFAULT]
@@ -430,7 +430,7 @@ La autenticación por defecto (`ident`) no funciona bien en producción. Cambiar
 
 ```bash
 # Editar pg_hba.conf
-sudo nano /var/lib/pgsql/data/pg_hba.conf
+sudo vim /var/lib/pgsql/data/pg_hba.conf
 
 # Buscar las líneas que comiencen con "local" y "host", y cambiar el METHOD:
 # Reemplazar:
@@ -449,7 +449,7 @@ sudo systemctl restart postgresql
 ### 6.3. Tuning de PostgreSQL para 2-4 GB RAM
 
 ```bash
-sudo nano /var/lib/pgsql/data/postgresql.conf
+sudo vim /var/lib/pgsql/data/postgresql.conf
 
 # Buscar y cambiar estos valores (descomentando si es necesario):
 # Para 2 GB RAM:
@@ -708,7 +708,7 @@ Tiempo estimado: 2-5 minutos.
 deactivate
 
 # Como usuario vpv, crear .env
-nano /opt/vpv/backend/.env
+vim /opt/vpv/backend/.env
 ```
 
 Copiar este contenido y completar los valores:
@@ -772,10 +772,10 @@ cd /opt/vpv/backend
 source .venv/bin/activate
 
 # Stamp: marcar que ya tenemos las migraciones iniciales
-alembic stamp head
+PYTHONPATH=/opt/vpv/backend alembic stamp head
 
 # Upgrade: aplicar nuevas migraciones (si las hay)
-alembic upgrade head
+PYTHONPATH=/opt/vpv/backend alembic upgrade head
 
 # Deactivate venv
 deactivate
@@ -837,7 +837,7 @@ Para los secrets de runtime, crear `.env.production.local`:
 
 ```bash
 cp .env.production.local.example .env.production.local
-nano .env.production.local
+vim .env.production.local
 ```
 
 Contenido:
@@ -906,7 +906,7 @@ sudo cp /opt/vpv/deploy/systemd/vpv-backend.service /etc/systemd/system/
 #### Editar si es necesario
 
 ```bash
-sudo nano /etc/systemd/system/vpv-backend.service
+sudo vim /etc/systemd/system/vpv-backend.service
 
 # Verificar/cambiar:
 # User=vpv
@@ -967,7 +967,7 @@ Verificar que se inicia en boot:
 ```bash
 sudo reboot
 # Después de reiniciar, conectar y:
-sudo -u vpv pm2 status
+sudo su - vpv -c "pm2 status"
 # vpv-frontend debe estar "online"
 ```
 
@@ -997,7 +997,7 @@ pip install -r requirements.txt
 
 # Configurar .env con credenciales reales
 cp .env.example .env
-nano .env
+vim .env
 # Rellenar: MYSQL_HOST, MYSQL_USER, MYSQL_PASSWORD, PG_PASSWORD
 ```
 
@@ -1146,7 +1146,7 @@ cd /opt/vpv/migration/scripts
 
 # Configurar .env.sync con credenciales de MySQL y PostgreSQL
 cp ../.env.example ../.env.sync
-nano ../.env.sync
+vim ../.env.sync
 
 # Sincronizar jornadas específicas
 python incremental_sync.py --matchdays 26,27
@@ -1257,7 +1257,7 @@ curl -sk -o /dev/null -w "%{http_code}" https://new.ligavpv.com/static/players/d
 
 ```bash
 # Como usuario vpv
-nano /opt/vpv/.pgpass
+vim /opt/vpv/.pgpass
 ```
 
 Contenido (una linea):
@@ -1330,11 +1330,11 @@ Logrotate rotará los logs diariamente, mantendiendo 14 archivos comprimidos.
 ```bash
 # Ver estado de servicios
 sudo systemctl status vpv-backend postgresql nginx
-sudo -u vpv pm2 status
+sudo su - vpv -c "pm2 status"
 
 # Ver logs en tiempo real
 sudo journalctl -u vpv-backend -f
-sudo -u vpv pm2 logs vpv-frontend
+sudo su - vpv -c "pm2 logs vpv-frontend"
 
 # Ver logs pasados
 sudo journalctl -u vpv-backend --since "1 hour ago" | tail -50
@@ -1379,7 +1379,7 @@ du -sh /var/log/vpv/*
 Crear un script que alerta si algún servicio está caído:
 
 ```bash
-nano /opt/vpv/health_check.sh
+vim /opt/vpv/health_check.sh
 ```
 
 Contenido:
@@ -1407,9 +1407,9 @@ if ! systemctl is-active --quiet vpv-backend; then
 fi
 
 # Verificar frontend
-if ! sudo -u vpv pm2 status vpv-frontend | grep -q "online"; then
+if ! sudo su - vpv -c "pm2 status vpv-frontend" | grep -q "online"; then
     send_alert "ALERTA: vpv-frontend está caído!"
-    sudo -u vpv pm2 restart vpv-frontend
+    sudo su - vpv -c "pm2 restart vpv-frontend"
 fi
 
 # Verificar BD
@@ -1512,7 +1512,7 @@ sudo systemctl is-active vpv-backend
 # Esperado: active
 
 # Frontend
-sudo -u vpv pm2 status
+sudo su - vpv -c "pm2 status"
 # Esperado: vpv-frontend en "online"
 
 # PostgreSQL
@@ -1586,6 +1586,7 @@ Si hay nuevas migraciones pendientes:
 # Ver estado
 cd /opt/vpv/backend
 source .venv/bin/activate
+export PYTHONPATH=/opt/vpv/backend
 alembic current
 alembic history
 
@@ -1733,7 +1734,7 @@ sudo systemctl status postgresql
 sudo -u postgres psql -c "SELECT 1"
 
 # Verificar pg_hba.conf
-sudo nano /var/lib/pgsql/data/pg_hba.conf
+sudo vim /var/lib/pgsql/data/pg_hba.conf
 # Debe tener: local all all scram-sha-256
 
 # Reiniciar PostgreSQL
@@ -1753,13 +1754,13 @@ Frontend desaparece después de reiniciar.
 # Ver si PM2 startup está configurado
 sudo systemctl list-unit-files | grep pm2
 
-# Como usuario vpv
-sudo -u vpv pm2 status
+# Como usuario vpv (IMPORTANTE: usar "su -" para login shell completo)
+sudo su - vpv -c "pm2 status"
 
 # Si no aparece:
-sudo -u vpv pm2 start /opt/vpv/ecosystem.config.js
-sudo -u vpv pm2 save
-sudo -u vpv pm2 startup systemd -u vpv --hp /opt/vpv
+sudo su - vpv -c "pm2 start /opt/vpv/deploy/pm2/ecosystem.config.js"
+sudo su - vpv -c "pm2 save"
+sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u vpv --hp /opt/vpv
 # Ejecutar el comando sudo que muestre
 ```
 
@@ -1872,6 +1873,7 @@ ls -lht /opt/vpv/backups/ | head -10
 # Ver migraciones históricas
 cd /opt/vpv/backend
 source .venv/bin/activate
+export PYTHONPATH=/opt/vpv/backend
 alembic history
 
 # Revertir última migración
@@ -1888,17 +1890,17 @@ sudo systemctl restart vpv-backend
 ```bash
 # Ver estado de todo
 sudo systemctl status vpv-backend postgresql nginx
-sudo -u vpv pm2 status
+sudo su - vpv -c "pm2 status"
 
 # Reiniciar servicios
 sudo systemctl restart vpv-backend
 sudo systemctl restart postgresql
 sudo systemctl restart nginx
-sudo -u vpv pm2 restart vpv-frontend
+sudo su - vpv -c "pm2 restart vpv-frontend"
 
 # Ver logs
 sudo journalctl -u vpv-backend -f
-sudo -u vpv pm2 logs vpv-frontend
+sudo su - vpv -c "pm2 logs vpv-frontend"
 
 # Backup manual
 sudo -u vpv /opt/vpv/backup_db.sh
@@ -1913,7 +1915,7 @@ psql -h 127.0.0.1 -U vpv -d ligavpv
 # Ejecutar Alembic
 cd /opt/vpv/backend
 source .venv/bin/activate
-alembic upgrade head
+PYTHONPATH=/opt/vpv/backend alembic upgrade head
 
 # Health check
 curl -s https://new.ligavpv.com/api/health | python3 -m json.tool
@@ -1977,5 +1979,5 @@ curl -s https://new.ligavpv.com/api/health | python3 -m json.tool
 Para soporte, contactar al equipo de desarrollo o revisar los logs con:
 ```bash
 sudo journalctl -u vpv-backend -f
-sudo -u vpv pm2 logs vpv-frontend
+sudo su - vpv -c "pm2 logs vpv-frontend"
 ```

@@ -29,7 +29,7 @@ SyslogIdentifier=vpv-backend
 # Hardening
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/opt/vpv/backend/static /opt/vpv/backend/data
+ReadWritePaths=/opt/vpv/backend/static
 PrivateTmp=true
 
 [Install]

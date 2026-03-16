@@ -1,0 +1,121 @@
+/* VPV Ops TUI stylesheet */
+
+Screen {
+    background: $surface;
+}
+
+/* --- MainMenuScreen --- */
+
+MainMenuScreen {
+    layout: horizontal;
+}
+
+#category-list {
+    width: 24;
+    border: solid $accent;
+    padding: 0 1;
+}
+
+#category-list > .option-list--option-highlighted {
+    background: $accent;
+    color: $text;
+}
+
+#operation-list {
+    width: 1fr;
+    border: solid $primary;
+    padding: 0 1;
+}
+
+/* --- OperationScreen --- */
+
+OperationScreen {
+    layout: vertical;
+}
+
+#op-header {
+    height: auto;
+    max-height: 6;
+    padding: 1 2;
+    background: $boost;
+}
+
+#op-badges {
+    height: auto;
+    padding: 0 2;
+}
+
+.badge-mysql {
+    color: $warning;
+    text-style: bold;
+}
+
+.badge-pg {
+    color: #5b9bd5;
+    text-style: bold;
+}
+
+.badge-destructive {
+    color: $error;
+    text-style: bold;
+}
+
+.badge-safe {
+    color: $success;
+    text-style: bold;
+}
+
+#params-container {
+    height: auto;
+    max-height: 14;
+    padding: 1 2;
+}
+
+#params-container Input {
+    margin: 0 0 1 0;
+}
+
+#buttons-bar {
+    height: 3;
+    padding: 0 2;
+    layout: horizontal;
+}
+
+#buttons-bar Button {
+    margin: 0 1 0 0;
+}
+
+#log-panel {
+    height: 1fr;
+    border: solid $success;
+    margin: 1 2;
+}
+
+/* --- ConfirmScreen (modal) --- */
+
+ConfirmScreen {
+    align: center middle;
+}
+
+#confirm-dialog {
+    width: 60;
+    height: auto;
+    max-height: 16;
+    border: thick $error;
+    background: $surface;
+    padding: 2 4;
+}
+
+#confirm-dialog Static {
+    margin: 1 0;
+}
+
+#confirm-buttons {
+    height: 3;
+    layout: horizontal;
+    align: center middle;
+}
+
+#confirm-buttons Button {
+    margin: 0 2;
+}
