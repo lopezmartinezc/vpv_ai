@@ -153,6 +153,7 @@ class OperationScreen(Screen):
         self._running = True
         log = self.query_one("#log-panel", RichLog)
         log.clear()
+        log.write("[yellow]Iniciando...[/yellow]")
 
         btn = self.query_one("#btn-run", Button)
         btn.disabled = True
