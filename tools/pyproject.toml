@@ -1,10 +1,11 @@
 [project]
 name = "vpv-ops"
 version = "0.1.0"
-description = "TUI for VPV production database operations"
+description = "CLI for VPV production database operations"
 requires-python = ">=3.12"
 dependencies = [
-    "textual>=1.0.0",
+    "rich>=13.0",
+    "simple-term-menu>=1.6",
 ]
 
 [project.scripts]
