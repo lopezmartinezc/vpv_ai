@@ -107,7 +107,6 @@ export default function AdminUsuariosPage() {
   }
 
   async function handleToggleAdmin(userId: number) {
-    alert(`toggle admin ${userId}`);
     setActionLoading(userId);
     setActionError(null);
     try {
