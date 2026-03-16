@@ -520,8 +520,11 @@ export default function GestionarDraftPage() {
               <p className="text-xs text-vpv-text-muted">
                 {PHASE_LABELS[selectedPhase]} &middot;{" "}
                 {TYPE_LABELS[currentDraft.draft_type]} &middot;{" "}
-                {localPicks.length} picks &middot; Arrastra o usa flechas para reordenar
-                {!isWinter && filterParticipantId && " &middot; Edita la ronda para mover"}
+                {localPicks.length} picks
+                {filterParticipantId
+                  ? <>{" "}&middot; Arrastra o usa flechas para cambiar ronda{!isWinter && " &middot; Edita la ronda"}</>
+                  : <>{" "}&middot; Filtra por participante para reordenar</>
+                }
               </p>
             </div>
             {hasReorderChanges && (
@@ -612,52 +615,58 @@ export default function GestionarDraftPage() {
                       </div>
                     )}
                     <div
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, displayIdx)}
-                      onDragOver={(e) => handleDragOver(e, displayIdx)}
-                      onDrop={(e) => handleDrop(e, displayIdx)}
-                      onDragEnd={handleDragEnd}
+                      draggable={!!filterParticipantId}
+                      onDragStart={filterParticipantId ? (e) => handleDragStart(e, displayIdx) : undefined}
+                      onDragOver={filterParticipantId ? (e) => handleDragOver(e, displayIdx) : undefined}
+                      onDrop={filterParticipantId ? (e) => handleDrop(e, displayIdx) : undefined}
+                      onDragEnd={filterParticipantId ? handleDragEnd : undefined}
                       className={`group flex items-center gap-2 rounded-lg border-l-4 px-3 py-2.5 text-sm transition-all sm:gap-3 ${colors.border} ${
                         isDragOver
                           ? "bg-vpv-accent/10 ring-2 ring-vpv-accent/40"
                           : "bg-vpv-bg hover:bg-vpv-bg/80"
-                      } cursor-grab active:cursor-grabbing`}
+                      }${filterParticipantId ? " cursor-grab active:cursor-grabbing" : ""}`}
                     >
-                      {/* Grip handle (desktop) */}
-                      <span className="hidden flex-shrink-0 text-vpv-text-muted/40 group-hover:text-vpv-text-muted sm:block">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-                          <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zm0 5.5a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75zm.75 4.75a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75z" clipRule="evenodd" />
-                        </svg>
-                      </span>
+                      {/* Grip handle + arrows: only when filtering by participant */}
+                      {filterParticipantId && (
+                        <>
+                          <span className="hidden flex-shrink-0 text-vpv-text-muted/40 group-hover:text-vpv-text-muted sm:block">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+                              <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zm0 5.5a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75zm.75 4.75a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75z" clipRule="evenodd" />
+                            </svg>
+                          </span>
+                        </>
+                      )}
 
                       {/* Pick number */}
                       <span className="w-7 flex-shrink-0 text-center text-xs font-bold text-vpv-accent">
                         #{pick.pick_number}
                       </span>
 
-                      {/* Move arrows */}
-                      <div className="flex flex-shrink-0 flex-col gap-0.5">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); movePick(displayIdx, -1); }}
-                          disabled={displayIdx === 0}
-                          className="rounded p-0.5 text-vpv-text-muted hover:bg-vpv-card hover:text-vpv-text disabled:opacity-20"
-                          title="Subir pick"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
-                            <path fillRule="evenodd" d="M11.78 9.78a.75.75 0 0 1-1.06 0L8 7.06 5.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06Z" clipRule="evenodd" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); movePick(displayIdx, 1); }}
-                          disabled={displayIdx === displayPicks.length - 1}
-                          className="rounded p-0.5 text-vpv-text-muted hover:bg-vpv-card hover:text-vpv-text disabled:opacity-20"
-                          title="Bajar pick"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
-                            <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
-                          </svg>
-                        </button>
-                      </div>
+                      {/* Move arrows: only when filtering */}
+                      {filterParticipantId && (
+                        <div className="flex flex-shrink-0 flex-col gap-0.5">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); movePick(displayIdx, -1); }}
+                            disabled={displayIdx === 0}
+                            className="rounded p-0.5 text-vpv-text-muted hover:bg-vpv-card hover:text-vpv-text disabled:opacity-20"
+                            title="Subir pick"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+                              <path fillRule="evenodd" d="M11.78 9.78a.75.75 0 0 1-1.06 0L8 7.06 5.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06Z" clipRule="evenodd" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); movePick(displayIdx, 1); }}
+                            disabled={displayIdx === displayPicks.length - 1}
+                            className="rounded p-0.5 text-vpv-text-muted hover:bg-vpv-card hover:text-vpv-text disabled:opacity-20"
+                            title="Bajar pick"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+                              <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                            </svg>
+                          </button>
+                        </div>
+                      )}
 
                       {/* Position badge */}
                       <span
