@@ -284,11 +284,13 @@ function PlayerCard({
   isSelected,
   isDisabled,
   onToggle,
+  showPoints = false,
 }: {
   player: SquadPlayerEntry;
   isSelected: boolean;
   isDisabled: boolean;
   onToggle: (player: SquadPlayerEntry) => void;
+  showPoints?: boolean;
 }) {
   const pos = player.position as Position;
 
@@ -326,9 +328,11 @@ function PlayerCard({
         >
           {pos}
         </span>
-        <span className="text-xs tabular-nums text-vpv-text-muted">
-          {player.season_points} pts
-        </span>
+        {showPoints && (
+          <span className="text-xs tabular-nums text-vpv-text-muted">
+            {player.season_points} pts
+          </span>
+        )}
       </div>
 
       {isSelected && (
@@ -537,25 +541,23 @@ export default function AlineacionPage() {
   const lineupComplete = detectedFormation !== null;
 
   // Group squad players by position
+  const isAdmin = user?.isAdmin ?? false;
   const playersByPosition = useMemo<Record<Position, SquadPlayerEntry[]>>(
     () => {
       const squad = myLineup?.squad ?? [];
+      const sortFn = isAdmin
+        ? (a: SquadPlayerEntry, b: SquadPlayerEntry) =>
+            b.season_points - a.season_points
+        : (a: SquadPlayerEntry, b: SquadPlayerEntry) =>
+            a.display_name.localeCompare(b.display_name);
       return {
-        POR: squad
-          .filter((p) => p.position === "POR")
-          .sort((a, b) => b.season_points - a.season_points),
-        DEF: squad
-          .filter((p) => p.position === "DEF")
-          .sort((a, b) => b.season_points - a.season_points),
-        MED: squad
-          .filter((p) => p.position === "MED")
-          .sort((a, b) => b.season_points - a.season_points),
-        DEL: squad
-          .filter((p) => p.position === "DEL")
-          .sort((a, b) => b.season_points - a.season_points),
+        POR: squad.filter((p) => p.position === "POR").sort(sortFn),
+        DEF: squad.filter((p) => p.position === "DEF").sort(sortFn),
+        MED: squad.filter((p) => p.position === "MED").sort(sortFn),
+        DEL: squad.filter((p) => p.position === "DEL").sort(sortFn),
       };
     },
-    [myLineup],
+    [myLineup, isAdmin],
   );
 
   // Build PitchView players
@@ -840,6 +842,7 @@ export default function AlineacionPage() {
                   isSelected={isSelected}
                   isDisabled={isDisabled}
                   onToggle={handleTogglePlayer}
+                  showPoints={user?.isAdmin}
                 />
               );
             })}
