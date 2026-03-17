@@ -629,8 +629,7 @@ async def evaluate_lider(
     matchday_id: int,
     matchday_number: int,
 ) -> list[Achievement]:
-    """Award the first time a participant leads the cumulative standings."""
-    already_awarded = await _get_existing_one_time_achievement_holders(session, season_id, "lider")
+    """Award the participant leading the cumulative standings each matchday."""
     counting_ids = await _get_counting_matchday_ids_up_to(session, season_id, matchday_number)
     if not counting_ids:
         return []
@@ -638,7 +637,7 @@ async def evaluate_lider(
     ranks = await _get_cumulative_ranks(session, season_id, counting_ids)
     achievements = []
     for participant_id, rank in ranks.items():
-        if rank == 1 and participant_id not in already_awarded:
+        if rank == 1:
             achievements.append(
                 _make_achievement(
                     season_id=season_id,

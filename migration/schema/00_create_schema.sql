@@ -454,7 +454,7 @@ INSERT INTO achievement_definitions (achievement_key, name_es, description_es, c
 ('racha_ganadora',   'Racha Ganadora',       'Top 3 en jornadas consecutivas',                            'streak',    'fire',   3, true),
 ('racha_perdedora',  'Racha Perdedora',      'Bottom 3 en jornadas consecutivas',                         'streak',    'ice',    3, true),
 ('imbatible',        'Imbatible',            'Numero 1 en jornadas consecutivas',                         'streak',    'crown',  3, true),
-('lider',            'Lider',                'Primera vez lider de la clasificacion acumulada',            'milestone', 'chart',  1, false),
+('lider',            'Lider',                'Lider de la clasificacion acumulada en la jornada',          'weekly',    'chart',  1, true),
 ('robo_draft',       'Robo del Draft',       'Pick tardio (ronda 20+) que rinde en el top 25%',           'draft',     'target', 1, true);
 
 -- ----------------------------------------------------------------------------
