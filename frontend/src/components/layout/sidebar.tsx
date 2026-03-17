@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { href: "/copa", label: "Copa", icon: "shield" },
   { href: "/jornadas", label: "Jornadas", icon: "calendar" },
   { href: "/economia", label: "Economia", icon: "coins" },
+  { href: "/drafts", label: "Drafts", icon: "shuffle" },
 ] as const;
 
 const ADMIN_SECTIONS = [
