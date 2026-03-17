@@ -75,6 +75,9 @@ export default function GestionarDraftPage() {
   const [localPicks, setLocalPicks] = useState<DraftPickEntry[]>([]);
   const [hasReorderChanges, setHasReorderChanges] = useState(false);
   const [savingReorder, setSavingReorder] = useState(false);
+  // Manual round edits: pick.id -> edited round number (not yet applied)
+  const [editedRounds, setEditedRounds] = useState<Record<number, number>>({});
+  const [roundError, setRoundError] = useState<string | null>(null);
 
   // Drag state (indices always refer to displayPicks)
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -136,6 +139,8 @@ export default function GestionarDraftPage() {
         ),
       );
       setHasReorderChanges(false);
+      setEditedRounds({});
+      setRoundError(null);
       setFilterParticipantId(null);
     } catch {
       setDraftDetail(null);
@@ -227,19 +232,52 @@ export default function GestionarDraftPage() {
   }
 
   // --- Change round number (preseason only) ---
-  function setPickRound(displayIdx: number, newRound: number) {
+  // Only stores the edit locally; actual reorder happens on "Aplicar rondas"
+  function setPickRound(pickId: number, newRound: number) {
     if (isWinter) return;
-    const maxRound = Math.ceil(localPicks.length / (orderedParticipants.length || 1));
-    const clamped = Math.max(1, Math.min(newRound, maxRound));
-    if (clamped === displayPicks[displayIdx].round_number) return;
+    setEditedRounds((prev) => ({ ...prev, [pickId]: newRound }));
+    setRoundError(null);
+    setHasReorderChanges(true);
+  }
 
-    // Move the pick to the target position in the filtered list
-    const newDisplay = [...displayPicks];
-    const [moved] = newDisplay.splice(displayIdx, 1);
-    // Insert at position = newRound - 1 (rounds are 1-indexed)
-    const insertAt = Math.min(clamped - 1, newDisplay.length);
-    newDisplay.splice(insertAt, 0, moved);
-    applyReorder(newDisplay);
+  // Apply edited rounds: validate and reorder
+  function applyRoundEdits() {
+    const n = orderedParticipants.length || 1;
+    const maxRound = Math.ceil(localPicks.length / n);
+
+    // Merge edited rounds into picks
+    const updated = localPicks.map((pick) => {
+      const edited = editedRounds[pick.id];
+      if (edited !== undefined) {
+        const clamped = Math.max(1, Math.min(edited, maxRound));
+        return { ...pick, round_number: clamped };
+      }
+      return pick;
+    });
+
+    // Check for rounds with too many picks
+    const roundCounts = new Map<number, number>();
+    for (const pick of updated) {
+      if (filterParticipantId && pick.participant_id !== filterParticipantId) continue;
+      roundCounts.set(pick.round_number, (roundCounts.get(pick.round_number) || 0) + 1);
+    }
+
+    // When filtering by participant, each round should have exactly 1 pick
+    if (filterParticipantId) {
+      const duplicateRounds = [...roundCounts.entries()]
+        .filter(([, count]) => count > 1)
+        .map(([round]) => round);
+      if (duplicateRounds.length > 0) {
+        setRoundError(`Rondas duplicadas: ${duplicateRounds.map((r) => `R${r}`).join(", ")}. Cada participante debe tener 1 pick por ronda.`);
+        return;
+      }
+    }
+
+    // Sort by round_number, then apply snake/linear order within each round
+    const sorted = [...updated].sort((a, b) => a.round_number - b.round_number);
+    recalculateGlobal(sorted);
+    setEditedRounds({});
+    setRoundError(null);
   }
 
   // --- Drag and drop ---
@@ -365,6 +403,8 @@ export default function GestionarDraftPage() {
       setLocalPicks(draftDetail.picks);
     }
     setHasReorderChanges(false);
+    setEditedRounds({});
+    setRoundError(null);
   }
 
   function showSuccess(msg: string) {
@@ -529,16 +569,24 @@ export default function GestionarDraftPage() {
               </p>
             </div>
             {hasReorderChanges && (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
                   onClick={cancelReorder}
                   className="rounded-lg border border-vpv-border px-4 py-2 text-sm font-medium text-vpv-text-muted transition-colors hover:text-vpv-text"
                 >
                   Cancelar
                 </button>
+                {Object.keys(editedRounds).length > 0 && (
+                  <button
+                    onClick={applyRoundEdits}
+                    className="rounded-lg border border-amber-500 px-4 py-2 text-sm font-medium text-amber-400 transition-colors hover:bg-amber-500/10"
+                  >
+                    Aplicar rondas
+                  </button>
+                )}
                 <button
                   onClick={saveReorder}
-                  disabled={savingReorder}
+                  disabled={savingReorder || Object.keys(editedRounds).length > 0}
                   className="rounded-lg bg-vpv-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-vpv-accent/80 disabled:opacity-50"
                 >
                   {savingReorder ? "Guardando..." : "Guardar cambios"}
@@ -546,6 +594,12 @@ export default function GestionarDraftPage() {
               </div>
             )}
           </div>
+
+          {roundError && (
+            <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+              {roundError}
+            </div>
+          )}
 
           {/* Filter by participant */}
           <div className="mb-4 flex flex-wrap gap-2">
@@ -712,15 +766,19 @@ export default function GestionarDraftPage() {
                               type="number"
                               min={1}
                               max={displayPicks.length}
-                              value={filteredRound}
+                              value={editedRounds[pick.id] ?? filteredRound}
                               onClick={(e) => e.stopPropagation()}
                               onChange={(e) => {
                                 const val = parseInt(e.target.value);
                                 if (!isNaN(val) && val >= 1) {
-                                  setPickRound(displayIdx, val);
+                                  setPickRound(pick.id, val);
                                 }
                               }}
-                              className="w-10 rounded border border-vpv-border bg-vpv-card px-1 py-0.5 text-center text-xs text-vpv-text"
+                              className={`w-10 rounded border px-1 py-0.5 text-center text-xs text-vpv-text ${
+                                editedRounds[pick.id] !== undefined
+                                  ? "border-vpv-accent bg-vpv-accent/10"
+                                  : "border-vpv-border bg-vpv-card"
+                              }`}
                             />
                           </div>
                         ) : (
