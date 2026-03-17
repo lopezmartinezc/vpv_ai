@@ -14,8 +14,8 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://new.ligavpv.com"),
-  title: "Liga VPV Fantasy",
-  description: "Liga fantasy de futbol entre amigos - La Liga espanola",
+  title: "Liga VPV",
+  description: "Liga VPV",
   manifest: "/site.webmanifest",
   icons: {
     icon: [
@@ -28,8 +28,8 @@ export const metadata: Metadata = {
     ],
   },
   openGraph: {
-    title: "Liga VPV Fantasy",
-    description: "Liga fantasy de futbol entre amigos - La Liga espanola",
+    title: "Liga VPV",
+    description: "Liga VPV",
     url: "https://new.ligavpv.com",
     siteName: "Liga VPV",
     images: [{ url: "/og-image.png", width: 1200, height: 1200 }],
