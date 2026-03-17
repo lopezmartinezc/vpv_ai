@@ -14,6 +14,7 @@ import { PagometroWidget } from "@/components/dashboard/pagometro-widget";
 import { DeadlineWidget } from "@/components/dashboard/deadline-widget";
 import { SkeletonCards } from "@/components/ui/skeleton";
 import { Logo } from "@/components/ui/logo";
+import type { MatchdayDetailResponse } from "@/types";
 
 interface SeasonPaymentEntry {
   id: number;
@@ -25,6 +26,7 @@ interface SeasonPaymentEntry {
 
 export default function Home() {
   const { selectedSeason, loading: seasonLoading } = useSeason();
+  const mdCurrent = selectedSeason?.matchday_current ?? null;
   const {
     standings,
     currentMatchdayDetail,
@@ -33,8 +35,17 @@ export default function Home() {
     loading,
   } = useDashboardData(
     selectedSeason?.id ?? null,
-    selectedSeason?.matchday_current ?? null,
+    mdCurrent,
   );
+
+  // Fetch previous matchday to show when current has no scores yet
+  const prevNumber = mdCurrent && mdCurrent > 1 ? mdCurrent - 1 : null;
+  const { data: prevMatchday } = useFetch<MatchdayDetailResponse>(
+    selectedSeason && prevNumber
+      ? `/matchdays/${selectedSeason.id}/${prevNumber}`
+      : null,
+  );
+
   const { data: payments } = useFetch<SeasonPaymentEntry[]>(
     selectedSeason ? `/seasons/${selectedSeason.id}/payments` : null,
   );
@@ -59,10 +70,22 @@ export default function Home() {
     );
   }
 
+  // Show previous matchday scores if current has no scores yet
+  const currentHasScores =
+    currentMatchdayDetail &&
+    currentMatchdayDetail.scores.length > 0 &&
+    currentMatchdayDetail.scores.some((s) => s.total_points > 0);
+  const displayMatchday = currentHasScores
+    ? currentMatchdayDetail
+    : prevMatchday ?? currentMatchdayDetail;
+
+  // Pagometro uses whichever matchday is being displayed
+  const pagometroMatchday = displayMatchday?.stats_ok ? displayMatchday : null;
+
   const leader = standings?.entries[0] ?? null;
   const copaLeader = copaData?.standings[0] ?? null;
   const currentCopaMatchday = copaData?.matchdays.find(
-    (md) => md.matchday_number === selectedSeason?.matchday_current,
+    (md) => md.matchday_number === (displayMatchday?.number ?? mdCurrent),
   ) ?? null;
 
   const navCards = [
@@ -109,18 +132,21 @@ export default function Home() {
         )}
       </div>
 
+      {/* Deadline countdown — always for current matchday */}
       {currentMatchdayDetail && selectedSeason && (
-        <>
-          <DeadlineWidget
-            firstMatchAt={currentMatchdayDetail.first_match_at}
-            deadlineMin={selectedSeason.lineup_deadline_min}
-            matchdayNumber={currentMatchdayDetail.number}
-          />
-          <MatchdayAccordion
-            data={currentMatchdayDetail}
-            seasonId={selectedSeason.id}
-          />
-        </>
+        <DeadlineWidget
+          firstMatchAt={currentMatchdayDetail.first_match_at}
+          deadlineMin={selectedSeason.lineup_deadline_min}
+          matchdayNumber={currentMatchdayDetail.number}
+        />
+      )}
+
+      {/* Matchday scores — shows previous if current has no scores yet */}
+      {displayMatchday && selectedSeason && (
+        <MatchdayAccordion
+          data={displayMatchday}
+          seasonId={selectedSeason.id}
+        />
       )}
 
       {standings && standings.entries.length > 0 && (
@@ -135,13 +161,12 @@ export default function Home() {
         <CopaWidget entries={copaData.standings} />
       )}
 
-      {currentMatchdayDetail &&
-        currentMatchdayDetail.stats_ok &&
-        currentMatchdayDetail.scores.length > 0 &&
+      {pagometroMatchday &&
+        pagometroMatchday.scores.length > 0 &&
         Object.keys(weeklyRules).length > 0 && (
           <PagometroJornadaWidget
-            scores={currentMatchdayDetail.scores}
-            matchdayNumber={currentMatchdayDetail.number}
+            scores={pagometroMatchday.scores}
+            matchdayNumber={pagometroMatchday.number}
             weeklyRules={weeklyRules}
           />
         )}
