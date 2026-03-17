@@ -136,7 +136,7 @@ export function PersonalEvolution({
                     fontSize: "12px",
                   }}
                   labelFormatter={(v) => `Jornada ${v}`}
-                  formatter={(value: number) => [`${value} pts`, "Puntos"]}
+                  formatter={(value) => [`${value} pts`, "Puntos"]}
                 />
                 <ReferenceLine
                   y={Number(stats.avgPoints)}
@@ -192,7 +192,7 @@ export function PersonalEvolution({
                     fontSize: "12px",
                   }}
                   labelFormatter={(v) => `Jornada ${v}`}
-                  formatter={(value: number) => [`${value}\u00BA`, "Posicion"]}
+                  formatter={(value) => [`${value}\u00BA`, "Posicion"]}
                 />
                 <Line
                   type="monotone"
