@@ -25,10 +25,14 @@ async def download_backup(
 
     process = await asyncio.create_subprocess_exec(
         "pg_dump",
-        "-h", settings.pg_host,
-        "-p", str(settings.pg_port),
-        "-U", settings.pg_user,
-        "-d", settings.pg_database,
+        "-h",
+        settings.pg_host,
+        "-p",
+        str(settings.pg_port),
+        "-U",
+        settings.pg_user,
+        "-d",
+        settings.pg_database,
         "--no-password",
         "--clean",
         "--if-exists",
