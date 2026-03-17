@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { useSeason } from "@/contexts/season-context";
 import { useDashboardData } from "@/hooks/use-dashboard-data";
 import { useFetch } from "@/hooks/use-fetch";
@@ -61,6 +61,26 @@ export default function Home() {
     return rules;
   }, [payments]);
 
+  // Determine if deadline has passed (re-checks every 30s via external store)
+  const firstMatchAt = currentMatchdayDetail?.first_match_at ?? null;
+  const dlMin = selectedSeason?.lineup_deadline_min ?? 0;
+  const subscribe = useCallback(
+    (cb: () => void) => {
+      const id = setInterval(cb, 30_000);
+      return () => clearInterval(id);
+    },
+    [],
+  );
+  const deadlinePassed = useSyncExternalStore(
+    subscribe,
+    () => {
+      if (!firstMatchAt) return true;
+      const deadlineMs = new Date(firstMatchAt).getTime() - dlMin * 60_000;
+      return Date.now() >= deadlineMs;
+    },
+    () => true,
+  );
+
   if (seasonLoading || loading) {
     return (
       <div className="space-y-6">
@@ -70,12 +90,8 @@ export default function Home() {
     );
   }
 
-  // Show previous matchday scores if current has no scores yet
-  const currentHasScores =
-    currentMatchdayDetail &&
-    currentMatchdayDetail.scores.length > 0 &&
-    currentMatchdayDetail.scores.some((s) => s.total_points > 0);
-  const displayMatchday = currentHasScores
+  // Show previous matchday until deadline passes, then show current
+  const displayMatchday = deadlinePassed
     ? currentMatchdayDetail
     : prevMatchday ?? currentMatchdayDetail;
 
