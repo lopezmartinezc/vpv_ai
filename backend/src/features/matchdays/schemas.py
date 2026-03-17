@@ -106,12 +106,29 @@ class HighlightPlayer(BaseModel):
     assists: int
 
 
+class DreamTeamPlayer(BaseModel):
+    player_id: int
+    player_name: str
+    photo_path: str | None
+    position: str
+    team_name: str
+    points: int
+
+
+class DreamTeamResponse(BaseModel):
+    formation: str
+    total_points: int
+    players: list[DreamTeamPlayer]
+
+
 class MatchdayHighlightsResponse(BaseModel):
     matchday_number: int
     mvp: HighlightPlayer | None = None
     flop: HighlightPlayer | None = None
     top_scorer: HighlightPlayer | None = None
     top_assister: HighlightPlayer | None = None
+    dream_team: DreamTeamResponse | None = None
+    nightmare_team: DreamTeamResponse | None = None
 
 
 # --- Admin schemas ---

@@ -482,6 +482,42 @@ class MatchdayRepository:
         result = await self.session.execute(stmt)
         return [dict(row._mapping) for row in result.all()]
 
+    async def get_all_player_stats_for_matchday(
+        self,
+        matchday_id: int,
+    ) -> list[dict]:
+        """Get all player stats for a matchday (played=True), for dream/nightmare team."""
+        stmt = (
+            select(
+                Player.id.label("player_id"),
+                Player.display_name.label("player_name"),
+                Player.photo_path,
+                PlayerStat.position,
+                func.coalesce(Team.short_name, Team.name).label("team_name"),
+                PlayerStat.pts_total,
+            )
+            .join(Player, PlayerStat.player_id == Player.id)
+            .join(Team, Player.team_id == Team.id)
+            .where(
+                PlayerStat.matchday_id == matchday_id,
+                PlayerStat.played.is_(True),
+            )
+        )
+        result = await self.session.execute(stmt)
+        return [dict(row._mapping) for row in result.all()]
+
+    async def get_valid_formations(self) -> list[tuple[int, int, int]]:
+        """Return all valid formations as (defenders, midfielders, forwards)."""
+        from src.shared.models.season import ValidFormation
+
+        stmt = select(
+            ValidFormation.defenders,
+            ValidFormation.midfielders,
+            ValidFormation.forwards,
+        )
+        result = await self.session.execute(stmt)
+        return [(row.defenders, row.midfielders, row.forwards) for row in result.all()]
+
     async def update_match(
         self,
         match_id: int,

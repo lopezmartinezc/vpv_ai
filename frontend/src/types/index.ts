@@ -103,12 +103,29 @@ export interface HighlightPlayer {
   assists: number;
 }
 
+export interface DreamTeamPlayer {
+  player_id: number;
+  player_name: string;
+  photo_path: string | null;
+  position: string;
+  team_name: string;
+  points: number;
+}
+
+export interface DreamTeamResponse {
+  formation: string;
+  total_points: number;
+  players: DreamTeamPlayer[];
+}
+
 export interface MatchdayHighlightsResponse {
   matchday_number: number;
   mvp: HighlightPlayer | null;
   flop: HighlightPlayer | null;
   top_scorer: HighlightPlayer | null;
   top_assister: HighlightPlayer | null;
+  dream_team: DreamTeamResponse | null;
+  nightmare_team: DreamTeamResponse | null;
 }
 
 export interface MatchdayDetailResponse {

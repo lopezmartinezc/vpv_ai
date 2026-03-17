@@ -8,6 +8,8 @@ from src.features.matchdays.schemas import (
     AdminMatchdayResponse,
     AdminMatchResponse,
     BenchPlayerEntry,
+    DreamTeamPlayer,
+    DreamTeamResponse,
     HighlightPlayer,
     LineupDetailResponse,
     LineupPlayerEntry,
@@ -307,10 +309,75 @@ class MatchdayService:
         with_assists.sort(key=lambda r: r["assists"] or 0, reverse=True)
         top_assister = to_highlight(with_assists[0]) if with_assists else None
 
+        # Dream team / Nightmare team
+        all_stats = await self.repo.get_all_player_stats_for_matchday(matchday.id)
+        formations = await self.repo.get_valid_formations()
+        dream_team = self._build_best_xi(all_stats, formations, best=True)
+        nightmare_team = self._build_best_xi(all_stats, formations, best=False)
+
         return MatchdayHighlightsResponse(
             matchday_number=matchday_number,
             mvp=mvp,
             flop=flop,
             top_scorer=top_scorer,
             top_assister=top_assister,
+            dream_team=dream_team,
+            nightmare_team=nightmare_team,
         )
+
+    @staticmethod
+    def _build_best_xi(
+        stats: list[dict],
+        formations: list[tuple[int, int, int]],
+        *,
+        best: bool,
+    ) -> DreamTeamResponse | None:
+        if not stats or not formations:
+            return None
+
+        by_pos: dict[str, list[dict]] = {"POR": [], "DEF": [], "MED": [], "DEL": []}
+        for s in stats:
+            pos = s["position"]
+            if pos in by_pos:
+                by_pos[pos].append(s)
+
+        reverse = best  # best=True → sort descending
+        for pos in by_pos:
+            by_pos[pos].sort(key=lambda r: r["pts_total"], reverse=reverse)
+
+        best_team: DreamTeamResponse | None = None
+
+        for defs, mids, fwds in formations:
+            needed = {"POR": 1, "DEF": defs, "MED": mids, "DEL": fwds}
+            if any(len(by_pos[p]) < needed[p] for p in needed):
+                continue
+
+            picked: list[dict] = []
+            for pos, count in needed.items():
+                picked.extend(by_pos[pos][:count])
+
+            total = sum(p["pts_total"] for p in picked)
+            formation_str = f"1-{defs}-{mids}-{fwds}"
+
+            if (
+                best_team is None
+                or (best and total > best_team.total_points)
+                or (not best and total < best_team.total_points)
+            ):
+                best_team = DreamTeamResponse(
+                    formation=formation_str,
+                    total_points=total,
+                    players=[
+                        DreamTeamPlayer(
+                            player_id=p["player_id"],
+                            player_name=p["player_name"],
+                            photo_path=p["photo_path"],
+                            position=p["position"],
+                            team_name=p["team_name"],
+                            points=p["pts_total"],
+                        )
+                        for p in picked
+                    ],
+                )
+
+        return best_team
