@@ -40,7 +40,9 @@ class AchievementRepository:
         ]
 
         stmt = (
-            pg_insert(Achievement.__table__).values(rows).on_conflict_do_nothing(constraint="uq_achievement")  # type: ignore[arg-type]
+            pg_insert(Achievement.__table__)
+            .values(rows)
+            .on_conflict_do_nothing(constraint="uq_achievement")  # type: ignore[arg-type]
         )
         cursor = await self.session.execute(stmt)
         inserted = getattr(cursor, "rowcount", 0) or 0
