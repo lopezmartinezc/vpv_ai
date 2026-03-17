@@ -829,6 +829,10 @@ def main() -> None:
         else:
             pg_conn.commit()
             log.info("All changes committed successfully!")
+            log.info("")
+            log.info("=== POST-SYNC: Re-run these if lineup changes affected rankings ===")
+            log.info("1. Weekly payments:  cd /opt/vpv/backend && source .venv/bin/activate && python -m scripts.backfill_weekly_payments")
+            log.info("2. Achievements:     curl -X POST https://new.ligavpv.com/api/achievements/admin/%d/evaluate-all -H 'Authorization: Bearer <token>'", ctx["season_id"])
 
     except Exception:
         log.exception("Sync failed!")
