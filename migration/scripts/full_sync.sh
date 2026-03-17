@@ -62,8 +62,8 @@ deactivate
 # Step 3: Re-evaluate achievements
 echo ""
 echo "--- STEP 3: Re-evaluate achievements ---"
-# Get season_id from the sync config
-SEASON_ID=$(source "$MIGRATION_VENV/bin/activate" && python -c "
+# Get season_id from DB
+SEASON_ID=$(cd "$SCRIPT_DIR" && source "$MIGRATION_VENV/bin/activate" && python -c "
 from config import get_pg_conninfo
 import psycopg
 conn = psycopg.connect(get_pg_conninfo())
