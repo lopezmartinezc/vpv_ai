@@ -134,6 +134,7 @@ class ScrapingService:
                     match.away_team_id, []
                 )
                 total_in_match = len(match_players)
+                match_processed = 0
                 match_errors = 0
 
                 logger.info(
@@ -192,16 +193,25 @@ class ScrapingService:
                         breakdown=breakdown,
                     )
                     total_processed += 1
+                    match_processed += 1
 
-                # Mark the match stats_ok only when there were no errors.
-                if match_errors == 0:
+                # Mark stats_ok only when no errors AND at least one player
+                # was actually processed (guards against marking ok when stats
+                # are not yet available on the source site).
+                if match_errors == 0 and match_processed > 0:
                     await self.repo.mark_match_stats_ok(match.id)
                     logger.info("scrape_matchday: marked match_id=%d stats_ok", match.id)
-                else:
+                elif match_errors > 0:
                     logger.warning(
                         "scrape_matchday: match_id=%d had %d errors, NOT marking stats_ok",
                         match.id,
                         match_errors,
+                    )
+                else:
+                    logger.warning(
+                        "scrape_matchday: match_id=%d — no stats found (all %d skipped), NOT marking stats_ok",
+                        match.id,
+                        total_in_match,
                     )
 
         # Reload to check if every counting match is now stats_ok.
@@ -346,8 +356,13 @@ class ScrapingService:
                 )
                 total_processed += 1
 
-        if total_errors == 0:
+        if total_errors == 0 and total_processed > 0:
             await self.repo.mark_match_stats_ok(match_id)
+        elif total_processed == 0 and total_errors == 0:
+            logger.warning(
+                "scrape_match_players: match_id=%d — no stats found (all skipped), NOT marking stats_ok",
+                match_id,
+            )
 
         await self._aggregator.aggregate_matchday(matchday_id)
 

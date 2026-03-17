@@ -149,6 +149,8 @@ async def _run_tick() -> None:
 
             # 5. Per-match CRC check + score discovery
             matches_to_scrape: list[int] = []
+            # Store new CRCs — only persist after successful scraping
+            pending_crcs: dict[int, str] = {}
 
             async with ScrapingClient() as client:
                 # 5a. Check pending-score matches — try to discover result from match page
@@ -177,7 +179,7 @@ async def _run_tick() -> None:
 
                     new_crc = parse_match_crc(html)
                     if new_crc != match.stats_crc:
-                        await repo.update_match_crc(match.id, new_crc)
+                        pending_crcs[match.id] = new_crc
                         matches_to_scrape.append(match.id)
 
                 # 5b. Normal CRC check for matches already with result
@@ -197,7 +199,7 @@ async def _run_tick() -> None:
                         "scraping_tick",
                         f"Match {match.id}: CRC cambio {match.stats_crc} -> {new_crc}",
                     )
-                    await repo.update_match_crc(match.id, new_crc)
+                    pending_crcs[match.id] = new_crc
                     matches_to_scrape.append(match.id)
 
             if not matches_to_scrape:
@@ -217,10 +219,20 @@ async def _run_tick() -> None:
                         md_current,
                         match_id,
                     )
+                    processed = result.get("processed", 0)
                     _log(
                         "scraping_tick",
-                        f"Match {match_id}: procesados={result.get('processed', 0)}, errores={result.get('errors', 0)}",
+                        f"Match {match_id}: procesados={processed}, errores={result.get('errors', 0)}",
                     )
+                    # Only persist CRC if stats were actually found;
+                    # otherwise the next tick will retry this match.
+                    if processed and match_id in pending_crcs:
+                        await repo.update_match_crc(match_id, pending_crcs[match_id])
+                    elif not processed and match_id in pending_crcs:
+                        _log(
+                            "scraping_tick",
+                            f"Match {match_id}: sin stats, CRC NO actualizado — se reintentará",
+                        )
                 except Exception as exc:
                     _log("scraping_tick", f"Error scraping match {match_id}: {exc}", "error")
 
