@@ -485,10 +485,8 @@ def _parse_as_picas(row: Tag) -> str | None:
 def parse_player_stats(html: str, matchday_number: int) -> PlayerMatchdayStats | None:
     """Extract a player's stats for *matchday_number* from their stats page.
 
-    The stats table is at:
-      3rd ``div.inside_tab`` (index 2)
-        → 2nd ``table.tablestats`` (index 1)
-          → all ``tr.plegado``
+    The stats table is inside ``div.puntos`` → 2nd ``table.tablestats``
+    (index 1) → all ``tr.plegado``.
 
     Returns ``None`` when the row for the requested matchday is not found or
     on any parsing failure.
@@ -496,22 +494,15 @@ def parse_player_stats(html: str, matchday_number: int) -> PlayerMatchdayStats |
     try:
         soup = _soup(html)
 
-        inside_tabs = soup.find_all("div", class_="inside_tab")
-        if len(inside_tabs) < 3:
-            logger.debug(
-                "parse_player_stats: expected 3+ inside_tab divs, found %d",
-                len(inside_tabs),
-            )
+        puntos_div = soup.find("div", class_="puntos")
+        if not isinstance(puntos_div, Tag):
+            logger.debug("parse_player_stats: div.puntos not found")
             return None
 
-        stats_tab = inside_tabs[2]
-        if not isinstance(stats_tab, Tag):
-            return None
-
-        tablestats = stats_tab.find_all("table", class_="tablestats")
+        tablestats = puntos_div.find_all("table", class_="tablestats")
         if len(tablestats) < 2:
             logger.debug(
-                "parse_player_stats: expected 2+ tablestats, found %d",
+                "parse_player_stats: expected 2+ tablestats in div.puntos, found %d",
                 len(tablestats),
             )
             return None
