@@ -16,7 +16,6 @@ const NAV_ITEMS = [
   { href: "/jornadas", label: "Jornadas", icon: "calendar" },
   { href: "/economia", label: "Economia", icon: "coins" },
   { href: "/drafts", label: "Drafts", icon: "shuffle" },
-  { href: "/logros", label: "Logros", icon: "medal" },
 ] as const;
 
 const ADMIN_SECTIONS = [
@@ -41,6 +40,7 @@ const ADMIN_SECTIONS = [
     group: "Operaciones",
     items: [
       { href: "/admin/scraping", label: "Scraping" },
+      { href: "/admin/logros", label: "Logros" },
       { href: "/admin/telegram", label: "Telegram" },
       { href: "/admin/backup", label: "Backup" },
     ],

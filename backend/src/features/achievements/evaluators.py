@@ -767,13 +767,9 @@ ALL_EVALUATORS: list[EvaluatorFn] = [
     evaluate_mvp_jornada,
     evaluate_goleador,
     evaluate_muro,
-    evaluate_remontada,
     evaluate_racha_ganadora,
     evaluate_racha_perdedora,
     evaluate_imbatible,
-    evaluate_centenario,
-    evaluate_doble_centenario,
-    evaluate_triple_centenario,
     evaluate_lider,
     evaluate_robo_draft,
 ]

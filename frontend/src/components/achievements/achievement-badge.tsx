@@ -2,6 +2,17 @@
 
 import type { AchievementEntry } from "@/types";
 
+const ICON_MAP: Record<string, string> = {
+  star: "\u2B50",
+  goal: "\u26BD",
+  shield: "\uD83D\uDEE1\uFE0F",
+  fire: "\uD83D\uDD25",
+  ice: "\u2744\uFE0F",
+  crown: "\uD83D\uDC51",
+  chart: "\uD83D\uDCC8",
+  target: "\uD83C\uDFAF",
+};
+
 const TIER_COLORS = [
   "bg-amber-700/30 text-amber-500",     // tier 1 (bronze)
   "bg-gray-400/20 text-gray-300",        // tier 2 (silver)
@@ -23,7 +34,7 @@ export function AchievementBadge({ achievement }: { achievement: AchievementEntr
       className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${tierColor}`}
       title={`${achievement.description}${tierLabel ? ` (${tierLabel})` : ""}`}
     >
-      <span className="text-sm">{achievement.icon}</span>
+      <span className="text-sm">{ICON_MAP[achievement.icon] ?? achievement.icon}</span>
       <span>{achievement.name}</span>
       {achievement.tier > 1 && (
         <span className="text-[10px] opacity-70">x{achievement.tier}</span>

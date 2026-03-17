@@ -29,6 +29,7 @@ const ADMIN_NAV = [
       { href: "/admin/scraping", label: "Scraping" },
       { href: "/admin/telegram", label: "Telegram" },
       { href: "/admin/backup", label: "Backup" },
+      { href: "/admin/logros", label: "Logros" },
     ],
   },
   {

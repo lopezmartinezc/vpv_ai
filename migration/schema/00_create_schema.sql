@@ -448,18 +448,14 @@ CREATE INDEX idx_achievements_season      ON achievements(season_id);
 CREATE INDEX idx_achievements_participant ON achievements(participant_id);
 
 INSERT INTO achievement_definitions (achievement_key, name_es, description_es, category, icon, max_tier, repeatable) VALUES
-('mvp_jornada',      'MVP de la Jornada',    'Participante con mas puntos en la jornada',                  'weekly',    '⭐', 1, true),
-('goleador',         'Goleador',             'Participante cuyo XI anoto mas goles',                       'weekly',    '⚽', 1, true),
-('muro',             'Muro',                 'Participante con mas puntos de imbatibilidad en su XI',      'weekly',    '🛡️', 1, true),
-('remontada',        'Remontada',            'Subio 3 o mas posiciones en la clasificacion acumulada',     'weekly',    '🚀', 1, true),
-('racha_ganadora',   'Racha Ganadora',       'Top 3 en jornadas consecutivas',                            'streak',    '🔥', 3, true),
-('racha_perdedora',  'Racha Perdedora',      'Bottom 3 en jornadas consecutivas',                         'streak',    '❄️', 3, true),
-('imbatible',        'Imbatible',            'Numero 1 en jornadas consecutivas',                         'streak',    '👑', 3, true),
-('centenario',       'Centenario',           'Alcanzo 100 puntos acumulados',                             'milestone', '💯', 1, false),
-('doble_centenario', 'Doble Centenario',     'Alcanzo 200 puntos acumulados',                             'milestone', '🏅', 1, false),
-('triple_centenario','Triple Centenario',    'Alcanzo 300 puntos acumulados',                             'milestone', '🏆', 1, false),
-('lider',            'Lider',                'Primera vez lider de la clasificacion acumulada',            'milestone', '📈', 1, false),
-('robo_draft',       'Robo del Draft',       'Pick tardio (ronda 20+) que rinde en el top 25%',           'draft',     '🎯', 1, true);
+('mvp_jornada',      'MVP de la Jornada',    'Participante con mas puntos en la jornada',                  'weekly',    'star',   1, true),
+('goleador',         'Goleador',             'Participante cuyo XI anoto mas goles',                       'weekly',    'goal',   1, true),
+('muro',             'Muro',                 'Participante con mas puntos de imbatibilidad en su XI',      'weekly',    'shield', 1, true),
+('racha_ganadora',   'Racha Ganadora',       'Top 3 en jornadas consecutivas',                            'streak',    'fire',   3, true),
+('racha_perdedora',  'Racha Perdedora',      'Bottom 3 en jornadas consecutivas',                         'streak',    'ice',    3, true),
+('imbatible',        'Imbatible',            'Numero 1 en jornadas consecutivas',                         'streak',    'crown',  3, true),
+('lider',            'Lider',                'Primera vez lider de la clasificacion acumulada',            'milestone', 'chart',  1, false),
+('robo_draft',       'Robo del Draft',       'Pick tardio (ronda 20+) que rinde en el top 25%',           'draft',     'target', 1, true);
 
 -- ----------------------------------------------------------------------------
 -- Alembic version tracking

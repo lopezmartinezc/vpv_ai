@@ -35,6 +35,7 @@ async def list_definitions(
 async def get_season_achievements(
     season_id: int,
     service: AchievementService = Depends(_get_service),
+    _admin: dict = Depends(get_current_admin),
 ) -> SeasonAchievementsResponse:
     return await service.get_season_achievements(season_id)
 
@@ -47,6 +48,7 @@ async def get_participant_achievements(
     season_id: int,
     participant_id: int,
     service: AchievementService = Depends(_get_service),
+    _admin: dict = Depends(get_current_admin),
 ) -> SeasonAchievementsResponse:
     return await service.get_participant_achievements(season_id, participant_id)
 
