@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -73,6 +74,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(false);
     /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
+
+  // Session heartbeat — validate session every 30s
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+    if (!accessToken) return;
+
+    const check = async () => {
+      try {
+        const res = await fetch(`${API_URL}/auth/me`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (res.status === 401) {
+          localStorage.removeItem("vpv_token");
+          window.location.href = "/login";
+        }
+      } catch {
+        // Network error — skip
+      }
+    };
+
+    heartbeatRef.current = setInterval(check, 30_000);
+    return () => {
+      if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+    };
+  }, [accessToken]);
 
   const login = useCallback(async (username: string, password: string) => {
     try {
