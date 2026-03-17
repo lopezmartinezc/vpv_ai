@@ -14,10 +14,20 @@ interface EvolutionResponse {
   entries: EvolutionEntry[];
 }
 
+interface MeResponse {
+  id: number;
+  username: string;
+  display_name: string;
+  email: string | null;
+  is_admin: boolean;
+  is_draft_manager: boolean;
+}
+
 export default function PerfilPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const { selectedSeason } = useSeason();
+  const { data: me } = useFetch<MeResponse>(user ? "/auth/me" : null);
   const { data: evolution } = useFetch<EvolutionResponse>(
     selectedSeason ? `/standings/${selectedSeason.id}/evolution` : null,
   );
@@ -93,7 +103,7 @@ export default function PerfilPage() {
           <div className="flex justify-between">
             <span className="text-vpv-text-muted">Nombre</span>
             <span className="font-medium text-vpv-text">
-              {user.displayName}
+              {me?.display_name ?? user.displayName}
             </span>
           </div>
           {user.isAdmin && (
@@ -108,14 +118,14 @@ export default function PerfilPage() {
       </section>
 
       {/* Evolution */}
-      {evolution && evolution.entries.length > 0 && user && (
+      {evolution && evolution.entries.length > 0 && me && (
         <section>
           <h2 className="mb-3 text-lg font-semibold text-vpv-text">
             Mi temporada {selectedSeason?.name}
           </h2>
           <PersonalEvolution
             entries={evolution.entries}
-            displayName={user.displayName}
+            displayName={me.display_name}
           />
         </section>
       )}
