@@ -94,6 +94,26 @@ class LineupDetailResponse(BaseModel):
     bench: list[BenchPlayerEntry]
 
 
+class HighlightPlayer(BaseModel):
+    player_id: int
+    player_name: str
+    photo_path: str | None
+    position: str
+    team_name: str
+    points: int
+    owner_name: str
+    goals: int
+    assists: int
+
+
+class MatchdayHighlightsResponse(BaseModel):
+    matchday_number: int
+    mvp: HighlightPlayer | None = None
+    flop: HighlightPlayer | None = None
+    top_scorer: HighlightPlayer | None = None
+    top_assister: HighlightPlayer | None = None
+
+
 # --- Admin schemas ---
 
 

@@ -8,9 +8,11 @@ from src.features.matchdays.schemas import (
     AdminMatchdayResponse,
     AdminMatchResponse,
     BenchPlayerEntry,
+    HighlightPlayer,
     LineupDetailResponse,
     LineupPlayerEntry,
     MatchdayDetailResponse,
+    MatchdayHighlightsResponse,
     MatchdayListResponse,
     MatchdaySummary,
     MatchEntry,
@@ -266,3 +268,49 @@ class MatchdayService:
                     played_at=m.played_at,
                 )
         raise NotFoundError("Match", match_id)
+
+    async def get_matchday_highlights(
+        self,
+        season_id: int,
+        matchday_number: int,
+    ) -> MatchdayHighlightsResponse:
+        matchday = await self.repo.get_matchday(season_id, matchday_number)
+        if matchday is None:
+            raise NotFoundError("Matchday", matchday_number)
+
+        rows = await self.repo.get_matchday_highlights(matchday.id)
+        if not rows:
+            return MatchdayHighlightsResponse(matchday_number=matchday_number)
+
+        def to_highlight(r: dict) -> HighlightPlayer:
+            return HighlightPlayer(
+                player_id=r["player_id"],
+                player_name=r["player_name"],
+                photo_path=r["photo_path"],
+                position=r["position_slot"],
+                team_name=r["team_name"],
+                points=r["points"] or 0,
+                owner_name=r["owner_name"],
+                goals=r["goals"] or 0,
+                assists=r["assists"] or 0,
+            )
+
+        played = [r for r in rows if (r["points"] or 0) != 0]
+        mvp = to_highlight(played[0]) if played else None
+        flop = to_highlight(played[-1]) if played and len(played) > 1 else None
+
+        with_goals = [r for r in rows if (r["goals"] or 0) > 0]
+        with_goals.sort(key=lambda r: r["goals"] or 0, reverse=True)
+        top_scorer = to_highlight(with_goals[0]) if with_goals else None
+
+        with_assists = [r for r in rows if (r["assists"] or 0) > 0]
+        with_assists.sort(key=lambda r: r["assists"] or 0, reverse=True)
+        top_assister = to_highlight(with_assists[0]) if with_assists else None
+
+        return MatchdayHighlightsResponse(
+            matchday_number=matchday_number,
+            mvp=mvp,
+            flop=flop,
+            top_scorer=top_scorer,
+            top_assister=top_assister,
+        )

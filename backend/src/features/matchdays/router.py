@@ -8,6 +8,7 @@ from src.features.matchdays.schemas import (
     AdminMatchResponse,
     LineupDetailResponse,
     MatchdayDetailResponse,
+    MatchdayHighlightsResponse,
     MatchdayListResponse,
     MatchdayUpdateRequest,
     MatchUpdateRequest,
@@ -41,6 +42,18 @@ async def get_matchday_detail(
     service: MatchdayService = Depends(_get_service),
 ) -> MatchdayDetailResponse:
     return await service.get_matchday_detail(season_id, number)
+
+
+@router.get(
+    "/{season_id}/{number}/highlights",
+    response_model=MatchdayHighlightsResponse,
+)
+async def get_matchday_highlights(
+    season_id: int,
+    number: int,
+    service: MatchdayService = Depends(_get_service),
+) -> MatchdayHighlightsResponse:
+    return await service.get_matchday_highlights(season_id, number)
 
 
 @router.get(

@@ -444,6 +444,44 @@ class MatchdayRepository:
                 setattr(matchday, key, value)
         return matchday
 
+    async def get_matchday_highlights(
+        self,
+        matchday_id: int,
+    ) -> list[dict]:
+        """Get all lined-up players with their points for a matchday."""
+        stmt = (
+            select(
+                Player.id.label("player_id"),
+                Player.display_name.label("player_name"),
+                Player.photo_path,
+                LineupPlayer.position_slot,
+                func.coalesce(Team.short_name, Team.name).label("team_name"),
+                LineupPlayer.points,
+                User.display_name.label("owner_name"),
+                PlayerStat.goals,
+                PlayerStat.assists,
+            )
+            .join(Lineup, LineupPlayer.lineup_id == Lineup.id)
+            .join(Player, LineupPlayer.player_id == Player.id)
+            .join(Team, Player.team_id == Team.id)
+            .join(SeasonParticipant, Lineup.participant_id == SeasonParticipant.id)
+            .join(User, SeasonParticipant.user_id == User.id)
+            .outerjoin(
+                PlayerStat,
+                and_(
+                    PlayerStat.player_id == Player.id,
+                    PlayerStat.matchday_id == matchday_id,
+                ),
+            )
+            .where(
+                Lineup.matchday_id == matchday_id,
+                Lineup.confirmed.is_(True),
+            )
+            .order_by(LineupPlayer.points.desc())
+        )
+        result = await self.session.execute(stmt)
+        return [dict(row._mapping) for row in result.all()]
+
     async def update_match(
         self,
         match_id: int,

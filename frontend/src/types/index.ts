@@ -91,6 +91,26 @@ export interface ParticipantScore {
   pending_players: number;
 }
 
+export interface HighlightPlayer {
+  player_id: number;
+  player_name: string;
+  photo_path: string | null;
+  position: string;
+  team_name: string;
+  points: number;
+  owner_name: string;
+  goals: number;
+  assists: number;
+}
+
+export interface MatchdayHighlightsResponse {
+  matchday_number: number;
+  mvp: HighlightPlayer | null;
+  flop: HighlightPlayer | null;
+  top_scorer: HighlightPlayer | null;
+  top_assister: HighlightPlayer | null;
+}
+
 export interface MatchdayDetailResponse {
   season_id: number;
   number: number;

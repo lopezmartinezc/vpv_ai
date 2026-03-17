@@ -6,9 +6,10 @@ import { useAuth } from "@/contexts/auth-context";
 import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
 import { MatchList } from "@/components/matchdays/match-list";
+import { MatchdayHighlights } from "@/components/matchdays/highlights";
 import { MatchdayAccordion } from "@/components/dashboard/matchday-accordion";
 import { SkeletonTable } from "@/components/ui/skeleton";
-import type { MatchdayDetailResponse } from "@/types";
+import type { MatchdayDetailResponse, MatchdayHighlightsResponse } from "@/types";
 
 export default function JornadaDetailPage() {
   const params = useParams<{ numero: string }>();
@@ -18,6 +19,11 @@ export default function JornadaDetailPage() {
 
   const { data, loading } = useFetch<MatchdayDetailResponse>(
     selectedSeason ? `/matchdays/${selectedSeason.id}/${numero}` : null,
+  );
+  const { data: highlights } = useFetch<MatchdayHighlightsResponse>(
+    selectedSeason && data?.stats_ok
+      ? `/matchdays/${selectedSeason.id}/${numero}/highlights`
+      : null,
   );
 
   if (seasonLoading || loading) {
@@ -64,6 +70,10 @@ export default function JornadaDetailPage() {
           </Link>
         )}
       </div>
+
+      {highlights && (
+        <MatchdayHighlights highlights={highlights} />
+      )}
 
       <section className="space-y-2">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-vpv-text-muted">

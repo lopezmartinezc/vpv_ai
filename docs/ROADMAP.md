@@ -19,9 +19,10 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 - **Problema**: Los usuarios no saben cuanto tiempo les queda para enviar alineacion
 - **Solucion**: Banner/widget en home y pagina de alineacion con cuenta atras
 - **Datos**: `matchday.first_match_at - season.lineup_deadline_min`
-- **Archivos**: `frontend/src/components/dashboard/`, pagina alineacion
+- **Archivos**: `frontend/src/components/dashboard/deadline-widget.tsx`, `page.tsx`
 - **Complejidad**: Baja
-- **Estado**: [ ] Pendiente
+- **Estado**: [x] Completado (2026-03-17)
+- **Notas**: Incluye logica de mostrar jornada anterior hasta que pase el deadline
 
 ### 1.2 Historial de alineaciones del usuario
 - **Problema**: Un usuario no puede ver sus alineaciones pasadas
@@ -137,13 +138,13 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 
 | # | Mejora | Impacto | Complejidad | Estado |
 |---|--------|---------|-------------|--------|
-| 1.1 | Countdown deadline | Alto | Baja | Pendiente |
+| 1.1 | Countdown deadline | Alto | Baja | Completado |
 | 1.2 | Historial alineaciones | Alto | Baja | Pendiente |
 | 1.3 | Estadisticas publicas | Alto | Baja | Pendiente |
 | 1.4 | Telegram automatico | Alto | Media | Pendiente |
 | 1.5 | Desglose puntos jornada | Alto | Baja | Pendiente |
 | 2.1 | Comparador H2H | Medio | Media | Pendiente |
-| 2.2 | MVP por jornada | Medio | Baja | Pendiente |
+| 2.2 | MVP por jornada | Medio | Baja | En progreso |
 | 2.3 | Evolucion personal | Medio | Media | Pendiente |
 | 2.4 | Plantillas mejoradas | Medio | Media | Pendiente |
 | 3.1 | Logros/badges | Medio | Alta | Pendiente |
