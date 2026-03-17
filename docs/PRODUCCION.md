@@ -1,6 +1,6 @@
 # Guía Completa de Producción — Liga VPV Fantasy en AlmaLinux 10
 
-**Última actualización:** 2026-03-08
+**Última actualización:** 2026-03-17
 
 Esta guía te lleva paso a paso desde un servidor dedicado AlmaLinux 10 desnudo hasta tener la aplicación Liga VPV (ligavpv.com) completamente operativa en producción. Está diseñada para alguien con conocimientos básicos de Linux.
 

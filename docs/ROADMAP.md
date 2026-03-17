@@ -74,10 +74,11 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 
 ### 2.3 Grafico de evolucion personal
 - **Problema**: No hay vista personal del progreso del usuario
-- **Solucion**: Grafico en `/perfil` con progresion de puntos y posicion en liga por jornada
-- **Backend**: endpoint de evolucion individual
+- **Solucion**: Dos graficos en `/perfil` (puntos por jornada + posicion en liga) + stats cards
+- **Backend**: reutiliza `/standings/{id}/evolution` existente, filtrado en frontend
 - **Complejidad**: Media
-- **Estado**: [ ] Pendiente
+- **Estado**: [x] Completado (2026-03-17)
+- **Notas**: Stats: mejor/peor jornada, posicion media, mejor racha top 3
 
 ### 2.4 Plantillas mejoradas
 - **Problema**: Vista de plantillas basica
@@ -145,7 +146,7 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 | 1.5 | Desglose puntos jornada | Alto | Baja | Completado |
 | 2.1 | Comparador H2H | Medio | Media | Pendiente |
 | 2.2 | MVP por jornada | Medio | Baja | Completado |
-| 2.3 | Evolucion personal | Medio | Media | Pendiente |
+| 2.3 | Evolucion personal | Medio | Media | Completado |
 | 2.4 | Plantillas mejoradas | Medio | Media | Pendiente |
 | 3.1 | Logros/badges | Medio | Alta | Completado |
 | 3.2 | Draft en vivo | Bajo | Alta | Pendiente |
@@ -153,6 +154,7 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 | 4.1 | PWA | Medio | Baja | Completado |
 | 4.2 | Lazy loading | Bajo | Media | Pendiente |
 | 4.3 | Tests | Alto (tecnico) | Alta | Pendiente |
+| 4.4 | Sesion unica | Alto (seguridad) | Media | Completado |
 
 ## Criterios de validacion
 
