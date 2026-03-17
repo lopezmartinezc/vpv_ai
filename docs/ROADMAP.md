@@ -50,10 +50,9 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 ### 1.5 Desglose de puntos en la jornada
 - **Problema**: Usuarios ven puntos totales pero no el desglose
 - **Solucion**: Expandir cada jugador para ver pts_play, pts_result, pts_goals, etc.
-- **Datos**: ya disponibles en `player_stats`
-- **Frontend**: accordion/tooltip con desglose
 - **Complejidad**: Baja
-- **Estado**: [ ] Pendiente
+- **Estado**: [x] Ya existia (MatchdayAccordion con PlayerRow expandible)
+- **Notas**: Click en jugador muestra grid con 10 categorias de puntos (solo no-cero)
 
 ---
 
@@ -143,7 +142,7 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 | 1.2 | Historial alineaciones | Alto | Baja | Pendiente |
 | 1.3 | Estadisticas publicas | Alto | Baja | Pendiente |
 | 1.4 | Telegram automatico | Alto | Media | Pendiente |
-| 1.5 | Desglose puntos jornada | Alto | Baja | Pendiente |
+| 1.5 | Desglose puntos jornada | Alto | Baja | Completado |
 | 2.1 | Comparador H2H | Medio | Media | Pendiente |
 | 2.2 | MVP por jornada | Medio | Baja | Completado |
 | 2.3 | Evolucion personal | Medio | Media | Pendiente |
