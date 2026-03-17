@@ -4,10 +4,11 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
 from src.core.config import settings
+from src.core.rate_limit import limiter
 from src.shared.dependencies import get_current_admin
 
 logger = logging.getLogger(__name__)
@@ -16,7 +17,9 @@ router = APIRouter(prefix="/backup", tags=["backup"])
 
 
 @router.post("/admin/download")
+@limiter.limit("3/hour")
 async def download_backup(
+    request: Request,
     _admin: dict = Depends(get_current_admin),
 ) -> StreamingResponse:
     """Run pg_dump and stream the result as a downloadable .sql file."""
@@ -38,7 +41,7 @@ async def download_backup(
         "--if-exists",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        env={"PGPASSWORD": settings.pg_password},
+        env={"PGPASSWORD": settings.pg_password, "PATH": "/usr/bin:/usr/local/bin"},
     )
 
     stdout, stderr = await process.communicate()

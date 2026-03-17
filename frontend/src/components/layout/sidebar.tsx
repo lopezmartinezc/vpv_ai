@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
@@ -15,6 +15,34 @@ const NAV_ITEMS = [
   { href: "/copa", label: "Copa", icon: "shield" },
   { href: "/jornadas", label: "Jornadas", icon: "calendar" },
   { href: "/economia", label: "Economia", icon: "coins" },
+] as const;
+
+const ADMIN_SECTIONS = [
+  {
+    group: "Liga",
+    items: [
+      { href: "/admin/temporadas", label: "Temporadas" },
+      { href: "/admin/jornadas", label: "Jornadas" },
+      { href: "/admin/jugadores", label: "Jugadores" },
+      { href: "/admin/estadisticas", label: "Estadisticas" },
+    ],
+  },
+  {
+    group: "Usuarios",
+    items: [
+      { href: "/admin/usuarios", label: "Usuarios" },
+      { href: "/admin/invitaciones", label: "Invitaciones" },
+      { href: "/admin/economia", label: "Economia" },
+    ],
+  },
+  {
+    group: "Operaciones",
+    items: [
+      { href: "/admin/scraping", label: "Scraping" },
+      { href: "/admin/telegram", label: "Telegram" },
+      { href: "/admin/backup", label: "Backup" },
+    ],
+  },
 ] as const;
 
 export function Sidebar({
@@ -186,19 +214,7 @@ export function Sidebar({
                   </li>
                 )}
                 {user.isAdmin && (
-                  <li>
-                    <Link
-                      href="/admin"
-                      className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                        pathname.startsWith("/admin")
-                          ? "bg-vpv-accent/10 text-vpv-accent"
-                          : "text-vpv-text-muted hover:bg-vpv-bg hover:text-vpv-text"
-                      }`}
-                    >
-                      <NavIcon name="shield" className="h-5 w-5" />
-                      Admin
-                    </Link>
-                  </li>
+                  <AdminSubmenu pathname={pathname} />
                 )}
               </ul>
             </>
@@ -206,5 +222,69 @@ export function Sidebar({
         </nav>
       </aside>
     </>
+  );
+}
+
+function AdminSubmenu({ pathname }: { pathname: string }) {
+  const isInAdmin = pathname.startsWith("/admin");
+  const [expanded, setExpanded] = useState(isInAdmin);
+
+  return (
+    <li>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+          isInAdmin
+            ? "bg-vpv-accent/10 text-vpv-accent"
+            : "text-vpv-text-muted hover:bg-vpv-bg hover:text-vpv-text"
+        }`}
+      >
+        <NavIcon name="shield" className="h-5 w-5" />
+        <span className="flex-1 text-left">Admin</span>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          className={`h-4 w-4 transition-transform ${expanded ? "rotate-180" : ""}`}
+        >
+          <path
+            fillRule="evenodd"
+            d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+            clipRule="evenodd"
+          />
+        </svg>
+      </button>
+      {expanded && (
+        <div className="ml-4 mt-1 space-y-3 border-l border-vpv-border pl-3">
+          {ADMIN_SECTIONS.map((section) => (
+            <div key={section.group}>
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-vpv-text-muted/50">
+                {section.group}
+              </p>
+              <ul className="space-y-0.5">
+                {section.items.map(({ href, label }) => {
+                  const active =
+                    pathname === href || pathname.startsWith(href + "/");
+                  return (
+                    <li key={href}>
+                      <Link
+                        href={href}
+                        className={`block rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
+                          active
+                            ? "text-vpv-accent"
+                            : "text-vpv-text-muted hover:text-vpv-text"
+                        }`}
+                      >
+                        {label}
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+    </li>
   );
 }
