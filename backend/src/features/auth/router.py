@@ -49,7 +49,7 @@ async def refresh_token(
     user: dict = Depends(get_current_user),
     service: AuthService = Depends(_get_service),
 ) -> TokenResponse:
-    return await service.refresh(int(user["sub"]))
+    return await service.refresh(int(user["sub"]), user.get("session_id", ""))
 
 
 @router.get("/invite/{token}", response_model=InviteStatusResponse)
@@ -142,3 +142,13 @@ async def reset_password(
     service: AuthService = Depends(_get_service),
 ) -> InviteResponse:
     return await service.reset_password(user_id, int(admin["sub"]))
+
+
+@router.post("/admin/users/{user_id}/force-logout")
+async def force_logout(
+    user_id: int,
+    _admin: dict = Depends(get_current_admin),
+    service: AuthService = Depends(_get_service),
+) -> dict[str, str]:
+    await service.force_logout(user_id)
+    return {"message": "Sesion cerrada"}

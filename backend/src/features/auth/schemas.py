@@ -72,4 +72,5 @@ class AdminUserResponse(BaseModel):
     is_admin: bool
     is_draft_manager: bool
     has_password: bool
+    has_session: bool
     telegram_chat_id: str | None

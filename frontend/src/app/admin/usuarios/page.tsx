@@ -11,6 +11,7 @@ interface AdminUser {
   is_admin: boolean;
   is_draft_manager: boolean;
   has_password: boolean;
+  has_session: boolean;
   telegram_chat_id: string | null;
 }
 
@@ -144,6 +145,25 @@ export default function AdminUsuariosPage() {
     }
   }
 
+  async function handleForceLogout(userId: number) {
+    setActionLoading(userId);
+    setActionError(null);
+    try {
+      await apiClient.post<{ message: string }>(
+        `/auth/admin/users/${userId}/force-logout`,
+        {},
+      );
+      setUsers((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, has_session: false } : u)),
+      );
+    } catch (e) {
+      console.error("force-logout error:", e);
+      setActionError(e instanceof Error ? e.message : "Error al cerrar sesion");
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
   async function handleResetPassword(userId: number) {
     setActionLoading(userId);
     setActionError(null);
@@ -218,6 +238,11 @@ export default function AdminUsuariosPage() {
                     Sin password
                   </span>
                 )}
+                {user.has_session && (
+                  <span className="rounded bg-green-500/20 px-2 py-0.5 text-xs font-medium text-green-400">
+                    Online
+                  </span>
+                )}
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -244,6 +269,15 @@ export default function AdminUsuariosPage() {
                   ? "Enlace copiado!"
                   : "Reset password"}
               </button>
+              {user.has_session && (
+                <button
+                  onClick={() => handleForceLogout(user.id)}
+                  disabled={actionLoading === user.id}
+                  className="rounded border border-red-500/30 px-2 py-1 text-xs text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50"
+                >
+                  Cerrar sesion
+                </button>
+              )}
             </div>
           </div>
         ))}
@@ -289,9 +323,9 @@ export default function AdminUsuariosPage() {
                         Sin password
                       </span>
                     )}
-                    {user.has_password && !user.is_admin && !user.is_draft_manager && (
-                      <span className="text-xs text-vpv-text-muted">
-                        Activo
+                    {user.has_session && (
+                      <span className="rounded bg-green-500/20 px-2 py-0.5 text-xs font-medium text-green-400">
+                        Online
                       </span>
                     )}
                   </div>
@@ -321,6 +355,15 @@ export default function AdminUsuariosPage() {
                         ? "Enlace copiado!"
                         : "Reset password"}
                     </button>
+                    {user.has_session && (
+                      <button
+                        onClick={() => handleForceLogout(user.id)}
+                        disabled={actionLoading === user.id}
+                        className="rounded border border-red-500/30 px-2 py-1 text-xs text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50"
+                      >
+                        Cerrar sesion
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>

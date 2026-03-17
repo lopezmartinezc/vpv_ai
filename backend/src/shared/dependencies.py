@@ -1,5 +1,6 @@
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db
 from src.core.exceptions import AuthenticationError, AuthorizationError
@@ -9,12 +10,26 @@ _bearer = HTTPBearer(auto_error=False)
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
     if credentials is None:
         raise AuthenticationError("Token de autenticacion requerido")
     from src.features.auth.service import decode_token
 
-    return decode_token(credentials.credentials)
+    payload = decode_token(credentials.credentials)
+
+    # Validate session_id against DB (single session enforcement)
+    session_id = payload.get("session_id")
+    if session_id:
+        from src.shared.models.user import User
+
+        user = await db.get(User, int(payload["sub"]))
+        if user is None:
+            raise AuthenticationError("Usuario no encontrado")
+        if user.session_id != session_id:
+            raise AuthenticationError("Sesion invalidada. Inicia sesion de nuevo.")
+
+    return payload
 
 
 async def get_current_admin(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import bcrypt
@@ -31,13 +32,14 @@ def _verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
-def _create_token(user: User) -> str:
+def _create_token(user: User, session_id: str) -> str:
     expire = datetime.now(UTC) + timedelta(minutes=settings.jwt_expire_minutes)
     payload = {
         "sub": str(user.id),
         "username": user.username,
         "is_admin": user.is_admin,
         "is_draft_manager": user.is_draft_manager,
+        "session_id": session_id,
         "exp": expire,
     }
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
@@ -84,7 +86,10 @@ class AuthService:
         user = await self.auth_repo.get_user_by_username(username)
         if user is None or not _verify_password(password, user.password_hash):
             raise AuthenticationError("Usuario o contrasena incorrectos")
-        return TokenResponse(access_token=_create_token(user))
+        session_id = str(uuid.uuid4())
+        user.session_id = session_id
+        await self.session.commit()
+        return TokenResponse(access_token=_create_token(user, session_id))
 
     async def get_me(self, user_id: int) -> UserResponse:
         user = await self.auth_repo.get_user_by_id(user_id)
@@ -92,11 +97,13 @@ class AuthService:
             raise AuthenticationError("Usuario no encontrado")
         return _user_response(user)
 
-    async def refresh(self, user_id: int) -> TokenResponse:
+    async def refresh(self, user_id: int, session_id: str) -> TokenResponse:
         user = await self.auth_repo.get_user_by_id(user_id)
         if user is None:
             raise AuthenticationError("Usuario no encontrado")
-        return TokenResponse(access_token=_create_token(user))
+        if user.session_id != session_id:
+            raise AuthenticationError("Sesion invalidada")
+        return TokenResponse(access_token=_create_token(user, session_id))
 
     async def validate_invite(self, token: str) -> InviteStatusResponse:
         invite = await self.invite_repo.get_valid_by_token(token)
@@ -140,8 +147,10 @@ class AuthService:
         if user is None:
             raise BusinessRuleError("Error interno: usuario no encontrado tras registro")
         await self.invite_repo.mark_used(invite.id, user.id)
+        session_id = str(uuid.uuid4())
+        user.session_id = session_id
         await self.session.commit()
-        return TokenResponse(access_token=_create_token(user))
+        return TokenResponse(access_token=_create_token(user, session_id))
 
     async def create_invite(
         self,
@@ -183,6 +192,7 @@ class AuthService:
                 is_admin=u.is_admin,
                 is_draft_manager=u.is_draft_manager,
                 has_password=bool(u.password_hash),
+                has_session=bool(u.session_id),
                 telegram_chat_id=u.telegram_chat_id,
             )
             for u in users
@@ -203,6 +213,7 @@ class AuthService:
             is_admin=user.is_admin,
             is_draft_manager=user.is_draft_manager,
             has_password=bool(user.password_hash),
+            has_session=bool(user.session_id),
             telegram_chat_id=user.telegram_chat_id,
         )
 
@@ -219,6 +230,7 @@ class AuthService:
             is_admin=user.is_admin,
             is_draft_manager=user.is_draft_manager,
             has_password=bool(user.password_hash),
+            has_session=bool(user.session_id),
             telegram_chat_id=user.telegram_chat_id,
         )
 
@@ -243,3 +255,10 @@ class AuthService:
         if loaded is None:
             raise BusinessRuleError("Error interno: invitacion no encontrada")
         return _invite_response(loaded)
+
+    async def force_logout(self, user_id: int) -> None:
+        user = await self.auth_repo.get_user_by_id(user_id)
+        if user is None:
+            raise BusinessRuleError("Usuario no encontrado")
+        user.session_id = None
+        await self.session.commit()
