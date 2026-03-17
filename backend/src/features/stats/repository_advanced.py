@@ -376,7 +376,7 @@ class AdvancedStatsRepository:
                 season_pts,
                 DraftPick.player_id == season_pts.c.player_id,
             )
-            .where(Draft.draft_type == "preseason")
+            .where(Draft.phase == "preseason")
         )
 
         if season_ids:
@@ -423,7 +423,7 @@ class AdvancedStatsRepository:
             .join(Draft, DraftPick.draft_id == Draft.id)
             .join(Player, DraftPick.player_id == Player.id)
             .join(season_pts, season_pts.c.player_id == Player.id)
-            .where(Draft.draft_type == "preseason")
+            .where(Draft.phase == "preseason")
         )
 
         if season_ids:
@@ -473,7 +473,7 @@ class AdvancedStatsRepository:
             .join(Draft, DraftPick.draft_id == Draft.id)
             .join(Player, DraftPick.player_id == Player.id)
             .join(season_pts, season_pts.c.player_id == Player.id)
-            .where(Draft.draft_type == "preseason")
+            .where(Draft.phase == "preseason")
         )
 
         if season_ids:
