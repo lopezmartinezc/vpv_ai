@@ -423,20 +423,24 @@ def sync_lineups(
                 positions = [p["pos"] for p in players if p["pos"]]
                 formation = _build_formation(positions)
 
-                # Insert lineup (skip if already exists)
+                # Upsert lineup (update formation if already exists)
                 pg_cur.execute(
                     """INSERT INTO lineups (participant_id, matchday_id, formation, confirmed, telegram_sent, total_points)
                        VALUES (%s, %s, %s, TRUE, FALSE, 0)
-                       ON CONFLICT (participant_id, matchday_id) DO NOTHING
+                       ON CONFLICT (participant_id, matchday_id)
+                       DO UPDATE SET formation = EXCLUDED.formation
                        RETURNING id""",
                     (participant_id, md_id, formation),
                 )
                 result = pg_cur.fetchone()
-                if not result:
-                    # Lineup already exists, skip
-                    continue
-
                 lineup_id = result[0]
+
+                # Delete existing lineup players and re-insert from MySQL
+                pg_cur.execute(
+                    "DELETE FROM lineup_players WHERE lineup_id = %s",
+                    (lineup_id,),
+                )
+
                 inserted_lineups += 1
 
                 # Insert lineup players
