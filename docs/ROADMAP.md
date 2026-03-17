@@ -116,9 +116,10 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 
 ### 4.1 PWA (Progressive Web App)
 - **Problema**: App no instalable en movil
-- **Solucion**: Manifest + service worker
+- **Solucion**: Manifest + iconos (192, 512, apple-touch-icon, OG image) + metadata completa
 - **Complejidad**: Baja
-- **Estado**: [ ] Pendiente
+- **Estado**: [x] Completado (2026-03-17)
+- **Notas**: Sin service worker offline (datos siempre necesitan servidor)
 
 ### 4.2 Lazy loading en tablas largas
 - **Problema**: Tablas de 200+ jugadores cargan completas
@@ -144,13 +145,13 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 | 1.4 | Telegram automatico | Alto | Media | Pendiente |
 | 1.5 | Desglose puntos jornada | Alto | Baja | Pendiente |
 | 2.1 | Comparador H2H | Medio | Media | Pendiente |
-| 2.2 | MVP por jornada | Medio | Baja | En progreso |
+| 2.2 | MVP por jornada | Medio | Baja | Completado |
 | 2.3 | Evolucion personal | Medio | Media | Pendiente |
 | 2.4 | Plantillas mejoradas | Medio | Media | Pendiente |
-| 3.1 | Logros/badges | Medio | Alta | Pendiente |
+| 3.1 | Logros/badges | Medio | Alta | Completado |
 | 3.2 | Draft en vivo | Bajo | Alta | Pendiente |
 | 3.3 | Predicciones | Medio | Alta | Pendiente |
-| 4.1 | PWA | Medio | Baja | Pendiente |
+| 4.1 | PWA | Medio | Baja | Completado |
 | 4.2 | Lazy loading | Bajo | Media | Pendiente |
 | 4.3 | Tests | Alto (tecnico) | Alta | Pendiente |
 
