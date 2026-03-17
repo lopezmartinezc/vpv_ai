@@ -12,6 +12,7 @@ class SeasonSummary(BaseModel):
     status: str
     matchday_current: int
     total_participants: int
+    lineup_deadline_min: int
 
     model_config = {"from_attributes": True}
 

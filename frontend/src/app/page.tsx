@@ -11,6 +11,7 @@ import { CopaWidget } from "@/components/dashboard/copa-widget";
 import { CopaMatchdayWidget } from "@/components/dashboard/copa-matchday-widget";
 import { PagometroJornadaWidget } from "@/components/dashboard/pagometro-jornada-widget";
 import { PagometroWidget } from "@/components/dashboard/pagometro-widget";
+import { DeadlineWidget } from "@/components/dashboard/deadline-widget";
 import { SkeletonCards } from "@/components/ui/skeleton";
 import { Logo } from "@/components/ui/logo";
 
@@ -109,10 +110,17 @@ export default function Home() {
       </div>
 
       {currentMatchdayDetail && selectedSeason && (
-        <MatchdayAccordion
-          data={currentMatchdayDetail}
-          seasonId={selectedSeason.id}
-        />
+        <>
+          <DeadlineWidget
+            firstMatchAt={currentMatchdayDetail.first_match_at}
+            deadlineMin={selectedSeason.lineup_deadline_min}
+            matchdayNumber={currentMatchdayDetail.number}
+          />
+          <MatchdayAccordion
+            data={currentMatchdayDetail}
+            seasonId={selectedSeason.id}
+          />
+        </>
       )}
 
       {standings && standings.entries.length > 0 && (

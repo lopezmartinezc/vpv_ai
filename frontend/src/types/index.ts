@@ -10,6 +10,7 @@ export interface SeasonSummary {
   status: string;
   matchday_current: number;
   total_participants: number;
+  lineup_deadline_min: number;
 }
 
 export interface SeasonDetail {
