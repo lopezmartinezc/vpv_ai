@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
 import type { DraftPickEntry } from "@/types";
 
@@ -10,6 +10,8 @@ const POSITION_COLORS: Record<string, string> = {
   MED: "bg-green-600/20 text-green-400",
   DEL: "bg-red-600/20 text-red-400",
 };
+
+const POSITIONS = ["POR", "DEF", "MED", "DEL"];
 
 const PARTICIPANT_COLORS = [
   "bg-blue-500/15 text-blue-400",
@@ -28,36 +30,98 @@ const PARTICIPANT_COLORS = [
 ];
 
 export function PicksList({ picks }: { picks: DraftPickEntry[] }) {
-  const [filterParticipantId, setFilterParticipantId] = useState<number | null>(
-    null,
-  );
+  const [filterParticipantId, setFilterParticipantId] = useState<number | null>(null);
+  const [filterPosition, setFilterPosition] = useState<string | null>(null);
+  const [filterTeam, setFilterTeam] = useState<string | null>(null);
+  const [searchPlayer, setSearchPlayer] = useState("");
 
   // Build unique participants in order of first appearance
-  const participantMap = new Map<number, { id: number; name: string }>();
-  for (const pick of picks) {
-    if (!participantMap.has(pick.participant_id)) {
-      participantMap.set(pick.participant_id, {
-        id: pick.participant_id,
-        name: pick.display_name,
-      });
+  const participants = useMemo(() => {
+    const map = new Map<number, { id: number; name: string }>();
+    for (const pick of picks) {
+      if (!map.has(pick.participant_id)) {
+        map.set(pick.participant_id, { id: pick.participant_id, name: pick.display_name });
+      }
     }
-  }
-  const participants = [...participantMap.values()];
+    return [...map.values()];
+  }, [picks]);
+
+  // Build unique teams sorted alphabetically
+  const teams = useMemo(() => {
+    const set = new Set<string>();
+    for (const pick of picks) set.add(pick.team_name);
+    return [...set].sort();
+  }, [picks]);
 
   function getParticipantColor(participantId: number): string {
     const idx = participants.findIndex((p) => p.id === participantId);
     return PARTICIPANT_COLORS[(idx >= 0 ? idx : 0) % PARTICIPANT_COLORS.length];
   }
 
-  const displayPicks = filterParticipantId
-    ? picks.filter((p) => p.participant_id === filterParticipantId)
-    : picks;
+  const displayPicks = useMemo(() => {
+    const normalizedSearch = searchPlayer.toLowerCase().trim();
+    return picks.filter((p) => {
+      if (filterParticipantId !== null && p.participant_id !== filterParticipantId) return false;
+      if (filterPosition !== null && p.position !== filterPosition) return false;
+      if (filterTeam !== null && p.team_name !== filterTeam) return false;
+      if (normalizedSearch && !p.player_name.toLowerCase().includes(normalizedSearch)) return false;
+      return true;
+    });
+  }, [picks, filterParticipantId, filterPosition, filterTeam, searchPlayer]);
+
+  const hasFilters = filterParticipantId !== null || filterPosition !== null || filterTeam !== null || searchPlayer !== "";
+
+  function clearFilters() {
+    setFilterParticipantId(null);
+    setFilterPosition(null);
+    setFilterTeam(null);
+    setSearchPlayer("");
+  }
 
   return (
     <div className="space-y-4">
-      {/* Filter chips */}
+      {/* Search + dropdown filters */}
+      <div className="flex flex-wrap gap-2">
+        <input
+          type="text"
+          placeholder="Buscar jugador..."
+          value={searchPlayer}
+          onChange={(e) => setSearchPlayer(e.target.value)}
+          className="w-full rounded-lg border border-vpv-border bg-vpv-card px-3 py-2 text-sm text-vpv-text placeholder:text-vpv-text-muted/50 focus:border-vpv-accent focus:outline-none sm:w-48"
+        />
+        <select
+          value={filterPosition ?? ""}
+          onChange={(e) => setFilterPosition(e.target.value || null)}
+          className="rounded-lg border border-vpv-border bg-vpv-card px-3 py-2 text-sm text-vpv-text focus:border-vpv-accent focus:outline-none"
+        >
+          <option value="">Posicion</option>
+          {POSITIONS.map((pos) => (
+            <option key={pos} value={pos}>{pos}</option>
+          ))}
+        </select>
+        <select
+          value={filterTeam ?? ""}
+          onChange={(e) => setFilterTeam(e.target.value || null)}
+          className="rounded-lg border border-vpv-border bg-vpv-card px-3 py-2 text-sm text-vpv-text focus:border-vpv-accent focus:outline-none"
+        >
+          <option value="">Equipo</option>
+          {teams.map((team) => (
+            <option key={team} value={team}>{team}</option>
+          ))}
+        </select>
+        {hasFilters && (
+          <button
+            onClick={clearFilters}
+            className="rounded-lg border border-vpv-border px-3 py-2 text-xs font-medium text-vpv-text-muted transition-colors hover:text-vpv-text"
+          >
+            Limpiar filtros
+          </button>
+        )}
+      </div>
+
+      {/* Participant chips */}
       {participants.length > 1 && (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-1.5">
           <button
             onClick={() => setFilterParticipantId(null)}
             className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
@@ -69,17 +133,13 @@ export function PicksList({ picks }: { picks: DraftPickEntry[] }) {
             Todos ({picks.length})
           </button>
           {participants.map((p) => {
-            const count = picks.filter(
-              (pk) => pk.participant_id === p.id,
-            ).length;
+            const count = picks.filter((pk) => pk.participant_id === p.id).length;
             const isActive = filterParticipantId === p.id;
             const color = getParticipantColor(p.id);
             return (
               <button
                 key={p.id}
-                onClick={() =>
-                  setFilterParticipantId(isActive ? null : p.id)
-                }
+                onClick={() => setFilterParticipantId(isActive ? null : p.id)}
                 className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
                   isActive ? "bg-vpv-accent text-white" : `${color} hover:brightness-125`
                 }`}
@@ -89,6 +149,13 @@ export function PicksList({ picks }: { picks: DraftPickEntry[] }) {
             );
           })}
         </div>
+      )}
+
+      {/* Results count */}
+      {hasFilters && (
+        <p className="text-xs text-vpv-text-muted">
+          {displayPicks.length} de {picks.length} picks
+        </p>
       )}
 
       {/* Mobile: Cards */}
@@ -149,7 +216,7 @@ export function PicksList({ picks }: { picks: DraftPickEntry[] }) {
           <tbody>
             {displayPicks.map((pick, i) => {
               const showRoundSep =
-                !filterParticipantId &&
+                !hasFilters &&
                 i > 0 &&
                 displayPicks[i - 1].round_number !== pick.round_number;
 
@@ -204,7 +271,7 @@ export function PicksList({ picks }: { picks: DraftPickEntry[] }) {
 
       {displayPicks.length === 0 && (
         <p className="py-8 text-center text-sm text-vpv-text-muted">
-          No hay picks registrados.
+          {hasFilters ? "Sin resultados para estos filtros." : "No hay picks registrados."}
         </p>
       )}
     </div>
