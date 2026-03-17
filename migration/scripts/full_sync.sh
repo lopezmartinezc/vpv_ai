@@ -40,8 +40,8 @@ echo ""
 
 # Step 1: Incremental sync (lineups + scores + rankings)
 echo "--- STEP 1: Incremental sync (migration venv) ---"
-source "$MIGRATION_VENV/bin/activate"
 cd "$SCRIPT_DIR"
+source "$MIGRATION_VENV/bin/activate"
 python incremental_sync.py $SYNC_ARGS
 deactivate
 
@@ -51,9 +51,56 @@ if [ -n "$DRY_RUN" ]; then
     exit 0
 fi
 
-# Step 2: Backfill weekly payments
+# Step 2: Delete + regenerate weekly payments for synced matchdays
 echo ""
-echo "--- STEP 2: Backfill weekly payments (backend venv) ---"
+echo "--- STEP 2: Regenerate weekly payments (migration venv) ---"
+cd "$SCRIPT_DIR"
+source "$MIGRATION_VENV/bin/activate"
+
+# Get season_id and delete existing payments for synced matchdays
+python -c "
+from config import get_pg_conninfo
+import psycopg
+
+conn = psycopg.connect(get_pg_conninfo())
+cur = conn.cursor()
+
+cur.execute(\"SELECT id FROM seasons WHERE status = 'active' LIMIT 1\")
+row = cur.fetchone()
+if not row:
+    print('No active season')
+    conn.close()
+    exit(0)
+
+season_id = row[0]
+matchdays = '${MATCHDAYS}'.strip()
+
+if matchdays:
+    md_list = [int(m.strip()) for m in matchdays.split(',')]
+    # Delete weekly_payment transactions for these matchdays
+    cur.execute('''
+        DELETE FROM transactions
+        WHERE season_id = %s
+          AND type = 'weekly_payment'
+          AND matchday_id IN (
+              SELECT id FROM matchdays WHERE season_id = %s AND number = ANY(%s)
+          )
+    ''', (season_id, season_id, md_list))
+    print(f'Deleted {cur.rowcount} weekly_payment transactions for matchdays {md_list}')
+else:
+    # Delete ALL weekly payments for the season
+    cur.execute('''
+        DELETE FROM transactions
+        WHERE season_id = %s AND type = 'weekly_payment'
+    ''', (season_id,))
+    print(f'Deleted {cur.rowcount} weekly_payment transactions')
+
+conn.commit()
+conn.close()
+"
+deactivate
+
+# Now regenerate payments
 source "$BACKEND_VENV/bin/activate"
 cd "$PROJECT_ROOT/backend"
 PYTHONPATH="$PROJECT_ROOT/backend" python -m scripts.backfill_weekly_payments
@@ -61,9 +108,12 @@ deactivate
 
 # Step 3: Re-evaluate achievements
 echo ""
-echo "--- STEP 3: Re-evaluate achievements ---"
-# Get season_id from DB
-SEASON_ID=$(cd "$SCRIPT_DIR" && source "$MIGRATION_VENV/bin/activate" && python -c "
+echo "--- STEP 3: Re-evaluate achievements (backend venv) ---"
+
+# Get season_id
+cd "$SCRIPT_DIR"
+source "$MIGRATION_VENV/bin/activate"
+SEASON_ID=$(python -c "
 from config import get_pg_conninfo
 import psycopg
 conn = psycopg.connect(get_pg_conninfo())
@@ -72,7 +122,8 @@ cur.execute(\"SELECT id FROM seasons WHERE status = 'active' LIMIT 1\")
 row = cur.fetchone()
 print(row[0] if row else '')
 conn.close()
-" && deactivate)
+")
+deactivate
 
 if [ -z "$SEASON_ID" ]; then
     echo "No active season found — skipping achievements."
@@ -81,15 +132,18 @@ else
     cd "$PROJECT_ROOT/backend"
     PYTHONPATH="$PROJECT_ROOT/backend" python -c "
 import asyncio
-from src.core.database import AsyncSessionLocal
-from src.features.achievements.service import AchievementService
+import sys
+sys.path.insert(0, '.')
 
 async def run():
+    from src.core.database import AsyncSessionLocal, engine
+    from src.features.achievements.service import AchievementService
     async with AsyncSessionLocal() as session:
         svc = AchievementService(session)
         results = await svc.evaluate_all_matchdays($SEASON_ID)
         total = sum(r.granted for r in results)
         print(f'Evaluated {len(results)} matchdays, granted {total} achievements')
+    await engine.dispose()
 
 asyncio.run(run())
 "
