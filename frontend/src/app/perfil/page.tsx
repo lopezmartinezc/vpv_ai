@@ -3,11 +3,24 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
+import { useSeason } from "@/contexts/season-context";
+import { useFetch } from "@/hooks/use-fetch";
 import { apiClient } from "@/lib/api-client";
+import { PersonalEvolution } from "@/components/standings/personal-evolution";
+import type { EvolutionEntry } from "@/types";
+
+interface EvolutionResponse {
+  season_id: number;
+  entries: EvolutionEntry[];
+}
 
 export default function PerfilPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+  const { selectedSeason } = useSeason();
+  const { data: evolution } = useFetch<EvolutionResponse>(
+    selectedSeason ? `/standings/${selectedSeason.id}/evolution` : null,
+  );
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -67,7 +80,7 @@ export default function PerfilPage() {
   }
 
   return (
-    <div className="mx-auto max-w-lg space-y-6">
+    <div className="mx-auto max-w-2xl space-y-6">
       <h1 className="text-2xl font-bold text-vpv-text">Mi perfil</h1>
 
       {/* User info */}
@@ -93,6 +106,19 @@ export default function PerfilPage() {
           )}
         </div>
       </section>
+
+      {/* Evolution */}
+      {evolution && evolution.entries.length > 0 && user && (
+        <section>
+          <h2 className="mb-3 text-lg font-semibold text-vpv-text">
+            Mi temporada {selectedSeason?.name}
+          </h2>
+          <PersonalEvolution
+            entries={evolution.entries}
+            displayName={user.displayName}
+          />
+        </section>
+      )}
 
       {/* Change password */}
       <section className="rounded-lg border border-vpv-card-border bg-vpv-card p-5">
