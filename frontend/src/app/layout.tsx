@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { AppShell } from "@/components/layout/app-shell";
@@ -8,11 +8,15 @@ const inter = Inter({
   subsets: ["latin"],
 });
 
+export const viewport: Viewport = {
+  themeColor: "#f97316",
+};
+
 export const metadata: Metadata = {
+  metadataBase: new URL("https://new.ligavpv.com"),
   title: "Liga VPV Fantasy",
   description: "Liga fantasy de futbol entre amigos - La Liga espanola",
   manifest: "/site.webmanifest",
-  themeColor: "#f97316",
   icons: {
     icon: [
       { url: "/favicon.svg", type: "image/svg+xml" },
