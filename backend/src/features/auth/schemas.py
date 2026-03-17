@@ -59,6 +59,11 @@ class UserWithoutPasswordResponse(BaseModel):
     display_name: str
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
+
+
 class AdminUserResponse(BaseModel):
     id: int
     username: str

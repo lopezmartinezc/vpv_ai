@@ -171,24 +171,39 @@ export function Sidebar({
             })}
           </ul>
 
-          {user && selectedSeason && (
+          {user && (
             <>
               <div className="my-3 border-t border-vpv-border" />
               <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted">
                 Mi zona
               </p>
               <ul className="space-y-1">
+                {selectedSeason && (
+                  <li>
+                    <Link
+                      href={`/jornadas/${selectedSeason.matchday_current + 1}/alineacion`}
+                      className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                        pathname.includes("/alineacion")
+                          ? "bg-vpv-accent/10 text-vpv-accent"
+                          : "text-vpv-text-muted hover:bg-vpv-bg hover:text-vpv-text"
+                      }`}
+                    >
+                      <NavIcon name="clipboard" className="h-5 w-5" />
+                      Introducir equipo
+                    </Link>
+                  </li>
+                )}
                 <li>
                   <Link
-                    href={`/jornadas/${selectedSeason.matchday_current + 1}/alineacion`}
+                    href="/perfil"
                     className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                      pathname.includes("/alineacion")
+                      pathname === "/perfil"
                         ? "bg-vpv-accent/10 text-vpv-accent"
                         : "text-vpv-text-muted hover:bg-vpv-bg hover:text-vpv-text"
                     }`}
                   >
-                    <NavIcon name="clipboard" className="h-5 w-5" />
-                    Introducir equipo
+                    <NavIcon name="users" className="h-5 w-5" />
+                    Mi perfil
                   </Link>
                 </li>
               </ul>

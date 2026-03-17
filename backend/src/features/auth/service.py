@@ -222,6 +222,17 @@ class AuthService:
             telegram_chat_id=user.telegram_chat_id,
         )
 
+    async def change_password(
+        self, user_id: int, current_password: str, new_password: str
+    ) -> None:
+        user = await self.auth_repo.get_user_by_id(user_id)
+        if user is None:
+            raise BusinessRuleError("Usuario no encontrado")
+        if not _verify_password(current_password, user.password_hash or ""):
+            raise AuthenticationError("Contraseña actual incorrecta")
+        user.password_hash = _hash_password(new_password)
+        await self.session.commit()
+
     async def reset_password(self, user_id: int, admin_id: int) -> InviteResponse:
         user = await self.auth_repo.get_user_by_id(user_id)
         if user is None:

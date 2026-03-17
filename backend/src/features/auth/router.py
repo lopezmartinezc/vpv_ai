@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.rate_limit import limiter
 from src.features.auth.schemas import (
     AdminUserResponse,
+    ChangePasswordRequest,
     InviteCreateRequest,
     InviteResponse,
     InviteStatusResponse,
@@ -69,6 +70,18 @@ async def register(
     service: AuthService = Depends(_get_service),
 ) -> TokenResponse:
     return await service.register_with_invite(body.token, body.password, body.username)
+
+
+@router.put("/change-password")
+@limiter.limit("5/minute")
+async def change_password(
+    request: Request,
+    body: ChangePasswordRequest,
+    user: dict = Depends(get_current_user),
+    service: AuthService = Depends(_get_service),
+) -> dict[str, str]:
+    await service.change_password(int(user["sub"]), body.current_password, body.new_password)
+    return {"message": "Contraseña actualizada"}
 
 
 @router.post("/admin/invite", response_model=InviteResponse)
