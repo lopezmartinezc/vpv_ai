@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any, cast
 
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -39,11 +40,8 @@ class AchievementRepository:
             for a in achievements
         ]
 
-        stmt = (
-            pg_insert(Achievement.__table__)
-            .values(rows)
-            .on_conflict_do_nothing(constraint="uq_achievement")  # type: ignore[arg-type]
-        )
+        table = cast(Any, Achievement.__table__)
+        stmt = pg_insert(table).values(rows).on_conflict_do_nothing(constraint="uq_achievement")
         cursor = await self.session.execute(stmt)
         inserted = getattr(cursor, "rowcount", 0) or 0
         logger.debug("upsert_achievements: inserted=%d of %d", inserted, len(achievements))
