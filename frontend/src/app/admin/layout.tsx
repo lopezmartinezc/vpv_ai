@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
@@ -39,6 +40,17 @@ const ADMIN_NAV = [
   },
 ];
 
+function getActiveLabel(pathname: string): string {
+  for (const section of ADMIN_NAV) {
+    for (const item of section.items) {
+      if (pathname === item.href || pathname.startsWith(item.href + "/")) {
+        return item.label;
+      }
+    }
+  }
+  return "Admin";
+}
+
 export default function AdminLayout({
   children,
 }: {
@@ -47,6 +59,7 @@ export default function AdminLayout({
   const pathname = usePathname();
   const router = useRouter();
   const { user, loading } = useAuth();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   if (loading) {
     return (
@@ -61,43 +74,82 @@ export default function AdminLayout({
     return null;
   }
 
-  return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold text-vpv-text">Administracion</h1>
-
-      <nav className="overflow-x-auto border-b border-vpv-border pb-px">
-        <div className="flex items-center gap-1">
-          {ADMIN_NAV.map((section, sIdx) => (
-            <div key={section.group} className="flex items-center">
-              {sIdx > 0 && (
-                <div className="mx-1.5 h-4 w-px bg-vpv-border" />
-              )}
-              <span className="mr-1 hidden text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted/50 lg:inline">
-                {section.group}
-              </span>
-              {section.items.map(({ href, label }) => {
-                const active =
-                  pathname === href || pathname.startsWith(href + "/");
-                return (
+  const navContent = (
+    <div className="space-y-5">
+      {ADMIN_NAV.map((section) => (
+        <div key={section.group}>
+          <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-widest text-vpv-text-muted/60">
+            {section.group}
+          </p>
+          <ul className="space-y-0.5">
+            {section.items.map(({ href, label }) => {
+              const active =
+                pathname === href || pathname.startsWith(href + "/");
+              return (
+                <li key={href}>
                   <Link
-                    key={href}
                     href={href}
-                    className={`whitespace-nowrap rounded-t-md px-3 py-2 text-sm font-medium transition-colors ${
+                    onClick={() => setMobileOpen(false)}
+                    className={`block rounded-md px-3 py-2 text-sm font-medium transition-colors ${
                       active
-                        ? "border-b-2 border-vpv-accent text-vpv-accent"
-                        : "text-vpv-text-muted hover:text-vpv-text"
+                        ? "bg-vpv-accent/15 text-vpv-accent"
+                        : "text-vpv-text-muted hover:bg-vpv-bg hover:text-vpv-text"
                     }`}
                   >
                     {label}
                   </Link>
-                );
-              })}
-            </div>
-          ))}
+                </li>
+              );
+            })}
+          </ul>
         </div>
-      </nav>
+      ))}
+    </div>
+  );
 
-      {children}
+  return (
+    <div>
+      {/* Mobile header */}
+      <div className="mb-4 flex items-center justify-between lg:hidden">
+        <h1 className="text-xl font-bold text-vpv-text">Admin</h1>
+        <button
+          onClick={() => setMobileOpen(!mobileOpen)}
+          className="flex items-center gap-2 rounded-lg border border-vpv-border bg-vpv-card px-3 py-2 text-sm font-medium text-vpv-text transition-colors hover:bg-vpv-bg"
+        >
+          {getActiveLabel(pathname)}
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            className={`h-4 w-4 transition-transform ${mobileOpen ? "rotate-180" : ""}`}
+          >
+            <path
+              fillRule="evenodd"
+              d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+              clipRule="evenodd"
+            />
+          </svg>
+        </button>
+      </div>
+
+      {/* Mobile dropdown */}
+      {mobileOpen && (
+        <div className="mb-4 rounded-lg border border-vpv-card-border bg-vpv-card p-3 lg:hidden">
+          {navContent}
+        </div>
+      )}
+
+      {/* Desktop: sidebar + content */}
+      <div className="lg:flex lg:gap-6">
+        {/* Desktop sidebar */}
+        <aside className="hidden w-48 flex-shrink-0 lg:block">
+          <h1 className="mb-4 text-xl font-bold text-vpv-text">Admin</h1>
+          {navContent}
+        </aside>
+
+        {/* Content */}
+        <main className="min-w-0 flex-1">{children}</main>
+      </div>
     </div>
   );
 }
