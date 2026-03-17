@@ -43,6 +43,14 @@ class ApiClient {
         code: "UNKNOWN",
         message: response.statusText,
       }));
+
+      // Session invalidated — clear token and redirect to login
+      if (response.status === 401 && typeof window !== "undefined") {
+        localStorage.removeItem("vpv_token");
+        window.location.href = "/login";
+        throw new ApiClientError(response.status, error);
+      }
+
       throw new ApiClientError(response.status, error);
     }
 
