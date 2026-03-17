@@ -245,6 +245,10 @@ class ScrapingService:
         if all_ok and counting_matches:
             economy_svc = EconomyService(self.session)
             await economy_svc.generate_weekly_payments(season_id, matchday_id)
+            from src.features.achievements.engine import AchievementEngine
+
+            ach_engine = AchievementEngine(self.session)
+            await ach_engine.evaluate_matchday(season_id, matchday_id, matchday_number)
 
         # Advance the season's scanned pointer when the matchday is fully done.
         if all_ok and counting_matches:
@@ -413,6 +417,10 @@ class ScrapingService:
 
                 economy_svc = EconomyService(self.session)
                 await economy_svc.generate_weekly_payments(season_id, matchday_id)
+                from src.features.achievements.engine import AchievementEngine
+
+                ach_engine = AchievementEngine(self.session)
+                await ach_engine.evaluate_matchday(season_id, matchday_id, matchday_number)
                 await self.repo.update_season_matchday_scanned(season_id, matchday_number)
 
         summary: dict[str, object] = {

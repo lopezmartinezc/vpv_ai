@@ -15,6 +15,8 @@
 -- DROP TABLES (reverse dependency order -- leaf tables first)
 -- =============================================================================
 
+DROP TABLE IF EXISTS achievements                  CASCADE;
+DROP TABLE IF EXISTS achievement_definitions       CASCADE;
 DROP TABLE IF EXISTS alembic_version               CASCADE;
 DROP TABLE IF EXISTS invites                       CASCADE;
 DROP TABLE IF EXISTS transactions                 CASCADE;
@@ -413,6 +415,51 @@ CREATE TABLE player_ownership_log (
 CREATE INDEX idx_ownership_log_season      ON player_ownership_log(season_id);
 CREATE INDEX idx_ownership_log_participant ON player_ownership_log(participant_id);
 CREATE INDEX idx_ownership_log_player      ON player_ownership_log(player_id);
+
+-- ----------------------------------------------------------------------------
+-- 21. achievement_definitions -- Catalogue of available achievements
+-- ----------------------------------------------------------------------------
+CREATE TABLE achievement_definitions (
+    id              SERIAL PRIMARY KEY,
+    achievement_key VARCHAR(50)  NOT NULL UNIQUE,
+    name_es         VARCHAR(100) NOT NULL,
+    description_es  VARCHAR(300) NOT NULL,
+    category        VARCHAR(20)  NOT NULL,
+    icon            VARCHAR(10)  NOT NULL,
+    max_tier        SMALLINT     DEFAULT 1,
+    repeatable      BOOLEAN      NOT NULL DEFAULT TRUE
+);
+
+-- ----------------------------------------------------------------------------
+-- 22. achievements -- Achievements earned by participants
+-- ----------------------------------------------------------------------------
+CREATE TABLE achievements (
+    id              SERIAL PRIMARY KEY,
+    season_id       INT          NOT NULL REFERENCES seasons(id),
+    participant_id  INT          NOT NULL REFERENCES season_participants(id),
+    matchday_id     INT          REFERENCES matchdays(id),
+    achievement_key VARCHAR(50)  NOT NULL,
+    tier            SMALLINT     DEFAULT 1,
+    metadata        JSONB,
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_achievement UNIQUE(season_id, participant_id, matchday_id, achievement_key)
+);
+CREATE INDEX idx_achievements_season      ON achievements(season_id);
+CREATE INDEX idx_achievements_participant ON achievements(participant_id);
+
+INSERT INTO achievement_definitions (achievement_key, name_es, description_es, category, icon, max_tier, repeatable) VALUES
+('mvp_jornada',      'MVP de la Jornada',    'Participante con mas puntos en la jornada',                  'weekly',    '⭐', 1, true),
+('goleador',         'Goleador',             'Participante cuyo XI anoto mas goles',                       'weekly',    '⚽', 1, true),
+('muro',             'Muro',                 'Participante con mas puntos de imbatibilidad en su XI',      'weekly',    '🛡️', 1, true),
+('remontada',        'Remontada',            'Subio 3 o mas posiciones en la clasificacion acumulada',     'weekly',    '🚀', 1, true),
+('racha_ganadora',   'Racha Ganadora',       'Top 3 en jornadas consecutivas',                            'streak',    '🔥', 3, true),
+('racha_perdedora',  'Racha Perdedora',      'Bottom 3 en jornadas consecutivas',                         'streak',    '❄️', 3, true),
+('imbatible',        'Imbatible',            'Numero 1 en jornadas consecutivas',                         'streak',    '👑', 3, true),
+('centenario',       'Centenario',           'Alcanzo 100 puntos acumulados',                             'milestone', '💯', 1, false),
+('doble_centenario', 'Doble Centenario',     'Alcanzo 200 puntos acumulados',                             'milestone', '🏅', 1, false),
+('triple_centenario','Triple Centenario',    'Alcanzo 300 puntos acumulados',                             'milestone', '🏆', 1, false),
+('lider',            'Lider',                'Primera vez lider de la clasificacion acumulada',            'milestone', '📈', 1, false),
+('robo_draft',       'Robo del Draft',       'Pick tardio (ronda 20+) que rinde en el top 25%',           'draft',     '🎯', 1, true);
 
 -- ----------------------------------------------------------------------------
 -- Alembic version tracking

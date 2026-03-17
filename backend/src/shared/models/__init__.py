@@ -1,3 +1,4 @@
+from src.features.achievements.models import Achievement, AchievementDefinition
 from src.shared.models.base import Base
 from src.shared.models.competition import Competition
 from src.shared.models.draft import Draft, DraftPick
@@ -15,6 +16,8 @@ from src.shared.models.transaction import Transaction
 from src.shared.models.user import User
 
 __all__ = [
+    "Achievement",
+    "AchievementDefinition",
     "Base",
     "Competition",
     "Draft",

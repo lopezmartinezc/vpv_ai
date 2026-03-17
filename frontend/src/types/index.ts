@@ -4,6 +4,26 @@ export interface HealthCheck {
   version: string;
 }
 
+export interface AchievementEntry {
+  id: number;
+  achievement_key: string;
+  name: string;
+  description: string;
+  icon: string;
+  category: string;
+  tier: number;
+  participant_id: number;
+  display_name: string;
+  matchday_number: number | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface SeasonAchievementsResponse {
+  season_id: number;
+  achievements: AchievementEntry[];
+}
+
 export interface SeasonSummary {
   id: number;
   name: string;
