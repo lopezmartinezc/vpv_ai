@@ -14,9 +14,10 @@ export default function BackupPage() {
     setError(null);
     setSuccess(null);
     try {
+      const token = localStorage.getItem("vpv_token");
       const res = await fetch(`${API_BASE_URL}/backup/admin/download`, {
         method: "POST",
-        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 
       if (!res.ok) {
