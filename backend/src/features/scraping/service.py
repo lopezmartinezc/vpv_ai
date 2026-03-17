@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.economy.service import EconomyService
@@ -49,8 +50,6 @@ class ScrapingService:
     @staticmethod
     def _format_scrape_error(player_name: str, team_name: str, exc: ScrapingError) -> str:
         """Build a short, human-readable error string."""
-        import httpx
-
         cause = exc.cause
         if isinstance(cause, httpx.HTTPStatusError):
             return f"{player_name} ({team_name}): HTTP {cause.response.status_code}"
@@ -156,6 +155,20 @@ class ScrapingService:
                     try:
                         html = await client.fetch(url)
                     except ScrapingError as exc:
+                        import httpx as _httpx
+
+                        cause = exc.cause
+                        is_not_found = (
+                            isinstance(cause, _httpx.HTTPStatusError)
+                            and cause.response.status_code == 404
+                        )
+                        if is_not_found:
+                            logger.info(
+                                "scrape_matchday: player slug=%s not found (404), skipping",
+                                player.slug,
+                            )
+                            total_skipped += 1
+                            continue
                         logger.warning(
                             "scrape_matchday: fetch failed for player slug=%s: %s",
                             player.slug,
@@ -328,6 +341,18 @@ class ScrapingService:
                 try:
                     html = await client.fetch(url)
                 except ScrapingError as exc:
+                    cause = exc.cause
+                    is_not_found = (
+                        isinstance(cause, httpx.HTTPStatusError)
+                        and cause.response.status_code == 404
+                    )
+                    if is_not_found:
+                        logger.info(
+                            "scrape_match_players: player slug=%s not found (404), skipping",
+                            player.slug,
+                        )
+                        total_skipped += 1
+                        continue
                     logger.warning(
                         "scrape_match_players: fetch failed for slug=%s: %s",
                         player.slug,

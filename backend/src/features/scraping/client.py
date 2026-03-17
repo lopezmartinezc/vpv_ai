@@ -115,6 +115,9 @@ class ScrapingClient:
                     attempt,
                     max_attempts,
                 )
+                # 4xx errors are permanent — no point retrying
+                if 400 <= exc.response.status_code < 500:
+                    raise ScrapingError(url, exc)
                 last_exc = exc
             except httpx.RequestError as exc:
                 logger.warning(
