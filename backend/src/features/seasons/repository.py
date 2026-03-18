@@ -193,42 +193,34 @@ class SeasonRepository(BaseRepository[Season]):
         return season
 
     async def copy_scoring_rules(self, source_season_id: int, target_season_id: int) -> int:
-        stmt = (
-            insert(ScoringRule)
-            .from_select(
-                ["season_id", "rule_key", "position", "value", "description"],
-                select(
-                    target_season_id,
-                    ScoringRule.rule_key,
-                    ScoringRule.position,
-                    ScoringRule.value,
-                    ScoringRule.description,
-                ).where(ScoringRule.season_id == source_season_id),
-            )
+        stmt = insert(ScoringRule).from_select(
+            ["season_id", "rule_key", "position", "value", "description"],
+            select(
+                target_season_id,
+                ScoringRule.rule_key,
+                ScoringRule.position,
+                ScoringRule.value,
+                ScoringRule.description,
+            ).where(ScoringRule.season_id == source_season_id),
         )
         result = await self.session.execute(stmt)
         return result.rowcount  # type: ignore[return-value]
 
     async def copy_payments(self, source_season_id: int, target_season_id: int) -> int:
-        stmt = (
-            insert(SeasonPayment)
-            .from_select(
-                ["season_id", "payment_type", "position_rank", "amount", "description"],
-                select(
-                    target_season_id,
-                    SeasonPayment.payment_type,
-                    SeasonPayment.position_rank,
-                    SeasonPayment.amount,
-                    SeasonPayment.description,
-                ).where(SeasonPayment.season_id == source_season_id),
-            )
+        stmt = insert(SeasonPayment).from_select(
+            ["season_id", "payment_type", "position_rank", "amount", "description"],
+            select(
+                target_season_id,
+                SeasonPayment.payment_type,
+                SeasonPayment.position_rank,
+                SeasonPayment.amount,
+                SeasonPayment.description,
+            ).where(SeasonPayment.season_id == source_season_id),
         )
         result = await self.session.execute(stmt)
         return result.rowcount  # type: ignore[return-value]
 
-    async def create_participants_from_users(
-        self, season_id: int, user_ids: list[int]
-    ) -> int:
+    async def create_participants_from_users(self, season_id: int, user_ids: list[int]) -> int:
         if not user_ids:
             return 0
         for user_id in user_ids:
@@ -239,19 +231,16 @@ class SeasonRepository(BaseRepository[Season]):
         return len(user_ids)
 
     async def copy_participants(self, source_season_id: int, target_season_id: int) -> int:
-        stmt = (
-            insert(SeasonParticipant)
-            .from_select(
-                ["season_id", "user_id", "is_active"],
-                select(
-                    target_season_id,
-                    SeasonParticipant.user_id,
-                    SeasonParticipant.is_active,
-                ).where(
-                    SeasonParticipant.season_id == source_season_id,
-                    SeasonParticipant.is_active.is_(True),
-                ),
-            )
+        stmt = insert(SeasonParticipant).from_select(
+            ["season_id", "user_id", "is_active"],
+            select(
+                target_season_id,
+                SeasonParticipant.user_id,
+                SeasonParticipant.is_active,
+            ).where(
+                SeasonParticipant.season_id == source_season_id,
+                SeasonParticipant.is_active.is_(True),
+            ),
         )
         result = await self.session.execute(stmt)
         return result.rowcount  # type: ignore[return-value]

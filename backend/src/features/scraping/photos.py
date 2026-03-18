@@ -80,7 +80,8 @@ class PhotoDownloader:
         # Use season-specific slug from DB, fall back to .env
         season = await self.repo.get_season(season_id)
         season_slug = (
-            season.scraping_slug if season and season.scraping_slug
+            season.scraping_slug
+            if season and season.scraping_slug
             else self._settings.scraping_season_slug
         )
 

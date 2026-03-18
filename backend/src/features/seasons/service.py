@@ -161,9 +161,7 @@ class SeasonService:
             scoring_rules_copied = await self.repo.copy_scoring_rules(
                 request.copy_from_season_id, season.id
             )
-            payments_copied = await self.repo.copy_payments(
-                request.copy_from_season_id, season.id
-            )
+            payments_copied = await self.repo.copy_payments(request.copy_from_season_id, season.id)
 
         # 3. Create participants
         participants_created = 0
@@ -212,15 +210,11 @@ class SeasonService:
         """Mark season as finished after validation."""
         season = await self.get_season(season_id)
         if season.status != "active":
-            raise BusinessRuleError(
-                "Solo se puede finalizar una temporada con estado 'active'"
-            )
+            raise BusinessRuleError("Solo se puede finalizar una temporada con estado 'active'")
 
         incomplete = await self.repo.get_incomplete_counting_matchdays(season_id)
         if incomplete:
-            raise BusinessRuleError(
-                f"No se puede finalizar: jornadas sin stats_ok: {incomplete}"
-            )
+            raise BusinessRuleError(f"No se puede finalizar: jornadas sin stats_ok: {incomplete}")
 
         updated = await self.repo.update_season(season_id, status="finished")
         await self.repo.session.commit()

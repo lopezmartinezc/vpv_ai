@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import ClassVar
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -624,11 +625,14 @@ class ScrapingService:
     # Season initialization: import teams, players, and calendar
     # ------------------------------------------------------------------
 
-    _POSITION_MAP: dict[str, str] = {"POR": "POR", "DEF": "DEF", "MED": "MID", "DEL": "DEL"}
+    _POSITION_MAP: ClassVar[dict[str, str]] = {
+        "POR": "POR",
+        "DEF": "DEF",
+        "MED": "MID",
+        "DEL": "DEL",
+    }
 
-    async def import_teams_and_players(
-        self, season_id: int, season_slug: str
-    ) -> dict[str, int]:
+    async def import_teams_and_players(self, season_id: int, season_slug: str) -> dict[str, int]:
         """Scrape teams from homepage, each team's roster, and the calendar.
 
         Creates Team, Player, and Match rows for the given season.
@@ -654,9 +658,7 @@ class ScrapingService:
             team_slug_to_id: dict[str, int] = {}
             team_name_to_id: dict[str, int] = {}
             for td in team_data_list:
-                team = await self.repo.create_team(
-                    season_id=season_id, name=td.name, slug=td.slug
-                )
+                team = await self.repo.create_team(season_id=season_id, name=td.name, slug=td.slug)
                 team_slug_to_id[td.slug] = team.id
                 team_name_to_id[td.name] = team.id
                 teams_created += 1
@@ -691,9 +693,7 @@ class ScrapingService:
                     )
                     players_created += 1
 
-                logger.info(
-                    "import_teams_and_players: %s → %d players", td.name, len(roster)
-                )
+                logger.info("import_teams_and_players: %s → %d players", td.name, len(roster))
 
             await self.session.flush()
 

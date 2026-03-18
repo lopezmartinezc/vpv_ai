@@ -121,9 +121,7 @@ async def initialize_season(
     result = await service.initialize_season(body)
 
     # Launch background task for scraping teams/players/calendar
-    background_tasks.add_task(
-        _background_import_teams, result.season.id, body.scraping_slug
-    )
+    background_tasks.add_task(_background_import_teams, result.season.id, body.scraping_slug)
     result.scraping_started = True
 
     return result
