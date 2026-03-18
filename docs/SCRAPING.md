@@ -284,3 +284,11 @@ Dos niveles de CRC:
 - **Posicion**: `player_stats.position` es la fuente de verdad para puntos, no `players.position` (un jugador puede cambiar de posicion entre jornadas).
 - **Counts a 2 niveles**: `matchdays.counts` Y `matches.counts` determinan si un partido/jornada computa para la clasificacion. El scraping procesa todos los matches con `counts=True`.
 - **Fechas del calendario**: Solo los partidos pendientes tienen fecha en el HTML. Los ya jugados no muestran fecha, solo resultado. Las fechas ya almacenadas en BD para partidos jugados son las originales de la migracion.
+
+## Bugs corregidos (2026-03-17)
+
+1. **Parser roto**: futbolfantasy.com cambio de 3 `div.inside_tab` a 2. Parser ahora usa `div.puntos` como ancla.
+2. **stats_ok prematuro**: Se marcaba `stats_ok=true` cuando `total_processed=0` (stats no disponibles aun). Ahora requiere `processed > 0`.
+3. **CRC diferido**: CRC se guardaba antes de confirmar que el scraping tuvo exito. Ahora solo se persiste si se procesaron stats.
+4. **404 = skip**: Un jugador con 404 en futbolfantasy bloqueaba todo el partido. Ahora se trata como skip.
+5. **No retry 4xx**: El client reintentaba 404/403 tres veces. Ahora solo reintenta errores 5xx.

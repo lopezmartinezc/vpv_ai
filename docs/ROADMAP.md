@@ -1,13 +1,13 @@
 # Roadmap de Mejoras — Liga VPV Fantasy
 
-**Fecha**: 2026-03-17
-**Estado**: Propuesta aprobada, pendiente de implementacion
+**Fecha**: 2026-03-18
+**Estado**: En progreso
 
 ## Estado actual
 
 La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
-- 28 paginas frontend (Next.js + Tailwind)
-- 15 modulos backend (FastAPI + SQLAlchemy)
+- 30 paginas frontend (Next.js + Tailwind)
+- 16 modulos backend (FastAPI + SQLAlchemy)
 - 20 tablas PostgreSQL
 - Liga, Copa, Drafts, Alineaciones, Economia, Scraping automatico, Admin completo
 
