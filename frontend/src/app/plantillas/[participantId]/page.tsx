@@ -20,7 +20,9 @@ const POSITION_COLORS: Record<string, string> = {
 function groupByPosition(players: SquadPlayerEntry[]) {
   const groups: Record<string, SquadPlayerEntry[]> = {};
   for (const pos of POSITION_ORDER) {
-    groups[pos] = players.filter((p) => p.position === pos);
+    groups[pos] = players
+      .filter((p) => p.position === pos)
+      .sort((a, b) => a.display_name.localeCompare(b.display_name));
   }
   return groups;
 }

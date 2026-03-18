@@ -545,11 +545,8 @@ export default function AlineacionPage() {
   const playersByPosition = useMemo<Record<Position, SquadPlayerEntry[]>>(
     () => {
       const squad = myLineup?.squad ?? [];
-      const sortFn = isAdmin
-        ? (a: SquadPlayerEntry, b: SquadPlayerEntry) =>
-            b.season_points - a.season_points
-        : (a: SquadPlayerEntry, b: SquadPlayerEntry) =>
-            a.display_name.localeCompare(b.display_name);
+      const sortFn = (a: SquadPlayerEntry, b: SquadPlayerEntry) =>
+        a.display_name.localeCompare(b.display_name);
       return {
         POR: squad.filter((p) => p.position === "POR").sort(sortFn),
         DEF: squad.filter((p) => p.position === "DEF").sort(sortFn),
@@ -557,7 +554,7 @@ export default function AlineacionPage() {
         DEL: squad.filter((p) => p.position === "DEL").sort(sortFn),
       };
     },
-    [myLineup, isAdmin],
+    [myLineup],
   );
 
   // Build PitchView players

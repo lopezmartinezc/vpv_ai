@@ -232,7 +232,7 @@ class SquadRepository:
             Player.photo_path,
             Player.position,
             Team.name,
-        ).order_by(POSITION_ORDER.asc(), season_pts.desc())
+        ).order_by(POSITION_ORDER.asc(), Player.display_name.asc())
 
         result = await self.session.execute(stmt)
         return [
