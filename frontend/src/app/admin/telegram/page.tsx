@@ -16,6 +16,7 @@ export default function AdminTelegramPage() {
   const [result, setResult] = useState<string | null>(null);
   const [messageText, setMessageText] = useState("");
   const [lineupId, setLineupId] = useState("");
+  const [pushSubs, setPushSubs] = useState<number | null>(null);
 
   // Fetch status on mount
   useState(() => {
@@ -165,6 +166,84 @@ export default function AdminTelegramPage() {
           >
             {actionLoading === "lineup" ? "Enviando..." : "Re-enviar"}
           </button>
+        </div>
+      </div>
+
+      {/* Notifications section */}
+      <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
+        <div className="border-b border-vpv-border px-4 py-3">
+          <h2 className="font-semibold text-vpv-text">Notificaciones</h2>
+        </div>
+        <div className="space-y-3 px-4 py-3">
+          <p className="text-xs text-vpv-text-muted">
+            Recordatorios automaticos: 2h y 30min antes del deadline via Telegram + Push.
+            {pushSubs !== null && ` Suscripciones push activas: ${pushSubs}.`}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={async () => {
+                setActionLoading("test-reminder");
+                setResult(null);
+                try {
+                  const data = await apiClient.post<{
+                    missing: number;
+                    names: string[];
+                    telegram_sent: boolean;
+                    push_sent: number;
+                    message?: string;
+                    error?: string;
+                  }>("/notifications/admin/test-reminder", {});
+                  if (data.error) {
+                    setResult(`Error: ${data.error}`);
+                  } else if (data.message) {
+                    setResult(data.message);
+                  } else {
+                    setResult(
+                      `Recordatorio enviado — ${data.missing} sin alineacion (${data.names?.join(", ")}). ` +
+                      `Telegram: ${data.telegram_sent ? "OK" : "error"}. Push: ${data.push_sent} enviadas.`
+                    );
+                  }
+                } catch {
+                  setResult("Error al enviar recordatorio");
+                } finally {
+                  setActionLoading(null);
+                }
+              }}
+              disabled={actionLoading !== null}
+              className="rounded bg-orange-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-orange-600 disabled:opacity-50"
+            >
+              {actionLoading === "test-reminder"
+                ? "Enviando..."
+                : "Enviar recordatorio de deadline"}
+            </button>
+            <button
+              onClick={async () => {
+                setActionLoading("test-push");
+                setResult(null);
+                try {
+                  const data = await apiClient.post<{ sent: number }>(
+                    "/notifications/admin/test-push",
+                    {},
+                  );
+                  setResult(
+                    data.sent > 0
+                      ? "Push de prueba enviada a tu navegador"
+                      : "No tienes suscripcion push activa. Activa las notificaciones primero.",
+                  );
+                } catch {
+                  setResult("Error al enviar push de prueba");
+                } finally {
+                  setActionLoading(null);
+                }
+              }}
+              disabled={actionLoading !== null}
+              className="rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+            >
+              {actionLoading === "test-push"
+                ? "Enviando..."
+                : "Test push (solo a mi)"}
+            </button>
+          </div>
         </div>
       </div>
 
