@@ -106,4 +106,32 @@ Migración necesaria en producción:
 ```sql
 ALTER TABLE seasons ADD COLUMN scraping_slug VARCHAR(50);
 UPDATE seasons SET scraping_slug = 'laliga-25-26' WHERE id = 8;
+
+CREATE TABLE push_subscriptions (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_push_subscriptions_user ON push_subscriptions(user_id);
+```
+
+Variables de entorno nuevas en `.env`:
+```env
+VAPID_PUBLIC_KEY=<clave publica base64url>
+VAPID_PRIVATE_KEY=<path al private_key.pem>
+VAPID_SUBJECT=mailto:admin@ligavpv.com
+TELEGRAM_ALERTS_CHAT_ID=<chat_id del grupo de alertas>
+```
+
+Nginx: agregar bloque para service worker:
+```nginx
+location = /sw.js {
+    root /opt/vpv/frontend/public;
+    try_files /sw.js =404;
+    add_header Cache-Control "no-cache";
+    add_header Service-Worker-Allowed "/";
+}
 ```

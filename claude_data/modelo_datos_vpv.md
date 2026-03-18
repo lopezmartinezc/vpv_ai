@@ -733,3 +733,4 @@ ORDER BY dp.pick_number;
 | 18 | `valid_formations` | Formaciones permitidas |
 | 19 | `invites` | Invitaciones de registro |
 | 20 | `player_ownership_log` | Historico de propiedad de jugadores |
+| 21 | `push_subscriptions` | Suscripciones Web Push por usuario |

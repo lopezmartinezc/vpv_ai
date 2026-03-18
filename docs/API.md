@@ -954,6 +954,100 @@ Genera y descarga un volcado completo de la base de datos (pg_dump). Rate limite
 
 **Auth**: Admin
 
+## Notifications (Push)
+
+### `GET /api/notifications/vapid-public-key`
+
+Obtener la clave publica VAPID para suscribirse a push.
+
+**Auth**: Publico
+
+**Response** `200`:
+```json
+{ "public_key": "BHpIkGvH..." }
+```
+
+### `POST /api/notifications/subscribe`
+
+Registrar una suscripcion push para el usuario actual.
+
+**Auth**: User
+
+**Request**:
+```json
+{
+  "endpoint": "https://fcm.googleapis.com/fcm/send/...",
+  "p256dh": "BNcRd...",
+  "auth": "tBHI..."
+}
+```
+
+**Response** `200`:
+```json
+{ "subscribed": true }
+```
+
+### `POST /api/notifications/unsubscribe`
+
+Eliminar una suscripcion push.
+
+**Auth**: User
+
+**Request**:
+```json
+{ "endpoint": "https://fcm.googleapis.com/fcm/send/..." }
+```
+
+**Response** `200`:
+```json
+{ "unsubscribed": true }
+```
+
+### `POST /api/notifications/admin/test-push`
+
+Enviar push de prueba al admin actual.
+
+**Auth**: Admin
+
+**Response** `200`:
+```json
+{ "sent": 1 }
+```
+
+### `POST /api/notifications/admin/test-reminder`
+
+Forzar envio de recordatorio de deadline (Telegram + Push) ignorando ventanas de tiempo.
+
+**Auth**: Admin
+
+**Response** `200`:
+```json
+{
+  "missing": 3,
+  "names": ["Daniel", "Pedro", "Ana"],
+  "telegram_sent": true,
+  "push_sent": 1
+}
+```
+
+## Lineups (deadline)
+
+### `GET /api/lineups/{season_id}/deadline-status`
+
+Comprobar si el usuario tiene alineacion y tiempo restante hasta el deadline.
+
+**Auth**: User
+
+**Response** `200`:
+```json
+{
+  "has_lineup": false,
+  "deadline_at": "2026-03-21T19:30:00+00:00",
+  "minutes_remaining": 85,
+  "matchday_number": 26
+}
+```
+
 ## Predictions
 
 ### `GET /api/stats/{season_id}/predictions?matchday={number}`

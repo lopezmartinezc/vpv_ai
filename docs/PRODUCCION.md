@@ -743,6 +743,12 @@ INVITE_EXPIRY_DAYS=7
 TELEGRAM_ENABLED=true
 TELEGRAM_BOT_TOKEN=TU_BOT_TOKEN_AQUI
 TELEGRAM_CHAT_ID=TU_CHAT_ID_AQUI
+TELEGRAM_ALERTS_CHAT_ID=TU_CHAT_ALERTAS_ID  # grupo separado para recordatorios deadline (opcional, usa CHAT_ID si vacio)
+
+# Push notifications (generar con: cd backend && vapid --gen && vapid --applicationServerKey)
+VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=/opt/vpv/backend/private_key.pem
+VAPID_SUBJECT=mailto:admin@ligavpv.com
 
 # Scraping
 SCRAPING_BASE_URL=https://www.futbolfantasy.com

@@ -40,12 +40,20 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 - **Complejidad**: Baja
 - **Estado**: [ ] Pendiente
 
-### 1.4 Notificaciones Telegram automaticas
-- **Problema**: Notificaciones Telegram son manuales (admin pulsa boton)
-- **Solucion**: Scheduler job que envie recordatorio X horas antes del deadline a usuarios sin alineacion. Notificar cuando se publican puntos
-- **Backend**: nuevo job en `scheduler.py` usando servicio Telegram existente
-- **Complejidad**: Media
-- **Estado**: [ ] Pendiente
+### 1.4 Notificaciones automaticas de deadline
+- **Problema**: Notificaciones Telegram son manuales (admin pulsa boton), usuarios olvidan enviar alineacion
+- **Solucion**: Sistema de 3 canales: Telegram (grupo alertas), Push PWA (notificacion nativa), Banner agresivo en la app
+- **Implementacion**:
+  - Scheduler job `deadline_reminder` envia a 2h y 30min del deadline
+  - Telegram: mensaje al grupo de alertas (`TELEGRAM_ALERTS_CHAT_ID`, separado de alineaciones)
+  - Push: Web Push API con VAPID keys, service worker, subscription en frontend
+  - Banner: sticky rojo/naranja en todas las paginas cuando faltan <2h y no has enviado
+  - Endpoint `GET /lineups/{season_id}/deadline-status` para el banner
+  - Endpoints admin: `POST /notifications/admin/test-push` y `test-reminder`
+  - Botones de test en Admin > Telegram
+- **Complejidad**: Media-Alta
+- **Estado**: [x] Completado (2026-03-18)
+- **Notas**: Nueva tabla `push_subscriptions`. Env vars: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `TELEGRAM_ALERTS_CHAT_ID`
 
 ### 1.5 Desglose de puntos en la jornada
 - **Problema**: Usuarios ven puntos totales pero no el desglose
@@ -154,7 +162,7 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 | 1.1 | Countdown deadline | Alto | Baja | Completado |
 | 1.2 | Historial alineaciones | Alto | Baja | Pendiente |
 | 1.3 | Estadisticas publicas | Alto | Baja | Pendiente |
-| 1.4 | Telegram automatico | Alto | Media | Pendiente |
+| 1.4 | Notificaciones deadline | Alto | Media-Alta | Completado |
 | 1.5 | Desglose puntos jornada | Alto | Baja | Completado |
 | 2.1 | Comparador H2H | Medio | Media | Pendiente |
 | 2.2 | MVP por jornada | Medio | Baja | Completado |

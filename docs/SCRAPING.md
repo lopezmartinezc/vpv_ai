@@ -265,6 +265,15 @@ Cada 15 minutos (scheduler tick):
 
 Cada dia a las 06:00 UTC (calendar_sync):
   1. scrape_calendar -> actualizar fechas reprogramadas por La Liga
+
+Cada 60 segundos (deadline_check):
+  1. Si deadline superado -> copiar alineacion anterior para participantes sin alineacion
+
+Cada 60 segundos (deadline_reminder):
+  1. Si faltan ~2h o ~30min para el deadline:
+     - Enviar mensaje Telegram al grupo de alertas (TELEGRAM_ALERTS_CHAT_ID)
+     - Enviar push notification a usuarios sin alineacion
+     - Solo a participantes que NO han enviado alineacion
 ```
 
 ### Panel de admin
