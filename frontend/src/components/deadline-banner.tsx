@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { useSeason } from "@/contexts/season-context";
 import { apiClient } from "@/lib/api-client";
@@ -26,24 +26,33 @@ export function DeadlineBanner() {
   const { user } = useAuth();
   const { selectedSeason } = useSeason();
   const [status, setStatus] = useState<DeadlineStatus | null>(null);
-
-  const fetchStatus = useCallback(async () => {
-    if (!user || !selectedSeason) return;
-    try {
-      const data = await apiClient.get<DeadlineStatus>(
-        `/lineups/${selectedSeason.id}/deadline-status`,
-      );
-      setStatus(data);
-    } catch {
-      setStatus(null);
-    }
-  }, [user, selectedSeason]);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    fetchStatus();
-    const id = setInterval(fetchStatus, 60_000);
-    return () => clearInterval(id);
-  }, [fetchStatus]);
+    if (!user || !selectedSeason) return;
+
+    let cancelled = false;
+
+    async function poll() {
+      try {
+        const data = await apiClient.get<DeadlineStatus>(
+          `/lineups/${selectedSeason!.id}/deadline-status`,
+        );
+        if (!cancelled) setStatus(data);
+      } catch {
+        if (!cancelled) setStatus(null);
+      }
+    }
+
+    // Initial fetch + interval
+    poll();
+    intervalRef.current = setInterval(poll, 60_000);
+
+    return () => {
+      cancelled = true;
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [user, selectedSeason]);
 
   if (!status) return null;
   if (status.has_lineup) return null;
