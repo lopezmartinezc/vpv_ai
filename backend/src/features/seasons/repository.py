@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
-from sqlalchemy import and_, func, insert, select, update
+from sqlalchemy import and_, func, insert, literal_column, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.shared.base.repository import BaseRepository
@@ -193,32 +194,34 @@ class SeasonRepository(BaseRepository[Season]):
         return season
 
     async def copy_scoring_rules(self, source_season_id: int, target_season_id: int) -> int:
+        target_id_col: Any = literal_column(str(target_season_id))
         stmt = insert(ScoringRule).from_select(
             ["season_id", "rule_key", "position", "value", "description"],
             select(
-                target_season_id,
+                target_id_col,
                 ScoringRule.rule_key,
                 ScoringRule.position,
                 ScoringRule.value,
                 ScoringRule.description,
             ).where(ScoringRule.season_id == source_season_id),
         )
-        result = await self.session.execute(stmt)
-        return result.rowcount  # type: ignore[return-value]
+        cursor = await self.session.execute(stmt)
+        return getattr(cursor, "rowcount", 0) or 0
 
     async def copy_payments(self, source_season_id: int, target_season_id: int) -> int:
+        target_id_col: Any = literal_column(str(target_season_id))
         stmt = insert(SeasonPayment).from_select(
             ["season_id", "payment_type", "position_rank", "amount", "description"],
             select(
-                target_season_id,
+                target_id_col,
                 SeasonPayment.payment_type,
                 SeasonPayment.position_rank,
                 SeasonPayment.amount,
                 SeasonPayment.description,
             ).where(SeasonPayment.season_id == source_season_id),
         )
-        result = await self.session.execute(stmt)
-        return result.rowcount  # type: ignore[return-value]
+        cursor = await self.session.execute(stmt)
+        return getattr(cursor, "rowcount", 0) or 0
 
     async def create_participants_from_users(self, season_id: int, user_ids: list[int]) -> int:
         if not user_ids:
@@ -231,10 +234,11 @@ class SeasonRepository(BaseRepository[Season]):
         return len(user_ids)
 
     async def copy_participants(self, source_season_id: int, target_season_id: int) -> int:
+        target_id_col: Any = literal_column(str(target_season_id))
         stmt = insert(SeasonParticipant).from_select(
             ["season_id", "user_id", "is_active"],
             select(
-                target_season_id,
+                target_id_col,
                 SeasonParticipant.user_id,
                 SeasonParticipant.is_active,
             ).where(
@@ -242,8 +246,8 @@ class SeasonRepository(BaseRepository[Season]):
                 SeasonParticipant.is_active.is_(True),
             ),
         )
-        result = await self.session.execute(stmt)
-        return result.rowcount  # type: ignore[return-value]
+        cursor = await self.session.execute(stmt)
+        return getattr(cursor, "rowcount", 0) or 0
 
     async def create_matchdays(self, season_id: int, start: int, end: int) -> int:
         for number in range(1, end + 1):
