@@ -32,6 +32,7 @@ class Season(Base):
     draft_pool_size: Mapped[int] = mapped_column(SmallInteger, default=26, nullable=False)
     lineup_deadline_min: Mapped[int] = mapped_column(SmallInteger, default=30, nullable=False)
     total_participants: Mapped[int] = mapped_column(SmallInteger, default=0, nullable=False)
+    scraping_slug: Mapped[str | None] = mapped_column(String(50))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
 
     scoring_rules: Mapped[list[ScoringRule]] = relationship(back_populates="season", lazy="raise")

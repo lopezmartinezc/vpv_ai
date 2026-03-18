@@ -1,13 +1,19 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+import logging
+
+from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.seasons.schemas import (
     PaymentsBatchUpdate,
+    PhotoDownloadResponse,
     ScoringRuleResponse,
     ScoringRulesBatchUpdate,
     SeasonDetail,
+    SeasonFinalizeResponse,
+    SeasonInitializeRequest,
+    SeasonInitializeResponse,
     SeasonParticipantResponse,
     SeasonPaymentResponse,
     SeasonSummary,
@@ -16,6 +22,8 @@ from src.features.seasons.schemas import (
 )
 from src.features.seasons.service import SeasonService
 from src.shared.dependencies import get_current_admin, get_db
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/seasons", tags=["seasons"])
 
@@ -102,6 +110,25 @@ async def get_season_participants(
 # ---------------------------------------------------------------------------
 
 
+@router.post("/admin/initialize", response_model=SeasonInitializeResponse)
+async def initialize_season(
+    body: SeasonInitializeRequest,
+    background_tasks: BackgroundTasks,
+    service: SeasonService = Depends(_get_service),
+    _admin: dict = Depends(get_current_admin),
+) -> SeasonInitializeResponse:
+    """Create a new season with config copied from source, then scrape teams in background."""
+    result = await service.initialize_season(body)
+
+    # Launch background task for scraping teams/players/calendar
+    background_tasks.add_task(
+        _background_import_teams, result.season.id, body.scraping_slug
+    )
+    result.scraping_started = True
+
+    return result
+
+
 @router.put("/admin/{season_id}", response_model=SeasonDetail)
 async def update_season(
     season_id: int,
@@ -152,3 +179,50 @@ async def toggle_participant_active(
 ) -> SeasonParticipantResponse:
     participant = await service.toggle_participant_active(season_id, participant_id)
     return SeasonParticipantResponse.model_validate(participant)
+
+
+@router.post("/admin/{season_id}/download-photos", response_model=PhotoDownloadResponse)
+async def download_photos(
+    season_id: int,
+    service: SeasonService = Depends(_get_service),
+    _admin: dict = Depends(get_current_admin),
+) -> PhotoDownloadResponse:
+    """Download player photos for a season (may take several minutes)."""
+    result = await service.download_photos(season_id)
+    return PhotoDownloadResponse(**result)
+
+
+@router.put("/admin/{season_id}/finalize", response_model=SeasonFinalizeResponse)
+async def finalize_season(
+    season_id: int,
+    service: SeasonService = Depends(_get_service),
+    _admin: dict = Depends(get_current_admin),
+) -> SeasonFinalizeResponse:
+    """Mark season as finished after validating all matchday stats are complete."""
+    season_detail = await service.finalize_season(season_id)
+    return SeasonFinalizeResponse(season=season_detail)
+
+
+# ---------------------------------------------------------------------------
+# Background task for team/player import
+# ---------------------------------------------------------------------------
+
+
+async def _background_import_teams(season_id: int, scraping_slug: str) -> None:
+    """Run team/player/calendar import in a fresh DB session."""
+    from src.core.database import AsyncSessionLocal
+    from src.features.scraping.service import ScrapingService
+
+    async with AsyncSessionLocal() as session:
+        try:
+            scraping_service = ScrapingService(session)
+            result = await scraping_service.import_teams_and_players(season_id, scraping_slug)
+            await session.commit()
+            logger.info(
+                "background_import_teams: season_id=%d complete — %s",
+                season_id,
+                result,
+            )
+        except Exception:
+            await session.rollback()
+            logger.exception("background_import_teams: season_id=%d failed", season_id)

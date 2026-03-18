@@ -372,6 +372,64 @@ class ScrapingRepository:
         await self.session.execute(stmt)
 
     # ------------------------------------------------------------------
+    # Team / player / match creation (season initialization)
+    # ------------------------------------------------------------------
+
+    async def create_team(
+        self, season_id: int, name: str, slug: str, short_name: str | None = None
+    ) -> Team:
+        team = Team(season_id=season_id, name=name, slug=slug, short_name=short_name)
+        self.session.add(team)
+        await self.session.flush()
+        return team
+
+    async def create_player(
+        self,
+        season_id: int,
+        team_id: int,
+        name: str,
+        display_name: str,
+        slug: str,
+        position: str,
+    ) -> Player:
+        player = Player(
+            season_id=season_id,
+            team_id=team_id,
+            name=name,
+            display_name=display_name,
+            slug=slug,
+            position=position,
+            is_available=True,
+        )
+        self.session.add(player)
+        return player
+
+    async def create_match(
+        self,
+        matchday_id: int,
+        home_team_id: int,
+        away_team_id: int,
+        source_id: int | None = None,
+        source_url: str | None = None,
+        played_at: object = None,
+    ) -> Match:
+        match = Match(
+            matchday_id=matchday_id,
+            home_team_id=home_team_id,
+            away_team_id=away_team_id,
+            source_id=source_id,
+            source_url=source_url,
+            played_at=played_at,
+        )
+        self.session.add(match)
+        return match
+
+    async def get_teams_by_season(self, season_id: int) -> list[Team]:
+        stmt = select(Team).where(Team.season_id == season_id).order_by(Team.id)
+        result = await self.session.execute(stmt)
+        return list(result.scalars())
+
+    # ------------------------------------------------------------------
     # CRC persistence (file-based, not in DB) — legacy homepage CRC
     # ------------------------------------------------------------------
 

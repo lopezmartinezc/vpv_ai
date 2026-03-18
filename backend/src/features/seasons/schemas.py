@@ -29,6 +29,7 @@ class SeasonDetail(BaseModel):
     draft_pool_size: int
     lineup_deadline_min: int
     total_participants: int
+    scraping_slug: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -103,3 +104,37 @@ class SeasonParticipantResponse(BaseModel):
     is_active: bool
 
     model_config = {"from_attributes": True}
+
+
+# --- Season lifecycle schemas ---
+
+
+class SeasonInitializeRequest(BaseModel):
+    name: str
+    scraping_slug: str
+    matchday_start: int = 1
+    matchday_end: int = 38
+    draft_pool_size: int = 26
+    lineup_deadline_min: int = 30
+    copy_from_season_id: int | None = None
+    participant_user_ids: list[int] | None = None
+
+
+class SeasonInitializeResponse(BaseModel):
+    season: SeasonDetail
+    participants_created: int
+    scoring_rules_copied: int
+    payments_copied: int
+    matchdays_created: int
+    scraping_started: bool
+
+
+class PhotoDownloadResponse(BaseModel):
+    downloaded: int
+    skipped: int
+    errors: int
+    restored: int
+
+
+class SeasonFinalizeResponse(BaseModel):
+    season: SeasonDetail

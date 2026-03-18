@@ -76,6 +76,7 @@ CREATE TABLE seasons (
     draft_pool_size     SMALLINT     NOT NULL DEFAULT 26,  -- Jugadores por participante
     lineup_deadline_min SMALLINT     NOT NULL DEFAULT 30,  -- Minutos antes del 1er partido
     total_participants  SMALLINT     NOT NULL DEFAULT 0,
+    scraping_slug       VARCHAR(50),                    -- e.g. 'laliga-25-26'
     created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 

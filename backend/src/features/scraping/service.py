@@ -13,6 +13,8 @@ from src.features.scraping.parsers import (
     parse_calendar,
     parse_homepage_matchday,
     parse_player_stats,
+    parse_roster,
+    parse_teams,
 )
 from src.features.scraping.repository import ScrapingRepository
 from src.features.scraping.scoring import ScoringEngine
@@ -46,6 +48,13 @@ class ScrapingService:
         stmt = select(Team.id, Team.name).where(Team.id.in_(team_ids))
         result = await self.session.execute(stmt)
         return {row.id: row.name for row in result.all()}
+
+    async def _resolve_season_slug(self, season_id: int) -> str:
+        """Return scraping_slug from DB if set, otherwise fall back to .env."""
+        season = await self.repo.get_season(season_id)
+        if season and season.scraping_slug:
+            return season.scraping_slug
+        return self._settings.scraping_season_slug
 
     @staticmethod
     def _format_scrape_error(player_name: str, team_name: str, exc: ScrapingError) -> str:
@@ -125,7 +134,7 @@ class ScrapingService:
         error_details: list[str] = []
 
         base_url = self._settings.scraping_base_url
-        season_slug = self._settings.scraping_season_slug
+        season_slug = await self._resolve_season_slug(season_id)
 
         async with ScrapingClient() as client:
             for match in counting_matches:
@@ -328,7 +337,7 @@ class ScrapingService:
         error_details: list[str] = []
 
         base_url = self._settings.scraping_base_url
-        season_slug = self._settings.scraping_season_slug
+        season_slug = await self._resolve_season_slug(season_id)
 
         async with ScrapingClient() as client:
             total = len(match_players)
@@ -610,3 +619,156 @@ class ScrapingService:
         )
         await self.repo.save_crc_value(info.crc)
         return info.ready_match_ids
+
+    # ------------------------------------------------------------------
+    # Season initialization: import teams, players, and calendar
+    # ------------------------------------------------------------------
+
+    _POSITION_MAP: dict[str, str] = {"POR": "POR", "DEF": "DEF", "MED": "MID", "DEL": "DEL"}
+
+    async def import_teams_and_players(
+        self, season_id: int, season_slug: str
+    ) -> dict[str, int]:
+        """Scrape teams from homepage, each team's roster, and the calendar.
+
+        Creates Team, Player, and Match rows for the given season.
+        Returns counts: ``{"teams": N, "players": M, "matches": K}``.
+        """
+        base_url = self._settings.scraping_base_url
+        teams_created = 0
+        players_created = 0
+        matches_created = 0
+
+        async with ScrapingClient() as client:
+            # 1. Fetch teams from homepage
+            try:
+                homepage_html = await client.fetch(base_url)
+            except ScrapingError as exc:
+                logger.error("import_teams_and_players: homepage fetch failed: %s", exc)
+                return {"teams": 0, "players": 0, "matches": 0}
+
+            team_data_list = parse_teams(homepage_html)
+            logger.info("import_teams_and_players: parsed %d teams", len(team_data_list))
+
+            # 2. Create Team rows and build lookup
+            team_slug_to_id: dict[str, int] = {}
+            team_name_to_id: dict[str, int] = {}
+            for td in team_data_list:
+                team = await self.repo.create_team(
+                    season_id=season_id, name=td.name, slug=td.slug
+                )
+                team_slug_to_id[td.slug] = team.id
+                team_name_to_id[td.name] = team.id
+                teams_created += 1
+
+            await self.session.flush()
+
+            # 3. Fetch each team's roster and create Player rows
+            for td in team_data_list:
+                team_id = team_slug_to_id[td.slug]
+                roster_url = f"{base_url}/{td.slug}/{season_slug}"
+                try:
+                    roster_html = await client.fetch(roster_url)
+                except ScrapingError as exc:
+                    logger.warning(
+                        "import_teams_and_players: roster fetch failed for %s: %s",
+                        td.slug,
+                        exc,
+                    )
+                    continue
+
+                roster = parse_roster(roster_html)
+                for player_data in roster:
+                    position = self._POSITION_MAP.get(player_data.position, player_data.position)
+                    display_name = player_data.slug.replace("-", " ").title()
+                    await self.repo.create_player(
+                        season_id=season_id,
+                        team_id=team_id,
+                        name=display_name,
+                        display_name=display_name,
+                        slug=player_data.slug,
+                        position=position,
+                    )
+                    players_created += 1
+
+                logger.info(
+                    "import_teams_and_players: %s → %d players", td.name, len(roster)
+                )
+
+            await self.session.flush()
+
+            # 4. Fetch calendar and create Match rows
+            season = await self.repo.get_season(season_id)
+            if season is None:
+                logger.error("import_teams_and_players: season_id=%d not found", season_id)
+                return {"teams": teams_created, "players": players_created, "matches": 0}
+
+            parts = season.name.split("-")
+            year = parts[-1] if len(parts) >= 2 else parts[0]
+            season_year = int(year)
+
+            calendar_url = f"{base_url}/laliga/calendario/{year}"
+            try:
+                calendar_html = await client.fetch(calendar_url)
+            except ScrapingError as exc:
+                logger.error("import_teams_and_players: calendar fetch failed: %s", exc)
+                return {"teams": teams_created, "players": players_created, "matches": 0}
+
+        cal_matches = parse_calendar(calendar_html, season_year=season_year)
+        logger.info("import_teams_and_players: parsed %d calendar matches", len(cal_matches))
+
+        # Build matchday number → matchday_id lookup
+        from sqlalchemy import select
+
+        from src.shared.models.matchday import Matchday
+
+        stmt = select(Matchday.id, Matchday.number).where(Matchday.season_id == season_id)
+        result = await self.session.execute(stmt)
+        md_number_to_id = {row.number: row.id for row in result.all()}
+
+        for cal_match in cal_matches:
+            matchday_id = md_number_to_id.get(cal_match.matchday_number)
+            if matchday_id is None:
+                continue
+
+            home_id = team_name_to_id.get(cal_match.home_team_name)
+            away_id = team_name_to_id.get(cal_match.away_team_name)
+            if home_id is None or away_id is None:
+                logger.debug(
+                    "import_teams_and_players: team not found for match %s vs %s",
+                    cal_match.home_team_name,
+                    cal_match.away_team_name,
+                )
+                continue
+
+            from datetime import datetime as _dt
+
+            played_at = _dt.fromisoformat(cal_match.played_at) if cal_match.played_at else None
+
+            source_url = (
+                f"{base_url}/partidos/{cal_match.source_id}" if cal_match.source_id else None
+            )
+
+            await self.repo.create_match(
+                matchday_id=matchday_id,
+                home_team_id=home_id,
+                away_team_id=away_id,
+                source_id=cal_match.source_id,
+                source_url=source_url,
+                played_at=played_at,
+            )
+            matches_created += 1
+
+        await self.session.flush()
+
+        # Sync first_match_at from match dates
+        if matches_created:
+            await self.repo.sync_matchday_first_match_at(season_id)
+
+        logger.info(
+            "import_teams_and_players: done — teams=%d players=%d matches=%d",
+            teams_created,
+            players_created,
+            matches_created,
+        )
+        return {"teams": teams_created, "players": players_created, "matches": matches_created}

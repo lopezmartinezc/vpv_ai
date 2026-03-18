@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import and_, select, update
+from sqlalchemy import and_, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.shared.base.repository import BaseRepository
@@ -167,3 +167,133 @@ class SeasonRepository(BaseRepository[Season]):
             return None
         rule.value = value  # type: ignore[assignment]
         return rule
+
+    # --- Season lifecycle methods ---
+
+    async def create_season(
+        self,
+        name: str,
+        scraping_slug: str,
+        matchday_start: int = 1,
+        matchday_end: int = 38,
+        draft_pool_size: int = 26,
+        lineup_deadline_min: int = 30,
+    ) -> Season:
+        season = Season(
+            name=name,
+            status="setup",
+            scraping_slug=scraping_slug,
+            matchday_start=matchday_start,
+            matchday_end=matchday_end,
+            draft_pool_size=draft_pool_size,
+            lineup_deadline_min=lineup_deadline_min,
+        )
+        self.session.add(season)
+        await self.session.flush()
+        return season
+
+    async def copy_scoring_rules(self, source_season_id: int, target_season_id: int) -> int:
+        stmt = (
+            insert(ScoringRule)
+            .from_select(
+                ["season_id", "rule_key", "position", "value", "description"],
+                select(
+                    target_season_id,
+                    ScoringRule.rule_key,
+                    ScoringRule.position,
+                    ScoringRule.value,
+                    ScoringRule.description,
+                ).where(ScoringRule.season_id == source_season_id),
+            )
+        )
+        result = await self.session.execute(stmt)
+        return result.rowcount  # type: ignore[return-value]
+
+    async def copy_payments(self, source_season_id: int, target_season_id: int) -> int:
+        stmt = (
+            insert(SeasonPayment)
+            .from_select(
+                ["season_id", "payment_type", "position_rank", "amount", "description"],
+                select(
+                    target_season_id,
+                    SeasonPayment.payment_type,
+                    SeasonPayment.position_rank,
+                    SeasonPayment.amount,
+                    SeasonPayment.description,
+                ).where(SeasonPayment.season_id == source_season_id),
+            )
+        )
+        result = await self.session.execute(stmt)
+        return result.rowcount  # type: ignore[return-value]
+
+    async def create_participants_from_users(
+        self, season_id: int, user_ids: list[int]
+    ) -> int:
+        if not user_ids:
+            return 0
+        for user_id in user_ids:
+            self.session.add(
+                SeasonParticipant(season_id=season_id, user_id=user_id, is_active=True)
+            )
+        await self.session.flush()
+        return len(user_ids)
+
+    async def copy_participants(self, source_season_id: int, target_season_id: int) -> int:
+        stmt = (
+            insert(SeasonParticipant)
+            .from_select(
+                ["season_id", "user_id", "is_active"],
+                select(
+                    target_season_id,
+                    SeasonParticipant.user_id,
+                    SeasonParticipant.is_active,
+                ).where(
+                    SeasonParticipant.season_id == source_season_id,
+                    SeasonParticipant.is_active.is_(True),
+                ),
+            )
+        )
+        result = await self.session.execute(stmt)
+        return result.rowcount  # type: ignore[return-value]
+
+    async def create_matchdays(self, season_id: int, start: int, end: int) -> int:
+        for number in range(1, end + 1):
+            self.session.add(
+                Matchday(
+                    season_id=season_id,
+                    number=number,
+                    status="pending",
+                    counts=(start <= number <= end),
+                )
+            )
+        await self.session.flush()
+        return end
+
+    async def get_incomplete_counting_matchdays(self, season_id: int) -> list[int]:
+        stmt = (
+            select(Matchday.number)
+            .where(
+                Matchday.season_id == season_id,
+                Matchday.counts.is_(True),
+                Matchday.stats_ok.is_(False),
+            )
+            .order_by(Matchday.number)
+        )
+        result = await self.session.execute(stmt)
+        return [row[0] for row in result.all()]
+
+    async def update_total_participants(self, season_id: int) -> None:
+        count = await self.session.scalar(
+            select(func.count())
+            .select_from(SeasonParticipant)
+            .where(SeasonParticipant.season_id == season_id)
+        )
+        await self.session.execute(
+            update(Season).where(Season.id == season_id).values(total_participants=count)
+        )
+
+    async def season_name_exists(self, name: str) -> bool:
+        result = await self.session.scalar(
+            select(func.count()).select_from(Season).where(Season.name == name)
+        )
+        return (result or 0) > 0
