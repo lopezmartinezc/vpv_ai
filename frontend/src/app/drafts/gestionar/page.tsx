@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { useSeason } from "@/contexts/season-context";
@@ -427,7 +428,17 @@ export default function GestionarDraftPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-bold text-vpv-text">Gestionar Draft</h1>
-        <SeasonSelector />
+        <div className="flex items-center gap-2">
+          {currentDraft && (
+            <Link
+              href={`/drafts/live/${currentDraft.id}`}
+              className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-500"
+            >
+              Draft en vivo
+            </Link>
+          )}
+          <SeasonSelector />
+        </div>
       </div>
 
       {/* Messages */}
