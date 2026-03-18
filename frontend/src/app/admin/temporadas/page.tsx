@@ -15,6 +15,7 @@ interface Season {
   draft_pool_size: number;
   lineup_deadline_min: number;
   total_participants: number;
+  scraping_slug: string | null;
 }
 
 interface ScoringRule {
@@ -39,6 +40,22 @@ interface SeasonSummary {
   status: string;
   matchday_current: number;
   total_participants: number;
+}
+
+interface InitializeResponse {
+  season: Season;
+  participants_created: number;
+  scoring_rules_copied: number;
+  payments_copied: number;
+  matchdays_created: number;
+  scraping_started: boolean;
+}
+
+interface PhotoDownloadResponse {
+  downloaded: number;
+  skipped: number;
+  errors: number;
+  restored: number;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -69,6 +86,17 @@ export default function AdminTemporadasPage() {
   const [editMatchdayStart, setEditMatchdayStart] = useState("");
   const [editLineupDeadline, setEditLineupDeadline] = useState("");
   const [editDraftPool, setEditDraftPool] = useState("");
+
+  // New season modal
+  const [showNewSeason, setShowNewSeason] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newSlug, setNewSlug] = useState("");
+  const [newCopyFrom, setNewCopyFrom] = useState<number | "">("");
+  const [creatingSeason, setCreatingSeason] = useState(false);
+
+  // Action states
+  const [downloadingPhotos, setDownloadingPhotos] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
 
   const fetchSeasons = useCallback(async () => {
     try {
@@ -227,6 +255,91 @@ export default function AdminTemporadasPage() {
     }
   }
 
+  // --- New season lifecycle handlers ---
+
+  async function handleCreateSeason() {
+    if (!newName.trim() || !newSlug.trim()) {
+      setMessage("Nombre y slug son obligatorios");
+      return;
+    }
+    setCreatingSeason(true);
+    setMessage(null);
+    try {
+      const body: Record<string, unknown> = {
+        name: newName.trim(),
+        scraping_slug: newSlug.trim(),
+      };
+      if (newCopyFrom) {
+        body.copy_from_season_id = Number(newCopyFrom);
+      }
+      const result = await apiClient.post<InitializeResponse>(
+        "/seasons/admin/initialize",
+        body,
+      );
+      setShowNewSeason(false);
+      setNewName("");
+      setNewSlug("");
+      setNewCopyFrom("");
+      // Refresh list and select new season
+      await fetchSeasons();
+      setSelectedId(result.season.id);
+      setMessage(
+        `Temporada creada: ${result.scoring_rules_copied} reglas, ${result.payments_copied} pagos, ${result.participants_created} participantes, ${result.matchdays_created} jornadas. Importando equipos en segundo plano...`,
+      );
+      setTimeout(() => setMessage(null), 8000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Error al crear temporada";
+      setMessage(msg);
+    } finally {
+      setCreatingSeason(false);
+    }
+  }
+
+  async function handleDownloadPhotos() {
+    if (!selectedId) return;
+    if (!confirm("Descargar fotos de jugadores? El proceso puede tardar varios minutos.")) return;
+    setDownloadingPhotos(true);
+    setMessage("Descargando fotos...");
+    try {
+      const result = await apiClient.post<PhotoDownloadResponse>(
+        `/seasons/admin/${selectedId}/download-photos`,
+        {},
+      );
+      setMessage(
+        `Fotos: ${result.downloaded} descargadas, ${result.restored} restauradas, ${result.skipped} omitidas, ${result.errors} errores`,
+      );
+      setTimeout(() => setMessage(null), 8000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Error al descargar fotos";
+      setMessage(msg);
+    } finally {
+      setDownloadingPhotos(false);
+    }
+  }
+
+  async function handleFinalizeSeason() {
+    if (!selectedId || !season) return;
+    if (!confirm(`Finalizar la temporada ${season.name}? Esta accion no se puede deshacer facilmente.`)) return;
+    setFinalizing(true);
+    setMessage(null);
+    try {
+      const result = await apiClient.put<{ season: Season }>(
+        `/seasons/admin/${selectedId}/finalize`,
+        {},
+      );
+      setSeason(result.season);
+      setEditStatus(result.season.status);
+      await fetchSeasons();
+      setMessage("Temporada finalizada");
+      setTimeout(() => setMessage(null), 5000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Error al finalizar";
+      setMessage(msg);
+    } finally {
+      setFinalizing(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-4 py-4">
@@ -237,7 +350,7 @@ export default function AdminTemporadasPage() {
 
   return (
     <div className="space-y-4">
-      {/* Season selector */}
+      {/* Season selector + New season button */}
       <div className="flex items-center gap-3">
         <label className="text-sm text-vpv-text-muted">Temporada:</label>
         <select
@@ -251,7 +364,93 @@ export default function AdminTemporadasPage() {
             </option>
           ))}
         </select>
+        <button
+          onClick={() => setShowNewSeason(true)}
+          className="rounded bg-green-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-green-700"
+        >
+          + Nueva temporada
+        </button>
       </div>
+
+      {/* New season modal */}
+      {showNewSeason && (
+        <div className="rounded-lg border border-green-600/30 bg-vpv-card">
+          <div className="border-b border-vpv-border px-4 py-3">
+            <h2 className="font-semibold text-vpv-text">Crear nueva temporada</h2>
+          </div>
+          <div className="space-y-3 px-4 py-3">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div>
+                <label className="mb-1 block text-xs text-vpv-text-muted">
+                  Nombre *
+                </label>
+                <input
+                  type="text"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="2026-2027"
+                  className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-vpv-text-muted">
+                  Slug scraping *
+                </label>
+                <input
+                  type="text"
+                  value={newSlug}
+                  onChange={(e) => setNewSlug(e.target.value)}
+                  placeholder="laliga-26-27"
+                  className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-vpv-text-muted">
+                  Copiar config de
+                </label>
+                <select
+                  value={newCopyFrom}
+                  onChange={(e) => setNewCopyFrom(e.target.value ? Number(e.target.value) : "")}
+                  className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+                >
+                  <option value="">— No copiar —</option>
+                  {seasons.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <p className="text-xs text-vpv-text-muted">
+              Se crearan 38 jornadas vacias. Si copias de otra temporada se copian reglas, pagos y participantes.
+              Los equipos y jugadores se importan automaticamente en segundo plano (~2-3 min).
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleCreateSeason}
+                disabled={creatingSeason}
+                className="rounded bg-green-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50"
+              >
+                {creatingSeason ? "Creando..." : "Crear temporada"}
+              </button>
+              <button
+                onClick={() => setShowNewSeason(false)}
+                className="rounded border border-vpv-border px-3 py-1.5 text-xs text-vpv-text-muted transition-colors hover:bg-vpv-bg"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Status message */}
+      {message && (
+        <div className="rounded border border-vpv-border bg-vpv-bg px-4 py-2 text-sm text-vpv-text">
+          {message}
+        </div>
+      )}
 
       {season && (
         <>
@@ -351,9 +550,10 @@ export default function AdminTemporadasPage() {
               <div className="flex items-center gap-3 text-xs text-vpv-text-muted">
                 <span>Scanned: J{season.matchday_scanned}</span>
                 <span>Participantes: {season.total_participants}</span>
+                {season.scraping_slug && <span>Slug: {season.scraping_slug}</span>}
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={handleSaveSeason}
                   disabled={saving}
@@ -361,8 +561,21 @@ export default function AdminTemporadasPage() {
                 >
                   {saving ? "Guardando..." : "Guardar cambios"}
                 </button>
-                {message && (
-                  <span className="text-xs text-vpv-text-muted">{message}</span>
+                <button
+                  onClick={handleDownloadPhotos}
+                  disabled={downloadingPhotos}
+                  className="rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {downloadingPhotos ? "Descargando fotos..." : "Descargar fotos"}
+                </button>
+                {season.status === "active" && (
+                  <button
+                    onClick={handleFinalizeSeason}
+                    disabled={finalizing}
+                    className="rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {finalizing ? "Finalizando..." : "Finalizar temporada"}
+                  </button>
                 )}
               </div>
             </div>
