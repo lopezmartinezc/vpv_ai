@@ -17,6 +17,7 @@ from src.features.drafts.schemas import (
     PlayerSearchResponse,
     ReorderPicksResponse,
 )
+from src.features.drafts.websocket import draft_ws_manager
 from src.features.seasons.repository import SeasonRepository
 
 
@@ -236,7 +237,7 @@ class DraftService:
         pick_rows = await self.repo.get_picks(draft_id)
         pk = next(p for p in pick_rows if p.pick_number == pick.pick_number)
 
-        return AddPickResponse(
+        response = AddPickResponse(
             pick_number=pk.pick_number,
             round_number=pk.round_number,
             participant_id=pk.participant_id,
@@ -245,6 +246,20 @@ class DraftService:
             position=pk.position,
             team_name=pk.team_name,
         )
+
+        # Broadcast to all connected WebSocket clients for this draft
+        next_pick_number = next_pick + 1
+        next_pid = _get_participant_for_pick(next_pick_number, draft.draft_type, ordered_pids)
+        await draft_ws_manager.broadcast(
+            draft_id,
+            {
+                "type": "pick_added",
+                "pick": response.model_dump(),
+                "next_participant_id": next_pid,
+            },
+        )
+
+        return response
 
     async def delete_pick(
         self,

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.exceptions import AuthenticationError
+from src.features.auth.service import decode_token
 from src.features.drafts.schemas import (
     AddPickRequest,
     AddPickResponse,
@@ -17,6 +19,7 @@ from src.features.drafts.schemas import (
     UpdateDraftOrderRequest,
 )
 from src.features.drafts.service import DraftService
+from src.features.drafts.websocket import draft_ws_manager
 from src.shared.dependencies import get_db, get_draft_manager
 
 router = APIRouter(prefix="/drafts", tags=["drafts"])
@@ -115,3 +118,32 @@ async def search_players_for_draft(
     _user: dict = Depends(get_draft_manager),
 ) -> PlayerSearchResponse:
     return await service.search_players(draft_id, q, position)
+
+
+@router.websocket("/ws/{draft_id}")
+async def draft_websocket(
+    websocket: WebSocket,
+    draft_id: int,
+    token: str = "",
+) -> None:
+    """WebSocket endpoint for live draft updates."""
+    # Authenticate via query param
+    try:
+        if not token:
+            await websocket.close(code=4001, reason="Token required")
+            return
+        decode_token(token)
+    except AuthenticationError:
+        await websocket.close(code=4001, reason="Invalid token")
+        return
+
+    await draft_ws_manager.connect(draft_id, websocket)
+    try:
+        while True:
+            # Keep connection alive; we don't expect client messages
+            # but we need to listen to detect disconnection
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        await draft_ws_manager.disconnect(draft_id, websocket)
+    except Exception:
+        await draft_ws_manager.disconnect(draft_id, websocket)
