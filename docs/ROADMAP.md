@@ -106,9 +106,10 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 
 ### 3.3 Predicciones pre-jornada
 - **Problema**: No hay herramienta para predecir puntos esperados
-- **Solucion**: Modelo basado en historial jugador + dificultad rival
+- **Solucion**: xPts = forma EWMA (40%) + media temporada (20%) + factor rival (25%) + casa/fuera (15%)
 - **Complejidad**: Alta
-- **Estado**: [ ] Pendiente
+- **Estado**: [x] Completado (2026-03-18)
+- **Notas**: Admin only. Factor rival invertido para POR/DEF vs MED/DEL. Ranking dificultad rivales.
 
 ---
 
@@ -150,7 +151,7 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 | 2.4 | Plantillas mejoradas | Medio | Media | Pendiente |
 | 3.1 | Logros/badges | Medio | Alta | Completado |
 | 3.2 | Draft en vivo | Bajo | Alta | Pendiente |
-| 3.3 | Predicciones | Medio | Alta | Pendiente |
+| 3.3 | Predicciones | Medio | Alta | Completado |
 | 4.1 | PWA | Medio | Baja | Completado |
 | 4.2 | Lazy loading | Bajo | Media | Pendiente |
 | 4.3 | Tests | Alto (tecnico) | Alta | Pendiente |
