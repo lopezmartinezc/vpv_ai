@@ -170,17 +170,17 @@ export default function PrediccionesPage() {
           <thead>
             <tr className="border-b border-vpv-border bg-vpv-card text-left text-xs text-vpv-text-muted">
               <th className="px-3 py-2.5">Jugador</th>
-              <th className="w-10 px-2 py-2.5 text-center">Pos</th>
-              <th className="px-2 py-2.5">Rival</th>
-              <th className="w-8 px-2 py-2.5 text-center">C/F</th>
-              <SortHeader label="Media" sortKey="season_avg" current={sortKey} asc={sortAsc} onToggle={toggleSort} />
-              <SortHeader label="Forma" sortKey="form_5" current={sortKey} asc={sortAsc} onToggle={toggleSort} />
-              <SortHeader label="xPts" sortKey="xpts" current={sortKey} asc={sortAsc} onToggle={toggleSort} />
-              <th className="px-2 py-2.5 text-center">Rango</th>
-              <th className="px-2 py-2.5 text-center">Titular</th>
-              <th className="px-2 py-2.5 text-center">Conf</th>
-              <th className="w-8 px-2 py-2.5 text-center">PJ</th>
-              <th className="w-8 px-2 py-2.5 text-center">Trend</th>
+              <th className="w-10 px-2 py-2.5 text-center" title="Posicion del jugador">Pos</th>
+              <th className="px-2 py-2.5" title="Equipo rival en esta jornada">Rival</th>
+              <TipHeader label="C/F" tip="Casa (C) o Fuera (F). Jugar en casa suele dar mas puntos." />
+              <SortHeader label="Media" sortKey="season_avg" current={sortKey} asc={sortAsc} onToggle={toggleSort} tip="Media de puntos en toda la temporada (20% del xPts)" />
+              <SortHeader label="Forma" sortKey="form_5" current={sortKey} asc={sortAsc} onToggle={toggleSort} tip="EWMA ultimos 5 partidos: da mas peso a los recientes (40% del xPts)" />
+              <SortHeader label="xPts" sortKey="xpts" current={sortKey} asc={sortAsc} onToggle={toggleSort} tip="Puntos esperados = Forma (40%) + Media (20%) + Factor rival (25%) + Casa/Fuera (15%), ajustado por probabilidad de titular" />
+              <TipHeader label="Rango" tip="Floor - Ceiling: xPts +/- desviacion estandar. Rango probable de puntos." />
+              <TipHeader label="Titular" tip="% de partidos recientes (ultimos 5) donde fue titular (>= 45 min). P = lanzador de penaltis." />
+              <TipHeader label="Conf" tip="Confianza en la prediccion. Alta: baja variabilidad + 10+ partidos. Baja: pocos datos o muy irregular." />
+              <TipHeader label="PJ" tip="Partidos jugados esta temporada. Mas partidos = datos mas fiables." />
+              <TipHeader label="Trend" tip="Tendencia: subiendo si forma > 110% de media, bajando si < 90%." />
             </tr>
           </thead>
           <tbody>
@@ -260,25 +260,37 @@ export default function PrediccionesPage() {
   );
 }
 
+function TipHeader({ label, tip }: { label: string; tip: string }) {
+  return (
+    <th className="px-2 py-2.5 text-center" title={tip}>
+      <span className="cursor-help border-b border-dashed border-vpv-text-muted/30 text-xs font-medium text-vpv-text-muted">
+        {label}
+      </span>
+    </th>
+  );
+}
+
 function SortHeader({
   label,
   sortKey,
   current,
   asc,
   onToggle,
+  tip,
 }: {
   label: string;
   sortKey: SortKey;
   current: SortKey;
   asc: boolean;
   onToggle: (key: SortKey) => void;
+  tip?: string;
 }) {
   const active = current === sortKey;
   return (
-    <th className="px-2 py-2.5 text-center">
+    <th className="px-2 py-2.5 text-center" title={tip}>
       <button
         onClick={() => onToggle(sortKey)}
-        className={`text-xs font-medium ${active ? "text-vpv-accent" : "text-vpv-text-muted hover:text-vpv-text"}`}
+        className={`cursor-help border-b border-dashed border-vpv-text-muted/30 text-xs font-medium ${active ? "text-vpv-accent" : "text-vpv-text-muted hover:text-vpv-text"}`}
       >
         {label}
         {active && (
