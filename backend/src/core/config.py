@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     # Telegram
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
+    telegram_alerts_chat_id: str = (
+        ""  # separate chat for deadline reminders (falls back to telegram_chat_id)
+    )
     telegram_enabled: bool = False
 
     # Push notifications (VAPID)

@@ -94,3 +94,23 @@ class TelegramNotifier:
         except Exception:
             logger.exception("Failed to send Telegram message")
             return False
+
+    async def send_alert(self, text: str) -> bool:
+        """Send a message to the alerts chat (deadline reminders, etc.).
+
+        Falls back to the main chat if no separate alerts chat is configured.
+        """
+        if not telegram_settings.telegram_enabled:
+            return False
+
+        from src.core.config import settings
+
+        chat_id = settings.telegram_alerts_chat_id or telegram_settings.telegram_chat_id
+
+        try:
+            async with TelegramClient() as client:
+                result = await client.send_message(chat_id=chat_id, text=text)
+            return result.get("ok", False)
+        except Exception:
+            logger.exception("Failed to send Telegram alert")
+            return False

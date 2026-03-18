@@ -407,7 +407,7 @@ async def _deadline_reminder() -> None:
                 from src.features.telegram.service import TelegramNotifier
 
                 notifier = TelegramNotifier(session)
-                await notifier.send_message(message)
+                await notifier.send_alert(message)
 
                 # Send push notifications to users without lineup
                 try:

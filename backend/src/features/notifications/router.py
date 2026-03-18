@@ -109,7 +109,7 @@ async def test_reminder(
 
         notifier = TelegramNotifier(db)
         message = f"\u23f0 TEST — Deadline J{md_number}\nSin alineacion: {', '.join(names)}"
-        await notifier.send_message(message)
+        await notifier.send_alert(message)
         telegram_sent = True
     except Exception as exc:
         telegram_sent = False
