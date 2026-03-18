@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
-import { useDraftWebSocket } from "@/hooks/use-draft-websocket";
+import { useDraftWebSocket, type DraftWSEvent } from "@/hooks/use-draft-websocket";
 import { apiClient } from "@/lib/api-client";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
 import type {
@@ -127,9 +127,24 @@ export default function LiveDraftPage() {
 
   // WebSocket events
   const handleWsEvent = useCallback(
-    (event: { type: string; pick?: DraftPickEntry; next_participant_id?: number }) => {
+    (event: DraftWSEvent) => {
       if (event.type === "pick_added" && event.pick) {
-        setPicks((prev) => [...prev, event.pick!]);
+        const pick = event.pick;
+        const newPick: DraftPickEntry = {
+          id: 0,
+          pick_number: pick.pick_number,
+          round_number: pick.round_number,
+          participant_id: pick.participant_id,
+          display_name: pick.display_name,
+          draft_order: null,
+          player_id: 0,
+          player_name: pick.player_name,
+          position: pick.position,
+          team_name: pick.team_name,
+          photo_path: null,
+          dropped_player_name: null,
+        };
+        setPicks((prev) => [...prev, newPick]);
         setNextParticipantId(event.next_participant_id ?? null);
         setLastPickFlash(event.pick.pick_number);
         setTimeout(() => setLastPickFlash(null), 2000);
@@ -320,7 +335,7 @@ export default function LiveDraftPage() {
             picking={picking}
             onPick={handlePick}
             adminStats={isAdmin ? adminStats : null}
-            suggestions={isAdmin ? adminStats?.suggestions : null}
+            suggestions={isAdmin ? adminStats?.suggestions ?? null : null}
           />
         </div>
       ) : (
