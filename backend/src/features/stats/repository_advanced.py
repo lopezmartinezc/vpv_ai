@@ -926,3 +926,142 @@ class AdvancedStatsRepository:
                 out[pid] = []
             out[pid].append(float(row.pts_total))
         return out
+
+    async def get_player_starter_pct(self, season_id: int, n: int = 5) -> dict[int, float]:
+        """% of last N matchdays where the player started (minutes >= 45).
+
+        Returns dict of player_id -> starter percentage (0.0 to 1.0).
+        """
+        ranked = (
+            select(
+                PlayerStat.player_id,
+                PlayerStat.minutes_played,
+                func.row_number()
+                .over(
+                    partition_by=PlayerStat.player_id,
+                    order_by=Matchday.number.desc(),
+                )
+                .label("rn"),
+            )
+            .join(Matchday, PlayerStat.matchday_id == Matchday.id)
+            .join(Player, PlayerStat.player_id == Player.id)
+            .where(
+                Player.season_id == season_id,
+                Matchday.season_id == season_id,
+                Matchday.counts.is_(True),
+                PlayerStat.played.is_(True),
+            )
+            .subquery()
+        )
+
+        stmt = (
+            select(
+                ranked.c.player_id,
+                func.count().label("total"),
+                func.sum(case((ranked.c.minutes_played >= 45, 1), else_=0)).label("starts"),
+            )
+            .where(ranked.c.rn <= n)
+            .group_by(ranked.c.player_id)
+        )
+
+        result = await self.session.execute(stmt)
+        return {
+            int(row.player_id): int(row.starts) / int(row.total)
+            for row in result.all()
+            if int(row.total) > 0
+        }
+
+    async def get_penalty_takers(self, season_id: int) -> set[int]:
+        """Player IDs that have scored at least 1 penalty goal this season."""
+        stmt = (
+            select(PlayerStat.player_id)
+            .join(Player, PlayerStat.player_id == Player.id)
+            .join(Matchday, PlayerStat.matchday_id == Matchday.id)
+            .where(
+                Player.season_id == season_id,
+                Matchday.season_id == season_id,
+                Matchday.counts.is_(True),
+                PlayerStat.penalty_goals > 0,
+            )
+            .group_by(PlayerStat.player_id)
+        )
+        result = await self.session.execute(stmt)
+        return set(result.scalars().all())
+
+    async def get_opponent_recent_stats(
+        self, season_id: int, n: int = 5
+    ) -> dict[int, dict[str, float]]:
+        """Goals conceded avg per team using only the last N matches.
+
+        Returns dict of team_id -> {goals_conceded_avg, matches}.
+        """
+        # Rank matches per team by matchday number desc
+        home_ranked = (
+            select(
+                Match.home_team_id.label("team_id"),
+                Match.away_score.label("goals_conceded"),
+                func.row_number()
+                .over(
+                    partition_by=Match.home_team_id,
+                    order_by=Matchday.number.desc(),
+                )
+                .label("rn"),
+            )
+            .join(Matchday, Match.matchday_id == Matchday.id)
+            .where(
+                Matchday.season_id == season_id,
+                Matchday.counts.is_(True),
+                Match.home_score.is_not(None),
+            )
+            .subquery()
+        )
+        away_ranked = (
+            select(
+                Match.away_team_id.label("team_id"),
+                Match.home_score.label("goals_conceded"),
+                func.row_number()
+                .over(
+                    partition_by=Match.away_team_id,
+                    order_by=Matchday.number.desc(),
+                )
+                .label("rn"),
+            )
+            .join(Matchday, Match.matchday_id == Matchday.id)
+            .where(
+                Matchday.season_id == season_id,
+                Matchday.counts.is_(True),
+                Match.home_score.is_not(None),
+            )
+            .subquery()
+        )
+
+        # Union last N home + away, then avg per team
+        from sqlalchemy import union_all
+
+        combined = union_all(
+            select(
+                home_ranked.c.team_id,
+                home_ranked.c.goals_conceded,
+            ).where(home_ranked.c.rn <= n),
+            select(
+                away_ranked.c.team_id,
+                away_ranked.c.goals_conceded,
+            ).where(away_ranked.c.rn <= n),
+        ).subquery()
+
+        stmt = select(
+            combined.c.team_id,
+            func.avg(func.cast(combined.c.goals_conceded, Float)).label("goals_conceded_avg"),
+            func.count().label("matches"),
+        ).group_by(combined.c.team_id)
+
+        result = await self.session.execute(stmt)
+        return {
+            int(row.team_id): {
+                "goals_conceded_avg": float(row.goals_conceded_avg)
+                if row.goals_conceded_avg
+                else 0.0,
+                "matches": int(row.matches),
+            }
+            for row in result.all()
+        }

@@ -177,7 +177,9 @@ export default function PrediccionesPage() {
               <SortHeader label="Forma" sortKey="form_5" current={sortKey} asc={sortAsc} onToggle={toggleSort} />
               <SortHeader label="xPts" sortKey="xpts" current={sortKey} asc={sortAsc} onToggle={toggleSort} />
               <th className="px-2 py-2.5 text-center">Rango</th>
+              <th className="px-2 py-2.5 text-center">Titular</th>
               <th className="px-2 py-2.5 text-center">Conf</th>
+              <th className="w-8 px-2 py-2.5 text-center">PJ</th>
               <th className="w-8 px-2 py-2.5 text-center">Trend</th>
             </tr>
           </thead>
@@ -229,8 +231,21 @@ export default function PrediccionesPage() {
                   <td className="px-2 py-2 text-center text-[10px] tabular-nums text-vpv-text-muted">
                     {p.xpts_floor.toFixed(0)}-{p.xpts_ceiling.toFixed(0)}
                   </td>
+                  <td className="px-2 py-2 text-center">
+                    <span className={`text-xs tabular-nums font-medium ${
+                      p.starter_pct >= 80 ? "text-green-400" : p.starter_pct >= 40 ? "text-amber-400" : "text-red-400"
+                    }`}>
+                      {p.starter_pct.toFixed(0)}%
+                    </span>
+                    {p.is_penalty_taker && (
+                      <span className="ml-0.5 text-[9px] text-vpv-accent" title="Lanzador de penaltis">P</span>
+                    )}
+                  </td>
                   <td className={`px-2 py-2 text-center text-xs font-medium ${CONF_COLORS[p.confidence] ?? ""}`}>
                     {p.confidence}
+                  </td>
+                  <td className="px-2 py-2 text-center text-xs tabular-nums text-vpv-text-muted">
+                    {p.matchdays_played}
                   </td>
                   <td className={`px-2 py-2 text-center font-bold ${trend.color}`}>
                     {trend.icon}

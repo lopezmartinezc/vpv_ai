@@ -592,7 +592,16 @@ class AdvancedStatsService:
         # 6. Recent points for form calculation (last 5)
         recent_points = await self.repo.get_player_recent_points(season_id, n=5)
 
-        # 7. Build predictions for players whose team has a fixture
+        # 7. Starter probability (last 5 matches)
+        starter_pcts = await self.repo.get_player_starter_pct(season_id, n=5)
+
+        # 8. Penalty takers
+        penalty_takers = await self.repo.get_penalty_takers(season_id)
+
+        # 9. Recent opponent form (last 5 matches instead of full season)
+        opponent_recent = await self.repo.get_opponent_recent_stats(season_id, n=5)
+
+        # 10. Build predictions for players whose team has a fixture
         predictions: list[PlayerPrediction] = []
         for player_id, stats in player_stats.items():
             team_id = int(stats["team_id"])
@@ -617,9 +626,15 @@ class AdvancedStatsService:
             season_avg = stats["avg_pts"]
             form_val = form_5 if form_5 is not None else season_avg
 
-            # Rival factor
-            opp = opponent_stats.get(opponent_id, {})
-            opp_goals_conceded = float(opp.get("goals_conceded_avg", league_avg_goals))
+            # Rival factor — use recent form (last 5 matches) if available
+            opp_recent = opponent_recent.get(opponent_id, {})
+            opp_season = opponent_stats.get(opponent_id, {})
+            # Prefer recent form, fallback to season avg
+            opp_goals_conceded = float(
+                opp_recent.get(
+                    "goals_conceded_avg", opp_season.get("goals_conceded_avg", league_avg_goals)
+                )
+            )
             position = stats["position"]
             if position in ("POR", "DEF"):
                 rival_factor = league_avg_goals / max(opp_goals_conceded, 0.1)
@@ -636,13 +651,18 @@ class AdvancedStatsService:
                 round(location_avg_raw, 1) if location_avg_raw else None
             )
 
-            # xPts formula
-            xpts = (
+            # Starter probability discount
+            starter_pct = starter_pcts.get(player_id, 1.0)
+            is_penalty_taker = player_id in penalty_takers
+
+            # xPts formula (weighted components * starter probability)
+            raw_xpts = (
                 (form_val * 0.40)
                 + (season_avg * 0.20)
                 + (season_avg * rival_factor * 0.25)
                 + (location_avg_used * 0.15)
             )
+            xpts = raw_xpts * starter_pct
 
             std_dev = stats["std_dev"]
             cv = std_dev / season_avg if season_avg > 0 else 1.0
@@ -684,6 +704,8 @@ class AdvancedStatsService:
                     confidence=confidence,
                     trend=trend,
                     matchdays_played=stats["matchdays_played"],
+                    starter_pct=round(starter_pct * 100, 0),
+                    is_penalty_taker=is_penalty_taker,
                 )
             )
 

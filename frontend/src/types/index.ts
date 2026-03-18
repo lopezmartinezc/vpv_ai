@@ -16,6 +16,8 @@ export interface PlayerPrediction {
   confidence: string;
   trend: string;
   matchdays_played: number;
+  starter_pct: number;
+  is_penalty_taker: boolean;
 }
 
 export interface OpponentDifficulty {

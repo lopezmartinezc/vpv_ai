@@ -194,6 +194,8 @@ class PlayerPrediction(BaseModel):
     confidence: str  # "alta" | "media" | "baja"
     trend: str  # "rising" | "stable" | "falling"
     matchdays_played: int
+    starter_pct: float  # % of recent matches started (>= 45 min)
+    is_penalty_taker: bool
 
 
 class OpponentDifficulty(BaseModel):
