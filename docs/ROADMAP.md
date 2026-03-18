@@ -99,10 +99,10 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 
 ### 3.2 Draft en vivo (WebSocket)
 - **Problema**: Draft sin experiencia en tiempo real
-- **Solucion**: WebSocket para picks en vivo, countdown por turno
-- **Nota**: Bajo impacto relativo (se usa 2 veces al ano)
+- **Solucion**: WebSocket broadcast + pagina interactiva /drafts/live/{id}
 - **Complejidad**: Alta
-- **Estado**: [ ] Pendiente
+- **Estado**: [x] Completado (2026-03-18)
+- **Notas**: Cada participante elige desde su dispositivo. Admin puede forzar picks. Filtros: texto + posicion + equipo. Admin: stats avanzadas + sugerencias top 5 por posicion.
 
 ### 3.3 Predicciones pre-jornada
 - **Problema**: No hay herramienta para predecir puntos esperados
@@ -150,7 +150,7 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 | 2.3 | Evolucion personal | Medio | Media | Completado |
 | 2.4 | Plantillas mejoradas | Medio | Media | Pendiente |
 | 3.1 | Logros/badges | Medio | Alta | Completado |
-| 3.2 | Draft en vivo | Bajo | Alta | Pendiente |
+| 3.2 | Draft en vivo | Bajo | Alta | Completado |
 | 3.3 | Predicciones | Medio | Alta | Completado |
 | 4.1 | PWA | Medio | Baja | Completado |
 | 4.2 | Lazy loading | Bajo | Media | Pendiente |

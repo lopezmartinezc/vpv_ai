@@ -649,6 +649,25 @@ Detalle de un draft con participantes y picks.
 }
 ```
 
+### `GET /api/drafts/{draft_id}/players/stats`
+
+Stats avanzadas de jugadores disponibles para el draft (no pickeados). Incluye sugerencias top 5 por posicion.
+
+**Auth**: Admin
+
+**Response** `200`: `DraftPlayerStatsResponse` con players (avg_pts, form, trend, starter_pct) y suggestions por posicion.
+
+### `WS /api/drafts/ws/{draft_id}?token=JWT`
+
+WebSocket para draft en vivo. Broadcast de eventos en tiempo real.
+
+**Auth**: JWT via query param
+
+**Eventos**:
+- `pick_added`: nuevo pick con next_participant_id
+- `connected`: confirmacion + online count
+- `online_count`: actualizacion de usuarios conectados
+
 ---
 
 ## Economy
