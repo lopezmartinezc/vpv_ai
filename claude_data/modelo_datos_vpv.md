@@ -101,11 +101,12 @@ CREATE TABLE seasons (
     draft_pool_size     SMALLINT     NOT NULL DEFAULT 26,  -- Jugadores por participante
     lineup_deadline_min SMALLINT     NOT NULL DEFAULT 30,  -- Minutos antes del 1er partido
     total_participants  SMALLINT     NOT NULL DEFAULT 0,
+    scraping_slug       VARCHAR(50),                    -- e.g. 'laliga-25-26'
     created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 ```
 
-**Diferencia con MySQL**: `temporadas` solo tenía jornada_inicial, jornada_actual, jornada_cambios, total_user, jornada_escaneada. Ahora se añade estado de la temporada, deadline configurable y draft_pool_size.
+**Diferencia con MySQL**: `temporadas` solo tenía jornada_inicial, jornada_actual, jornada_cambios, total_user, jornada_escaneada. Ahora se añade estado de la temporada, deadline configurable, draft_pool_size y scraping_slug (slug de futbolfantasy.com para URLs de jugadores, reemplaza config de .env).
 
 ---
 

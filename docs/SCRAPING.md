@@ -51,7 +51,7 @@ backend/src/features/scraping/
   scheduler.py        # APScheduler — 2 jobs automaticos
   photos.py           # PhotoDownloader — descarga fotos WebP
   cli.py              # CLI para ejecucion manual
-  router.py           # 8 endpoints FastAPI
+  router.py           # 8 endpoints FastAPI (+ 3 en seasons/router.py para lifecycle)
 ```
 
 ### Configuracion (`config.py`)
@@ -59,7 +59,7 @@ backend/src/features/scraping/
 | Variable | Default | Descripcion |
 |----------|---------|-------------|
 | `SCRAPING_BASE_URL` | `https://www.futbolfantasy.com` | URL base de futbolfantasy |
-| `SCRAPING_SEASON_SLUG` | `laliga-25-26` | Slug temporada para URLs de jugadores |
+| `SCRAPING_SEASON_SLUG` | `laliga-25-26` | Slug temporada para URLs de jugadores (fallback; se lee de `seasons.scraping_slug` si existe) |
 | `SCRAPING_DELAY_MIN` | `1.0` | Delay minimo entre requests (segundos) |
 | `SCRAPING_DELAY_MAX` | `4.0` | Delay maximo entre requests (segundos) |
 | `SCRAPING_TIMEOUT` | `15.0` | Timeout por request (segundos) |
@@ -194,6 +194,10 @@ Metodos de acceso a datos relevantes para scraping:
 | `sync_matchday_first_match_at(season_id)` | Recalcular `MIN(played_at)` por jornada |
 | `mark_match_stats_ok(match_id)` | Marcar match como scrapeado OK |
 | `mark_matchday_stats_ok(matchday_id)` | Marcar jornada como completa |
+| `create_team(season_id, name, slug)` | Crear equipo (season init) |
+| `create_player(season_id, team_id, ...)` | Crear jugador (season init) |
+| `create_match(matchday_id, home_team_id, ...)` | Crear partido (season init) |
+| `get_teams_by_season(season_id)` | Listar equipos de temporada |
 
 ### Photos (`photos.py`)
 
@@ -229,6 +233,19 @@ python -m src.features.scraping.cli download-photos 8
 
 ### Inicio de temporada
 
+Automatizado via `POST /api/seasons/admin/initialize`:
+```
+1. Crear temporada con scraping_slug (endpoint initialize)
+   -> copia scoring_rules, payments, participants del source
+   -> crea 38 matchdays vacios
+2. Background task automatico:
+   -> scrape teams (homepage) -> crear equipos La Liga
+   -> scrape rosters (por equipo) -> crear jugadores
+   -> scrape calendar -> crear matches con fechas/equipos
+3. POST /seasons/admin/{id}/download-photos -> fotos WebP
+```
+
+Alternativa manual (CLI):
 ```
 1. Crear temporada en BD (admin)
 2. scrape teams -> obtener equipos La Liga

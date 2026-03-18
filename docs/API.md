@@ -343,6 +343,74 @@ Actualizar configuracion de la temporada.
 
 **Response** `200`: `SeasonDetail`
 
+### `POST /api/seasons/admin/initialize`
+
+Crear temporada completa en un paso. Copia config de temporada anterior e importa equipos/jugadores en background.
+
+**Auth**: Admin
+
+**Request**:
+```json
+{
+  "name": "2026-2027",
+  "scraping_slug": "laliga-26-27",
+  "matchday_start": 1,
+  "matchday_end": 38,
+  "draft_pool_size": 26,
+  "lineup_deadline_min": 30,
+  "copy_from_season_id": 8,
+  "participant_user_ids": null
+}
+```
+
+> `copy_from_season_id`: si se proporciona, copia scoring_rules, payments y participantes activos.
+> `participant_user_ids`: lista explicita de user_ids; si es null y hay `copy_from_season_id`, copia del source.
+
+**Response** `200`:
+```json
+{
+  "season": { "id": 9, "name": "2026-2027", "status": "setup", "scraping_slug": "laliga-26-27", "..." : "..." },
+  "participants_created": 11,
+  "scoring_rules_copied": 45,
+  "payments_copied": 12,
+  "matchdays_created": 38,
+  "scraping_started": true
+}
+```
+
+> Cuando `scraping_started=true`, un background task esta importando equipos, jugadores y calendario (~2-3 min).
+
+### `POST /api/seasons/admin/{season_id}/download-photos`
+
+Descargar fotos de jugadores de futbolfantasy.com. Proceso largo (~5 min).
+
+**Auth**: Admin
+
+**Response** `200`:
+```json
+{
+  "downloaded": 480,
+  "skipped": 5,
+  "errors": 2,
+  "restored": 15
+}
+```
+
+### `PUT /api/seasons/admin/{season_id}/finalize`
+
+Marcar temporada como `finished`. Bloquea si hay jornadas con `counts=true` sin `stats_ok=true`.
+
+**Auth**: Admin
+
+**Response** `200`:
+```json
+{
+  "season": { "id": 8, "name": "2025-2026", "status": "finished", "..." : "..." }
+}
+```
+
+**Error** `422`: si hay jornadas incompletas.
+
 ### `PUT /api/seasons/admin/{season_id}/scoring-rules`
 
 Actualizar reglas de puntuacion en lote.

@@ -134,6 +134,17 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 - **Complejidad**: Alta
 - **Estado**: [ ] Pendiente
 
+### 4.5 Ciclo de vida de temporada (admin)
+- **Problema**: Crear temporada requeria SQL manual y CLI
+- **Solucion**: 3 endpoints admin + UI en /admin/temporadas:
+  - `POST /seasons/admin/initialize` — crea temporada, copia config, importa equipos/jugadores en background
+  - `POST /seasons/admin/{id}/download-photos` — descarga fotos de jugadores
+  - `PUT /seasons/admin/{id}/finalize` — finaliza temporada con validacion de stats
+- **Extras**: `scraping_slug` almacenado en DB (ya no requiere reiniciar backend)
+- **Complejidad**: Media
+- **Estado**: [x] Completado (2026-03-18)
+- **Notas**: Documentacion completa en `docs/SEASON_LIFECYCLE.md`
+
 ---
 
 ## Resumen
@@ -156,6 +167,7 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 | 4.2 | Lazy loading | Bajo | Media | Pendiente |
 | 4.3 | Tests | Alto (tecnico) | Alta | Pendiente |
 | 4.4 | Sesion unica | Alto (seguridad) | Media | Completado |
+| 4.5 | Ciclo vida temporada | Alto (operativo) | Media | Completado |
 
 ## Criterios de validacion
 
