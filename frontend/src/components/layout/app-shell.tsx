@@ -4,6 +4,8 @@ import { useState } from "react";
 import { AuthProvider } from "@/contexts/auth-context";
 import { ThemeProvider } from "@/contexts/theme-context";
 import { SeasonProvider } from "@/contexts/season-context";
+import { DeadlineBanner } from "@/components/deadline-banner";
+import { PushPrompt } from "@/components/push-prompt";
 import { NavBar } from "./nav-bar";
 import { Sidebar } from "./sidebar";
 
@@ -20,6 +22,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               open={sidebarOpen}
               onClose={() => setSidebarOpen(false)}
             />
+            <DeadlineBanner />
+            <PushPrompt />
             <main className="mx-auto max-w-7xl px-4 py-6">
               {children}
             </main>

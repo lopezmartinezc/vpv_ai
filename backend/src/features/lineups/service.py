@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.exceptions import BusinessRuleError, NotFoundError
 from src.features.lineups.repository import LineupRepository
 from src.features.lineups.schemas import (
+    DeadlineStatusResponse,
     LineupPlayerResponse,
     LineupPlayerSlot,
     LineupSubmitRequest,
@@ -197,6 +198,48 @@ class LineupService:
             len(missing),
         )
         return {"copied": copied, "errors": errors, "total_missing": len(missing)}
+
+    async def get_deadline_status(self, user_id: int, season_id: int) -> DeadlineStatusResponse:
+        """Check if the current user has a lineup and how much time is left."""
+        season = await self.repo.get_season(season_id)
+        if season is None:
+            raise NotFoundError("Temporada", season_id)
+
+        md_number = season.matchday_current
+        if md_number == 0:
+            return DeadlineStatusResponse(has_lineup=True, matchday_number=0)
+
+        matchday = await self.repo.get_matchday(season_id, md_number)
+        if matchday is None:
+            return DeadlineStatusResponse(has_lineup=True, matchday_number=md_number)
+
+        # Compute deadline
+        deadline = matchday.deadline_at
+        if deadline is None and matchday.first_match_at is not None:
+            deadline = matchday.first_match_at - timedelta(minutes=season.lineup_deadline_min)
+
+        if deadline is not None and deadline.tzinfo is None:
+            deadline = deadline.replace(tzinfo=UTC)
+
+        # Check if user has lineup
+        participant = await self.repo.get_participant_for_user(season_id, user_id)
+        has_lineup = False
+        if participant is not None:
+            lineup = await self.repo.get_lineup(participant.id, matchday.id)
+            has_lineup = lineup is not None
+
+        minutes_remaining = None
+        if deadline is not None:
+            now = datetime.now(UTC)
+            diff = (deadline - now).total_seconds() / 60
+            minutes_remaining = max(0, int(diff))
+
+        return DeadlineStatusResponse(
+            has_lineup=has_lineup,
+            deadline_at=deadline,
+            minutes_remaining=minutes_remaining,
+            matchday_number=md_number,
+        )
 
     async def _validate_deadline(self, matchday: object, season_id: int) -> None:
         """Check that the deadline hasn't passed."""

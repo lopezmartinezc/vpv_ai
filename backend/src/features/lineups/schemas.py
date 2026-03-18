@@ -66,3 +66,10 @@ class MyLineupResponse(BaseModel):
     lineup_deadline_min: int
     current_lineup: LineupSubmitResponse | None = None
     squad: list[SquadPlayerForLineup]
+
+
+class DeadlineStatusResponse(BaseModel):
+    has_lineup: bool
+    deadline_at: datetime | None = None
+    minutes_remaining: int | None = None
+    matchday_number: int

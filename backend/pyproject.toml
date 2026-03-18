@@ -19,6 +19,7 @@ dependencies = [
     "Pillow>=11.0.0",
     "apscheduler>=3.10",
     "slowapi>=0.1.9",
+    "pywebpush>=2.0.0",
 ]
 
 [project.optional-dependencies]

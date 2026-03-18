@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.lineups.schemas import (
+    DeadlineStatusResponse,
     LineupSubmitRequest,
     LineupSubmitResponse,
     MyLineupResponse,
@@ -53,6 +54,22 @@ async def submit_lineup(
         season_id=season_id,
         matchday_number=matchday_number,
         data=data,
+    )
+
+
+@router.get(
+    "/{season_id}/deadline-status",
+    response_model=DeadlineStatusResponse,
+)
+async def get_deadline_status(
+    season_id: int,
+    user: dict = Depends(get_current_user),
+    service: LineupService = Depends(_get_service),
+) -> DeadlineStatusResponse:
+    """Check if user has lineup and time remaining until deadline."""
+    return await service.get_deadline_status(
+        user_id=int(user["sub"]),
+        season_id=season_id,
     )
 
 

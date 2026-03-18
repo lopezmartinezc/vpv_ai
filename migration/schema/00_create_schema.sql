@@ -15,6 +15,7 @@
 -- DROP TABLES (reverse dependency order -- leaf tables first)
 -- =============================================================================
 
+DROP TABLE IF EXISTS push_subscriptions             CASCADE;
 DROP TABLE IF EXISTS achievements                  CASCADE;
 DROP TABLE IF EXISTS achievement_definitions       CASCADE;
 DROP TABLE IF EXISTS alembic_version               CASCADE;
@@ -458,6 +459,20 @@ INSERT INTO achievement_definitions (achievement_key, name_es, description_es, c
 ('imbatible',        'Imbatible',            'Numero 1 en jornadas consecutivas',                         'streak',    'crown',  3, true),
 ('lider',            'Lider',                'Lider de la clasificacion acumulada en la jornada',          'weekly',    'chart',  1, true),
 ('robo_draft',       'Robo del Draft',       'Pick tardio (ronda 20+) que rinde en el top 25%',           'draft',     'target', 1, true);
+
+-- ----------------------------------------------------------------------------
+-- Push subscriptions (Web Push API)
+-- ----------------------------------------------------------------------------
+CREATE TABLE push_subscriptions (
+    id              SERIAL PRIMARY KEY,
+    user_id         INT          NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    endpoint        TEXT         NOT NULL UNIQUE,
+    p256dh          TEXT         NOT NULL,
+    auth            TEXT         NOT NULL,
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_push_subscriptions_user ON push_subscriptions(user_id);
 
 -- ----------------------------------------------------------------------------
 -- Alembic version tracking

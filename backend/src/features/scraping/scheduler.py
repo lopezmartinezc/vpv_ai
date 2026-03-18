@@ -45,6 +45,7 @@ _job_logs: dict[str, deque[dict]] = {
     "scraping_tick": deque(maxlen=_MAX_LOG_ENTRIES),
     "calendar_sync": deque(maxlen=_MAX_LOG_ENTRIES),
     "deadline_check": deque(maxlen=_MAX_LOG_ENTRIES),
+    "deadline_reminder": deque(maxlen=_MAX_LOG_ENTRIES),
 }
 
 
@@ -250,6 +251,17 @@ async def _run_tick() -> None:
 
 _last_deadline_matchday: int | None = None  # track last processed matchday
 
+# ---------------------------------------------------------------------------
+# Deadline reminder tracking
+# ---------------------------------------------------------------------------
+_reminders_sent: dict[int, set[str]] = {}  # matchday_number → set of "2h"/"30min"
+_last_deadline_reminder_at: datetime | None = None
+
+_REMINDER_WINDOWS = [
+    ("2h", 120),  # label, minutes before deadline
+    ("30min", 30),
+]
+
 
 async def _deadline_check() -> None:
     """Check if the lineup deadline has passed and copy previous lineups."""
@@ -305,6 +317,130 @@ async def _deadline_check() -> None:
         except Exception as exc:
             await session.rollback()
             _log("deadline_check", f"Error: {exc}", "error")
+
+
+# ---------------------------------------------------------------------------
+# Deadline reminder (Telegram notifications before deadline)
+# ---------------------------------------------------------------------------
+
+
+async def _deadline_reminder() -> None:
+    """Send Telegram reminders at 2h and 30min before lineup deadline."""
+    global _last_deadline_reminder_at
+    _last_deadline_reminder_at = datetime.now(UTC)
+
+    async with AsyncSessionLocal() as session:
+        try:
+            from src.features.lineups.repository import LineupRepository
+            from src.shared.models.user import User
+
+            scraping_repo = ScrapingRepository(session)
+            lineup_repo = LineupRepository(session)
+
+            season = await scraping_repo.get_active_season()
+            if season is None:
+                return
+
+            md_number = season.matchday_current
+            if md_number == 0:
+                return
+
+            matchday = await lineup_repo.get_matchday(season.id, md_number)
+            if matchday is None:
+                return
+
+            # Compute deadline
+            deadline = matchday.deadline_at
+            if deadline is None and matchday.first_match_at is not None:
+                deadline = matchday.first_match_at - timedelta(minutes=season.lineup_deadline_min)
+
+            if deadline is None:
+                return
+
+            if deadline.tzinfo is None:
+                deadline = deadline.replace(tzinfo=UTC)
+
+            now = datetime.now(UTC)
+            if now >= deadline:
+                return  # Deadline already passed
+
+            minutes_left = (deadline - now).total_seconds() / 60
+            sent_for_md = _reminders_sent.get(md_number, set())
+
+            for label, window_minutes in _REMINDER_WINDOWS:
+                if label in sent_for_md:
+                    continue
+                # Fire when within 1 minute of the window
+                if abs(minutes_left - window_minutes) > 1.5:
+                    continue
+
+                # Get participants without lineup
+                missing = await lineup_repo.get_participants_without_lineup(season.id, matchday.id)
+                if not missing:
+                    _log("deadline_reminder", f"J{md_number} ({label}): todos han enviado")
+                    sent_for_md.add(label)
+                    _reminders_sent[md_number] = sent_for_md
+                    continue
+
+                # Get display names
+                from sqlalchemy import select as sa_select
+
+                user_ids = [p.user_id for p in missing]
+                stmt = sa_select(User.id, User.display_name).where(User.id.in_(user_ids))
+                result = await session.execute(stmt)
+                user_names = {row.id: row.display_name for row in result.all()}
+
+                names = [user_names.get(p.user_id, "?") for p in missing]
+                names_str = ", ".join(names)
+
+                if window_minutes >= 60:
+                    time_str = f"{window_minutes // 60}h"
+                else:
+                    time_str = f"{window_minutes}min"
+
+                message = (
+                    f"\u23f0 Faltan {time_str} para el deadline de J{md_number}\n"
+                    f"Sin alineacion: {names_str}"
+                )
+
+                # Send to Telegram group
+                from src.features.telegram.service import TelegramNotifier
+
+                notifier = TelegramNotifier(session)
+                await notifier.send_message(message)
+
+                # Send push notifications to users without lineup
+                try:
+                    from src.features.notifications.service import NotificationService
+
+                    push_service = NotificationService(session)
+                    push_user_ids = [p.user_id for p in missing]
+                    md_url = f"/jornadas/{md_number}/alineacion"
+                    push_sent = await push_service.send_push_to_users(
+                        user_ids=push_user_ids,
+                        title=f"Deadline J{md_number}",
+                        body=f"Faltan {time_str} para enviar alineacion",
+                        url=md_url,
+                    )
+                    if push_sent:
+                        _log("deadline_reminder", f"Push: {push_sent} notificaciones enviadas")
+                except Exception as push_exc:
+                    _log("deadline_reminder", f"Push error: {push_exc}", "warning")
+
+                sent_for_md.add(label)
+                _reminders_sent[md_number] = sent_for_md
+                _log(
+                    "deadline_reminder",
+                    f"J{md_number} ({label}): aviso enviado — {len(missing)} sin alineacion",
+                )
+
+                # Clean old matchday entries
+                for old_md in list(_reminders_sent.keys()):
+                    if old_md < md_number:
+                        del _reminders_sent[old_md]
+
+        except Exception as exc:
+            _log("deadline_reminder", f"Error: {exc}", "error")
 
 
 # ---------------------------------------------------------------------------
@@ -383,9 +519,18 @@ def start_scheduler() -> None:
         replace_existing=True,
         misfire_grace_time=30,
     )
+    _scheduler.add_job(
+        _deadline_reminder,
+        trigger="interval",
+        seconds=60,
+        id="deadline_reminder",
+        max_instances=1,
+        replace_existing=True,
+        misfire_grace_time=30,
+    )
     _scheduler.start()
     logger.info(
-        "scheduler.start: started, tick_interval=%ds, calendar_sync=daily@06:00, deadline_check=60s",
+        "scheduler.start: started, tick_interval=%ds, calendar_sync=daily@06:00, deadline_check=60s, deadline_reminder=60s",
         interval,
     )
 
@@ -420,6 +565,7 @@ def get_scheduler_status() -> dict:
     next_run = _next("scraping_tick")
     next_calendar_sync = _next("calendar_sync")
     next_deadline_check = _next("deadline_check")
+    next_deadline_reminder = _next("deadline_reminder")
 
     # --- structured per-job list ---
     jobs: list[dict] = [
@@ -452,6 +598,17 @@ def get_scheduler_status() -> dict:
             else None,
             "next_run_at": next_deadline_check,
             "logs": list(_job_logs["deadline_check"]),
+        },
+        {
+            "id": "deadline_reminder",
+            "name": "Recordatorio deadline (Telegram)",
+            "type": "interval",
+            "interval_seconds": 60,
+            "last_run_at": _last_deadline_reminder_at.isoformat()
+            if _last_deadline_reminder_at
+            else None,
+            "next_run_at": next_deadline_reminder,
+            "logs": list(_job_logs["deadline_reminder"]),
         },
     ]
 
