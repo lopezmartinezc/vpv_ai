@@ -13,6 +13,7 @@ from src.features.drafts.schemas import (
     DeletePickResponse,
     DraftDetailResponse,
     DraftListResponse,
+    DraftPlayerStatsResponse,
     PlayerSearchResponse,
     ReorderPicksRequest,
     ReorderPicksResponse,
@@ -20,7 +21,7 @@ from src.features.drafts.schemas import (
 )
 from src.features.drafts.service import DraftService
 from src.features.drafts.websocket import draft_ws_manager
-from src.shared.dependencies import get_db, get_draft_manager
+from src.shared.dependencies import get_current_admin, get_db, get_draft_manager
 
 router = APIRouter(prefix="/drafts", tags=["drafts"])
 
@@ -109,15 +110,25 @@ async def delete_pick(
     return await service.delete_pick(draft_id, pick_number)
 
 
+@router.get("/{draft_id}/players/stats", response_model=DraftPlayerStatsResponse)
+async def get_draft_player_stats(
+    draft_id: int,
+    _admin: dict = Depends(get_current_admin),
+    service: DraftService = Depends(_get_service),
+) -> DraftPlayerStatsResponse:
+    return await service.get_player_stats_for_draft(draft_id)
+
+
 @router.get("/{draft_id}/players/search", response_model=PlayerSearchResponse)
 async def search_players_for_draft(
     draft_id: int,
     q: str = Query(default=""),
     position: str | None = Query(default=None),
+    team_id: int | None = Query(default=None),
     service: DraftService = Depends(_get_service),
     _user: dict = Depends(get_draft_manager),
 ) -> PlayerSearchResponse:
-    return await service.search_players(draft_id, q, position)
+    return await service.search_players(draft_id, q, position, team_id)
 
 
 @router.websocket("/ws/{draft_id}")

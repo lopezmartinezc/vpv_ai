@@ -12,7 +12,9 @@ from src.features.drafts.schemas import (
     DraftListResponse,
     DraftParticipant,
     DraftPickEntry,
+    DraftPlayerStatsResponse,
     DraftSummary,
+    PlayerDraftStats,
     PlayerSearchItem,
     PlayerSearchResponse,
     ReorderPicksResponse,
@@ -282,6 +284,7 @@ class DraftService:
         draft_id: int,
         query: str,
         position: str | None,
+        team_id: int | None = None,
     ) -> PlayerSearchResponse:
         draft = await self.repo.get_draft_by_id(draft_id)
         if draft is None:
@@ -293,6 +296,7 @@ class DraftService:
             picked_ids=picked,
             query=query,
             position=position,
+            team_id=team_id,
         )
 
         return PlayerSearchResponse(
@@ -308,6 +312,81 @@ class DraftService:
                 for r in rows
             ]
         )
+
+    async def get_player_stats_for_draft(self, draft_id: int) -> DraftPlayerStatsResponse:
+        """Get advanced stats for all unpicked players (admin use during live draft)."""
+        from src.features.stats.repository_advanced import AdvancedStatsRepository
+        from src.features.stats.service_advanced import _ewma
+
+        # 1. Get draft to find season_id
+        draft = await self.repo.get_draft_by_id(draft_id)
+        if draft is None:
+            raise NotFoundError("Draft", draft_id)
+        season_id = draft.season_id
+
+        # 2. Get picked player IDs
+        picked_ids = await self.repo.get_picked_player_ids(draft_id)
+
+        # 3. Get season stats using the advanced stats repo
+        adv_repo = AdvancedStatsRepository(self.repo.session)
+
+        player_stats = await adv_repo.get_player_season_stats_for_predictions(season_id)
+        recent_points = await adv_repo.get_player_recent_points(season_id, n=5)
+        starter_pcts = await adv_repo.get_player_starter_pct(season_id, n=5)
+
+        # 4. Build response (only unpicked players)
+        players: dict[str, PlayerDraftStats] = {}
+        by_position: dict[str, list[tuple[int, float]]] = {}
+
+        for player_id, stats in player_stats.items():
+            if player_id in picked_ids:
+                continue
+
+            avg_pts = stats["avg_pts"]
+            pts_list = recent_points.get(player_id, [])
+            form_5 = round(_ewma(pts_list), 1) if len(pts_list) >= 2 else None
+            form_val = form_5 if form_5 is not None else avg_pts
+
+            if avg_pts > 0:
+                if form_val > avg_pts * 1.1:
+                    trend = "rising"
+                elif form_val < avg_pts * 0.9:
+                    trend = "falling"
+                else:
+                    trend = "stable"
+            else:
+                trend = "stable"
+
+            starter_pct = starter_pcts.get(player_id, 1.0)
+
+            players[str(player_id)] = PlayerDraftStats(
+                player_id=player_id,
+                avg_pts=round(avg_pts, 1),
+                std_dev=round(stats["std_dev"], 1),
+                form_5=form_5,
+                trend=trend,
+                matchdays_played=stats["matchdays_played"],
+                starter_pct=round(starter_pct * 100, 0),
+            )
+
+            # Score for suggestions: avg * starter_factor * trend_factor
+            starter_factor = 1.0 if starter_pct >= 0.8 else 0.7
+            trend_factor = 1.1 if trend == "rising" else (0.9 if trend == "falling" else 1.0)
+            score = avg_pts * starter_factor * trend_factor
+
+            position = stats["position"]
+            if position not in by_position:
+                by_position[position] = []
+            by_position[position].append((player_id, score))
+
+        # 5. Build suggestions (top 5 per position)
+        suggestions: dict[str, list[int]] = {}
+        for pos in ["POR", "DEF", "MED", "DEL"]:
+            pos_list = by_position.get(pos, [])
+            pos_list.sort(key=lambda x: x[1], reverse=True)
+            suggestions[pos] = [pid for pid, _ in pos_list[:5]]
+
+        return DraftPlayerStatsResponse(players=players, suggestions=suggestions)
 
     async def reorder_picks(
         self,

@@ -118,3 +118,23 @@ class PlayerSearchItem(BaseModel):
 
 class PlayerSearchResponse(BaseModel):
     players: list[PlayerSearchItem]
+
+
+# ---------------------------------------------------------------------------
+# Admin — live draft player stats
+# ---------------------------------------------------------------------------
+
+
+class PlayerDraftStats(BaseModel):
+    player_id: int
+    avg_pts: float
+    std_dev: float
+    form_5: float | None
+    trend: str  # "rising" | "stable" | "falling"
+    matchdays_played: int
+    starter_pct: float
+
+
+class DraftPlayerStatsResponse(BaseModel):
+    players: dict[str, PlayerDraftStats]  # keyed by player_id as string
+    suggestions: dict[str, list[int]]  # position -> [top 5 player_ids]

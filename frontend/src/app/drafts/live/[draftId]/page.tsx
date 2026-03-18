@@ -8,7 +8,11 @@ import { useFetch } from "@/hooks/use-fetch";
 import { useDraftWebSocket } from "@/hooks/use-draft-websocket";
 import { apiClient } from "@/lib/api-client";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
-import type { DraftDetailResponse, DraftPickEntry } from "@/types";
+import type {
+  DraftDetailResponse,
+  DraftPickEntry,
+  DraftPlayerStatsResponse,
+} from "@/types";
 
 interface PlayerSearchItem {
   id: number;
@@ -52,10 +56,15 @@ export default function LiveDraftPage() {
   // Player search
   const [search, setSearch] = useState("");
   const [posFilter, setPosFilter] = useState<string>("");
+  const [teamFilter, setTeamFilter] = useState<string>("");
   const [searchResults, setSearchResults] = useState<PlayerSearchItem[]>([]);
   const [searching, setSearching] = useState(false);
   const [picking, setPicking] = useState(false);
   const [lastPickFlash, setLastPickFlash] = useState<number | null>(null);
+
+  // Admin stats (loaded once)
+  const [adminStats, setAdminStats] = useState<DraftPlayerStatsResponse | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   // Find my participant_id
   const myParticipantId = draft?.participants.find(
@@ -101,6 +110,21 @@ export default function LiveDraftPage() {
     load();
   }, [selectedSeason, draftId]);
 
+  // Load admin stats once
+  useEffect(() => {
+    if (!isAdmin || !draftId) return;
+    apiClient
+      .get<DraftPlayerStatsResponse>(`/drafts/${draftId}/players/stats`)
+      .then(setAdminStats)
+      .catch(() => {});
+  }, [isAdmin, draftId]);
+
+  // Build teams list from search results or picks
+  const teams = [...new Set([
+    ...picks.map((p) => p.team_name),
+    ...searchResults.map((p) => p.team_name),
+  ])].sort();
+
   // WebSocket events
   const handleWsEvent = useCallback(
     (event: { type: string; pick?: DraftPickEntry; next_participant_id?: number }) => {
@@ -121,7 +145,7 @@ export default function LiveDraftPage() {
 
   // Search players
   useEffect(() => {
-    if (!search.trim() && !posFilter) {
+    if (!search.trim() && !posFilter && !teamFilter) {
       setSearchResults([]);
       return;
     }
@@ -131,6 +155,7 @@ export default function LiveDraftPage() {
         const params = new URLSearchParams();
         if (search.trim()) params.set("q", search.trim());
         if (posFilter) params.set("position", posFilter);
+        if (teamFilter) params.set("team_id", teamFilter);
         const res = await apiClient.get<{ players: PlayerSearchItem[] }>(
           `/drafts/${draftId}/players/search?${params}`,
         );
@@ -142,7 +167,7 @@ export default function LiveDraftPage() {
       }
     }, 300);
     return () => clearTimeout(timeout);
-  }, [search, posFilter, draftId]);
+  }, [search, posFilter, teamFilter, draftId]);
 
   // Make a pick
   async function handlePick(playerId: number) {
@@ -184,6 +209,15 @@ export default function LiveDraftPage() {
     return null;
   }
 
+  // Helper to find player name from picks or search results
+  function findPlayerName(playerId: number): string {
+    const fromPick = picks.find((p) => p.player_id === playerId);
+    if (fromPick) return fromPick.player_name;
+    const fromSearch = searchResults.find((p) => p.id === playerId);
+    if (fromSearch) return fromSearch.display_name;
+    return `#${playerId}`;
+  }
+
   if (!draft) {
     return (
       <div className="py-10 text-center text-vpv-text-muted">
@@ -221,66 +255,73 @@ export default function LiveDraftPage() {
         </div>
       )}
 
+      {/* Admin suggestions panel */}
+      {isAdmin && adminStats && (isMyTurn || true) && (
+        <div>
+          <button
+            onClick={() => setShowSuggestions(!showSuggestions)}
+            className={`w-full rounded-lg border px-4 py-2 text-left text-xs font-medium transition-colors ${
+              showSuggestions
+                ? "border-amber-500 bg-amber-500/10 text-amber-400"
+                : "border-vpv-border bg-vpv-card text-vpv-text-muted hover:text-vpv-text"
+            }`}
+          >
+            {showSuggestions ? "Ocultar sugerencias" : "Sugerencias de pick (Admin)"}
+          </button>
+          {showSuggestions && (
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {(["POR", "DEF", "MED", "DEL"] as const).map((pos) => {
+                const ids = adminStats.suggestions[pos] ?? [];
+                return (
+                  <div key={pos} className="rounded-lg border border-vpv-card-border bg-vpv-card p-2">
+                    <p className={`mb-1 text-center text-[10px] font-bold ${POS_COLORS[pos]?.split(" ")[1] ?? ""}`}>{pos}</p>
+                    {ids.map((pid) => {
+                      const s = adminStats.players[String(pid)];
+                      if (!s) return null;
+                      return (
+                        <button
+                          key={pid}
+                          onClick={() => { setSearch(s.avg_pts > 0 ? "" : ""); handlePick(pid); }}
+                          disabled={picking}
+                          className="flex w-full items-center justify-between rounded px-1 py-1 text-[10px] transition-colors hover:bg-vpv-accent/10 disabled:opacity-50"
+                        >
+                          <span className="truncate text-vpv-text">{findPlayerName(pid)}</span>
+                          <span className="ml-1 tabular-nums text-vpv-accent">{s.avg_pts}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Turn indicator + pick interface */}
       {isMyTurn ? (
         <div className="rounded-lg border-2 border-vpv-accent bg-vpv-accent/10 p-4">
           <p className="mb-3 text-center text-lg font-bold text-vpv-accent">
             Tu turno!
           </p>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="Buscar jugador..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              autoFocus
-              className="flex-1 rounded-lg border border-vpv-border bg-vpv-bg px-3 py-2 text-sm text-vpv-text placeholder:text-vpv-text-muted/50 focus:border-vpv-accent focus:outline-none"
-            />
-            <select
-              value={posFilter}
-              onChange={(e) => setPosFilter(e.target.value)}
-              className="rounded-lg border border-vpv-border bg-vpv-bg px-2 py-2 text-sm text-vpv-text"
-            >
-              <option value="">Pos</option>
-              {["POR", "DEF", "MED", "DEL"].map((p) => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Search results */}
-          {searching && (
-            <p className="mt-2 text-center text-xs text-vpv-text-muted">Buscando...</p>
-          )}
-          {searchResults.length > 0 && (
-            <div className="mt-2 max-h-60 space-y-1 overflow-y-auto">
-              {searchResults.map((player) => (
-                <button
-                  key={player.id}
-                  onClick={() => handlePick(player.id)}
-                  disabled={picking}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-vpv-accent/20 disabled:opacity-50"
-                >
-                  <PlayerAvatar
-                    photoPath={player.photo_path}
-                    name={player.display_name}
-                    size={32}
-                  />
-                  <span
-                    className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${POS_COLORS[player.position] ?? ""}`}
-                  >
-                    {player.position}
-                  </span>
-                  <span className="flex-1 font-medium text-vpv-text">
-                    {player.display_name}
-                  </span>
-                  <span className="text-xs text-vpv-text-muted">
-                    {player.team_name}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
+          <SearchFilters
+            search={search}
+            setSearch={setSearch}
+            posFilter={posFilter}
+            setPosFilter={setPosFilter}
+            teamFilter={teamFilter}
+            setTeamFilter={setTeamFilter}
+            teams={teams}
+            autoFocus
+          />
+          <SearchResults
+            results={searchResults}
+            searching={searching}
+            picking={picking}
+            onPick={handlePick}
+            adminStats={isAdmin ? adminStats : null}
+            suggestions={isAdmin ? adminStats?.suggestions : null}
+          />
         </div>
       ) : (
         <div className="rounded-lg border border-vpv-card-border bg-vpv-card p-4 text-center">
@@ -299,54 +340,24 @@ export default function LiveDraftPage() {
             Admin: hacer pick por {currentTurnName}
           </summary>
           <div className="px-4 pb-3">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="Buscar jugador..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="flex-1 rounded-lg border border-vpv-border bg-vpv-bg px-3 py-2 text-sm text-vpv-text placeholder:text-vpv-text-muted/50 focus:border-vpv-accent focus:outline-none"
-              />
-              <select
-                value={posFilter}
-                onChange={(e) => setPosFilter(e.target.value)}
-                className="rounded-lg border border-vpv-border bg-vpv-bg px-2 py-2 text-sm text-vpv-text"
-              >
-                <option value="">Pos</option>
-                {["POR", "DEF", "MED", "DEL"].map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-            </div>
-            {searchResults.length > 0 && (
-              <div className="mt-2 max-h-40 space-y-1 overflow-y-auto">
-                {searchResults.map((player) => (
-                  <button
-                    key={player.id}
-                    onClick={() => handlePick(player.id)}
-                    disabled={picking}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-vpv-accent/20 disabled:opacity-50"
-                  >
-                    <PlayerAvatar
-                      photoPath={player.photo_path}
-                      name={player.display_name}
-                      size={28}
-                    />
-                    <span
-                      className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${POS_COLORS[player.position] ?? ""}`}
-                    >
-                      {player.position}
-                    </span>
-                    <span className="flex-1 font-medium text-vpv-text">
-                      {player.display_name}
-                    </span>
-                    <span className="text-xs text-vpv-text-muted">
-                      {player.team_name}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
+            <SearchFilters
+              search={search}
+              setSearch={setSearch}
+              posFilter={posFilter}
+              setPosFilter={setPosFilter}
+              teamFilter={teamFilter}
+              setTeamFilter={setTeamFilter}
+              teams={teams}
+            />
+            <SearchResults
+              results={searchResults}
+              searching={searching}
+              picking={picking}
+              onPick={handlePick}
+              adminStats={adminStats}
+              suggestions={adminStats?.suggestions ?? null}
+              compact
+            />
           </div>
         </details>
       )}
@@ -425,6 +436,149 @@ export default function LiveDraftPage() {
             })}
         </div>
       </div>
+    </div>
+  );
+}
+
+const TREND_COLORS: Record<string, string> = {
+  rising: "text-green-400",
+  stable: "text-vpv-text-muted",
+  falling: "text-red-400",
+};
+
+function SearchFilters({
+  search,
+  setSearch,
+  posFilter,
+  setPosFilter,
+  teamFilter,
+  setTeamFilter,
+  teams,
+  autoFocus,
+}: {
+  search: string;
+  setSearch: (v: string) => void;
+  posFilter: string;
+  setPosFilter: (v: string) => void;
+  teamFilter: string;
+  setTeamFilter: (v: string) => void;
+  teams: string[];
+  autoFocus?: boolean;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      <input
+        type="text"
+        placeholder="Buscar jugador..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        autoFocus={autoFocus}
+        className="min-w-0 flex-1 rounded-lg border border-vpv-border bg-vpv-bg px-3 py-2 text-sm text-vpv-text placeholder:text-vpv-text-muted/50 focus:border-vpv-accent focus:outline-none"
+      />
+      <select
+        value={posFilter}
+        onChange={(e) => setPosFilter(e.target.value)}
+        className="rounded-lg border border-vpv-border bg-vpv-bg px-2 py-2 text-sm text-vpv-text"
+      >
+        <option value="">Pos</option>
+        {["POR", "DEF", "MED", "DEL"].map((p) => (
+          <option key={p} value={p}>{p}</option>
+        ))}
+      </select>
+      {teams.length > 0 && (
+        <select
+          value={teamFilter}
+          onChange={(e) => setTeamFilter(e.target.value)}
+          className="rounded-lg border border-vpv-border bg-vpv-bg px-2 py-2 text-sm text-vpv-text"
+        >
+          <option value="">Equipo</option>
+          {teams.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+}
+
+function SearchResults({
+  results,
+  searching,
+  picking,
+  onPick,
+  adminStats,
+  suggestions,
+  compact,
+}: {
+  results: PlayerSearchItem[];
+  searching: boolean;
+  picking: boolean;
+  onPick: (id: number) => void;
+  adminStats: DraftPlayerStatsResponse | null;
+  suggestions: Record<string, number[]> | null;
+  compact?: boolean;
+}) {
+  const suggestedIds = new Set(
+    suggestions ? Object.values(suggestions).flat() : [],
+  );
+
+  if (searching) {
+    return <p className="mt-2 text-center text-xs text-vpv-text-muted">Buscando...</p>;
+  }
+
+  if (results.length === 0) return null;
+
+  return (
+    <div className={`mt-2 space-y-1 overflow-y-auto ${compact ? "max-h-40" : "max-h-60"}`}>
+      {results.map((player) => {
+        const stats = adminStats?.players[String(player.id)];
+        const isTop = suggestedIds.has(player.id);
+        return (
+          <button
+            key={player.id}
+            onClick={() => onPick(player.id)}
+            disabled={picking}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-vpv-accent/20 disabled:opacity-50"
+          >
+            <PlayerAvatar
+              photoPath={player.photo_path}
+              name={player.display_name}
+              size={compact ? 28 : 32}
+            />
+            <span
+              className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${POS_COLORS[player.position] ?? ""}`}
+            >
+              {player.position}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1">
+                <span className="truncate font-medium text-vpv-text">
+                  {player.display_name}
+                </span>
+                {isTop && (
+                  <span className="rounded bg-amber-500/20 px-1 py-0.5 text-[9px] font-bold text-amber-400">
+                    TOP
+                  </span>
+                )}
+              </div>
+              {stats && (
+                <div className="flex gap-2 text-[10px] text-vpv-text-muted">
+                  <span>{stats.avg_pts} pts/j</span>
+                  <span>PJ:{stats.matchdays_played}</span>
+                  {stats.form_5 != null && <span>F:{stats.form_5}</span>}
+                  <span>T:{stats.starter_pct.toFixed(0)}%</span>
+                  <span className={TREND_COLORS[stats.trend] ?? ""}>
+                    {stats.trend === "rising" ? "\u2191" : stats.trend === "falling" ? "\u2193" : "\u2192"}
+                  </span>
+                </div>
+              )}
+            </div>
+            <span className="text-xs text-vpv-text-muted">
+              {player.team_name}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }

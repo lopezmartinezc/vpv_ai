@@ -34,6 +34,21 @@ export interface PredictionsResponse {
   opponent_rankings: OpponentDifficulty[];
 }
 
+export interface PlayerDraftStats {
+  player_id: number;
+  avg_pts: number;
+  std_dev: number;
+  form_5: number | null;
+  trend: string;
+  matchdays_played: number;
+  starter_pct: number;
+}
+
+export interface DraftPlayerStatsResponse {
+  players: Record<string, PlayerDraftStats>;
+  suggestions: Record<string, number[]>;
+}
+
 export interface HealthCheck {
   status: string;
   database: boolean;

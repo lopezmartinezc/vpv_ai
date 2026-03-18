@@ -296,6 +296,7 @@ class DraftRepository:
         picked_ids: set[int],
         query: str,
         position: str | None,
+        team_id: int | None = None,
         limit: int = 20,
     ) -> list[PlayerSearchRow]:
         stmt = (
@@ -314,6 +315,8 @@ class DraftRepository:
             stmt = stmt.where(Player.display_name.ilike(f"%{query}%"))
         if position:
             stmt = stmt.where(Player.position == position)
+        if team_id is not None:
+            stmt = stmt.where(Player.team_id == team_id)
 
         stmt = stmt.order_by(Player.display_name.asc()).limit(limit)
         result = await self.session.execute(stmt)
