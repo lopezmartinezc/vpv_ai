@@ -1,14 +1,20 @@
 from __future__ import annotations
 
-from pydantic_settings import BaseSettings
+from src.core.config import settings
 
 
-class VapidSettings(BaseSettings):
-    vapid_public_key: str = ""
-    vapid_private_key: str = ""
-    vapid_subject: str = "mailto:admin@ligavpv.com"
+class VapidSettings:
+    @property
+    def vapid_public_key(self) -> str:
+        return settings.vapid_public_key
 
-    model_config = {"env_file": ".env", "extra": "ignore"}
+    @property
+    def vapid_private_key(self) -> str:
+        return settings.vapid_private_key
+
+    @property
+    def vapid_subject(self) -> str:
+        return settings.vapid_subject
 
 
 vapid_settings = VapidSettings()

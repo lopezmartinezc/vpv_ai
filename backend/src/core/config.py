@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     telegram_chat_id: str = ""
     telegram_enabled: bool = False
 
+    # Push notifications (VAPID)
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    vapid_subject: str = "mailto:admin@ligavpv.com"
+
     # Logging
     log_level: str = "INFO"
 
