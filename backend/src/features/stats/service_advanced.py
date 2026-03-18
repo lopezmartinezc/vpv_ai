@@ -646,7 +646,14 @@ class AdvancedStatsService:
 
             std_dev = stats["std_dev"]
             cv = std_dev / season_avg if season_avg > 0 else 1.0
-            confidence = "alta" if cv < 0.3 else "media" if cv < 0.5 else "baja"
+            played = stats["matchdays_played"]
+            # Confidence: low CV + enough games = alta, few games always caps at media
+            if played < 5:
+                confidence = "baja"
+            elif played < 10 or cv >= 0.5:
+                confidence = "media" if cv < 0.5 else "baja"
+            else:
+                confidence = "alta" if cv < 0.3 else "media"
 
             if form_5 is not None and season_avg > 0:
                 if form_val > season_avg * 1.1:
