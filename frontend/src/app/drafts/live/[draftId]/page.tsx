@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
@@ -43,6 +43,8 @@ export default function LiveDraftPage() {
   const { draftId: draftIdParam } = useParams<{ draftId: string }>();
   const draftId = Number(draftIdParam);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const testMode = searchParams.get("test") === "true";
   const { user, loading: authLoading } = useAuth();
   const { selectedSeason } = useSeason();
   const { data: me } = useFetch<MeResponse>(user ? "/auth/me" : null);
@@ -189,10 +191,37 @@ export default function LiveDraftPage() {
     setPicking(true);
     setError(null);
     try {
-      await apiClient.post(`/drafts/${draftId}/picks`, {
-        player_id: playerId,
-      });
-      // WebSocket will broadcast the pick to everyone including us
+      if (testMode) {
+        // Test mode: simulate pick locally without hitting the API
+        const player = searchResults.find((p) => p.id === playerId);
+        const fakePick: DraftPickEntry = {
+          id: 0,
+          pick_number: picks.length + 1,
+          round_number: Math.floor(picks.length / (draft?.participants.length ?? 1)) + 1,
+          participant_id: nextParticipantId ?? 0,
+          display_name: draft?.participants.find((p) => p.participant_id === nextParticipantId)?.display_name ?? "?",
+          draft_order: null,
+          player_id: playerId,
+          player_name: player?.display_name ?? "?",
+          position: player?.position ?? "?",
+          team_name: player?.team_name ?? "?",
+          photo_path: player?.photo_path ?? null,
+          dropped_player_name: null,
+        };
+        setPicks((prev) => [...prev, fakePick]);
+        // Advance turn (simplified — doesn't handle snake perfectly)
+        const participants = draft?.participants.sort((a, b) => (a.draft_order ?? 99) - (b.draft_order ?? 99)) ?? [];
+        const currentIdx = participants.findIndex((p) => p.participant_id === nextParticipantId);
+        const nextIdx = (currentIdx + 1) % participants.length;
+        setNextParticipantId(participants[nextIdx]?.participant_id ?? null);
+        setLastPickFlash(fakePick.pick_number);
+        setTimeout(() => setLastPickFlash(null), 2000);
+      } else {
+        await apiClient.post(`/drafts/${draftId}/picks`, {
+          player_id: playerId,
+        });
+        // WebSocket will broadcast the pick to everyone including us
+      }
       setSearch("");
       setSearchResults([]);
     } catch (e) {
@@ -263,6 +292,12 @@ export default function LiveDraftPage() {
           </span>
         </div>
       </div>
+
+      {testMode && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-center text-sm font-medium text-amber-400">
+          MODO TEST — Los picks no se guardan en la base de datos
+        </div>
+      )}
 
       {error && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
