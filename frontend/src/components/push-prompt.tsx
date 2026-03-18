@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import {
   isPushPermissionDenied,
@@ -13,11 +13,20 @@ export function PushPrompt() {
   const { user } = useAuth();
   const [show, setShow] = useState(false);
   const [registering, setRegistering] = useState(false);
+  const autoRegistered = useRef(false);
 
   useEffect(() => {
     if (!user) return;
     if (!isPushSupported()) return;
-    if (isPushPermissionGranted() || isPushPermissionDenied()) return;
+
+    // If permission already granted, silently register subscription
+    if (isPushPermissionGranted() && !autoRegistered.current) {
+      autoRegistered.current = true;
+      registerPushSubscription().catch(() => {});
+      return;
+    }
+
+    if (isPushPermissionDenied()) return;
 
     // Check if already dismissed this session
     const dismissed = sessionStorage.getItem("push_prompt_dismissed");

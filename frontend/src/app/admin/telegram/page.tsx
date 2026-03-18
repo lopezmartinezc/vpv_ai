@@ -16,7 +16,7 @@ export default function AdminTelegramPage() {
   const [result, setResult] = useState<string | null>(null);
   const [messageText, setMessageText] = useState("");
   const [lineupId, setLineupId] = useState("");
-  const [pushSubs, setPushSubs] = useState<number | null>(null);
+  const [pushSubs] = useState<number | null>(null);
 
   // Fetch status on mount
   useState(() => {
