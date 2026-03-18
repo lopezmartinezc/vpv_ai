@@ -708,8 +708,12 @@ async def evaluate_robo_draft(
     if not pts_rows:
         return []
 
-    all_season_pts = sorted([int(row.season_pts) for row in pts_rows if row.season_pts is not None], reverse=True)
-    player_pts_map = {row.player_id: int(row.season_pts) for row in pts_rows if row.season_pts is not None}
+    all_season_pts = sorted(
+        [int(row.season_pts) for row in pts_rows if row.season_pts is not None], reverse=True
+    )
+    player_pts_map = {
+        row.player_id: int(row.season_pts) for row in pts_rows if row.season_pts is not None
+    }
 
     # Determine the top-25% threshold
     top25_cutoff_index = max(0, len(all_season_pts) // 4 - 1)
