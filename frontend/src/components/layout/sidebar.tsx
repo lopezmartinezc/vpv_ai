@@ -41,6 +41,7 @@ const ADMIN_SECTIONS = [
     items: [
       { href: "/admin/scraping", label: "Scraping" },
       { href: "/admin/logros", label: "Logros" },
+      { href: "/admin/predicciones", label: "Predicciones" },
       { href: "/admin/telegram", label: "Telegram" },
       { href: "/admin/backup", label: "Backup" },
     ],

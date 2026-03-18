@@ -30,6 +30,7 @@ const ADMIN_NAV = [
       { href: "/admin/telegram", label: "Telegram" },
       { href: "/admin/backup", label: "Backup" },
       { href: "/admin/logros", label: "Logros" },
+      { href: "/admin/predicciones", label: "Predicciones" },
     ],
   },
   {

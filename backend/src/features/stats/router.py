@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.stats.repository import MatchdayScoreRow, StatsRepository
@@ -37,6 +37,7 @@ from src.features.stats.schemas_advanced import (
     DraftHistoryResponse,
     PlayerSplitsResponse,
     PositionValueResponse,
+    PredictionsResponse,
     TeamDependencyResponse,
 )
 from src.features.stats.service_advanced import AdvancedStatsService
@@ -192,6 +193,31 @@ async def get_draft_history(
         parsed_ids = [int(s) for s in season_ids.split(",") if s.strip()]
     service = AdvancedStatsService(db)
     return await service.get_draft_history(parsed_ids)
+
+
+@router.get("/{season_id}/predictions", response_model=PredictionsResponse)
+async def get_predictions(
+    season_id: int,
+    matchday: int | None = Query(
+        None, description="Matchday number; defaults to season's current matchday"
+    ),
+    admin: dict = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+) -> PredictionsResponse:
+    """Expected points forecast for all players with a fixture in the given matchday.
+
+    Admin-only.  If `matchday` is omitted the season's `matchday_current` is used.
+    """
+    if matchday is None:
+        from src.core.exceptions import NotFoundError
+        from src.features.seasons.repository import SeasonRepository
+
+        season = await SeasonRepository(db).get_by_id(season_id)
+        if season is None:
+            raise NotFoundError("Season", season_id)
+        matchday = season.matchday_current
+    service = AdvancedStatsService(db)
+    return await service.get_predictions(season_id, matchday)
 
 
 @router.get("/{season_id}/players", response_model=PlayerStatsResponse)

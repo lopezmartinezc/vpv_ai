@@ -23,7 +23,9 @@ from src.features.stats.schemas_advanced import (
     ComparePlayerAxis,
     ComparePlayersResponse,
     DraftHistoryResponse,
+    OpponentDifficulty,
     PickValuePoint,
+    PlayerPrediction,
     PlayerSplit,
     PlayerSplitsResponse,
     PositionAnalysis,
@@ -31,6 +33,7 @@ from src.features.stats.schemas_advanced import (
     PositionTier,
     PositionTierPlayer,
     PositionValueResponse,
+    PredictionsResponse,
     RateEntry,
     TeamDependencyEntry,
     TeamDependencyResponse,
@@ -540,3 +543,180 @@ class AdvancedStatsService:
             )
 
         return ComparePlayersResponse(season_id=season_id, players=players)
+
+    # ------------------------------------------------------------------
+    # Phase 5 — Predictions / expected points
+    # ------------------------------------------------------------------
+
+    async def get_predictions(self, season_id: int, matchday_number: int) -> PredictionsResponse:
+        """Calculate expected points (xPts) for all players with a fixture.
+
+        Formula:
+            xPts = (form_5 * 0.40) + (season_avg * 0.20)
+                   + (season_avg * rival_factor * 0.25) + (location_avg * 0.15)
+
+        rival_factor for POR/DEF = league_avg_goals / opponent_goals_conceded_avg
+        rival_factor for MED/DEL = opponent_goals_conceded_avg / league_avg_goals
+        """
+        # 1. Fixtures for the target matchday
+        fixtures = await self.repo.get_fixtures_for_matchday(season_id, matchday_number)
+        if not fixtures:
+            return PredictionsResponse(
+                season_id=season_id,
+                matchday_number=matchday_number,
+                predictions=[],
+                opponent_rankings=[],
+            )
+
+        # 2. Build team_id -> fixture mapping (each team appears in exactly one match)
+        team_fixture: dict[int, dict] = {}
+        for fixture in fixtures:
+            team_fixture[int(fixture["home_team_id"])] = fixture
+            team_fixture[int(fixture["away_team_id"])] = fixture
+
+        # 3. Season-level player aggregates
+        player_stats = await self.repo.get_player_season_stats_for_predictions(season_id)
+
+        # 4. Opponent defensive stats + league average
+        opponent_stats = await self.repo.get_opponent_stats(season_id)
+        if opponent_stats:
+            league_avg_goals = sum(
+                float(o["goals_conceded_avg"]) for o in opponent_stats.values()
+            ) / len(opponent_stats)
+        else:
+            league_avg_goals = 1.0
+
+        # 5. Location (home/away) averages per player
+        location_avgs = await self.repo.get_player_location_avgs(season_id)
+
+        # 6. Recent points for form calculation (last 5)
+        recent_points = await self.repo.get_player_recent_points(season_id, n=5)
+
+        # 7. Build predictions for players whose team has a fixture
+        predictions: list[PlayerPrediction] = []
+        for player_id, stats in player_stats.items():
+            team_id = int(stats["team_id"])
+            match_fix = team_fixture.get(team_id)
+            if match_fix is None:
+                continue
+
+            is_home = int(match_fix["home_team_id"]) == team_id
+            opponent_id = (
+                int(match_fix["away_team_id"]) if is_home else int(match_fix["home_team_id"])
+            )
+            opponent_name = (
+                str(match_fix["away_short"]) if is_home else str(match_fix["home_short"])
+            )
+
+            # Form (EWMA of last 5 matchdays; oldest → newest already ordered by repo)
+            pts_list = recent_points.get(player_id, [])
+            form_5: float | None = None
+            if len(pts_list) >= 2:
+                form_5 = round(_ewma(pts_list), 1)
+
+            season_avg = stats["avg_pts"]
+            form_val = form_5 if form_5 is not None else season_avg
+
+            # Rival factor
+            opp = opponent_stats.get(opponent_id, {})
+            opp_goals_conceded = float(opp.get("goals_conceded_avg", league_avg_goals))
+            position = stats["position"]
+            if position in ("POR", "DEF"):
+                rival_factor = league_avg_goals / max(opp_goals_conceded, 0.1)
+            else:
+                rival_factor = opp_goals_conceded / max(league_avg_goals, 0.1)
+
+            # Location average
+            loc = location_avgs.get(player_id, {})
+            loc_key = "home_avg" if is_home else "away_avg"
+            location_avg_raw: float | None = loc.get(loc_key)
+            # Treat 0.0 as missing (player may not have played in that location yet)
+            location_avg_used = location_avg_raw if location_avg_raw else season_avg
+            location_avg_out: float | None = (
+                round(location_avg_raw, 1) if location_avg_raw else None
+            )
+
+            # xPts formula
+            xpts = (
+                (form_val * 0.40)
+                + (season_avg * 0.20)
+                + (season_avg * rival_factor * 0.25)
+                + (location_avg_used * 0.15)
+            )
+
+            std_dev = stats["std_dev"]
+            cv = std_dev / season_avg if season_avg > 0 else 1.0
+            confidence = "alta" if cv < 0.3 else "media" if cv < 0.5 else "baja"
+
+            if form_5 is not None and season_avg > 0:
+                if form_val > season_avg * 1.1:
+                    trend = "rising"
+                elif form_val < season_avg * 0.9:
+                    trend = "falling"
+                else:
+                    trend = "stable"
+            else:
+                trend = "stable"
+
+            predictions.append(
+                PlayerPrediction(
+                    player_id=player_id,
+                    player_name=stats["player_name"],
+                    photo_path=stats["photo_path"],
+                    position=position,
+                    team_name=stats["team_name"],
+                    opponent_name=opponent_name,
+                    is_home=is_home,
+                    season_avg=round(season_avg, 1),
+                    form_5=form_5,
+                    location_avg=location_avg_out,
+                    rival_factor=round(rival_factor, 2),
+                    xpts=round(xpts, 1),
+                    xpts_floor=round(xpts - std_dev, 1),
+                    xpts_ceiling=round(xpts + std_dev, 1),
+                    confidence=confidence,
+                    trend=trend,
+                    matchdays_played=stats["matchdays_played"],
+                )
+            )
+
+        # Sort by xpts descending for a useful default ordering
+        predictions.sort(key=lambda p: p.xpts, reverse=True)
+
+        # 8. Build opponent difficulty rankings
+        all_gcas = [float(o["goals_conceded_avg"]) for o in opponent_stats.values()]
+        if all_gcas:
+            gca_sorted = sorted(all_gcas)
+            n_teams = len(gca_sorted)
+            # Thresholds: bottom third = easy (few goals conceded), top third = hard
+            third = max(1, n_teams // 3)
+            easy_threshold = gca_sorted[third - 1]
+            hard_threshold = gca_sorted[n_teams - third]
+        else:
+            easy_threshold = hard_threshold = 0.0
+
+        opponent_rankings: list[OpponentDifficulty] = []
+        for opp_data in opponent_stats.values():
+            gca = float(opp_data["goals_conceded_avg"])
+            if gca <= easy_threshold:
+                difficulty = "dificil"  # concedes few goals → hard to score against
+            elif gca >= hard_threshold:
+                difficulty = "facil"  # concedes many goals → easy to score against
+            else:
+                difficulty = "medio"
+            opponent_rankings.append(
+                OpponentDifficulty(
+                    team_name=str(opp_data["team_name"]),
+                    goals_conceded_avg=round(gca, 2),
+                    clean_sheet_pct=round(float(opp_data["clean_sheet_pct"]) * 100, 1),
+                    difficulty=difficulty,
+                )
+            )
+        opponent_rankings.sort(key=lambda o: o.goals_conceded_avg)
+
+        return PredictionsResponse(
+            season_id=season_id,
+            matchday_number=matchday_number,
+            predictions=predictions,
+            opponent_rankings=opponent_rankings,
+        )

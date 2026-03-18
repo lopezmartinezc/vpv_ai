@@ -167,3 +167,46 @@ class ComparePlayerAxis(BaseModel):
 class ComparePlayersResponse(BaseModel):
     season_id: int
     players: list[ComparePlayerAxis]
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — Predictions / expected points
+# ---------------------------------------------------------------------------
+
+
+class PlayerPrediction(BaseModel):
+    """Expected-points forecast for a single player in an upcoming matchday."""
+
+    player_id: int
+    player_name: str
+    photo_path: str | None
+    position: str
+    team_name: str
+    opponent_name: str
+    is_home: bool
+    season_avg: float
+    form_5: float | None
+    location_avg: float | None
+    rival_factor: float
+    xpts: float
+    xpts_floor: float
+    xpts_ceiling: float
+    confidence: str  # "alta" | "media" | "baja"
+    trend: str  # "rising" | "stable" | "falling"
+    matchdays_played: int
+
+
+class OpponentDifficulty(BaseModel):
+    """Defensive difficulty ranking for a team."""
+
+    team_name: str
+    goals_conceded_avg: float
+    clean_sheet_pct: float
+    difficulty: str  # "facil" | "medio" | "dificil"
+
+
+class PredictionsResponse(BaseModel):
+    season_id: int
+    matchday_number: int
+    predictions: list[PlayerPrediction]
+    opponent_rankings: list[OpponentDifficulty]

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import Float, case, func, select
+from sqlalchemy import Float, case, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.shared.models.draft import Draft, DraftPick
@@ -673,3 +673,256 @@ class AdvancedStatsRepository:
             )
             for row in result.all()
         ]
+
+    # ------------------------------------------------------------------
+    # Phase 5 — Predictions / expected points
+    # ------------------------------------------------------------------
+
+    async def get_opponent_stats(self, season_id: int) -> dict[int, dict[str, float | str]]:
+        """Goals conceded average and clean-sheet % per team for a season.
+
+        Only counts completed matches (home_score IS NOT NULL) on counting
+        matchdays.  Returns a dict keyed by team_id.
+        """
+        home_case = case(
+            (Match.home_team_id == Team.id, Match.away_score),
+            else_=Match.home_score,
+        )
+        cs_home = case(
+            (Match.home_team_id == Team.id, case((Match.away_score == 0, 1), else_=None)),
+            else_=None,
+        )
+        cs_away = case(
+            (Match.away_team_id == Team.id, case((Match.home_score == 0, 1), else_=None)),
+            else_=None,
+        )
+        clean_sheet_expr = func.coalesce(cs_home, cs_away)
+
+        stmt = (
+            select(
+                Team.id.label("team_id"),
+                Team.name.label("team_name"),
+                func.avg(func.cast(home_case, Float)).label("goals_conceded_avg"),
+                (
+                    func.cast(func.count(clean_sheet_expr), Float)
+                    / func.nullif(func.count(Match.id), 0)
+                ).label("clean_sheet_pct"),
+            )
+            .join(
+                Match,
+                (Match.home_team_id == Team.id) | (Match.away_team_id == Team.id),
+            )
+            .join(Matchday, Match.matchday_id == Matchday.id)
+            .where(
+                Team.season_id == season_id,
+                Matchday.season_id == season_id,
+                Matchday.counts.is_(True),
+                Match.home_score.is_not(None),
+            )
+            .group_by(Team.id, Team.name)
+        )
+
+        result = await self.session.execute(stmt)
+        out: dict[int, dict[str, float | str]] = {}
+        for row in result.all():
+            out[int(row.team_id)] = {
+                "team_name": str(row.team_name),
+                "goals_conceded_avg": float(row.goals_conceded_avg)
+                if row.goals_conceded_avg is not None
+                else 0.0,
+                "clean_sheet_pct": float(row.clean_sheet_pct)
+                if row.clean_sheet_pct is not None
+                else 0.0,
+            }
+        return out
+
+    async def get_fixtures_for_matchday(
+        self, season_id: int, matchday_number: int
+    ) -> list[dict[str, int | str]]:
+        """Matches scheduled for a specific matchday (regardless of counts flag).
+
+        Returns list of dicts with match info including team ids and names.
+        """
+        home_team = Team.__table__.alias("t1")
+        away_team = Team.__table__.alias("t2")
+
+        stmt = (
+            select(
+                Match.id.label("match_id"),
+                Match.home_team_id,
+                Match.away_team_id,
+                home_team.c.name.label("home_name"),
+                func.coalesce(home_team.c.short_name, home_team.c.name).label("home_short"),
+                away_team.c.name.label("away_name"),
+                func.coalesce(away_team.c.short_name, away_team.c.name).label("away_short"),
+            )
+            .join(Matchday, Match.matchday_id == Matchday.id)
+            .join(home_team, Match.home_team_id == home_team.c.id)
+            .join(away_team, Match.away_team_id == away_team.c.id)
+            .where(
+                Matchday.season_id == season_id,
+                Matchday.number == matchday_number,
+            )
+        )
+
+        result = await self.session.execute(stmt)
+        return [
+            {
+                "match_id": int(row.match_id),
+                "home_team_id": int(row.home_team_id),
+                "away_team_id": int(row.away_team_id),
+                "home_name": str(row.home_name),
+                "home_short": str(row.home_short),
+                "away_name": str(row.away_name),
+                "away_short": str(row.away_short),
+            }
+            for row in result.all()
+        ]
+
+    async def get_player_location_avgs(self, season_id: int) -> dict[int, dict[str, float]]:
+        """Average fantasy points per player when playing home vs away.
+
+        Uses player's current team_id to determine home/away from matches.
+        Only counting matchdays and played stats are considered.
+        """
+        home_pts = case(
+            (Match.home_team_id == Player.team_id, func.cast(PlayerStat.pts_total, Float)),
+            else_=None,
+        )
+        away_pts = case(
+            (Match.away_team_id == Player.team_id, func.cast(PlayerStat.pts_total, Float)),
+            else_=None,
+        )
+
+        stmt = (
+            select(
+                PlayerStat.player_id,
+                func.avg(home_pts).label("home_avg"),
+                func.avg(away_pts).label("away_avg"),
+            )
+            .join(Player, PlayerStat.player_id == Player.id)
+            .join(Match, PlayerStat.match_id == Match.id)
+            .join(Matchday, PlayerStat.matchday_id == Matchday.id)
+            .where(
+                Player.season_id == season_id,
+                Matchday.season_id == season_id,
+                Matchday.counts.is_(True),
+                PlayerStat.played.is_(True),
+            )
+            .group_by(PlayerStat.player_id)
+        )
+
+        result = await self.session.execute(stmt)
+        out: dict[int, dict[str, float]] = {}
+        for row in result.all():
+            out[int(row.player_id)] = {
+                "home_avg": float(row.home_avg) if row.home_avg is not None else 0.0,
+                "away_avg": float(row.away_avg) if row.away_avg is not None else 0.0,
+            }
+        return out
+
+    async def get_player_season_stats_for_predictions(self, season_id: int) -> dict[int, dict]:
+        """Per-player season aggregates needed for xPts calculation.
+
+        Groups by player and most-common position (mode via window function
+        on the raw stats).  Returns a dict keyed by player_id.
+        """
+        stmt = (
+            select(
+                Player.id.label("player_id"),
+                Player.display_name,
+                Player.photo_path,
+                Player.team_id,
+                func.coalesce(Team.short_name, Team.name).label("team_name"),
+                PlayerStat.position,
+                func.count(PlayerStat.id).label("matchdays_played"),
+                func.avg(func.cast(PlayerStat.pts_total, Float)).label("avg_pts"),
+                func.coalesce(
+                    func.stddev_samp(func.cast(PlayerStat.pts_total, Float)), text("0")
+                ).label("std_dev"),
+            )
+            .join(Player, PlayerStat.player_id == Player.id)
+            .join(Team, Player.team_id == Team.id)
+            .join(Matchday, PlayerStat.matchday_id == Matchday.id)
+            .where(
+                Player.season_id == season_id,
+                Matchday.season_id == season_id,
+                Matchday.counts.is_(True),
+                PlayerStat.played.is_(True),
+            )
+            .group_by(
+                Player.id,
+                Player.display_name,
+                Player.photo_path,
+                Player.team_id,
+                Team.short_name,
+                Team.name,
+                PlayerStat.position,
+            )
+        )
+
+        result = await self.session.execute(stmt)
+        out: dict[int, dict] = {}
+        for row in result.all():
+            pid = int(row.player_id)
+            # If a player appears under multiple positions keep highest avg_pts
+            if pid not in out or float(row.avg_pts) > out[pid]["avg_pts"]:
+                out[pid] = {
+                    "player_name": str(row.display_name),
+                    "photo_path": row.photo_path,
+                    "team_id": int(row.team_id),
+                    "team_name": str(row.team_name),
+                    "position": str(row.position),
+                    "matchdays_played": int(row.matchdays_played),
+                    "avg_pts": float(row.avg_pts),
+                    "std_dev": float(row.std_dev) if row.std_dev is not None else 0.0,
+                }
+        return out
+
+    async def get_player_recent_points(self, season_id: int, n: int = 5) -> dict[int, list[float]]:
+        """Last N matchday pts_total per player, ordered oldest to newest.
+
+        Returns a dict keyed by player_id containing a list of floats.
+        """
+        # Rank matchdays per player in descending order so we can LIMIT to n
+        ranked = (
+            select(
+                PlayerStat.player_id,
+                PlayerStat.pts_total,
+                Matchday.number.label("md_number"),
+                func.row_number()
+                .over(
+                    partition_by=PlayerStat.player_id,
+                    order_by=Matchday.number.desc(),
+                )
+                .label("rn"),
+            )
+            .join(Matchday, PlayerStat.matchday_id == Matchday.id)
+            .join(Player, PlayerStat.player_id == Player.id)
+            .where(
+                Player.season_id == season_id,
+                Matchday.season_id == season_id,
+                Matchday.counts.is_(True),
+                PlayerStat.played.is_(True),
+            )
+            .subquery()
+        )
+
+        stmt = (
+            select(
+                ranked.c.player_id,
+                ranked.c.pts_total,
+                ranked.c.md_number,
+            )
+            .where(ranked.c.rn <= n)
+            .order_by(ranked.c.player_id, ranked.c.md_number)
+        )
+
+        result = await self.session.execute(stmt)
+        out: dict[int, list[float]] = {}
+        for row in result.all():
+            pid = int(row.player_id)
+            if pid not in out:
+                out[pid] = []
+            out[pid].append(float(row.pts_total))
+        return out

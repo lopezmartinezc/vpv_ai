@@ -1,3 +1,37 @@
+export interface PlayerPrediction {
+  player_id: number;
+  player_name: string;
+  photo_path: string | null;
+  position: string;
+  team_name: string;
+  opponent_name: string;
+  is_home: boolean;
+  season_avg: number;
+  form_5: number | null;
+  location_avg: number | null;
+  rival_factor: number;
+  xpts: number;
+  xpts_floor: number;
+  xpts_ceiling: number;
+  confidence: string;
+  trend: string;
+  matchdays_played: number;
+}
+
+export interface OpponentDifficulty {
+  team_name: string;
+  goals_conceded_avg: number;
+  clean_sheet_pct: number;
+  difficulty: string;
+}
+
+export interface PredictionsResponse {
+  season_id: number;
+  matchday_number: number;
+  predictions: PlayerPrediction[];
+  opponent_rankings: OpponentDifficulty[];
+}
+
 export interface HealthCheck {
   status: string;
   database: boolean;
