@@ -8,7 +8,7 @@
 La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 - 30 paginas frontend (Next.js + Tailwind)
 - 16 modulos backend (FastAPI + SQLAlchemy)
-- 20 tablas PostgreSQL
+- 22 tablas PostgreSQL (+ achievement_definitions, achievements)
 - Liga, Copa, Drafts, Alineaciones, Economia, Scraping automatico, Admin completo
 
 ---
@@ -109,7 +109,7 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 - **Solucion**: xPts = forma EWMA (40%) + media temporada (20%) + factor rival (25%) + casa/fuera (15%)
 - **Complejidad**: Alta
 - **Estado**: [x] Completado (2026-03-18)
-- **Notas**: Admin only. Factor rival invertido para POR/DEF vs MED/DEL. Ranking dificultad rivales.
+- **Notas**: Admin only. Factor rival invertido para POR/DEF vs MED/DEL. Ranking dificultad rivales. Starter %, penalty taker, rival reciente (5 partidos).
 
 ---
 

@@ -826,3 +826,53 @@ Detener el scheduler.
 **Auth**: Admin
 
 **Response** `200`: `SchedulerStatus`
+
+## Achievements
+
+### `GET /api/achievements/definitions`
+
+Lista todas las definiciones de logros (iconos, nombres, categorias).
+
+**Auth**: Admin
+
+### `GET /api/achievements/{season_id}`
+
+Todos los logros ganados en la temporada.
+
+**Auth**: Admin
+
+### `GET /api/achievements/{season_id}/{participant_id}`
+
+Logros de un participante en la temporada.
+
+**Auth**: Admin
+
+### `POST /api/achievements/admin/{season_id}/evaluate/{number}`
+
+Evaluar logros para una jornada especifica.
+
+**Auth**: Admin
+
+### `POST /api/achievements/admin/{season_id}/evaluate-all`
+
+Re-evaluar logros para todas las jornadas de la temporada.
+
+**Auth**: Admin
+
+## Backup
+
+### `POST /api/backup/admin/download`
+
+Genera y descarga un volcado completo de la base de datos (pg_dump). Rate limited: 3/hora.
+
+**Auth**: Admin
+
+## Predictions
+
+### `GET /api/stats/{season_id}/predictions?matchday={number}`
+
+Predicciones de puntos esperados (xPts) para todos los jugadores con partido en la jornada indicada. Si no se pasa matchday, usa matchday_current.
+
+Modelo: forma EWMA (40%) + media temporada (20%) + factor rival reciente (25%) + casa/fuera (15%), multiplicado por probabilidad de titular.
+
+**Auth**: Admin
