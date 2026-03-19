@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import and_, case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -315,19 +316,45 @@ class LineupRepository:
     ) -> dict[int, dict]:
         """Get last N matchday stats per player for form display.
 
+        Includes matchdays where the player did NOT play (played=False),
+        so the frontend can show disabled slots in the form indicator.
+
         Returns dict[player_id] with matches list + aggregate stats.
         """
         if not player_ids:
             return {}
 
+        # 1. Get last N completed counting matchdays for this season
+        recent_mds_stmt = (
+            select(Matchday.id, Matchday.number)
+            .where(
+                Matchday.season_id == season_id,
+                Matchday.counts.is_(True),
+                Matchday.stats_ok.is_(True),
+            )
+            .order_by(Matchday.number.desc())
+            .limit(n)
+        )
+        recent_mds_result = await self.session.execute(recent_mds_stmt)
+        recent_mds = list(recent_mds_result.all())
+        if not recent_mds:
+            return {}
+
+        # Ordered oldest → newest
+        recent_mds.reverse()
+        md_ids = [md.id for md in recent_mds]
+        md_numbers = [md.number for md in recent_mds]
+
+        # 2. Fetch player stats for these matchdays (including non-played via LEFT JOIN)
         is_home = case(
             (Player.team_id == Match.home_team_id, True),
             else_=False,
         ).label("is_home")
 
-        ranked = (
+        stmt = (
             select(
                 PlayerStat.player_id,
+                PlayerStat.played,
                 PlayerStat.result,
                 PlayerStat.pts_total,
                 PlayerStat.pts_clean_sheet,
@@ -337,71 +364,70 @@ class LineupRepository:
                 PlayerStat.yellow_card,
                 Matchday.number.label("md_number"),
                 is_home,
-                func.row_number()
-                .over(
-                    partition_by=PlayerStat.player_id,
-                    order_by=Matchday.number.desc(),
-                )
-                .label("rn"),
             )
             .join(Matchday, PlayerStat.matchday_id == Matchday.id)
             .join(Player, PlayerStat.player_id == Player.id)
             .outerjoin(Match, PlayerStat.match_id == Match.id)
             .where(
                 PlayerStat.player_id.in_(player_ids),
-                Matchday.season_id == season_id,
-                Matchday.counts.is_(True),
-                PlayerStat.played.is_(True),
+                PlayerStat.matchday_id.in_(md_ids),
             )
-            .subquery()
-        )
-
-        stmt = (
-            select(
-                ranked.c.player_id,
-                ranked.c.result,
-                ranked.c.pts_total,
-                ranked.c.pts_clean_sheet,
-                ranked.c.goals,
-                ranked.c.assists,
-                ranked.c.penalty_goals,
-                ranked.c.yellow_card,
-                ranked.c.md_number,
-                ranked.c.is_home,
-            )
-            .where(ranked.c.rn <= n)
-            .order_by(ranked.c.player_id, ranked.c.md_number)
+            .order_by(PlayerStat.player_id, Matchday.number)
         )
 
         result = await self.session.execute(stmt)
         rows = result.all()
 
-        form_data: dict[int, dict] = {}
+        # Index stats by (player_id, md_number)
+        stats_index: dict[tuple[int, int], Any] = {}
         for row in rows:
-            pid = row.player_id
-            if pid not in form_data:
-                form_data[pid] = {
-                    "matches": [],
-                    "clean_sheets": 0,
-                    "goals": 0,
-                    "assists": 0,
-                    "penalty_goals": 0,
-                    "yellow_cards": 0,
-                }
-            entry = form_data[pid]
-            entry["matches"].append(
-                {
-                    "result": row.result or 0,
-                    "is_home": bool(row.is_home),
-                    "points": row.pts_total or 0,
-                }
-            )
-            if (row.pts_clean_sheet or 0) > 0:
-                entry["clean_sheets"] += 1
-            entry["goals"] += row.goals or 0
-            entry["assists"] += row.assists or 0
-            entry["penalty_goals"] += row.penalty_goals or 0
-            if row.yellow_card:
-                entry["yellow_cards"] += 1
+            stats_index[(row.player_id, row.md_number)] = row
+
+        # 3. Build form data — include empty slots for matchdays without stats
+        form_data: dict[int, dict] = {}
+        for pid in player_ids:
+            matches: list[dict] = []
+            clean_sheets = 0
+            goals = 0
+            assists = 0
+            penalty_goals = 0
+            yellow_cards = 0
+
+            for md_num in md_numbers:
+                stat = stats_index.get((pid, md_num))
+                if stat is None or not stat.played:
+                    matches.append(
+                        {
+                            "played": False,
+                            "result": 0,
+                            "is_home": False,
+                            "points": 0,
+                        }
+                    )
+                else:
+                    matches.append(
+                        {
+                            "played": True,
+                            "result": stat.result or 0,
+                            "is_home": bool(stat.is_home),
+                            "points": stat.pts_total or 0,
+                        }
+                    )
+                    if (stat.pts_clean_sheet or 0) > 0:
+                        clean_sheets += 1
+                    goals += stat.goals or 0
+                    assists += stat.assists or 0
+                    penalty_goals += stat.penalty_goals or 0
+                    if stat.yellow_card:
+                        yellow_cards += 1
+
+            form_data[pid] = {
+                "matches": matches,
+                "clean_sheets": clean_sheets,
+                "goals": goals,
+                "assists": assists,
+                "penalty_goals": penalty_goals,
+                "yellow_cards": yellow_cards,
+            }
 
         return form_data

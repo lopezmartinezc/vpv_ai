@@ -280,27 +280,72 @@ function SquadColumn({
   );
 }
 
+const RESULT_COLORS: Record<string, string> = {
+  W: "bg-emerald-500",
+  D: "bg-amber-400",
+  L: "bg-red-500",
+  X: "bg-vpv-border",
+};
+
+const RESULT_LABELS: Record<number, string> = { 2: "W", 1: "D", 0: "L" };
+
 function FormIndicator({ form }: { form: PlayerRecentForm }) {
   return (
-    <div className="flex items-center gap-0.5">
-      {form.matches.map((m, i) => (
-        <div key={i} className="flex flex-col items-center">
+    <div className="flex items-center gap-[3px]">
+      {form.matches.map((m, i) => {
+        const label = m.played ? RESULT_LABELS[m.result] ?? "L" : "X";
+        const color = RESULT_COLORS[label];
+        return (
           <div
-            className={`h-2.5 w-2.5 rounded-full ${
-              m.result === 2
-                ? "bg-green-500"
-                : m.result === 1
-                  ? "bg-gray-400"
-                  : "bg-red-500"
-            }`}
-            title={`${m.result === 2 ? "V" : m.result === 1 ? "E" : "D"} ${m.is_home ? "(C)" : "(F)"} ${m.points}pts`}
-          />
-          <span className="text-[7px] leading-none text-vpv-text-muted">
-            {m.is_home ? "C" : "F"}
-          </span>
-        </div>
-      ))}
+            key={i}
+            className="flex flex-col items-center gap-px"
+            title={
+              m.played
+                ? `${label === "W" ? "Victoria" : label === "D" ? "Empate" : "Derrota"} ${m.is_home ? "(Casa)" : "(Fuera)"} — ${m.points} pts`
+                : "No jugo"
+            }
+          >
+            <div
+              className={`flex h-3.5 w-3.5 items-center justify-center rounded-sm text-[8px] font-bold leading-none ${
+                m.played
+                  ? `${color} text-white`
+                  : "border border-dashed border-vpv-border text-vpv-text-muted/40"
+              }`}
+            >
+              {m.played ? label : "-"}
+            </div>
+            {m.played && (
+              <span className="text-[7px] leading-none text-vpv-text-muted/60">
+                {m.is_home ? "C" : "F"}
+              </span>
+            )}
+          </div>
+        );
+      })}
     </div>
+  );
+}
+
+function StatBadge({
+  icon,
+  value,
+  title,
+  color = "text-vpv-text-muted",
+}: {
+  icon: React.ReactNode;
+  value: number;
+  title: string;
+  color?: string;
+}) {
+  if (value === 0) return null;
+  return (
+    <span
+      className={`inline-flex items-center gap-0.5 ${color}`}
+      title={title}
+    >
+      {icon}
+      <span className="tabular-nums">{value}</span>
+    </span>
   );
 }
 
@@ -313,32 +358,37 @@ function PlayerFormStats({
 }) {
   const isDef = position === "POR" || position === "DEF";
   const totalGoals = form.goals + form.penalty_goals;
+
+  const shieldIcon = (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </svg>
+  );
+  const goalIcon = (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+      <circle cx="12" cy="12" r="10" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+  const assistIcon = (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+      <path d="M7 17l9.2-9.2M17 17V7H7" />
+    </svg>
+  );
+  const cardIcon = (
+    <svg width="8" height="10" viewBox="0 0 8 12" fill="currentColor">
+      <rect width="8" height="12" rx="1" className="text-yellow-400" />
+    </svg>
+  );
+
   return (
-    <div className="flex items-center gap-1.5 text-[10px] text-vpv-text-muted">
+    <div className="flex items-center gap-1.5 text-[10px]">
       {isDef && (
-        <span title="Imbatibilidades">
-          <span className="opacity-70">&#128737;</span>
-          {form.clean_sheets}
-        </span>
+        <StatBadge icon={shieldIcon} value={form.clean_sheets} title="Imbatibilidades" color="text-sky-400" />
       )}
-      {totalGoals > 0 && (
-        <span title="Goles">
-          <span className="opacity-70">&#9917;</span>
-          {totalGoals}
-        </span>
-      )}
-      {form.assists > 0 && (
-        <span title="Asistencias">
-          <span className="opacity-70">&#128095;</span>
-          {form.assists}
-        </span>
-      )}
-      {form.yellow_cards > 0 && (
-        <span title="Tarjetas amarillas">
-          <span className="opacity-70">&#128993;</span>
-          {form.yellow_cards}
-        </span>
-      )}
+      <StatBadge icon={goalIcon} value={totalGoals} title="Goles" color="text-vpv-text-muted" />
+      <StatBadge icon={assistIcon} value={form.assists} title="Asistencias" color="text-vpv-text-muted" />
+      <StatBadge icon={cardIcon} value={form.yellow_cards} title="Tarjetas" color="text-yellow-400" />
     </div>
   );
 }

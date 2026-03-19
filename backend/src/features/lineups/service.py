@@ -80,7 +80,15 @@ class LineupService:
             recent_form = None
             if form:
                 recent_form = PlayerRecentForm(
-                    matches=[FormMatch(**m) for m in form["matches"]],
+                    matches=[
+                        FormMatch(
+                            played=m["played"],
+                            result=m["result"],
+                            is_home=m["is_home"],
+                            points=m["points"],
+                        )
+                        for m in form["matches"]
+                    ],
                     clean_sheets=form["clean_sheets"],
                     goals=form["goals"],
                     assists=form["assists"],

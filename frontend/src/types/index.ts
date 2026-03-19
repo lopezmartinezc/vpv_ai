@@ -276,6 +276,7 @@ export interface SquadListResponse {
 }
 
 export interface FormMatch {
+  played: boolean;
   result: number; // 0=L, 1=D, 2=W
   is_home: boolean;
   points: number;

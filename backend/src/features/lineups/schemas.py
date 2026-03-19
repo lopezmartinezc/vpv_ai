@@ -50,7 +50,8 @@ class LineupSubmitResponse(BaseModel):
 
 
 class FormMatch(BaseModel):
-    result: int  # 0=L, 1=D, 2=W
+    played: bool
+    result: int  # 0=L, 1=D, 2=W (only meaningful when played=True)
     is_home: bool
     points: int
 
