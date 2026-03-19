@@ -3,13 +3,14 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import and_, case, delete, func, select
+from sqlalchemy import and_, case, delete, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.shared.models.lineup import Lineup, LineupPlayer
 from src.shared.models.matchday import Match, Matchday
 from src.shared.models.participant import SeasonParticipant
 from src.shared.models.player import Player
+from src.shared.models.player_ownership_log import PlayerOwnershipLog
 from src.shared.models.player_stat import PlayerStat
 from src.shared.models.season import Season, ValidFormation
 from src.shared.models.team import Team
@@ -504,3 +505,141 @@ class LineupRepository:
             }
             for r in lineup_rows
         ]
+
+    async def get_accuracy_data(self, participant_id: int, season_id: int) -> list[dict]:
+        """Get data needed to calculate lineup accuracy per matchday.
+
+        For each completed counting matchday where the participant has a lineup:
+        - The lineup (formation, total_points, lined-up player IDs)
+        - All squad players' stats (using ownership log for correct historical ownership)
+
+        Returns list of dicts ordered by matchday number DESC.
+        """
+        # 1. Get all completed counting matchdays
+        md_stmt = (
+            select(Matchday.id, Matchday.number)
+            .where(
+                Matchday.season_id == season_id,
+                Matchday.counts.is_(True),
+                Matchday.stats_ok.is_(True),
+            )
+            .order_by(Matchday.number.desc())
+        )
+        md_result = await self.session.execute(md_stmt)
+        matchdays = md_result.all()
+        if not matchdays:
+            return []
+
+        md_ids = [m.id for m in matchdays]
+        md_id_to_number = {m.id: m.number for m in matchdays}
+
+        # 2. Get all lineups for this participant in these matchdays
+        lineup_stmt = select(
+            Lineup.id.label("lineup_id"),
+            Lineup.matchday_id,
+            Lineup.formation,
+            Lineup.total_points,
+        ).where(
+            Lineup.participant_id == participant_id,
+            Lineup.matchday_id.in_(md_ids),
+        )
+        lineup_result = await self.session.execute(lineup_stmt)
+        lineups = {r.matchday_id: r for r in lineup_result.all()}
+
+        if not lineups:
+            return []
+
+        # 3. Get lined-up player IDs per lineup
+        lineup_ids = [r.lineup_id for r in lineups.values()]
+        lp_stmt = select(LineupPlayer.lineup_id, LineupPlayer.player_id).where(
+            LineupPlayer.lineup_id.in_(lineup_ids)
+        )
+        lp_result = await self.session.execute(lp_stmt)
+        lined_up_by_lineup: dict[int, set[int]] = {}
+        for r in lp_result.all():
+            lined_up_by_lineup.setdefault(r.lineup_id, set()).add(r.player_id)
+
+        # 4. For each matchday, get all owned players' stats
+        results: list[dict] = []
+        for md in matchdays:
+            lineup = lineups.get(md.id)
+            if lineup is None:
+                continue
+
+            md_number = md_id_to_number[md.id]
+
+            # Ownership subquery for this matchday
+            row_num = (
+                func.row_number()
+                .over(
+                    partition_by=PlayerOwnershipLog.player_id,
+                    order_by=PlayerOwnershipLog.from_matchday.desc(),
+                )
+                .label("rn")
+            )
+            ownership_inner = (
+                select(
+                    PlayerOwnershipLog.player_id,
+                    PlayerOwnershipLog.participant_id,
+                    row_num,
+                )
+                .where(
+                    PlayerOwnershipLog.season_id == season_id,
+                    PlayerOwnershipLog.from_matchday <= md_number,
+                )
+                .subquery()
+            )
+            ownership = (
+                select(ownership_inner.c.player_id, ownership_inner.c.participant_id)
+                .where(ownership_inner.c.rn == 1)
+                .subquery()
+            )
+
+            # Get stats for owned players, respecting match.counts
+            stats_stmt = (
+                select(
+                    PlayerStat.player_id,
+                    PlayerStat.position,
+                    PlayerStat.pts_total,
+                    PlayerStat.played,
+                    Player.display_name,
+                )
+                .join(Player, PlayerStat.player_id == Player.id)
+                .join(ownership, ownership.c.player_id == PlayerStat.player_id)
+                .outerjoin(Match, PlayerStat.match_id == Match.id)
+                .where(
+                    ownership.c.participant_id == participant_id,
+                    PlayerStat.matchday_id == md.id,
+                    func.coalesce(Match.counts, literal(True)).is_(True),
+                )
+            )
+            stats_result = await self.session.execute(stats_stmt)
+            squad_stats = [
+                {
+                    "player_id": r.player_id,
+                    "name": r.display_name,
+                    "position": r.position,
+                    "pts": r.pts_total if r.played else 0,
+                    "played": r.played,
+                }
+                for r in stats_result.all()
+            ]
+
+            lined_up_ids = lined_up_by_lineup.get(lineup.lineup_id, set())
+
+            results.append(
+                {
+                    "matchday_number": md_number,
+                    "formation": lineup.formation,
+                    "actual_points": lineup.total_points or 0,
+                    "squad_stats": squad_stats,
+                    "lined_up_ids": lined_up_ids,
+                }
+            )
+
+        return results
+
+    async def get_valid_formations(self) -> list[ValidFormation]:
+        stmt = select(ValidFormation)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())

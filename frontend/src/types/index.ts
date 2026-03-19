@@ -455,6 +455,34 @@ export interface LineupHistoryEntry {
   players: LineupHistoryPlayerEntry[];
 }
 
+export interface MissedCall {
+  position: string;
+  benched_name: string;
+  benched_points: number;
+  lined_up_name: string;
+  lined_up_points: number;
+}
+
+export interface MatchdayAccuracy {
+  matchday_number: number;
+  actual_points: number;
+  optimal_points: number;
+  accuracy_pct: number;
+  formation_used: string;
+  optimal_formation: string;
+  missed_calls: MissedCall[];
+}
+
+export interface AccuracyResponse {
+  participant_id: number;
+  display_name: string;
+  season_name: string;
+  avg_accuracy: number;
+  perfect_weeks: number;
+  total_missed_points: number;
+  matchdays: MatchdayAccuracy[];
+}
+
 export interface LineupHistoryResponse {
   participant_id: number;
   display_name: string;

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.lineups.schemas import (
+    AccuracyResponse,
     DeadlineStatusResponse,
     LineupHistoryResponse,
     LineupSubmitRequest,
@@ -55,6 +56,22 @@ async def submit_lineup(
         season_id=season_id,
         matchday_number=matchday_number,
         data=data,
+    )
+
+
+@router.get(
+    "/{season_id}/accuracy",
+    response_model=AccuracyResponse,
+)
+async def get_lineup_accuracy(
+    season_id: int,
+    user: dict = Depends(get_current_user),
+    service: LineupService = Depends(_get_service),
+) -> AccuracyResponse:
+    """Calculate lineup accuracy: actual vs optimal XI per matchday."""
+    return await service.get_lineup_accuracy(
+        user_id=int(user["sub"]),
+        season_id=season_id,
     )
 
 

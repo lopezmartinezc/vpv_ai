@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.exceptions import BusinessRuleError, NotFoundError
 from src.features.lineups.repository import LineupRepository
 from src.features.lineups.schemas import (
+    AccuracyResponse,
     DeadlineStatusResponse,
     FormMatch,
     LineupHistoryEntry,
@@ -17,6 +18,8 @@ from src.features.lineups.schemas import (
     LineupPlayerSlot,
     LineupSubmitRequest,
     LineupSubmitResponse,
+    MatchdayAccuracy,
+    MissedCall,
     MyLineupResponse,
     PlayerRecentForm,
     SquadPlayerForLineup,
@@ -308,6 +311,143 @@ class LineupService:
             season_name=season.name,
             lineups=lineups,
         )
+
+    async def get_lineup_accuracy(self, user_id: int, season_id: int) -> AccuracyResponse:
+        """Calculate how well the user picked their XI each matchday."""
+        participant = await self.repo.get_participant_for_user(season_id, user_id)
+        if participant is None:
+            raise NotFoundError("Participante", f"user={user_id}, season={season_id}")
+
+        season = await self.repo.get_season(season_id)
+        if season is None:
+            raise NotFoundError("Temporada", season_id)
+
+        from src.shared.models.user import User
+
+        user_obj = await self.session.get(User, user_id)
+        display_name = user_obj.display_name if user_obj else "Unknown"
+
+        raw_data = await self.repo.get_accuracy_data(participant.id, season_id)
+        formations = await self.repo.get_valid_formations()
+
+        matchday_accuracies: list[MatchdayAccuracy] = []
+        total_missed = 0
+        perfect = 0
+
+        for md_data in raw_data:
+            squad_stats = md_data["squad_stats"]
+            lined_up_ids: set[int] = md_data["lined_up_ids"]
+            actual = md_data["actual_points"]
+            formation_used = md_data["formation"]
+
+            # Calculate optimal XI
+            optimal, optimal_formation, optimal_ids = self._calc_optimal(squad_stats, formations)
+
+            accuracy = round(actual / optimal * 100, 1) if optimal > 0 else 100.0
+            if accuracy >= 95:
+                perfect += 1
+            total_missed += max(0, optimal - actual)
+
+            # Build missed calls: benched players who scored more than a lined-up
+            # player in the same position (top 3 biggest diffs)
+            missed_calls = self._build_missed_calls(squad_stats, lined_up_ids, optimal_ids)
+
+            matchday_accuracies.append(
+                MatchdayAccuracy(
+                    matchday_number=md_data["matchday_number"],
+                    actual_points=actual,
+                    optimal_points=optimal,
+                    accuracy_pct=accuracy,
+                    formation_used=formation_used,
+                    optimal_formation=optimal_formation,
+                    missed_calls=missed_calls,
+                )
+            )
+
+        n = len(matchday_accuracies)
+        avg = round(sum(m.accuracy_pct for m in matchday_accuracies) / n, 1) if n else 0
+
+        return AccuracyResponse(
+            participant_id=participant.id,
+            display_name=display_name,
+            season_name=season.name,
+            avg_accuracy=avg,
+            perfect_weeks=perfect,
+            total_missed_points=total_missed,
+            matchdays=matchday_accuracies,
+        )
+
+    @staticmethod
+    def _calc_optimal(squad_stats: list[dict], formations: list) -> tuple[int, str, set[int]]:
+        """Try all formations and return (max_points, formation_name, player_ids)."""
+        # Group by position, sorted by pts DESC
+        by_pos: dict[str, list[dict]] = {"POR": [], "DEF": [], "MED": [], "DEL": []}
+        for s in squad_stats:
+            pos = s["position"]
+            if pos in by_pos:
+                by_pos[pos].append(s)
+        for pos in by_pos:
+            by_pos[pos].sort(key=lambda x: x["pts"], reverse=True)
+
+        best_total = 0
+        best_formation = ""
+        best_ids: set[int] = set()
+
+        for f in formations:
+            picks: list[dict] = []
+            picks.extend(by_pos["POR"][:1])
+            picks.extend(by_pos["DEF"][: f.defenders])
+            picks.extend(by_pos["MED"][: f.midfielders])
+            picks.extend(by_pos["DEL"][: f.forwards])
+
+            total = sum(p["pts"] for p in picks)
+            if total > best_total:
+                best_total = total
+                best_formation = f.formation
+                best_ids = {p["player_id"] for p in picks}
+
+        return best_total, best_formation, best_ids
+
+    @staticmethod
+    def _build_missed_calls(
+        squad_stats: list[dict],
+        lined_up_ids: set[int],
+        optimal_ids: set[int],
+    ) -> list[MissedCall]:
+        """Find players who should have been lined up but weren't (top 3)."""
+        # Players in optimal but NOT in actual lineup
+        should_have = {s["player_id"]: s for s in squad_stats if s["player_id"] in optimal_ids}
+        actually_lined = {s["player_id"]: s for s in squad_stats if s["player_id"] in lined_up_ids}
+
+        diffs: list[MissedCall] = []
+        for pid, benched in should_have.items():
+            if pid in lined_up_ids:
+                continue  # Correctly lined up
+            # Find the worst lined-up player in the same position
+            pos = benched["position"]
+            worst_in_pos = None
+            for lid, lined in actually_lined.items():
+                if (
+                    lined["position"] == pos
+                    and lid not in optimal_ids
+                    and (worst_in_pos is None or lined["pts"] < worst_in_pos["pts"])
+                ):
+                    worst_in_pos = lined
+
+            if worst_in_pos and benched["pts"] > worst_in_pos["pts"]:
+                diffs.append(
+                    MissedCall(
+                        position=pos,
+                        benched_name=benched["name"],
+                        benched_points=benched["pts"],
+                        lined_up_name=worst_in_pos["name"],
+                        lined_up_points=worst_in_pos["pts"],
+                    )
+                )
+
+        # Sort by biggest diff, return top 3
+        diffs.sort(key=lambda d: d.benched_points - d.lined_up_points, reverse=True)
+        return diffs[:3]
 
     async def _validate_deadline(self, matchday: object, season_id: int) -> None:
         """Check that the deadline hasn't passed."""

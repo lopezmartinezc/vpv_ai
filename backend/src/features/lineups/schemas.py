@@ -114,3 +114,31 @@ class LineupHistoryResponse(BaseModel):
     display_name: str
     season_name: str
     lineups: list[LineupHistoryEntry]
+
+
+class MissedCall(BaseModel):
+    position: str
+    benched_name: str
+    benched_points: int
+    lined_up_name: str
+    lined_up_points: int
+
+
+class MatchdayAccuracy(BaseModel):
+    matchday_number: int
+    actual_points: int
+    optimal_points: int
+    accuracy_pct: float
+    formation_used: str
+    optimal_formation: str
+    missed_calls: list[MissedCall]
+
+
+class AccuracyResponse(BaseModel):
+    participant_id: int
+    display_name: str
+    season_name: str
+    avg_accuracy: float
+    perfect_weeks: int
+    total_missed_points: int
+    matchdays: list[MatchdayAccuracy]

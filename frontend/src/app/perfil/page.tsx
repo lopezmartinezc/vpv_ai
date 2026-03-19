@@ -8,7 +8,11 @@ import { useFetch } from "@/hooks/use-fetch";
 import { apiClient } from "@/lib/api-client";
 import { PersonalEvolution } from "@/components/standings/personal-evolution";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
-import type { EvolutionEntry, LineupHistoryResponse } from "@/types";
+import type {
+  AccuracyResponse,
+  EvolutionEntry,
+  LineupHistoryResponse,
+} from "@/types";
 
 interface EvolutionResponse {
   season_id: number;
@@ -45,7 +49,14 @@ export default function PerfilPage() {
       : null,
   );
 
+  const { data: accuracy } = useFetch<AccuracyResponse>(
+    user && selectedSeason
+      ? `/lineups/${selectedSeason.id}/accuracy`
+      : null,
+  );
+
   const [expandedMd, setExpandedMd] = useState<number | null>(null);
+  const [expandedAccMd, setExpandedAccMd] = useState<number | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
   const [currentPassword, setCurrentPassword] = useState("");
@@ -238,6 +249,154 @@ export default function PerfilPage() {
             entries={evolution.entries}
             displayName={me.display_name}
           />
+        </section>
+      )}
+
+      {/* Accuracy — Acierto de Mister */}
+      {accuracy && accuracy.matchdays.length > 0 && (
+        <section>
+          <h2 className="mb-3 text-lg font-semibold text-vpv-text">
+            Acierto de Mister
+          </h2>
+          {/* Summary cards */}
+          <div className="mb-3 grid grid-cols-3 gap-2">
+            <div className="rounded-lg border border-vpv-card-border bg-vpv-card px-3 py-2 text-center">
+              <p
+                className={`text-xl font-bold tabular-nums ${
+                  accuracy.avg_accuracy >= 90
+                    ? "text-emerald-400"
+                    : accuracy.avg_accuracy >= 70
+                      ? "text-amber-400"
+                      : "text-red-400"
+                }`}
+              >
+                {accuracy.avg_accuracy}%
+              </p>
+              <p className="text-[10px] text-vpv-text-muted">Acierto medio</p>
+            </div>
+            <div className="rounded-lg border border-vpv-card-border bg-vpv-card px-3 py-2 text-center">
+              <p className="text-xl font-bold tabular-nums text-vpv-text">
+                {accuracy.perfect_weeks}
+              </p>
+              <p className="text-[10px] text-vpv-text-muted">Semanas perfectas</p>
+            </div>
+            <div className="rounded-lg border border-vpv-card-border bg-vpv-card px-3 py-2 text-center">
+              <p className="text-xl font-bold tabular-nums text-red-400">
+                -{accuracy.total_missed_points}
+              </p>
+              <p className="text-[10px] text-vpv-text-muted">Puntos perdidos</p>
+            </div>
+          </div>
+
+          {/* Per-matchday list */}
+          <div className="space-y-1.5">
+            {accuracy.matchdays.map((md) => {
+              const isExpanded = expandedAccMd === md.matchday_number;
+              const barColor =
+                md.accuracy_pct >= 90
+                  ? "bg-emerald-500"
+                  : md.accuracy_pct >= 70
+                    ? "bg-amber-400"
+                    : "bg-red-500";
+              return (
+                <div
+                  key={md.matchday_number}
+                  className="rounded-lg border border-vpv-card-border bg-vpv-card overflow-hidden"
+                >
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpandedAccMd(
+                        isExpanded ? null : md.matchday_number,
+                      )
+                    }
+                    className="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-vpv-bg/50"
+                  >
+                    <span className="text-xs font-bold text-vpv-accent w-7">
+                      J{md.matchday_number}
+                    </span>
+                    {/* Progress bar */}
+                    <div className="flex-1">
+                      <div className="h-2 rounded-full bg-vpv-border overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${barColor}`}
+                          style={{ width: `${Math.min(100, md.accuracy_pct)}%` }}
+                        />
+                      </div>
+                    </div>
+                    <span className="text-xs tabular-nums text-vpv-text-muted w-16 text-right">
+                      {md.actual_points}/{md.optimal_points}
+                    </span>
+                    <span
+                      className={`text-xs font-bold tabular-nums w-10 text-right ${
+                        md.accuracy_pct >= 90
+                          ? "text-emerald-400"
+                          : md.accuracy_pct >= 70
+                            ? "text-amber-400"
+                            : "text-red-400"
+                      }`}
+                    >
+                      {md.accuracy_pct}%
+                    </span>
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      className={`text-vpv-text-muted transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                    >
+                      <path
+                        d="M4 6l4 4 4-4"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </button>
+
+                  {isExpanded && md.missed_calls.length > 0 && (
+                    <div className="border-t border-vpv-border px-3 py-2 space-y-1">
+                      {md.formation_used !== md.optimal_formation && (
+                        <p className="text-[10px] text-vpv-text-muted">
+                          Formacion optima: {md.optimal_formation} (pusiste {md.formation_used})
+                        </p>
+                      )}
+                      {md.missed_calls.map((mc, i) => (
+                        <div
+                          key={i}
+                          className="flex items-center gap-1.5 text-[11px]"
+                        >
+                          <span
+                            className={`rounded border px-1 py-px text-[9px] font-bold ${POS_COLORS[mc.position] ?? "text-vpv-text-muted border-vpv-border"}`}
+                          >
+                            {mc.position}
+                          </span>
+                          <span className="text-red-400">
+                            {mc.lined_up_name} ({mc.lined_up_points})
+                          </span>
+                          <span className="text-vpv-text-muted">→</span>
+                          <span className="text-emerald-400">
+                            {mc.benched_name} ({mc.benched_points})
+                          </span>
+                          <span className="text-vpv-text-muted">
+                            +{mc.benched_points - mc.lined_up_points}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {isExpanded && md.missed_calls.length === 0 && (
+                    <div className="border-t border-vpv-border px-3 py-2">
+                      <p className="text-[11px] text-emerald-400">
+                        Alineacion perfecta
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </section>
       )}
 
