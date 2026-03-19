@@ -260,6 +260,7 @@ _last_deadline_reminder_at: datetime | None = None
 _REMINDER_WINDOWS = [
     ("2h", 120),  # label, minutes before deadline
     ("30min", 30),
+    ("15min", 15),
 ]
 
 
