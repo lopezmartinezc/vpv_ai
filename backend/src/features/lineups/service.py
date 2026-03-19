@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.exceptions import BusinessRuleError, NotFoundError
 from src.features.lineups.repository import LineupRepository
 from src.features.lineups.schemas import (
+    AccuracyRankingEntry,
+    AccuracyRankingResponse,
     AccuracyResponse,
     DeadlineStatusResponse,
     FormMatch,
@@ -375,6 +377,75 @@ class LineupService:
             perfect_weeks=perfect,
             total_missed_points=total_missed,
             matchdays=matchday_accuracies,
+        )
+
+    async def get_accuracy_ranking(self, season_id: int) -> AccuracyRankingResponse:
+        """Calculate accuracy ranking for all participants in a season."""
+        season = await self.repo.get_season(season_id)
+        if season is None:
+            raise NotFoundError("Temporada", season_id)
+
+        from sqlalchemy import select as sa_select
+
+        from src.shared.models.participant import SeasonParticipant
+        from src.shared.models.user import User
+
+        stmt = (
+            sa_select(SeasonParticipant.id, SeasonParticipant.user_id, User.display_name)
+            .join(User, SeasonParticipant.user_id == User.id)
+            .where(
+                SeasonParticipant.season_id == season_id,
+                SeasonParticipant.is_active.is_(True),
+            )
+        )
+        result = await self.session.execute(stmt)
+        participants = result.all()
+
+        formations = await self.repo.get_valid_formations()
+        entries: list[AccuracyRankingEntry] = []
+
+        for p in participants:
+            raw_data = await self.repo.get_accuracy_data(p.id, season_id)
+            if not raw_data:
+                continue
+
+            total_accuracy = 0.0
+            perfect = 0
+            missed = 0
+            count = 0
+
+            for md_data in raw_data:
+                optimal, _, _ = self._calc_optimal(md_data["squad_stats"], formations)
+                actual = md_data["actual_points"]
+                acc = actual / optimal * 100 if optimal > 0 else 100.0
+                total_accuracy += acc
+                if acc >= 95:
+                    perfect += 1
+                missed += max(0, optimal - actual)
+                count += 1
+
+            avg = round(total_accuracy / count, 1) if count else 0
+            entries.append(
+                AccuracyRankingEntry(
+                    rank=0,
+                    participant_id=p.id,
+                    display_name=p.display_name,
+                    avg_accuracy=avg,
+                    perfect_weeks=perfect,
+                    total_missed_points=missed,
+                    matchdays_played=count,
+                )
+            )
+
+        # Sort by avg_accuracy DESC and assign ranks
+        entries.sort(key=lambda e: e.avg_accuracy, reverse=True)
+        for i, entry in enumerate(entries):
+            entry.rank = i + 1
+
+        return AccuracyRankingResponse(
+            season_id=season_id,
+            season_name=season.name,
+            entries=entries,
         )
 
     @staticmethod

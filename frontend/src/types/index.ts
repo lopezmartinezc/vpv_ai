@@ -483,6 +483,22 @@ export interface AccuracyResponse {
   matchdays: MatchdayAccuracy[];
 }
 
+export interface AccuracyRankingEntry {
+  rank: number;
+  participant_id: number;
+  display_name: string;
+  avg_accuracy: number;
+  perfect_weeks: number;
+  total_missed_points: number;
+  matchdays_played: number;
+}
+
+export interface AccuracyRankingResponse {
+  season_id: number;
+  season_name: string;
+  entries: AccuracyRankingEntry[];
+}
+
 export interface LineupHistoryResponse {
   participant_id: number;
   display_name: string;

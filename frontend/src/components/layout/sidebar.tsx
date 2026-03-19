@@ -12,6 +12,7 @@ import { SeasonSelector } from "./season-selector";
 const NAV_ITEMS = [
   { href: "/", label: "Inicio", icon: "home" },
   { href: "/clasificacion", label: "Liga", icon: "trophy" },
+  { href: "/acierto", label: "Acierto", icon: "clipboard" },
   { href: "/copa", label: "Copa", icon: "shield" },
   { href: "/jornadas", label: "Jornadas", icon: "calendar" },
   { href: "/economia", label: "Economia", icon: "coins" },

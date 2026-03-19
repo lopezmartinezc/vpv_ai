@@ -142,3 +142,19 @@ class AccuracyResponse(BaseModel):
     perfect_weeks: int
     total_missed_points: int
     matchdays: list[MatchdayAccuracy]
+
+
+class AccuracyRankingEntry(BaseModel):
+    rank: int
+    participant_id: int
+    display_name: str
+    avg_accuracy: float
+    perfect_weeks: int
+    total_missed_points: int
+    matchdays_played: int
+
+
+class AccuracyRankingResponse(BaseModel):
+    season_id: int
+    season_name: str
+    entries: list[AccuracyRankingEntry]
