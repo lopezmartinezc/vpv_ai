@@ -184,7 +184,7 @@ export function Sidebar({
                 {selectedSeason && (
                   <li>
                     <Link
-                      href={`/jornadas/${selectedSeason.matchday_current + 1}/alineacion`}
+                      href={`/jornadas/${selectedSeason.matchday_current}/alineacion`}
                       className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
                         pathname.includes("/alineacion")
                           ? "bg-vpv-accent/10 text-vpv-accent"
