@@ -493,10 +493,34 @@ export interface AccuracyRankingEntry {
   matchdays_played: number;
 }
 
+export interface AccuracyPlayerEntry {
+  player_id: number;
+  name: string;
+  position: string;
+  points: number;
+  in_optimal: boolean;
+  in_actual: boolean;
+}
+
+export interface AccuracyMatchdayRankingEntry {
+  rank: number;
+  participant_id: number;
+  display_name: string;
+  actual_points: number;
+  optimal_points: number;
+  accuracy_pct: number;
+  formation_used: string;
+  optimal_formation: string;
+  players: AccuracyPlayerEntry[];
+  missed_calls: MissedCall[];
+}
+
 export interface AccuracyRankingResponse {
   season_id: number;
   season_name: string;
+  matchday_number: number | null;
   entries: AccuracyRankingEntry[];
+  matchday_entries: AccuracyMatchdayRankingEntry[] | null;
 }
 
 export interface LineupHistoryResponse {

@@ -154,7 +154,31 @@ class AccuracyRankingEntry(BaseModel):
     matchdays_played: int
 
 
+class AccuracyPlayerEntry(BaseModel):
+    player_id: int
+    name: str
+    position: str
+    points: int
+    in_optimal: bool
+    in_actual: bool
+
+
+class AccuracyMatchdayRankingEntry(BaseModel):
+    rank: int
+    participant_id: int
+    display_name: str
+    actual_points: int
+    optimal_points: int
+    accuracy_pct: float
+    formation_used: str
+    optimal_formation: str
+    players: list[AccuracyPlayerEntry]
+    missed_calls: list[MissedCall]
+
+
 class AccuracyRankingResponse(BaseModel):
     season_id: int
     season_name: str
+    matchday_number: int | None = None
     entries: list[AccuracyRankingEntry]
+    matchday_entries: list[AccuracyMatchdayRankingEntry] | None = None

@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.exceptions import BusinessRuleError, NotFoundError
 from src.features.lineups.repository import LineupRepository
 from src.features.lineups.schemas import (
+    AccuracyMatchdayRankingEntry,
+    AccuracyPlayerEntry,
     AccuracyRankingEntry,
     AccuracyRankingResponse,
     AccuracyResponse,
@@ -379,8 +381,14 @@ class LineupService:
             matchdays=matchday_accuracies,
         )
 
-    async def get_accuracy_ranking(self, season_id: int) -> AccuracyRankingResponse:
-        """Calculate accuracy ranking for all participants in a season."""
+    async def get_accuracy_ranking(
+        self, season_id: int, matchday_number: int | None = None
+    ) -> AccuracyRankingResponse:
+        """Calculate accuracy ranking for all participants in a season.
+
+        If matchday_number is provided, returns detail for that single matchday
+        including per-player breakdown (actual vs optimal).
+        """
         season = await self.repo.get_season(season_id)
         if season is None:
             raise NotFoundError("Temporada", season_id)
@@ -402,50 +410,112 @@ class LineupService:
         participants = result.all()
 
         formations = await self.repo.get_valid_formations()
-        entries: list[AccuracyRankingEntry] = []
 
+        # Global ranking (no matchday filter)
+        if matchday_number is None:
+            entries: list[AccuracyRankingEntry] = []
+            for p in participants:
+                raw_data = await self.repo.get_accuracy_data(p.id, season_id)
+                if not raw_data:
+                    continue
+
+                total_accuracy = 0.0
+                perfect = 0
+                missed = 0
+                count = 0
+
+                for md_data in raw_data:
+                    optimal, _, _ = self._calc_optimal(md_data["squad_stats"], formations)
+                    actual = md_data["actual_points"]
+                    acc = actual / optimal * 100 if optimal > 0 else 100.0
+                    total_accuracy += acc
+                    if acc >= 95:
+                        perfect += 1
+                    missed += max(0, optimal - actual)
+                    count += 1
+
+                avg = round(total_accuracy / count, 1) if count else 0
+                entries.append(
+                    AccuracyRankingEntry(
+                        rank=0,
+                        participant_id=p.id,
+                        display_name=p.display_name,
+                        avg_accuracy=avg,
+                        perfect_weeks=perfect,
+                        total_missed_points=missed,
+                        matchdays_played=count,
+                    )
+                )
+
+            entries.sort(key=lambda e: e.avg_accuracy, reverse=True)
+            for i, entry in enumerate(entries):
+                entry.rank = i + 1
+
+            return AccuracyRankingResponse(
+                season_id=season_id,
+                season_name=season.name,
+                entries=entries,
+            )
+
+        # Single matchday detail
+        md_entries: list[AccuracyMatchdayRankingEntry] = []
         for p in participants:
             raw_data = await self.repo.get_accuracy_data(p.id, season_id)
-            if not raw_data:
+            single_md: dict | None = next(
+                (d for d in raw_data if d["matchday_number"] == matchday_number), None
+            )
+            if single_md is None:
                 continue
 
-            total_accuracy = 0.0
-            perfect = 0
-            missed = 0
-            count = 0
+            squad_stats = single_md["squad_stats"]
+            lined_up_ids: set[int] = single_md["lined_up_ids"]
+            actual = single_md["actual_points"]
 
-            for md_data in raw_data:
-                optimal, _, _ = self._calc_optimal(md_data["squad_stats"], formations)
-                actual = md_data["actual_points"]
-                acc = actual / optimal * 100 if optimal > 0 else 100.0
-                total_accuracy += acc
-                if acc >= 95:
-                    perfect += 1
-                missed += max(0, optimal - actual)
-                count += 1
+            optimal, optimal_formation, optimal_ids = self._calc_optimal(squad_stats, formations)
+            acc = round(actual / optimal * 100, 1) if optimal > 0 else 100.0
 
-            avg = round(total_accuracy / count, 1) if count else 0
-            entries.append(
-                AccuracyRankingEntry(
+            # Build player entries with flags
+            players = [
+                AccuracyPlayerEntry(
+                    player_id=s["player_id"],
+                    name=s["name"],
+                    position=s["position"],
+                    points=s["pts"],
+                    in_optimal=s["player_id"] in optimal_ids,
+                    in_actual=s["player_id"] in lined_up_ids,
+                )
+                for s in squad_stats
+                if s["played"]
+            ]
+            players.sort(key=lambda x: x.points, reverse=True)
+
+            missed_calls = self._build_missed_calls(squad_stats, lined_up_ids, optimal_ids)
+
+            md_entries.append(
+                AccuracyMatchdayRankingEntry(
                     rank=0,
                     participant_id=p.id,
                     display_name=p.display_name,
-                    avg_accuracy=avg,
-                    perfect_weeks=perfect,
-                    total_missed_points=missed,
-                    matchdays_played=count,
+                    actual_points=actual,
+                    optimal_points=optimal,
+                    accuracy_pct=acc,
+                    formation_used=single_md["formation"],
+                    optimal_formation=optimal_formation,
+                    players=players,
+                    missed_calls=missed_calls,
                 )
             )
 
-        # Sort by avg_accuracy DESC and assign ranks
-        entries.sort(key=lambda e: e.avg_accuracy, reverse=True)
-        for i, entry in enumerate(entries):
-            entry.rank = i + 1
+        md_entries.sort(key=lambda e: e.accuracy_pct, reverse=True)
+        for i, md_entry in enumerate(md_entries):
+            md_entry.rank = i + 1
 
         return AccuracyRankingResponse(
             season_id=season_id,
             season_name=season.name,
-            entries=entries,
+            matchday_number=matchday_number,
+            entries=[],
+            matchday_entries=md_entries,
         )
 
     @staticmethod

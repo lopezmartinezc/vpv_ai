@@ -66,10 +66,11 @@ async def submit_lineup(
 )
 async def get_accuracy_ranking(
     season_id: int,
+    matchday: int | None = None,
     service: LineupService = Depends(_get_service),
 ) -> AccuracyRankingResponse:
-    """Accuracy ranking for all participants (public)."""
-    return await service.get_accuracy_ranking(season_id)
+    """Accuracy ranking for all participants. Optional ?matchday=N for single matchday detail."""
+    return await service.get_accuracy_ranking(season_id, matchday_number=matchday)
 
 
 @router.get(
