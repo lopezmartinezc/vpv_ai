@@ -175,6 +175,19 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 - **Estado**: [x] Completado (2026-03-18)
 - **Notas**: Documentacion completa en `docs/SEASON_LIFECYCLE.md`
 
+### 4.6 Palmares historico
+- **Problema**: No habia vista del historial de la liga a traves de las temporadas
+- **Solucion**: Pagina `/palmares` con campeonatos, ranking historico y records all-time
+- **Complejidad**: Media
+- **Estado**: [x] Completado (2026-03-19)
+
+### 4.7 Grupos de participantes
+- **Problema**: La liga tiene 3 grupos (Virtuales, Petit Comite, Vacas Sagradas) que compiten entre si. El ultimo grupo paga pica-pica en el siguiente draft.
+- **Solucion**: Campo `group_name` en `season_participants`. Clasificacion de grupos en `/clasificacion`. Historial de grupos en `/palmares`. Admin asigna grupos en Admin > Usuarios.
+- **Complejidad**: Media
+- **Estado**: [x] Completado (2026-03-19)
+- **Notas**: Migracion: `ALTER TABLE season_participants ADD COLUMN group_name VARCHAR(50);`
+
 ---
 
 ## Resumen
@@ -200,6 +213,8 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 | 4.3 | Tests | Alto (tecnico) | Alta | Pendiente |
 | 4.4 | Sesion unica | Alto (seguridad) | Media | Completado |
 | 4.5 | Ciclo vida temporada | Alto (operativo) | Media | Completado |
+| 4.6 | Palmares historico | Medio | Media | Completado |
+| 4.7 | Grupos participantes | Alto | Media | Completado |
 
 ## Criterios de validacion
 

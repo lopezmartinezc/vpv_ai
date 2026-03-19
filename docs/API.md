@@ -607,6 +607,69 @@ Clasificacion general de la temporada.
 
 > Solo computa jornadas donde `matchdays.counts=true` Y `matches.counts=true`.
 
+### `GET /api/standings/{season_id}/groups`
+
+Clasificacion por grupos. Suma de puntos de cada miembro del grupo.
+
+**Auth**: Publico
+
+**Response** `200`:
+```json
+{
+  "season_id": 8,
+  "season_name": "2025-2026",
+  "groups": [
+    {
+      "rank": 1,
+      "group_name": "Virtuales",
+      "total_points": 4500,
+      "members": [
+        { "participant_id": 3, "display_name": "Carlos L.", "total_points": 1500 }
+      ]
+    }
+  ]
+}
+```
+
+### `PUT /api/seasons/admin/{season_id}/participants/{participant_id}/group`
+
+Asignar grupo a un participante.
+
+**Auth**: Admin
+
+**Request**:
+```json
+{ "group_name": "Virtuales" }
+```
+
+> `group_name` puede ser null para quitar del grupo. Valores tipicos: "Virtuales", "Petit Comite", "Vacas Sagradas".
+
+**Response** `200`: `SeasonParticipantResponse` (incluye `group_name`)
+
+### `GET /api/palmares`
+
+Palmares historico: campeonatos, ranking de carrera, records all-time, historial de grupos.
+
+**Auth**: Publico
+
+**Response** `200`:
+```json
+{
+  "champions": [
+    { "season_id": 8, "season_name": "2025-2026", "entries": [...] }
+  ],
+  "career": [
+    { "user_id": 1, "display_name": "Carlos L.", "seasons_played": 8, "championships": 3, "podiums": 6, "total_points": 12450, "total_matchdays": 280, "avg_points": 44.5, "best_finish": 1, "best_season_name": "2023-2024" }
+  ],
+  "records": [
+    { "label": "Mayor puntuacion en una jornada", "value": "89 pts", "detail": "Carlos L. — J15 (2023-2024)" }
+  ],
+  "group_history": [
+    { "season_id": 7, "season_name": "2024-2025", "winner": "Virtuales", "loser": "Vacas Sagradas" }
+  ]
+}
+```
+
 ---
 
 ## Squads
