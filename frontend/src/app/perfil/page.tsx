@@ -46,6 +46,7 @@ export default function PerfilPage() {
   );
 
   const [expandedMd, setExpandedMd] = useState<number | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -73,15 +74,15 @@ export default function PerfilPage() {
     setSuccess(null);
 
     if (newPassword.length < 8) {
-      setError("La nueva contrasena debe tener al menos 8 caracteres");
+      setError("La nueva contraseña debe tener al menos 8 caracteres");
       return;
     }
     if (newPassword !== confirmPassword) {
-      setError("Las contrasenas no coinciden");
+      setError("Las contraseñas no coinciden");
       return;
     }
     if (currentPassword === newPassword) {
-      setError("La nueva contrasena debe ser diferente a la actual");
+      setError("La nueva contraseña debe ser diferente a la actual");
       return;
     }
 
@@ -91,13 +92,13 @@ export default function PerfilPage() {
         current_password: currentPassword,
         new_password: newPassword,
       });
-      setSuccess("Contrasena actualizada correctamente");
+      setSuccess("Contraseña actualizada correctamente");
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
     } catch (e) {
       setError(
-        e instanceof Error ? e.message : "Error al cambiar la contrasena",
+        e instanceof Error ? e.message : "Error al cambiar la contraseña",
       );
     } finally {
       setSaving(false);
@@ -130,6 +131,101 @@ export default function PerfilPage() {
             </div>
           )}
         </div>
+      </section>
+
+      {/* Change password (accordion) */}
+      <section className="rounded-lg border border-vpv-card-border bg-vpv-card overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setShowPassword(!showPassword)}
+          className="flex w-full items-center justify-between px-5 py-3 text-left transition-colors hover:bg-vpv-bg/50"
+        >
+          <span className="text-sm font-semibold text-vpv-text">
+            Cambiar contraseña
+          </span>
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            fill="none"
+            className={`text-vpv-text-muted transition-transform ${showPassword ? "rotate-180" : ""}`}
+          >
+            <path
+              d="M4 6l4 4 4-4"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+
+        {showPassword && (
+          <div className="border-t border-vpv-border px-5 py-4">
+            {error && (
+              <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+                {error}
+              </div>
+            )}
+            {success && (
+              <div className="mb-4 rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-400">
+                {success}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="current" className="mb-1 block text-sm text-vpv-text-muted">
+                  Contraseña actual
+                </label>
+                <input
+                  id="current"
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  required
+                  className="w-full rounded-lg border border-vpv-border bg-vpv-bg px-3 py-2 text-sm text-vpv-text focus:border-vpv-accent focus:outline-none"
+                />
+              </div>
+              <div>
+                <label htmlFor="new" className="mb-1 block text-sm text-vpv-text-muted">
+                  Nueva contraseña
+                </label>
+                <input
+                  id="new"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  minLength={8}
+                  className="w-full rounded-lg border border-vpv-border bg-vpv-bg px-3 py-2 text-sm text-vpv-text focus:border-vpv-accent focus:outline-none"
+                />
+                <p className="mt-1 text-xs text-vpv-text-muted">Minimo 8 caracteres</p>
+              </div>
+              <div>
+                <label htmlFor="confirm" className="mb-1 block text-sm text-vpv-text-muted">
+                  Confirmar nueva contraseña
+                </label>
+                <input
+                  id="confirm"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  minLength={8}
+                  className="w-full rounded-lg border border-vpv-border bg-vpv-bg px-3 py-2 text-sm text-vpv-text focus:border-vpv-accent focus:outline-none"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={saving || !currentPassword || !newPassword || !confirmPassword}
+                className="rounded-lg bg-vpv-accent px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-vpv-accent/80 disabled:opacity-50"
+              >
+                {saving ? "Guardando..." : "Cambiar contraseña"}
+              </button>
+            </form>
+          </div>
+        )}
       </section>
 
       {/* Evolution */}
@@ -243,84 +339,6 @@ export default function PerfilPage() {
         </section>
       )}
 
-      {/* Change password */}
-      <section className="rounded-lg border border-vpv-card-border bg-vpv-card p-5">
-        <h2 className="mb-4 text-lg font-semibold text-vpv-text">
-          Cambiar contrasena
-        </h2>
-
-        {error && (
-          <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-            {error}
-          </div>
-        )}
-        {success && (
-          <div className="mb-4 rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-400">
-            {success}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label
-              htmlFor="current"
-              className="mb-1 block text-sm text-vpv-text-muted"
-            >
-              Contrasena actual
-            </label>
-            <input
-              id="current"
-              type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              required
-              className="w-full rounded-lg border border-vpv-border bg-vpv-bg px-3 py-2 text-sm text-vpv-text focus:border-vpv-accent focus:outline-none"
-            />
-          </div>
-          <div>
-            <label
-              htmlFor="new"
-              className="mb-1 block text-sm text-vpv-text-muted"
-            >
-              Nueva contrasena
-            </label>
-            <input
-              id="new"
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              required
-              minLength={8}
-              className="w-full rounded-lg border border-vpv-border bg-vpv-bg px-3 py-2 text-sm text-vpv-text focus:border-vpv-accent focus:outline-none"
-            />
-            <p className="mt-1 text-xs text-vpv-text-muted">Minimo 8 caracteres</p>
-          </div>
-          <div>
-            <label
-              htmlFor="confirm"
-              className="mb-1 block text-sm text-vpv-text-muted"
-            >
-              Confirmar nueva contrasena
-            </label>
-            <input
-              id="confirm"
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-              minLength={8}
-              className="w-full rounded-lg border border-vpv-border bg-vpv-bg px-3 py-2 text-sm text-vpv-text focus:border-vpv-accent focus:outline-none"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={saving || !currentPassword || !newPassword || !confirmPassword}
-            className="rounded-lg bg-vpv-accent px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-vpv-accent/80 disabled:opacity-50"
-          >
-            {saving ? "Guardando..." : "Cambiar contrasena"}
-          </button>
-        </form>
-      </section>
     </div>
   );
 }
