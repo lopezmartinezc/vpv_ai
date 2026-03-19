@@ -26,11 +26,11 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 
 ### 1.2 Historial de alineaciones del usuario
 - **Problema**: Un usuario no puede ver sus alineaciones pasadas
-- **Solucion**: Listar alineaciones por jornada con formacion, jugadores y puntos
-- **Backend**: `GET /lineups/{season_id}/history` (datos en `lineups` + `lineup_players`)
-- **Frontend**: tabla/cards en `/perfil` o seccion dedicada
+- **Solucion**: Endpoint `GET /lineups/{season_id}/history` + seccion en `/perfil` con cards expandibles
+- **Implementacion**: cards colapsables por jornada (mas reciente arriba), click expande para ver 11 jugadores con foto, posicion, puntos
 - **Complejidad**: Baja
-- **Estado**: [ ] Pendiente
+- **Estado**: [x] Completado (2026-03-19)
+- **Notas**: Tambien se movio cambio de contraseña a accordion colapsado. Racha de forma (ultimos 5 partidos) añadida a la seleccion de alineacion.
 
 ### 1.3 Estadisticas publicas (no solo admin)
 - **Problema**: `/admin/estadisticas` solo accesible para admin
@@ -160,7 +160,7 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 | # | Mejora | Impacto | Complejidad | Estado |
 |---|--------|---------|-------------|--------|
 | 1.1 | Countdown deadline | Alto | Baja | Completado |
-| 1.2 | Historial alineaciones | Alto | Baja | Pendiente |
+| 1.2 | Historial alineaciones | Alto | Baja | Completado |
 | 1.3 | Estadisticas publicas | Alto | Baja | Pendiente |
 | 1.4 | Notificaciones deadline | Alto | Media-Alta | Completado |
 | 1.5 | Desglose puntos jornada | Alto | Baja | Completado |

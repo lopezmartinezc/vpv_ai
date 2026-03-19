@@ -1030,7 +1030,40 @@ Forzar envio de recordatorio de deadline (Telegram + Push) ignorando ventanas de
 }
 ```
 
-## Lineups (deadline)
+## Lineups
+
+### `GET /api/lineups/{season_id}/history`
+
+Historial de alineaciones del usuario en la temporada.
+
+**Auth**: User
+
+**Response** `200`:
+```json
+{
+  "participant_id": 3,
+  "display_name": "Carlos L.",
+  "season_name": "2025-2026",
+  "lineups": [
+    {
+      "matchday_number": 30,
+      "formation": "1-4-3-3",
+      "total_points": 52,
+      "confirmed_at": "2026-03-19T18:00:00",
+      "players": [
+        {
+          "player_id": 101,
+          "player_name": "Oblak",
+          "position_slot": "POR",
+          "display_order": 1,
+          "photo_path": "players/oblak.webp",
+          "points": 7
+        }
+      ]
+    }
+  ]
+}
+```
 
 ### `GET /api/lineups/{season_id}/deadline-status`
 
