@@ -32,7 +32,7 @@ interface SeasonParticipant {
   group_name: string | null;
 }
 
-const GROUPS = ["Virtuales", "Petit Comite", "Vacas Sagradas"] as const;
+const GROUPS = ["Virtuales", "Petit Comite", "Vacas Sagradas", "Comando Badalona"] as const;
 
 
 export default function AdminUsuariosPage() {
