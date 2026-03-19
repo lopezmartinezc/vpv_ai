@@ -13,6 +13,7 @@ import { PagometroJornadaWidget } from "@/components/dashboard/pagometro-jornada
 import { PagometroWidget } from "@/components/dashboard/pagometro-widget";
 import { DeadlineWidget } from "@/components/dashboard/deadline-widget";
 import { SkeletonCards } from "@/components/ui/skeleton";
+import type { GroupStandingsResponse } from "@/types";
 import { Logo } from "@/components/ui/logo";
 import type { MatchdayDetailResponse } from "@/types";
 
@@ -36,6 +37,10 @@ export default function Home() {
   } = useDashboardData(
     selectedSeason?.id ?? null,
     mdCurrent,
+  );
+
+  const { data: groupStandings } = useFetch<GroupStandingsResponse>(
+    selectedSeason ? `/standings/${selectedSeason.id}/groups` : null,
   );
 
   // Fetch previous matchday to show when current has no scores yet
@@ -189,6 +194,37 @@ export default function Home() {
 
       {economy && economy.balances.length > 0 && (
         <PagometroWidget balances={economy.balances} />
+      )}
+
+      {/* Group standings */}
+      {groupStandings && groupStandings.groups.length > 0 && (
+        <div className="rounded-lg border border-vpv-card-border bg-vpv-card overflow-hidden">
+          <div className="border-b border-vpv-border bg-vpv-bg px-4 py-2.5">
+            <h2 className="text-sm font-semibold text-vpv-text">Grupos</h2>
+          </div>
+          <div className="divide-y divide-vpv-border">
+            {groupStandings.groups.map((g) => {
+              const isLast = g.rank === groupStandings.groups.length;
+              return (
+                <div
+                  key={g.group_name}
+                  className={`flex items-center justify-between px-4 py-2.5 ${
+                    isLast ? "bg-red-500/5" : g.rank === 1 ? "bg-amber-400/5" : ""
+                  }`}
+                >
+                  <span className="text-sm font-medium text-vpv-text">
+                    {g.rank === 1 && "\uD83C\uDFC6 "}
+                    {isLast && "\uD83C\uDF55 "}
+                    {g.rank}. {g.group_name}
+                  </span>
+                  <span className="text-sm tabular-nums font-bold text-vpv-text">
+                    {g.avg_points} <span className="text-xs font-normal text-vpv-text-muted">pts/usr</span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       )}
 
       <NavCards cards={navCards} />

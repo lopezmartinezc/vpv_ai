@@ -863,11 +863,17 @@ export interface AllTimeRecord {
   detail: string;
 }
 
+export interface GroupPoints {
+  group_name: string;
+  avg_points: number;
+}
+
 export interface SeasonGroupResult {
   season_id: number;
   season_name: string;
   winner: string;
   loser: string;
+  groups: GroupPoints[];
 }
 
 export interface GroupMemberEntry {
@@ -880,6 +886,8 @@ export interface GroupStandingEntry {
   rank: number;
   group_name: string;
   total_points: number;
+  avg_points: number;
+  member_count: number;
   members: GroupMemberEntry[];
 }
 

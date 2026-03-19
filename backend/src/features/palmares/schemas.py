@@ -36,11 +36,17 @@ class AllTimeRecord(BaseModel):
     detail: str
 
 
+class GroupPoints(BaseModel):
+    group_name: str
+    avg_points: float
+
+
 class SeasonGroupResult(BaseModel):
     season_id: int
     season_name: str
     winner: str
     loser: str  # pays pica-pica
+    groups: list[GroupPoints]
 
 
 class PalmaresResponse(BaseModel):

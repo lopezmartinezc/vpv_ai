@@ -55,6 +55,8 @@ class StandingsService:
                 rank=g["rank"],
                 group_name=g["group_name"],
                 total_points=g["total_points"],
+                avg_points=g["avg_points"],
+                member_count=g["member_count"],
                 members=[GroupMemberEntry(**m) for m in g["members"]],
             )
             for g in raw

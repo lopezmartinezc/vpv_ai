@@ -106,7 +106,7 @@ export default function ClasificacionPage() {
                       {isLast && " \uD83C\uDF55"}
                     </span>
                     <span className="text-sm font-bold tabular-nums text-vpv-text">
-                      {g.total_points.toLocaleString()} pts
+                      {g.avg_points} pts/usr
                     </span>
                   </div>
                   <div className="px-4 py-2 space-y-1">

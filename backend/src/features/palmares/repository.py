@@ -173,12 +173,15 @@ class PalmaresRepository:
             0,
         ).label("total_points")
 
+        member_count = func.count(SeasonParticipant.id.distinct()).label("member_count")
+
         stmt = (
             select(
                 Season.id.label("season_id"),
                 Season.name.label("season_name"),
                 SeasonParticipant.group_name,
                 total_pts,
+                member_count,
             )
             .join(SeasonParticipant, SeasonParticipant.season_id == Season.id)
             .outerjoin(
@@ -191,13 +194,13 @@ class PalmaresRepository:
                 SeasonParticipant.group_name.isnot(None),
             )
             .group_by(Season.id, Season.name, SeasonParticipant.group_name)
-            .order_by(Season.id.desc(), total_pts.desc())
+            .order_by(Season.id.desc())
         )
 
         result = await self.session.execute(stmt)
         rows = result.all()
 
-        # Group by season
+        # Group by season, compute avg per group
         seasons: dict[int, dict] = {}
         for row in rows:
             sid = row.season_id
@@ -207,19 +210,22 @@ class PalmaresRepository:
                     "season_name": row.season_name,
                     "groups": [],
                 }
+            total = int(row.total_points)
+            members = int(row.member_count)
+            avg = round(total / members, 1) if members else 0
             seasons[sid]["groups"].append(
                 {
                     "group_name": row.group_name,
-                    "total_points": int(row.total_points),
+                    "avg_points": avg,
                 }
             )
 
         history: list[dict] = []
         for s in seasons.values():
-            groups = s["groups"]
+            groups = sorted(s["groups"], key=lambda g: g["avg_points"], reverse=True)
             if len(groups) < 2:
                 continue
-            winner = groups[0]["group_name"]  # already sorted DESC
+            winner = groups[0]["group_name"]
             loser = groups[-1]["group_name"]
             history.append(
                 {
@@ -227,6 +233,7 @@ class PalmaresRepository:
                     "season_name": s["season_name"],
                     "winner": winner,
                     "loser": loser,
+                    "groups": groups,
                 }
             )
 

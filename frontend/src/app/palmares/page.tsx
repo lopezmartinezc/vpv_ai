@@ -212,36 +212,45 @@ export default function PalmaresPage() {
           <h2 className="mb-3 text-lg font-semibold text-vpv-text">
             Historial de grupos
           </h2>
-          <div className="rounded-lg border border-vpv-card-border bg-vpv-card overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-vpv-border bg-vpv-bg text-left text-vpv-text-muted">
-                  <th className="px-4 py-2">Temporada</th>
-                  <th className="px-4 py-2">Campeon</th>
-                  <th className="px-4 py-2">Paga pica-pica</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.group_history.map((g) => (
-                  <tr
-                    key={g.season_id}
-                    className="border-b border-vpv-border last:border-0"
-                  >
-                    <td className="px-4 py-2 text-vpv-text">{g.season_name}</td>
-                    <td className="px-4 py-2">
-                      <span className="text-amber-400 font-medium">
-                        {"\uD83C\uDFC6"} {g.winner}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2">
-                      <span className="text-red-400 font-medium">
-                        {"\uD83C\uDF55"} {g.loser}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {data.group_history.map((season) => (
+              <div
+                key={season.season_id}
+                className="rounded-lg border border-vpv-card-border bg-vpv-card overflow-hidden"
+              >
+                <div className="border-b border-vpv-border bg-vpv-bg px-4 py-2">
+                  <span className="text-sm font-semibold text-vpv-text">
+                    {season.season_name}
+                  </span>
+                </div>
+                <div className="px-4 py-3 space-y-1.5">
+                  {season.groups.map((gp, i) => {
+                    const isWinner = gp.group_name === season.winner;
+                    const isLoser = gp.group_name === season.loser;
+                    return (
+                      <div key={gp.group_name} className="flex items-center justify-between">
+                        <span
+                          className={`text-sm ${
+                            isWinner
+                              ? "font-bold text-amber-400"
+                              : isLoser
+                                ? "font-medium text-red-400"
+                                : "text-vpv-text"
+                          }`}
+                        >
+                          {isWinner && "\uD83C\uDFC6 "}
+                          {isLoser && "\uD83C\uDF55 "}
+                          {i + 1}. {gp.group_name}
+                        </span>
+                        <span className="text-xs tabular-nums text-vpv-text-muted">
+                          {gp.avg_points} pts/usr
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         </section>
       )}

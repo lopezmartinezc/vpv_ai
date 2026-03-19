@@ -6,6 +6,7 @@ from src.features.palmares.repository import PalmaresRepository
 from src.features.palmares.schemas import (
     AllTimeRecord,
     CareerEntry,
+    GroupPoints,
     PalmaresResponse,
     PodiumEntry,
     SeasonChampion,
@@ -150,7 +151,16 @@ class PalmaresService:
 
         # 4. Group history
         raw_groups = await self.repo.get_group_history()
-        group_history = [SeasonGroupResult(**g) for g in raw_groups]
+        group_history = [
+            SeasonGroupResult(
+                season_id=g["season_id"],
+                season_name=g["season_name"],
+                winner=g["winner"],
+                loser=g["loser"],
+                groups=[GroupPoints(**gp) for gp in g["groups"]],
+            )
+            for g in raw_groups
+        ]
 
         return PalmaresResponse(
             champions=champions,

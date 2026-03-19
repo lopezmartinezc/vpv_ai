@@ -41,6 +41,8 @@ class GroupStandingEntry(BaseModel):
     rank: int
     group_name: str
     total_points: int
+    avg_points: float
+    member_count: int
     members: list[GroupMemberEntry]
 
 

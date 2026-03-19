@@ -135,8 +135,14 @@ class StandingsRepository:
                 }
             )
 
-        # Sort groups by total_points DESC and assign ranks
-        sorted_groups = sorted(groups.values(), key=lambda g: g["total_points"], reverse=True)
+        # Calculate avg_points (total / members) for fair comparison
+        for g in groups.values():
+            member_count = len(g["members"])
+            g["avg_points"] = round(g["total_points"] / member_count, 1) if member_count else 0
+            g["member_count"] = member_count
+
+        # Sort by avg_points DESC (fair ranking) and assign ranks
+        sorted_groups = sorted(groups.values(), key=lambda g: g["avg_points"], reverse=True)
         for i, g in enumerate(sorted_groups):
             g["rank"] = i + 1
 
