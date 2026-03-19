@@ -183,10 +183,12 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 
 ### 4.7 Grupos de participantes
 - **Problema**: La liga tiene 3 grupos (Virtuales, Petit Comite, Vacas Sagradas) que compiten entre si. El ultimo grupo paga pica-pica en el siguiente draft.
-- **Solucion**: Campo `group_name` en `season_participants`. Clasificacion de grupos en `/clasificacion`. Historial de grupos en `/palmares`. Admin asigna grupos en Admin > Usuarios.
+- **Solucion**: Campo `group_name` en `season_participants`. Clasificacion de grupos en `/clasificacion` y home. Historial de grupos en `/palmares`. Admin asigna grupos en Admin > Usuarios.
+- **Grupos**: Virtuales, Petit Comite, Vacas Sagradas, Comando Badalona
+- **Ranking**: por media de puntos por miembro (pts/usr), no suma directa — justo si los grupos tienen distinto tamaño
 - **Complejidad**: Media
 - **Estado**: [x] Completado (2026-03-19)
-- **Notas**: Migracion: `ALTER TABLE season_participants ADD COLUMN group_name VARCHAR(50);`
+- **Notas**: Migracion: `ALTER TABLE season_participants ADD COLUMN group_name VARCHAR(50);`. Ultimo grupo paga pica-pica.
 
 ---
 

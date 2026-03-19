@@ -642,7 +642,7 @@ Asignar grupo a un participante.
 { "group_name": "Virtuales" }
 ```
 
-> `group_name` puede ser null para quitar del grupo. Valores tipicos: "Virtuales", "Petit Comite", "Vacas Sagradas".
+> `group_name` puede ser null para quitar del grupo. Valores: "Virtuales", "Petit Comite", "Vacas Sagradas", "Comando Badalona".
 
 **Response** `200`: `SeasonParticipantResponse` (incluye `group_name`)
 
