@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.lineups.schemas import (
     DeadlineStatusResponse,
+    LineupHistoryResponse,
     LineupSubmitRequest,
     LineupSubmitResponse,
     MyLineupResponse,
@@ -54,6 +55,22 @@ async def submit_lineup(
         season_id=season_id,
         matchday_number=matchday_number,
         data=data,
+    )
+
+
+@router.get(
+    "/{season_id}/history",
+    response_model=LineupHistoryResponse,
+)
+async def get_lineup_history(
+    season_id: int,
+    user: dict = Depends(get_current_user),
+    service: LineupService = Depends(_get_service),
+) -> LineupHistoryResponse:
+    """Get all lineups for the current user in a season."""
+    return await service.get_lineup_history(
+        user_id=int(user["sub"]),
+        season_id=season_id,
     )
 
 

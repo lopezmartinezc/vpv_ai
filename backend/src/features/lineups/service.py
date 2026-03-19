@@ -10,6 +10,9 @@ from src.features.lineups.repository import LineupRepository
 from src.features.lineups.schemas import (
     DeadlineStatusResponse,
     FormMatch,
+    LineupHistoryEntry,
+    LineupHistoryPlayerEntry,
+    LineupHistoryResponse,
     LineupPlayerResponse,
     LineupPlayerSlot,
     LineupSubmitRequest,
@@ -269,6 +272,41 @@ class LineupService:
             deadline_at=deadline,
             minutes_remaining=minutes_remaining,
             matchday_number=md_number,
+        )
+
+    async def get_lineup_history(self, user_id: int, season_id: int) -> LineupHistoryResponse:
+        """Get all lineups for the current user in a season."""
+        participant = await self.repo.get_participant_for_user(season_id, user_id)
+        if participant is None:
+            raise NotFoundError("Participante", f"user={user_id}, season={season_id}")
+
+        season = await self.repo.get_season(season_id)
+        if season is None:
+            raise NotFoundError("Temporada", season_id)
+
+        from src.shared.models.user import User
+
+        user_obj = await self.session.get(User, user_id)
+        display_name = user_obj.display_name if user_obj else "Unknown"
+
+        rows = await self.repo.get_participant_lineups(participant.id, season_id)
+
+        lineups = [
+            LineupHistoryEntry(
+                matchday_number=r["matchday_number"],
+                formation=r["formation"],
+                total_points=r["total_points"],
+                confirmed_at=r["confirmed_at"],
+                players=[LineupHistoryPlayerEntry(**p) for p in r["players"]],
+            )
+            for r in rows
+        ]
+
+        return LineupHistoryResponse(
+            participant_id=participant.id,
+            display_name=display_name,
+            season_name=season.name,
+            lineups=lineups,
         )
 
     async def _validate_deadline(self, matchday: object, season_id: int) -> None:

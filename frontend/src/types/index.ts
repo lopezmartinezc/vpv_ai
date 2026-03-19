@@ -438,6 +438,30 @@ export interface CurrentLineupData {
   players: LineupPlayerResponseData[];
 }
 
+export interface LineupHistoryPlayerEntry {
+  player_id: number;
+  player_name: string;
+  position_slot: string;
+  display_order: number;
+  photo_path: string | null;
+  points: number;
+}
+
+export interface LineupHistoryEntry {
+  matchday_number: number;
+  formation: string;
+  total_points: number;
+  confirmed_at: string | null;
+  players: LineupHistoryPlayerEntry[];
+}
+
+export interface LineupHistoryResponse {
+  participant_id: number;
+  display_name: string;
+  season_name: string;
+  lineups: LineupHistoryEntry[];
+}
+
 export interface MyLineupResponse {
   participant_id: number;
   display_name: string;

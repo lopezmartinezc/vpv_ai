@@ -90,3 +90,27 @@ class DeadlineStatusResponse(BaseModel):
     deadline_at: datetime | None = None
     minutes_remaining: int | None = None
     matchday_number: int
+
+
+class LineupHistoryPlayerEntry(BaseModel):
+    player_id: int
+    player_name: str
+    position_slot: str
+    display_order: int
+    photo_path: str | None = None
+    points: int
+
+
+class LineupHistoryEntry(BaseModel):
+    matchday_number: int
+    formation: str
+    total_points: int
+    confirmed_at: datetime | None = None
+    players: list[LineupHistoryPlayerEntry]
+
+
+class LineupHistoryResponse(BaseModel):
+    participant_id: int
+    display_name: str
+    season_name: str
+    lineups: list[LineupHistoryEntry]

@@ -431,3 +431,76 @@ class LineupRepository:
             }
 
         return form_data
+
+    async def get_participant_lineups(self, participant_id: int, season_id: int) -> list[dict]:
+        """Get all lineups for a participant in a season, with players and points.
+
+        Returns list of dicts with lineup info + nested player list,
+        ordered by matchday number descending.
+        """
+        # 1. Get all lineups for this participant in this season
+        stmt = (
+            select(
+                Lineup.id.label("lineup_id"),
+                Lineup.formation,
+                Lineup.total_points,
+                Lineup.confirmed_at,
+                Matchday.number.label("matchday_number"),
+            )
+            .join(Matchday, Lineup.matchday_id == Matchday.id)
+            .where(
+                Lineup.participant_id == participant_id,
+                Matchday.season_id == season_id,
+            )
+            .order_by(Matchday.number.desc())
+        )
+        result = await self.session.execute(stmt)
+        lineup_rows = result.all()
+
+        if not lineup_rows:
+            return []
+
+        # 2. Get all players for these lineups in one query
+        lineup_ids = [r.lineup_id for r in lineup_rows]
+        players_stmt = (
+            select(
+                LineupPlayer.lineup_id,
+                LineupPlayer.player_id,
+                Player.display_name.label("player_name"),
+                LineupPlayer.position_slot,
+                LineupPlayer.display_order,
+                Player.photo_path,
+                LineupPlayer.points,
+            )
+            .join(Player, LineupPlayer.player_id == Player.id)
+            .where(LineupPlayer.lineup_id.in_(lineup_ids))
+            .order_by(LineupPlayer.lineup_id, LineupPlayer.display_order)
+        )
+        players_result = await self.session.execute(players_stmt)
+        all_players = players_result.all()
+
+        # Group players by lineup_id
+        players_by_lineup: dict[int, list[dict]] = {}
+        for p in all_players:
+            players_by_lineup.setdefault(p.lineup_id, []).append(
+                {
+                    "player_id": p.player_id,
+                    "player_name": p.player_name,
+                    "position_slot": p.position_slot,
+                    "display_order": p.display_order,
+                    "photo_path": p.photo_path,
+                    "points": p.points or 0,
+                }
+            )
+
+        # 3. Build result
+        return [
+            {
+                "matchday_number": r.matchday_number,
+                "formation": r.formation,
+                "total_points": r.total_points or 0,
+                "confirmed_at": r.confirmed_at,
+                "players": players_by_lineup.get(r.lineup_id, []),
+            }
+            for r in lineup_rows
+        ]

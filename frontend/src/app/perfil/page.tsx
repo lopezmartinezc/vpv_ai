@@ -7,7 +7,8 @@ import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
 import { apiClient } from "@/lib/api-client";
 import { PersonalEvolution } from "@/components/standings/personal-evolution";
-import type { EvolutionEntry } from "@/types";
+import { PlayerAvatar } from "@/components/ui/player-avatar";
+import type { EvolutionEntry, LineupHistoryResponse } from "@/types";
 
 interface EvolutionResponse {
   season_id: number;
@@ -23,6 +24,13 @@ interface MeResponse {
   is_draft_manager: boolean;
 }
 
+const POS_COLORS: Record<string, string> = {
+  POR: "text-amber-400 border-amber-400/30",
+  DEF: "text-blue-400 border-blue-400/30",
+  MED: "text-green-400 border-green-400/30",
+  DEL: "text-red-400 border-red-400/30",
+};
+
 export default function PerfilPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
@@ -31,6 +39,13 @@ export default function PerfilPage() {
   const { data: evolution } = useFetch<EvolutionResponse>(
     selectedSeason ? `/standings/${selectedSeason.id}/evolution` : null,
   );
+  const { data: history } = useFetch<LineupHistoryResponse>(
+    user && selectedSeason
+      ? `/lineups/${selectedSeason.id}/history`
+      : null,
+  );
+
+  const [expandedMd, setExpandedMd] = useState<number | null>(null);
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -58,15 +73,15 @@ export default function PerfilPage() {
     setSuccess(null);
 
     if (newPassword.length < 8) {
-      setError("La nueva contraseña debe tener al menos 8 caracteres");
+      setError("La nueva contrasena debe tener al menos 8 caracteres");
       return;
     }
     if (newPassword !== confirmPassword) {
-      setError("Las contraseñas no coinciden");
+      setError("Las contrasenas no coinciden");
       return;
     }
     if (currentPassword === newPassword) {
-      setError("La nueva contraseña debe ser diferente a la actual");
+      setError("La nueva contrasena debe ser diferente a la actual");
       return;
     }
 
@@ -76,13 +91,13 @@ export default function PerfilPage() {
         current_password: currentPassword,
         new_password: newPassword,
       });
-      setSuccess("Contraseña actualizada correctamente");
+      setSuccess("Contrasena actualizada correctamente");
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
     } catch (e) {
       setError(
-        e instanceof Error ? e.message : "Error al cambiar la contraseña",
+        e instanceof Error ? e.message : "Error al cambiar la contrasena",
       );
     } finally {
       setSaving(false);
@@ -130,10 +145,108 @@ export default function PerfilPage() {
         </section>
       )}
 
+      {/* Lineup history */}
+      {history && history.lineups.length > 0 && (
+        <section>
+          <h2 className="mb-3 text-lg font-semibold text-vpv-text">
+            Historial de alineaciones
+          </h2>
+          <div className="space-y-2">
+            {history.lineups.map((lineup) => {
+              const isExpanded = expandedMd === lineup.matchday_number;
+              return (
+                <div
+                  key={lineup.matchday_number}
+                  className="rounded-lg border border-vpv-card-border bg-vpv-card overflow-hidden"
+                >
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpandedMd(isExpanded ? null : lineup.matchday_number)
+                    }
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-vpv-bg/50"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-vpv-accent/10 text-sm font-bold text-vpv-accent">
+                        J{lineup.matchday_number}
+                      </span>
+                      <div>
+                        <span className="text-sm font-medium text-vpv-text">
+                          {lineup.formation}
+                        </span>
+                        {lineup.confirmed_at && (
+                          <p className="text-[11px] text-vpv-text-muted">
+                            {new Date(lineup.confirmed_at).toLocaleDateString(
+                              "es-ES",
+                              { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" },
+                            )}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg font-bold tabular-nums text-vpv-text">
+                        {lineup.total_points}
+                      </span>
+                      <span className="text-[10px] text-vpv-text-muted">pts</span>
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        className={`text-vpv-text-muted transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                      >
+                        <path
+                          d="M4 6l4 4 4-4"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </div>
+                  </button>
+
+                  {isExpanded && (
+                    <div className="border-t border-vpv-border px-4 py-3">
+                      <div className="space-y-1.5">
+                        {lineup.players.map((p) => (
+                          <div
+                            key={p.player_id}
+                            className="flex items-center gap-2.5"
+                          >
+                            <PlayerAvatar
+                              photoPath={p.photo_path}
+                              name={p.player_name}
+                              size={28}
+                            />
+                            <span
+                              className={`rounded border px-1 py-px text-[9px] font-bold ${POS_COLORS[p.position_slot] ?? "text-vpv-text-muted border-vpv-border"}`}
+                            >
+                              {p.position_slot}
+                            </span>
+                            <span className="flex-1 truncate text-sm text-vpv-text">
+                              {p.player_name}
+                            </span>
+                            <span className="text-sm font-medium tabular-nums text-vpv-text-muted">
+                              {p.points}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       {/* Change password */}
       <section className="rounded-lg border border-vpv-card-border bg-vpv-card p-5">
         <h2 className="mb-4 text-lg font-semibold text-vpv-text">
-          Cambiar contraseña
+          Cambiar contrasena
         </h2>
 
         {error && (
@@ -153,7 +266,7 @@ export default function PerfilPage() {
               htmlFor="current"
               className="mb-1 block text-sm text-vpv-text-muted"
             >
-              Contraseña actual
+              Contrasena actual
             </label>
             <input
               id="current"
@@ -169,7 +282,7 @@ export default function PerfilPage() {
               htmlFor="new"
               className="mb-1 block text-sm text-vpv-text-muted"
             >
-              Nueva contraseña
+              Nueva contrasena
             </label>
             <input
               id="new"
@@ -187,7 +300,7 @@ export default function PerfilPage() {
               htmlFor="confirm"
               className="mb-1 block text-sm text-vpv-text-muted"
             >
-              Confirmar nueva contraseña
+              Confirmar nueva contrasena
             </label>
             <input
               id="confirm"
@@ -204,7 +317,7 @@ export default function PerfilPage() {
             disabled={saving || !currentPassword || !newPassword || !confirmPassword}
             className="rounded-lg bg-vpv-accent px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-vpv-accent/80 disabled:opacity-50"
           >
-            {saving ? "Guardando..." : "Cambiar contraseña"}
+            {saving ? "Guardando..." : "Cambiar contrasena"}
           </button>
         </form>
       </section>
