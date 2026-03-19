@@ -94,6 +94,19 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 - **Complejidad**: Media
 - **Estado**: [ ] Pendiente
 
+### 2.5 Acierto de Mister (Manager Accuracy)
+- **Problema**: Los usuarios no saben si eligen bien su XI de entre sus 26 jugadores
+- **Solucion**: Calculo de alineacion optima por jornada (prueba 7 formaciones) vs lo que pusiste
+- **Implementacion**:
+  - Perfil: seccion con accuracy media, semanas perfectas, puntos perdidos + lista expandible por jornada con missed calls
+  - Pagina `/acierto`: ranking publico de todos los participantes + filtro por jornada
+  - Detalle por jornada: XI actual vs XI optimo lado a lado, jugadores en rojo/verde, cambios sugeridos
+  - Usa `player_ownership_log` para propiedad historica correcta (draft invierno)
+  - Respeta `match.counts` y `player_stats.position` (fuente de verdad)
+- **Complejidad**: Alta
+- **Estado**: [x] Completado (2026-03-19)
+- **Notas**: Endpoint `GET /lineups/{season_id}/accuracy` (personal) + `GET /lineups/{season_id}/accuracy/ranking?matchday=N` (publico). Racha de forma (ultimos 5 partidos) tambien añadida a la seleccion de alineacion.
+
 ---
 
 ## Prioridad 3 — Features nuevos, complejidad alta
@@ -173,6 +186,7 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 | 3.3 | Predicciones | Medio | Alta | Completado |
 | 4.1 | PWA | Medio | Baja | Completado |
 | 4.2 | Lazy loading | Bajo | Media | Pendiente |
+| 2.5 | Acierto de Mister | Alto | Alta | Completado |
 | 4.3 | Tests | Alto (tecnico) | Alta | Pendiente |
 | 4.4 | Sesion unica | Alto (seguridad) | Media | Completado |
 | 4.5 | Ciclo vida temporada | Alto (operativo) | Media | Completado |

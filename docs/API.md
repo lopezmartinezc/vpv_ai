@@ -1065,6 +1065,60 @@ Historial de alineaciones del usuario en la temporada.
 }
 ```
 
+### `GET /api/lineups/{season_id}/accuracy`
+
+Calcular accuracy del usuario: XI real vs XI optimo por jornada.
+
+**Auth**: User
+
+**Response** `200`:
+```json
+{
+  "participant_id": 3,
+  "display_name": "Carlos L.",
+  "season_name": "2025-2026",
+  "avg_accuracy": 81.3,
+  "perfect_weeks": 8,
+  "total_missed_points": 187,
+  "matchdays": [
+    {
+      "matchday_number": 30,
+      "actual_points": 52,
+      "optimal_points": 68,
+      "accuracy_pct": 76.5,
+      "formation_used": "1-4-3-3",
+      "optimal_formation": "1-4-4-2",
+      "missed_calls": [
+        { "position": "POR", "benched_name": "Oblak", "benched_points": 15, "lined_up_name": "Remiro", "lined_up_points": 2 }
+      ]
+    }
+  ]
+}
+```
+
+### `GET /api/lineups/{season_id}/accuracy/ranking`
+
+Ranking de acierto de todos los participantes.
+
+**Auth**: Publico
+
+**Query params**:
+- `matchday` (int, opcional): si se pasa, ranking para esa jornada con detalle de jugadores (XI actual vs optimo)
+
+**Response** `200` (sin matchday):
+```json
+{
+  "season_id": 8,
+  "season_name": "2025-2026",
+  "matchday_number": null,
+  "entries": [
+    { "rank": 1, "participant_id": 3, "display_name": "Carlos L.", "avg_accuracy": 85.2, "perfect_weeks": 10, "total_missed_points": 142, "matchdays_played": 30 }
+  ]
+}
+```
+
+**Response** `200` (con `?matchday=25`): incluye `matchday_entries` con detalle de jugadores (`in_actual`/`in_optimal` flags) y `missed_calls`.
+
 ### `GET /api/lineups/{season_id}/deadline-status`
 
 Comprobar si el usuario tiene alineacion y tiempo restante hasta el deadline.
