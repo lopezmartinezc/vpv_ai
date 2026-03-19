@@ -6,7 +6,7 @@ from sqlalchemy import and_, case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.shared.models.lineup import Lineup, LineupPlayer
-from src.shared.models.matchday import Matchday
+from src.shared.models.matchday import Match, Matchday
 from src.shared.models.participant import SeasonParticipant
 from src.shared.models.player import Player
 from src.shared.models.player_stat import PlayerStat
@@ -309,3 +309,99 @@ class LineupRepository:
 
         result = await self.session.execute(stmt)
         return [dict(r._mapping) for r in result.all()]
+
+    async def get_squad_recent_form(
+        self, season_id: int, player_ids: list[int], n: int = 5
+    ) -> dict[int, dict]:
+        """Get last N matchday stats per player for form display.
+
+        Returns dict[player_id] with matches list + aggregate stats.
+        """
+        if not player_ids:
+            return {}
+
+        is_home = case(
+            (Player.team_id == Match.home_team_id, True),
+            else_=False,
+        ).label("is_home")
+
+        ranked = (
+            select(
+                PlayerStat.player_id,
+                PlayerStat.result,
+                PlayerStat.pts_total,
+                PlayerStat.pts_clean_sheet,
+                PlayerStat.goals,
+                PlayerStat.assists,
+                PlayerStat.penalty_goals,
+                PlayerStat.yellow_card,
+                Matchday.number.label("md_number"),
+                is_home,
+                func.row_number()
+                .over(
+                    partition_by=PlayerStat.player_id,
+                    order_by=Matchday.number.desc(),
+                )
+                .label("rn"),
+            )
+            .join(Matchday, PlayerStat.matchday_id == Matchday.id)
+            .join(Player, PlayerStat.player_id == Player.id)
+            .outerjoin(Match, PlayerStat.match_id == Match.id)
+            .where(
+                PlayerStat.player_id.in_(player_ids),
+                Matchday.season_id == season_id,
+                Matchday.counts.is_(True),
+                PlayerStat.played.is_(True),
+            )
+            .subquery()
+        )
+
+        stmt = (
+            select(
+                ranked.c.player_id,
+                ranked.c.result,
+                ranked.c.pts_total,
+                ranked.c.pts_clean_sheet,
+                ranked.c.goals,
+                ranked.c.assists,
+                ranked.c.penalty_goals,
+                ranked.c.yellow_card,
+                ranked.c.md_number,
+                ranked.c.is_home,
+            )
+            .where(ranked.c.rn <= n)
+            .order_by(ranked.c.player_id, ranked.c.md_number)
+        )
+
+        result = await self.session.execute(stmt)
+        rows = result.all()
+
+        form_data: dict[int, dict] = {}
+        for row in rows:
+            pid = row.player_id
+            if pid not in form_data:
+                form_data[pid] = {
+                    "matches": [],
+                    "clean_sheets": 0,
+                    "goals": 0,
+                    "assists": 0,
+                    "penalty_goals": 0,
+                    "yellow_cards": 0,
+                }
+            entry = form_data[pid]
+            entry["matches"].append(
+                {
+                    "result": row.result or 0,
+                    "is_home": bool(row.is_home),
+                    "points": row.pts_total or 0,
+                }
+            )
+            if (row.pts_clean_sheet or 0) > 0:
+                entry["clean_sheets"] += 1
+            entry["goals"] += row.goals or 0
+            entry["assists"] += row.assists or 0
+            entry["penalty_goals"] += row.penalty_goals or 0
+            if row.yellow_card:
+                entry["yellow_cards"] += 1
+
+        return form_data

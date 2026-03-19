@@ -15,6 +15,7 @@ import type {
   MatchdayDetailResponse,
   MatchEntry,
   MyLineupResponse,
+  PlayerRecentForm,
   SquadPlayerEntry,
   ValidFormation,
 } from "@/types";
@@ -279,6 +280,69 @@ function SquadColumn({
   );
 }
 
+function FormIndicator({ form }: { form: PlayerRecentForm }) {
+  return (
+    <div className="flex items-center gap-0.5">
+      {form.matches.map((m, i) => (
+        <div key={i} className="flex flex-col items-center">
+          <div
+            className={`h-2.5 w-2.5 rounded-full ${
+              m.result === 2
+                ? "bg-green-500"
+                : m.result === 1
+                  ? "bg-gray-400"
+                  : "bg-red-500"
+            }`}
+            title={`${m.result === 2 ? "V" : m.result === 1 ? "E" : "D"} ${m.is_home ? "(C)" : "(F)"} ${m.points}pts`}
+          />
+          <span className="text-[7px] leading-none text-vpv-text-muted">
+            {m.is_home ? "C" : "F"}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PlayerFormStats({
+  form,
+  position,
+}: {
+  form: PlayerRecentForm;
+  position: string;
+}) {
+  const isDef = position === "POR" || position === "DEF";
+  const totalGoals = form.goals + form.penalty_goals;
+  return (
+    <div className="flex items-center gap-1.5 text-[10px] text-vpv-text-muted">
+      {isDef && (
+        <span title="Imbatibilidades">
+          <span className="opacity-70">&#128737;</span>
+          {form.clean_sheets}
+        </span>
+      )}
+      {totalGoals > 0 && (
+        <span title="Goles">
+          <span className="opacity-70">&#9917;</span>
+          {totalGoals}
+        </span>
+      )}
+      {form.assists > 0 && (
+        <span title="Asistencias">
+          <span className="opacity-70">&#128095;</span>
+          {form.assists}
+        </span>
+      )}
+      {form.yellow_cards > 0 && (
+        <span title="Tarjetas amarillas">
+          <span className="opacity-70">&#128993;</span>
+          {form.yellow_cards}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function PlayerCard({
   player,
   isSelected,
@@ -320,6 +384,15 @@ function PlayerCard({
         <p className="truncate text-xs text-vpv-text-muted">
           {player.team_name}
         </p>
+        {player.recent_form && player.recent_form.matches.length > 0 && (
+          <div className="mt-0.5 flex items-center gap-2">
+            <FormIndicator form={player.recent_form} />
+            <PlayerFormStats
+              form={player.recent_form}
+              position={player.position}
+            />
+          </div>
+        )}
       </div>
 
       <div className="flex shrink-0 flex-col items-end gap-0.5">

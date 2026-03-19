@@ -275,6 +275,21 @@ export interface SquadListResponse {
   squads: SquadSummary[];
 }
 
+export interface FormMatch {
+  result: number; // 0=L, 1=D, 2=W
+  is_home: boolean;
+  points: number;
+}
+
+export interface PlayerRecentForm {
+  matches: FormMatch[];
+  clean_sheets: number;
+  goals: number;
+  assists: number;
+  penalty_goals: number;
+  yellow_cards: number;
+}
+
 export interface SquadPlayerEntry {
   player_id: number;
   display_name: string;
@@ -282,6 +297,7 @@ export interface SquadPlayerEntry {
   position: string;
   team_name: string;
   season_points: number;
+  recent_form: PlayerRecentForm | null;
 }
 
 export interface SquadDetailResponse {

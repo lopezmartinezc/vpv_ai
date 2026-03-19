@@ -49,6 +49,21 @@ class LineupSubmitResponse(BaseModel):
     players: list[LineupPlayerResponse]
 
 
+class FormMatch(BaseModel):
+    result: int  # 0=L, 1=D, 2=W
+    is_home: bool
+    points: int
+
+
+class PlayerRecentForm(BaseModel):
+    matches: list[FormMatch]  # last 5, oldest→newest
+    clean_sheets: int
+    goals: int
+    assists: int
+    penalty_goals: int
+    yellow_cards: int
+
+
 class SquadPlayerForLineup(BaseModel):
     """Player entry from the user's squad, for lineup selection."""
 
@@ -58,6 +73,7 @@ class SquadPlayerForLineup(BaseModel):
     position: str
     team_name: str
     season_points: int
+    recent_form: PlayerRecentForm | None = None
 
 
 class MyLineupResponse(BaseModel):

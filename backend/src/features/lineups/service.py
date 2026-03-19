@@ -9,11 +9,13 @@ from src.core.exceptions import BusinessRuleError, NotFoundError
 from src.features.lineups.repository import LineupRepository
 from src.features.lineups.schemas import (
     DeadlineStatusResponse,
+    FormMatch,
     LineupPlayerResponse,
     LineupPlayerSlot,
     LineupSubmitRequest,
     LineupSubmitResponse,
     MyLineupResponse,
+    PlayerRecentForm,
     SquadPlayerForLineup,
 )
 
@@ -61,28 +63,48 @@ class LineupService:
         # Get squad players
         squad_rows = await self.repo.get_squad_players(season_id, participant.id)
 
+        # Get recent form for all squad players
+        player_ids = [r["player_id"] for r in squad_rows]
+        form_data = await self.repo.get_squad_recent_form(season_id, player_ids)
+
         # Get display_name from the user
         from src.shared.models.user import User
 
         user_obj = await self.session.get(User, user_id)
         display_name = user_obj.display_name if user_obj else "Unknown"
 
-        return MyLineupResponse(
-            participant_id=participant.id,
-            display_name=display_name,
-            lineup_deadline_min=season.lineup_deadline_min,
-            current_lineup=current_lineup,
-            squad=[
+        squad: list[SquadPlayerForLineup] = []
+        for r in squad_rows:
+            pid = r["player_id"]
+            form = form_data.get(pid)
+            recent_form = None
+            if form:
+                recent_form = PlayerRecentForm(
+                    matches=[FormMatch(**m) for m in form["matches"]],
+                    clean_sheets=form["clean_sheets"],
+                    goals=form["goals"],
+                    assists=form["assists"],
+                    penalty_goals=form["penalty_goals"],
+                    yellow_cards=form["yellow_cards"],
+                )
+            squad.append(
                 SquadPlayerForLineup(
-                    player_id=r["player_id"],
+                    player_id=pid,
                     display_name=r["display_name"],
                     photo_path=r["photo_path"],
                     position=r["position"],
                     team_name=r["team_name"],
                     season_points=r["season_points"],
+                    recent_form=recent_form,
                 )
-                for r in squad_rows
-            ],
+            )
+
+        return MyLineupResponse(
+            participant_id=participant.id,
+            display_name=display_name,
+            lineup_deadline_min=season.lineup_deadline_min,
+            current_lineup=current_lineup,
+            squad=squad,
         )
 
     async def submit_lineup(
