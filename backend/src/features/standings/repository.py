@@ -75,3 +75,69 @@ class StandingsRepository:
             )
             for row in result.all()
         ]
+
+    async def get_group_standings(self, season_id: int) -> list[dict]:
+        """Get group standings: total points per group with member breakdown."""
+        total_pts = func.coalesce(
+            func.sum(
+                case(
+                    (Matchday.counts.is_(True), ParticipantMatchdayScore.total_points),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("total_points")
+
+        stmt = (
+            select(
+                SeasonParticipant.group_name,
+                SeasonParticipant.id.label("participant_id"),
+                User.display_name,
+                total_pts,
+            )
+            .join(User, SeasonParticipant.user_id == User.id)
+            .outerjoin(
+                ParticipantMatchdayScore,
+                ParticipantMatchdayScore.participant_id == SeasonParticipant.id,
+            )
+            .outerjoin(
+                Matchday,
+                ParticipantMatchdayScore.matchday_id == Matchday.id,
+            )
+            .where(
+                SeasonParticipant.season_id == season_id,
+                SeasonParticipant.is_active.is_(True),
+                SeasonParticipant.group_name.isnot(None),
+            )
+            .group_by(
+                SeasonParticipant.group_name,
+                SeasonParticipant.id,
+                User.display_name,
+            )
+            .order_by(SeasonParticipant.group_name, total_pts.desc())
+        )
+
+        result = await self.session.execute(stmt)
+        rows = result.all()
+
+        groups: dict[str, dict] = {}
+        for row in rows:
+            gn = row.group_name
+            if gn not in groups:
+                groups[gn] = {"group_name": gn, "total_points": 0, "members": []}
+            pts = int(row.total_points)
+            groups[gn]["total_points"] += pts
+            groups[gn]["members"].append(
+                {
+                    "participant_id": row.participant_id,
+                    "display_name": row.display_name,
+                    "total_points": pts,
+                }
+            )
+
+        # Sort groups by total_points DESC and assign ranks
+        sorted_groups = sorted(groups.values(), key=lambda g: g["total_points"], reverse=True)
+        for i, g in enumerate(sorted_groups):
+            g["rank"] = i + 1
+
+        return sorted_groups

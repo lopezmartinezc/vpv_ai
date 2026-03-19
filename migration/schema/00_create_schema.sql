@@ -128,6 +128,7 @@ CREATE TABLE season_participants (
     user_id         INT      NOT NULL REFERENCES users(id),
     draft_order     SMALLINT,  -- Puesto en el sorteo del draft (1,2,3...)
     is_active       BOOLEAN  NOT NULL DEFAULT TRUE,
+    group_name      VARCHAR(50),  -- Grupo: Virtuales, Petit Comite, Vacas Sagradas
     UNIQUE(season_id, user_id)
 );
 

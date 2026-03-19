@@ -20,6 +20,7 @@ class ParticipantRow:
     display_name: str
     draft_order: int | None
     is_active: bool
+    group_name: str | None = None
 
 
 class SeasonRepository(BaseRepository[Season]):
@@ -67,6 +68,7 @@ class SeasonRepository(BaseRepository[Season]):
                 User.display_name,
                 SeasonParticipant.draft_order,
                 SeasonParticipant.is_active,
+                SeasonParticipant.group_name,
             )
             .join(User, User.id == SeasonParticipant.user_id)
             .where(SeasonParticipant.season_id == season_id)
@@ -80,6 +82,7 @@ class SeasonRepository(BaseRepository[Season]):
                 display_name=row.display_name,
                 draft_order=row.draft_order,
                 is_active=row.is_active,
+                group_name=row.group_name,
             )
             for row in result.all()
         ]
@@ -98,6 +101,26 @@ class SeasonRepository(BaseRepository[Season]):
             display_name=user.display_name,
             draft_order=participant.draft_order,
             is_active=participant.is_active,
+            group_name=participant.group_name,
+        )
+
+    async def update_participant_group(
+        self, participant_id: int, group_name: str | None
+    ) -> ParticipantRow | None:
+        participant = await self.session.get(SeasonParticipant, participant_id)
+        if participant is None:
+            return None
+        participant.group_name = group_name
+        user = await self.session.get(User, participant.user_id)
+        if user is None:
+            return None
+        return ParticipantRow(
+            id=participant.id,
+            user_id=participant.user_id,
+            display_name=user.display_name,
+            draft_order=participant.draft_order,
+            is_active=participant.is_active,
+            group_name=participant.group_name,
         )
 
     async def update_season(self, season_id: int, **kwargs: object) -> Season | None:

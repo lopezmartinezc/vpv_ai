@@ -56,6 +56,19 @@ class SeasonService:
 
     # --- Admin methods ---
 
+    async def assign_participant_group(
+        self,
+        season_id: int,
+        participant_id: int,
+        group_name: str | None,
+    ) -> ParticipantRow:
+        await self.get_season(season_id)
+        result = await self.repo.update_participant_group(participant_id, group_name)
+        if result is None:
+            raise NotFoundError("SeasonParticipant", participant_id)
+        await self.repo.session.commit()
+        return result
+
     async def toggle_participant_active(
         self,
         season_id: int,

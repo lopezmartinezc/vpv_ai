@@ -5,7 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.exceptions import NotFoundError
 from src.features.seasons.repository import SeasonRepository
 from src.features.standings.repository import StandingsRepository
-from src.features.standings.schemas import StandingEntry, StandingsResponse
+from src.features.standings.schemas import (
+    GroupMemberEntry,
+    GroupStandingEntry,
+    GroupStandingsResponse,
+    StandingEntry,
+    StandingsResponse,
+)
 
 
 class StandingsService:
@@ -36,4 +42,25 @@ class StandingsService:
             season_id=season.id,
             season_name=season.name,
             entries=entries,
+        )
+
+    async def get_group_standings(self, season_id: int) -> GroupStandingsResponse:
+        season = await self.season_repo.get_by_id(season_id)
+        if season is None:
+            raise NotFoundError("Season", season_id)
+
+        raw = await self.standings_repo.get_group_standings(season_id)
+        groups = [
+            GroupStandingEntry(
+                rank=g["rank"],
+                group_name=g["group_name"],
+                total_points=g["total_points"],
+                members=[GroupMemberEntry(**m) for m in g["members"]],
+            )
+            for g in raw
+        ]
+        return GroupStandingsResponse(
+            season_id=season.id,
+            season_name=season.name,
+            groups=groups,
         )

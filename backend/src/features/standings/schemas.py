@@ -29,3 +29,22 @@ class EvolutionEntry(BaseModel):
 class EvolutionResponse(BaseModel):
     season_id: int
     entries: list[EvolutionEntry]
+
+
+class GroupMemberEntry(BaseModel):
+    participant_id: int
+    display_name: str
+    total_points: int
+
+
+class GroupStandingEntry(BaseModel):
+    rank: int
+    group_name: str
+    total_points: int
+    members: list[GroupMemberEntry]
+
+
+class GroupStandingsResponse(BaseModel):
+    season_id: int
+    season_name: str
+    groups: list[GroupStandingEntry]

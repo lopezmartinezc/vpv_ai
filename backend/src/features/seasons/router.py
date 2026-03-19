@@ -6,6 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.seasons.schemas import (
+    GroupAssignRequest,
     PaymentsBatchUpdate,
     PhotoDownloadResponse,
     ScoringRuleResponse,
@@ -176,6 +177,23 @@ async def toggle_participant_active(
     _admin: dict = Depends(get_current_admin),
 ) -> SeasonParticipantResponse:
     participant = await service.toggle_participant_active(season_id, participant_id)
+    return SeasonParticipantResponse.model_validate(participant)
+
+
+@router.put(
+    "/admin/{season_id}/participants/{participant_id}/group",
+    response_model=SeasonParticipantResponse,
+)
+async def assign_participant_group(
+    season_id: int,
+    participant_id: int,
+    body: GroupAssignRequest,
+    service: SeasonService = Depends(_get_service),
+    _admin: dict = Depends(get_current_admin),
+) -> SeasonParticipantResponse:
+    participant = await service.assign_participant_group(
+        season_id, participant_id, body.group_name
+    )
     return SeasonParticipantResponse.model_validate(participant)
 
 

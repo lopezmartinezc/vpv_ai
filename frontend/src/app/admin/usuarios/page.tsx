@@ -29,7 +29,11 @@ interface SeasonParticipant {
   display_name: string;
   draft_order: number | null;
   is_active: boolean;
+  group_name: string | null;
 }
+
+const GROUPS = ["Virtuales", "Petit Comite", "Vacas Sagradas"] as const;
+
 
 export default function AdminUsuariosPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -104,6 +108,21 @@ export default function AdminUsuariosPage() {
       // error
     } finally {
       setTogglingId(null);
+    }
+  }
+
+  async function handleGroupChange(participantId: number, groupName: string | null) {
+    if (selectedSeasonId === null) return;
+    try {
+      const updated = await apiClient.put<SeasonParticipant>(
+        `/seasons/admin/${selectedSeasonId}/participants/${participantId}/group`,
+        { group_name: groupName },
+      );
+      setParticipants((prev) =>
+        prev.map((p) => (p.id === updated.id ? updated : p)),
+      );
+    } catch {
+      // error
     }
   }
 
@@ -444,6 +463,7 @@ export default function AdminUsuariosPage() {
                 <tr className="border-b border-vpv-border bg-vpv-bg text-left text-vpv-text-muted">
                   <th className="px-4 py-2">Nombre</th>
                   <th className="px-4 py-2">Orden draft</th>
+                  <th className="px-4 py-2">Grupo</th>
                   <th className="px-4 py-2">Estado</th>
                   <th className="px-4 py-2 text-right">Acciones</th>
                 </tr>
@@ -461,6 +481,20 @@ export default function AdminUsuariosPage() {
                     </td>
                     <td className="px-4 py-2 text-vpv-text-muted">
                       {p.draft_order !== null ? `#${p.draft_order}` : "—"}
+                    </td>
+                    <td className="px-4 py-2">
+                      <select
+                        value={p.group_name ?? ""}
+                        onChange={(e) =>
+                          handleGroupChange(p.id, e.target.value || null)
+                        }
+                        className="rounded border border-vpv-border bg-vpv-bg px-2 py-1 text-xs text-vpv-text"
+                      >
+                        <option value="">Sin grupo</option>
+                        {GROUPS.map((g) => (
+                          <option key={g} value={g}>{g}</option>
+                        ))}
+                      </select>
                     </td>
                     <td className="px-4 py-2">
                       {p.is_active ? (

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.features.standings.schemas import (
     EvolutionEntry,
     EvolutionResponse,
+    GroupStandingsResponse,
     StandingsResponse,
 )
 from src.features.standings.service import StandingsService
@@ -27,6 +28,15 @@ async def get_standings(
     service: StandingsService = Depends(_get_service),
 ) -> StandingsResponse:
     return await service.get_standings(season_id)
+
+
+@router.get("/{season_id}/groups", response_model=GroupStandingsResponse)
+async def get_group_standings(
+    season_id: int,
+    service: StandingsService = Depends(_get_service),
+) -> GroupStandingsResponse:
+    """Group standings: total points per group with member breakdown."""
+    return await service.get_group_standings(season_id)
 
 
 @router.get("/{season_id}/evolution", response_model=EvolutionResponse)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, SmallInteger, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, SmallInteger, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.shared.models.base import Base
@@ -26,6 +26,7 @@ class SeasonParticipant(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     draft_order: Mapped[int | None] = mapped_column(SmallInteger)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    group_name: Mapped[str | None] = mapped_column(String(50))
 
     season: Mapped[Season] = relationship(back_populates="participants")
     user: Mapped[User] = relationship(back_populates="participations")

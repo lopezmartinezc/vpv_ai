@@ -863,8 +863,35 @@ export interface AllTimeRecord {
   detail: string;
 }
 
+export interface SeasonGroupResult {
+  season_id: number;
+  season_name: string;
+  winner: string;
+  loser: string;
+}
+
+export interface GroupMemberEntry {
+  participant_id: number;
+  display_name: string;
+  total_points: number;
+}
+
+export interface GroupStandingEntry {
+  rank: number;
+  group_name: string;
+  total_points: number;
+  members: GroupMemberEntry[];
+}
+
+export interface GroupStandingsResponse {
+  season_id: number;
+  season_name: string;
+  groups: GroupStandingEntry[];
+}
+
 export interface PalmaresResponse {
   champions: SeasonChampion[];
   career: CareerEntry[];
   records: AllTimeRecord[];
+  group_history: SeasonGroupResult[];
 }

@@ -102,8 +102,13 @@ class SeasonParticipantResponse(BaseModel):
     display_name: str
     draft_order: int | None
     is_active: bool
+    group_name: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+class GroupAssignRequest(BaseModel):
+    group_name: str | None = None
 
 
 # --- Season lifecycle schemas ---

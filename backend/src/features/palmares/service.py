@@ -9,6 +9,7 @@ from src.features.palmares.schemas import (
     PalmaresResponse,
     PodiumEntry,
     SeasonChampion,
+    SeasonGroupResult,
 )
 
 
@@ -147,8 +148,13 @@ class PalmaresService:
                     )
                 )
 
+        # 4. Group history
+        raw_groups = await self.repo.get_group_history()
+        group_history = [SeasonGroupResult(**g) for g in raw_groups]
+
         return PalmaresResponse(
             champions=champions,
             career=career,
             records=records,
+            group_history=group_history,
         )

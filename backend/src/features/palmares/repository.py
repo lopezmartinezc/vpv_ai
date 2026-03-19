@@ -160,3 +160,74 @@ class PalmaresRepository:
             matchday_number=row.matchday_number,
             total_points=row.total_points,
         )
+
+    async def get_group_history(self) -> list[dict]:
+        """Get group winner and loser for each finished season."""
+        total_pts = func.coalesce(
+            func.sum(
+                case(
+                    (Matchday.counts.is_(True), ParticipantMatchdayScore.total_points),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("total_points")
+
+        stmt = (
+            select(
+                Season.id.label("season_id"),
+                Season.name.label("season_name"),
+                SeasonParticipant.group_name,
+                total_pts,
+            )
+            .join(SeasonParticipant, SeasonParticipant.season_id == Season.id)
+            .outerjoin(
+                ParticipantMatchdayScore,
+                ParticipantMatchdayScore.participant_id == SeasonParticipant.id,
+            )
+            .outerjoin(Matchday, ParticipantMatchdayScore.matchday_id == Matchday.id)
+            .where(
+                Season.status.in_(["finished", "active"]),
+                SeasonParticipant.group_name.isnot(None),
+            )
+            .group_by(Season.id, Season.name, SeasonParticipant.group_name)
+            .order_by(Season.id.desc(), total_pts.desc())
+        )
+
+        result = await self.session.execute(stmt)
+        rows = result.all()
+
+        # Group by season
+        seasons: dict[int, dict] = {}
+        for row in rows:
+            sid = row.season_id
+            if sid not in seasons:
+                seasons[sid] = {
+                    "season_id": sid,
+                    "season_name": row.season_name,
+                    "groups": [],
+                }
+            seasons[sid]["groups"].append(
+                {
+                    "group_name": row.group_name,
+                    "total_points": int(row.total_points),
+                }
+            )
+
+        history: list[dict] = []
+        for s in seasons.values():
+            groups = s["groups"]
+            if len(groups) < 2:
+                continue
+            winner = groups[0]["group_name"]  # already sorted DESC
+            loser = groups[-1]["group_name"]
+            history.append(
+                {
+                    "season_id": s["season_id"],
+                    "season_name": s["season_name"],
+                    "winner": winner,
+                    "loser": loser,
+                }
+            )
+
+        return history

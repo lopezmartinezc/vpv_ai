@@ -205,6 +205,46 @@ export default function PalmaresPage() {
           </div>
         </section>
       )}
+
+      {/* Group history */}
+      {data.group_history.length > 0 && (
+        <section>
+          <h2 className="mb-3 text-lg font-semibold text-vpv-text">
+            Historial de grupos
+          </h2>
+          <div className="rounded-lg border border-vpv-card-border bg-vpv-card overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-vpv-border bg-vpv-bg text-left text-vpv-text-muted">
+                  <th className="px-4 py-2">Temporada</th>
+                  <th className="px-4 py-2">Campeon</th>
+                  <th className="px-4 py-2">Paga pica-pica</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.group_history.map((g) => (
+                  <tr
+                    key={g.season_id}
+                    className="border-b border-vpv-border last:border-0"
+                  >
+                    <td className="px-4 py-2 text-vpv-text">{g.season_name}</td>
+                    <td className="px-4 py-2">
+                      <span className="text-amber-400 font-medium">
+                        {"\uD83C\uDFC6"} {g.winner}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2">
+                      <span className="text-red-400 font-medium">
+                        {"\uD83C\uDF55"} {g.loser}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

@@ -36,7 +36,15 @@ class AllTimeRecord(BaseModel):
     detail: str
 
 
+class SeasonGroupResult(BaseModel):
+    season_id: int
+    season_name: str
+    winner: str
+    loser: str  # pays pica-pica
+
+
 class PalmaresResponse(BaseModel):
     champions: list[SeasonChampion]
     career: list[CareerEntry]
     records: list[AllTimeRecord]
+    group_history: list[SeasonGroupResult]
