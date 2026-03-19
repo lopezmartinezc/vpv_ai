@@ -5,9 +5,16 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { useSeason } from "@/contexts/season-context";
+import { useFetch } from "@/hooks/use-fetch";
 import { NavIcon } from "@/components/ui/nav-icon";
 import { Logo } from "@/components/ui/logo";
 import { SeasonSelector } from "./season-selector";
+
+interface DeadlineCheck {
+  has_lineup: boolean;
+  minutes_remaining: number | null;
+  matchday_number: number;
+}
 
 const NAV_ITEMS = [
   { href: "/", label: "Inicio", icon: "home" },
@@ -60,6 +67,24 @@ export function Sidebar({
   const { user } = useAuth();
   const { selectedSeason } = useSeason();
   const prevPathname = useRef(pathname);
+
+  // Determine which matchday to link "Introducir equipo" to
+  const { data: deadlineCheck } = useFetch<DeadlineCheck>(
+    user && selectedSeason
+      ? `/lineups/${selectedSeason.id}/deadline-status`
+      : null,
+  );
+  const lineupMatchday = (() => {
+    const current = selectedSeason?.matchday_current ?? 0;
+    if (current === 0) return 1;
+    if (!deadlineCheck) return current;
+    // If deadline hasn't passed, link to current matchday
+    if (deadlineCheck.minutes_remaining !== null && deadlineCheck.minutes_remaining > 0) {
+      return current;
+    }
+    // Deadline passed — link to next matchday (max 38)
+    return Math.min(current + 1, 38);
+  })();
 
   // Close on route change
   useEffect(() => {
@@ -184,7 +209,7 @@ export function Sidebar({
                 {selectedSeason && (
                   <li>
                     <Link
-                      href={`/jornadas/${selectedSeason.matchday_current}/alineacion`}
+                      href={`/jornadas/${lineupMatchday}/alineacion`}
                       className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
                         pathname.includes("/alineacion")
                           ? "bg-vpv-accent/10 text-vpv-accent"
