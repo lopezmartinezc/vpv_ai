@@ -827,3 +827,44 @@ export interface ComparePlayersResponse {
   season_id: number;
   players: ComparePlayerAxis[];
 }
+
+// Palmares
+
+export interface PodiumEntry {
+  rank: number;
+  user_id: number;
+  display_name: string;
+  total_points: number;
+  matchdays_played: number;
+}
+
+export interface SeasonChampion {
+  season_id: number;
+  season_name: string;
+  entries: PodiumEntry[];
+}
+
+export interface CareerEntry {
+  user_id: number;
+  display_name: string;
+  seasons_played: number;
+  championships: number;
+  podiums: number;
+  total_points: number;
+  total_matchdays: number;
+  avg_points: number;
+  best_finish: number;
+  best_season_name: string;
+}
+
+export interface AllTimeRecord {
+  label: string;
+  value: string;
+  detail: string;
+}
+
+export interface PalmaresResponse {
+  champions: SeasonChampion[];
+  career: CareerEntry[];
+  records: AllTimeRecord[];
+}
