@@ -15,7 +15,9 @@ import type {
   MatchdayDetailResponse,
   MatchEntry,
   MyLineupResponse,
+  PlayerPrediction,
   PlayerRecentForm,
+  PredictionsResponse,
   SquadPlayerEntry,
   ValidFormation,
 } from "@/types";
@@ -364,18 +366,32 @@ function PlayerFormStats({
   );
 }
 
+const TREND_ICONS: Record<string, string> = {
+  rising: "\u2197",   // ↗
+  stable: "\u2192",   // →
+  falling: "\u2198",  // ↘
+};
+
+const TREND_COLORS: Record<string, string> = {
+  rising: "text-emerald-400",
+  stable: "text-vpv-text-muted",
+  falling: "text-red-400",
+};
+
 function PlayerCard({
   player,
   isSelected,
   isDisabled,
   onToggle,
   showPoints = false,
+  prediction,
 }: {
   player: SquadPlayerEntry;
   isSelected: boolean;
   isDisabled: boolean;
   onToggle: (player: SquadPlayerEntry) => void;
   showPoints?: boolean;
+  prediction?: PlayerPrediction;
 }) {
   const pos = player.position as Position;
 
@@ -412,6 +428,22 @@ function PlayerCard({
               form={player.recent_form}
               position={player.position}
             />
+          </div>
+        )}
+        {prediction && (
+          <div className="mt-0.5 flex items-center gap-2 text-[10px]">
+            <span className="font-bold text-vpv-accent tabular-nums" title="Puntos esperados">
+              xPts {prediction.xpts.toFixed(1)}
+            </span>
+            <span className="text-vpv-text-muted" title={prediction.is_home ? "Casa" : "Fuera"}>
+              vs {prediction.opponent_name} ({prediction.is_home ? "C" : "F"})
+            </span>
+            <span className="text-vpv-text-muted tabular-nums" title="Probabilidad de titular">
+              {Math.round(prediction.starter_pct * 100)}%
+            </span>
+            <span className={TREND_COLORS[prediction.trend] ?? "text-vpv-text-muted"} title={`Tendencia: ${prediction.trend}`}>
+              {TREND_ICONS[prediction.trend] ?? "→"}
+            </span>
           </div>
         )}
       </div>
@@ -522,6 +554,18 @@ export default function AlineacionPage() {
   const { data: formationsData, loading: formationsLoading } = useFetch<
     ValidFormation[]
   >("/seasons/formations");
+
+  // Admin-only: predictions for player cards
+  const isAdmin = user?.isAdmin ?? false;
+  const { data: predictionsData } = useFetch<PredictionsResponse>(
+    isAdmin && selectedSeason
+      ? `/stats/${selectedSeason.id}/predictions?matchday=${numero}`
+      : null,
+  );
+  const predictionsMap = useMemo(() => {
+    if (!predictionsData?.predictions) return new Map<number, PlayerPrediction>();
+    return new Map(predictionsData.predictions.map((p) => [p.player_id, p]));
+  }, [predictionsData]);
 
   // ---------------------------------------------------------------------------
   // Local state
@@ -635,7 +679,6 @@ export default function AlineacionPage() {
   const lineupComplete = detectedFormation !== null;
 
   // Group squad players by position
-  const isAdmin = user?.isAdmin ?? false;
   const playersByPosition = useMemo<Record<Position, SquadPlayerEntry[]>>(
     () => {
       const squad = myLineup?.squad ?? [];
@@ -933,7 +976,8 @@ export default function AlineacionPage() {
                   isSelected={isSelected}
                   isDisabled={isDisabled}
                   onToggle={handleTogglePlayer}
-                  showPoints={user?.isAdmin ?? false}
+                  showPoints={isAdmin}
+                  prediction={predictionsMap.get(player.player_id)}
                 />
               );
             })}
