@@ -107,6 +107,15 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 - **Estado**: [x] Completado (2026-03-19)
 - **Notas**: Endpoint `GET /lineups/{season_id}/accuracy` (personal) + `GET /lineups/{season_id}/accuracy/ranking?matchday=N` (publico). Racha de forma (ultimos 5 partidos) tambien añadida a la seleccion de alineacion.
 
+### 2.6 Info enriquecida en seleccion de alineacion
+- **Problema**: Los jugadores solo mostraban nombre, equipo y posicion al elegir alineacion
+- **Solucion**: Dos niveles de informacion:
+  - **Todos los usuarios**: racha ultimos 5 partidos (cuadrados coloreados W/D/L con puntos) + stats (imbatibilidades POR/DEF, goles, asistencias, tarjetas)
+  - **Solo admin**: predicciones xPts, rival + casa/fuera, % titular, tendencia (datos del endpoint de predicciones)
+- **Complejidad**: Media
+- **Estado**: [x] Completado (2026-03-19)
+- **Notas**: Backend: `recent_form` en `SquadPlayerForLineup` con `get_squad_recent_form()`. Frontend: admin fetch de `/stats/{season_id}/predictions`. `starter_pct` viene ya como porcentaje del backend.
+
 ---
 
 ## Prioridad 3 — Features nuevos, complejidad alta
@@ -187,6 +196,7 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 | 4.1 | PWA | Medio | Baja | Completado |
 | 4.2 | Lazy loading | Bajo | Media | Pendiente |
 | 2.5 | Acierto de Mister | Alto | Alta | Completado |
+| 2.6 | Info enriquecida alineacion | Alto | Media | Completado |
 | 4.3 | Tests | Alto (tecnico) | Alta | Pendiente |
 | 4.4 | Sesion unica | Alto (seguridad) | Media | Completado |
 | 4.5 | Ciclo vida temporada | Alto (operativo) | Media | Completado |
