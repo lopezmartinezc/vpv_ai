@@ -439,7 +439,7 @@ function PlayerCard({
               vs {prediction.opponent_name} ({prediction.is_home ? "C" : "F"})
             </span>
             <span className="text-vpv-text-muted tabular-nums" title="Probabilidad de titular">
-              {Math.round(prediction.starter_pct * 100)}%
+              {Math.round(prediction.starter_pct)}%
             </span>
             <span className={TREND_COLORS[prediction.trend] ?? "text-vpv-text-muted"} title={`Tendencia: ${prediction.trend}`}>
               {TREND_ICONS[prediction.trend] ?? "→"}
