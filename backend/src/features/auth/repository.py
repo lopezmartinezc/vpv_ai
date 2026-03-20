@@ -63,7 +63,6 @@ class AuthRepository:
         return user
 
 
-
 class InviteRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
