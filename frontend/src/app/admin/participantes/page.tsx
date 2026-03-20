@@ -155,33 +155,59 @@ export default function AdminParticipantesPage() {
           {/* Mobile: Cards */}
           <div className="divide-y divide-vpv-border md:hidden">
             {participants.map((p) => (
-              <div
-                key={p.id}
-                className="flex items-center justify-between px-4 py-3"
-              >
-                <div>
-                  <p
-                    className={`font-medium ${p.is_active ? "text-vpv-text" : "text-vpv-text-muted line-through"}`}
-                  >
-                    {p.display_name}
-                  </p>
-                  <p className="text-xs text-vpv-text-muted">
-                    {p.draft_order !== null
-                      ? `Draft #${p.draft_order}`
-                      : "Sin orden"}
-                  </p>
+              <div key={p.id} className="space-y-2 px-4 py-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p
+                      className={`font-medium ${p.is_active ? "text-vpv-text" : "text-vpv-text-muted line-through"}`}
+                    >
+                      {p.display_name}
+                    </p>
+                    <p className="text-xs text-vpv-text-muted">
+                      {p.draft_order !== null
+                        ? `Draft #${p.draft_order}`
+                        : "Sin orden"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {p.is_active ? (
+                      <span className="rounded bg-green-500/20 px-2 py-0.5 text-xs font-medium text-green-600">
+                        Activo
+                      </span>
+                    ) : (
+                      <span className="rounded bg-vpv-danger/20 px-2 py-0.5 text-xs font-medium text-vpv-danger">
+                        Inactivo
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <button
-                  onClick={() => handleToggleActive(p.id)}
-                  disabled={togglingId === p.id}
-                  className={`rounded px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
-                    p.is_active
-                      ? "border border-vpv-danger/30 text-vpv-danger hover:bg-vpv-danger/10"
-                      : "border border-green-500/30 text-green-600 hover:bg-green-500/10"
-                  }`}
-                >
-                  {p.is_active ? "Desactivar" : "Activar"}
-                </button>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={p.group_name ?? ""}
+                    onChange={(e) =>
+                      handleGroupChange(p.id, e.target.value || null)
+                    }
+                    className="flex-1 rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-xs text-vpv-text"
+                  >
+                    <option value="">Sin grupo</option>
+                    {GROUPS.map((g) => (
+                      <option key={g} value={g}>
+                        {g}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => handleToggleActive(p.id)}
+                    disabled={togglingId === p.id}
+                    className={`rounded px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${
+                      p.is_active
+                        ? "border border-vpv-danger/30 text-vpv-danger hover:bg-vpv-danger/10"
+                        : "border border-green-500/30 text-green-600 hover:bg-green-500/10"
+                    }`}
+                  >
+                    {p.is_active ? "Desactivar" : "Activar"}
+                  </button>
+                </div>
               </div>
             ))}
           </div>
