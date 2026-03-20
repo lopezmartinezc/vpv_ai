@@ -28,6 +28,23 @@ const NAV_ITEMS = [
   { href: "/drafts", label: "Drafts", icon: "shuffle" },
 ] as const;
 
+/** Permission required for each admin route. null = admin-only. */
+const ROUTE_PERM: Record<string, number | null> = {
+  "/admin/temporadas": null,
+  "/admin/jornadas": PERM.MATCHDAYS,
+  "/admin/jugadores": PERM.PLAYERS,
+  "/admin/estadisticas": PERM.STATS,
+  "/admin/usuarios": null,
+  "/admin/invitaciones": null,
+  "/admin/economia": PERM.ECONOMY,
+  "/admin/participantes": PERM.PARTICIPANTS,
+  "/admin/scraping": PERM.SCRAPING,
+  "/admin/logros": PERM.ACHIEVEMENTS,
+  "/admin/predicciones": PERM.STATS,
+  "/admin/telegram": PERM.TELEGRAM,
+  "/admin/backup": null,
+};
+
 const ADMIN_SECTIONS = [
   {
     group: "Liga",
@@ -44,6 +61,7 @@ const ADMIN_SECTIONS = [
       { href: "/admin/usuarios", label: "Usuarios" },
       { href: "/admin/invitaciones", label: "Invitaciones" },
       { href: "/admin/economia", label: "Economia" },
+      { href: "/admin/participantes", label: "Participantes" },
     ],
   },
   {
@@ -259,9 +277,7 @@ export function Sidebar({
                     </Link>
                   </li>
                 )}
-                {user.isAdmin && (
-                  <AdminSubmenu pathname={pathname} />
-                )}
+                <AdminSubmenu pathname={pathname} isAdmin={user.isAdmin} permissions={user.permissions} />
               </ul>
             </>
           )}
@@ -271,9 +287,30 @@ export function Sidebar({
   );
 }
 
-function AdminSubmenu({ pathname }: { pathname: string }) {
+function AdminSubmenu({
+  pathname,
+  isAdmin,
+  permissions,
+}: {
+  pathname: string;
+  isAdmin: boolean;
+  permissions: number;
+}) {
   const isInAdmin = pathname.startsWith("/admin");
   const [expanded, setExpanded] = useState(isInAdmin);
+
+  const filteredSections = isAdmin
+    ? ADMIN_SECTIONS
+    : ADMIN_SECTIONS.map((section) => ({
+        ...section,
+        items: section.items.filter((item) => {
+          const perm = ROUTE_PERM[item.href];
+          if (perm === null) return false;
+          return userHasPerm(isAdmin, permissions, perm);
+        }),
+      })).filter((section) => section.items.length > 0);
+
+  if (filteredSections.length === 0) return null;
 
   return (
     <li>
@@ -302,7 +339,7 @@ function AdminSubmenu({ pathname }: { pathname: string }) {
       </button>
       {expanded && (
         <div className="ml-4 mt-1 space-y-3 border-l border-vpv-border pl-3">
-          {ADMIN_SECTIONS.map((section) => (
+          {filteredSections.map((section) => (
             <div key={section.group}>
               <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-vpv-text-muted/50">
                 {section.group}
