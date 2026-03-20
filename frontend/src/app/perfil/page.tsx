@@ -25,7 +25,7 @@ interface MeResponse {
   display_name: string;
   email: string | null;
   is_admin: boolean;
-  is_draft_manager: boolean;
+  permissions: number;
 }
 
 const POS_COLORS: Record<string, string> = {

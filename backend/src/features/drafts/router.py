@@ -21,7 +21,8 @@ from src.features.drafts.schemas import (
 )
 from src.features.drafts.service import DraftService
 from src.features.drafts.websocket import draft_ws_manager
-from src.shared.dependencies import get_current_admin, get_db, get_draft_manager
+from src.shared.dependencies import get_current_admin, get_db, require_perm
+from src.shared.permissions import Perm
 
 router = APIRouter(prefix="/drafts", tags=["drafts"])
 
@@ -62,7 +63,7 @@ async def update_draft_order(
     season_id: int,
     body: UpdateDraftOrderRequest,
     service: DraftService = Depends(_get_service),
-    _user: dict = Depends(get_draft_manager),
+    _user: dict = Depends(require_perm(Perm.DRAFT)),
 ) -> dict:
     await service.update_draft_order(
         season_id, [(o.participant_id, o.draft_order) for o in body.orders]
@@ -75,7 +76,7 @@ async def create_draft(
     season_id: int,
     body: CreateDraftRequest,
     service: DraftService = Depends(_get_service),
-    _user: dict = Depends(get_draft_manager),
+    _user: dict = Depends(require_perm(Perm.DRAFT)),
 ) -> CreateDraftResponse:
     return await service.create_draft(season_id, body.phase, body.draft_type)
 
@@ -85,7 +86,7 @@ async def add_pick(
     draft_id: int,
     body: AddPickRequest,
     service: DraftService = Depends(_get_service),
-    _user: dict = Depends(get_draft_manager),
+    _user: dict = Depends(require_perm(Perm.DRAFT)),
 ) -> AddPickResponse:
     return await service.add_pick(draft_id, body.player_id, body.participant_id)
 
@@ -95,7 +96,7 @@ async def reorder_picks(
     draft_id: int,
     body: ReorderPicksRequest,
     service: DraftService = Depends(_get_service),
-    _user: dict = Depends(get_draft_manager),
+    _user: dict = Depends(require_perm(Perm.DRAFT)),
 ) -> ReorderPicksResponse:
     return await service.reorder_picks(draft_id, body.pick_ids)
 
@@ -105,7 +106,7 @@ async def delete_pick(
     draft_id: int,
     pick_number: int,
     service: DraftService = Depends(_get_service),
-    _user: dict = Depends(get_draft_manager),
+    _user: dict = Depends(require_perm(Perm.DRAFT)),
 ) -> DeletePickResponse:
     return await service.delete_pick(draft_id, pick_number)
 
@@ -126,7 +127,7 @@ async def search_players_for_draft(
     position: str | None = Query(default=None),
     team_id: int | None = Query(default=None),
     service: DraftService = Depends(_get_service),
-    _user: dict = Depends(get_draft_manager),
+    _user: dict = Depends(require_perm(Perm.DRAFT)),
 ) -> PlayerSearchResponse:
     return await service.search_players(draft_id, q, position, team_id)
 

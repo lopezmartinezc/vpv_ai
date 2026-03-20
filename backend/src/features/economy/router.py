@@ -10,7 +10,8 @@ from src.features.economy.schemas import (
     TransactionEntry,
 )
 from src.features.economy.service import EconomyService
-from src.shared.dependencies import get_current_admin, get_db
+from src.shared.dependencies import get_db, require_perm
+from src.shared.permissions import Perm
 
 router = APIRouter(prefix="/economy", tags=["economy"])
 
@@ -49,7 +50,7 @@ async def create_transaction(
     season_id: int,
     body: TransactionCreateRequest,
     service: EconomyService = Depends(_get_service),
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_perm(Perm.ECONOMY)),
 ) -> TransactionEntry:
     return await service.create_transaction(
         season_id=season_id,
@@ -68,7 +69,7 @@ async def delete_transaction(
     season_id: int,
     tx_id: int,
     service: EconomyService = Depends(_get_service),
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_perm(Perm.ECONOMY)),
 ) -> dict:
     await service.delete_transaction(season_id, tx_id)
     return {"deleted": True}

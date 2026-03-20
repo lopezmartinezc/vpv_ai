@@ -12,6 +12,7 @@ from src.features.auth.schemas import (
     InviteStatusResponse,
     LoginRequest,
     RegisterRequest,
+    SetPermissionsRequest,
     TokenResponse,
     UserResponse,
     UserWithoutPasswordResponse,
@@ -126,13 +127,14 @@ async def toggle_admin(
     return await service.toggle_admin(user_id, int(admin["sub"]))
 
 
-@router.put("/admin/users/{user_id}/toggle-draft-manager", response_model=AdminUserResponse)
-async def toggle_draft_manager(
+@router.put("/admin/users/{user_id}/permissions", response_model=AdminUserResponse)
+async def set_permissions(
     user_id: int,
+    body: SetPermissionsRequest,
     admin: dict = Depends(get_current_admin),
     service: AuthService = Depends(_get_service),
 ) -> AdminUserResponse:
-    return await service.toggle_draft_manager(user_id)
+    return await service.set_permissions(user_id, body.permissions)
 
 
 @router.post("/admin/users/{user_id}/reset-password", response_model=InviteResponse)

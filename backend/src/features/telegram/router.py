@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.telegram.config import telegram_settings
 from src.features.telegram.service import TelegramNotifier
-from src.shared.dependencies import get_current_admin, get_db
+from src.shared.dependencies import get_db, require_perm
+from src.shared.permissions import Perm
 
 router = APIRouter(prefix="/telegram", tags=["telegram"])
 
@@ -17,7 +18,7 @@ class SendMessageRequest(BaseModel):
 
 @router.get("/admin/status")
 async def get_telegram_status(
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_perm(Perm.TELEGRAM)),
 ) -> dict:
     return {
         "enabled": telegram_settings.telegram_enabled,
@@ -29,7 +30,7 @@ async def get_telegram_status(
 @router.post("/admin/send-lineup/{lineup_id}")
 async def send_lineup(
     lineup_id: int,
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_perm(Perm.TELEGRAM)),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     notifier = TelegramNotifier(db)
@@ -40,7 +41,7 @@ async def send_lineup(
 @router.post("/admin/send-message")
 async def send_message(
     data: SendMessageRequest,
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_perm(Perm.TELEGRAM)),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     notifier = TelegramNotifier(db)

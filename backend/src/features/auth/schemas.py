@@ -27,7 +27,7 @@ class UserResponse(BaseModel):
     display_name: str
     email: str | None
     is_admin: bool
-    is_draft_manager: bool
+    permissions: int
 
 
 class InviteCreateRequest(BaseModel):
@@ -64,13 +64,17 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(min_length=8)
 
 
+class SetPermissionsRequest(BaseModel):
+    permissions: int = Field(ge=0, le=1023)
+
+
 class AdminUserResponse(BaseModel):
     id: int
     username: str
     display_name: str
     email: str | None
     is_admin: bool
-    is_draft_manager: bool
+    permissions: int
     has_password: bool
     has_session: bool
     telegram_chat_id: str | None

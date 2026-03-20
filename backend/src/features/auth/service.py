@@ -38,7 +38,7 @@ def _create_token(user: User, session_id: str) -> str:
         "sub": str(user.id),
         "username": user.username,
         "is_admin": user.is_admin,
-        "is_draft_manager": user.is_draft_manager,
+        "permissions": user.permissions,
         "session_id": session_id,
         "exp": expire,
     }
@@ -59,7 +59,7 @@ def _user_response(user: User) -> UserResponse:
         display_name=user.display_name,
         email=user.email,
         is_admin=user.is_admin,
-        is_draft_manager=user.is_draft_manager,
+        permissions=user.permissions,
     )
 
 
@@ -183,20 +183,7 @@ class AuthService:
 
     async def list_users(self) -> list[AdminUserResponse]:
         users = await self.auth_repo.get_all_users()
-        return [
-            AdminUserResponse(
-                id=u.id,
-                username=u.username,
-                display_name=u.display_name,
-                email=u.email,
-                is_admin=u.is_admin,
-                is_draft_manager=u.is_draft_manager,
-                has_password=bool(u.password_hash),
-                has_session=bool(u.session_id),
-                telegram_chat_id=u.telegram_chat_id,
-            )
-            for u in users
-        ]
+        return [self._admin_response(u) for u in users]
 
     async def toggle_admin(self, user_id: int, admin_id: int) -> AdminUserResponse:
         if user_id == admin_id:
@@ -205,30 +192,25 @@ class AuthService:
         if user is None:
             raise BusinessRuleError("Usuario no encontrado")
         await self.session.commit()
-        return AdminUserResponse(
-            id=user.id,
-            username=user.username,
-            display_name=user.display_name,
-            email=user.email,
-            is_admin=user.is_admin,
-            is_draft_manager=user.is_draft_manager,
-            has_password=bool(user.password_hash),
-            has_session=bool(user.session_id),
-            telegram_chat_id=user.telegram_chat_id,
-        )
+        return self._admin_response(user)
 
-    async def toggle_draft_manager(self, user_id: int) -> AdminUserResponse:
-        user = await self.auth_repo.toggle_draft_manager(user_id)
+    async def set_permissions(self, user_id: int, permissions: int) -> AdminUserResponse:
+        user = await self.auth_repo.get_user_by_id(user_id)
         if user is None:
             raise BusinessRuleError("Usuario no encontrado")
+        user.permissions = permissions
         await self.session.commit()
+        return self._admin_response(user)
+
+    @staticmethod
+    def _admin_response(user: User) -> AdminUserResponse:
         return AdminUserResponse(
             id=user.id,
             username=user.username,
             display_name=user.display_name,
             email=user.email,
             is_admin=user.is_admin,
-            is_draft_manager=user.is_draft_manager,
+            permissions=user.permissions,
             has_password=bool(user.password_hash),
             has_session=bool(user.session_id),
             telegram_chat_id=user.telegram_chat_id,

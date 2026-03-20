@@ -9,6 +9,7 @@ import { useFetch } from "@/hooks/use-fetch";
 import { NavIcon } from "@/components/ui/nav-icon";
 import { Logo } from "@/components/ui/logo";
 import { SeasonSelector } from "./season-selector";
+import { PERM, userHasPerm } from "@/lib/permissions";
 
 interface DeadlineCheck {
   has_lineup: boolean;
@@ -239,11 +240,11 @@ export function Sidebar({
             </>
           )}
 
-          {(user?.isAdmin || user?.isDraftManager) && (
+          {user && (user.isAdmin || user.permissions > 0) && (
             <>
               <div className="my-3 border-t border-vpv-border" />
               <ul className="space-y-1">
-                {(user.isDraftManager || user.isAdmin) && (
+                {user && userHasPerm(user.isAdmin, user.permissions, PERM.DRAFT) && (
                   <li>
                     <Link
                       href="/drafts/gestionar"

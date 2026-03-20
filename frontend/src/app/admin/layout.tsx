@@ -1,9 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
+import { PERM, userHasPerm } from "@/lib/permissions";
+
+/** Permission required for each admin route. null = admin-only (no bitmap). */
+const ROUTE_PERM: Record<string, number | null> = {
+  "/admin/temporadas": null,
+  "/admin/jornadas": PERM.MATCHDAYS,
+  "/admin/jugadores": PERM.PLAYERS,
+  "/admin/estadisticas": PERM.STATS,
+  "/admin/usuarios": null,
+  "/admin/invitaciones": null,
+  "/admin/economia": PERM.ECONOMY,
+  "/admin/scraping": PERM.SCRAPING,
+  "/admin/telegram": PERM.TELEGRAM,
+  "/admin/backup": null,
+  "/admin/logros": PERM.ACHIEVEMENTS,
+  "/admin/predicciones": PERM.STATS,
+  "/plantillas": null,
+  "/drafts/gestionar": PERM.DRAFT,
+  "/admin/participantes": PERM.PARTICIPANTS,
+};
 
 const ADMIN_NAV = [
   {
@@ -21,6 +41,7 @@ const ADMIN_NAV = [
       { href: "/admin/usuarios", label: "Usuarios" },
       { href: "/admin/invitaciones", label: "Invitaciones" },
       { href: "/admin/economia", label: "Economia" },
+      { href: "/admin/participantes", label: "Participantes" },
     ],
   },
   {
@@ -63,6 +84,20 @@ export default function AdminLayout({
   const { user, loading } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  const filteredNav = useMemo(() => {
+    if (!user) return [];
+    if (user.isAdmin) return ADMIN_NAV;
+
+    return ADMIN_NAV.map((section) => ({
+      ...section,
+      items: section.items.filter((item) => {
+        const perm = ROUTE_PERM[item.href];
+        if (perm === null) return false; // admin-only
+        return userHasPerm(user.isAdmin, user.permissions, perm);
+      }),
+    })).filter((section) => section.items.length > 0);
+  }, [user]);
+
   if (loading) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
@@ -71,14 +106,14 @@ export default function AdminLayout({
     );
   }
 
-  if (!user?.isAdmin) {
+  if (!user || (!user.isAdmin && user.permissions === 0)) {
     router.push("/");
     return null;
   }
 
   const navContent = (
     <div className="space-y-5">
-      {ADMIN_NAV.map((section) => (
+      {filteredNav.map((section) => (
         <div key={section.group}>
           <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-widest text-vpv-text-muted/60">
             {section.group}

@@ -41,7 +41,8 @@ from src.features.stats.schemas_advanced import (
     TeamDependencyResponse,
 )
 from src.features.stats.service_advanced import AdvancedStatsService
-from src.shared.dependencies import get_current_admin, get_db
+from src.shared.dependencies import get_db, require_perm
+from src.shared.permissions import Perm
 
 router = APIRouter(prefix="/stats", tags=["stats"])
 
@@ -185,7 +186,7 @@ def _compute_records(
 @router.get("/draft-history", response_model=DraftHistoryResponse)
 async def get_draft_history(
     season_ids: str | None = None,
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_perm(Perm.STATS)),
     db: AsyncSession = Depends(get_db),
 ) -> DraftHistoryResponse:
     parsed_ids: list[int] | None = None
@@ -201,7 +202,7 @@ async def get_predictions(
     matchday: int | None = Query(
         None, description="Matchday number; defaults to season's current matchday"
     ),
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_perm(Perm.STATS)),
     db: AsyncSession = Depends(get_db),
 ) -> PredictionsResponse:
     """Expected points forecast for all players with a fixture in the given matchday.
@@ -223,7 +224,7 @@ async def get_predictions(
 @router.get("/{season_id}/players", response_model=PlayerStatsResponse)
 async def get_player_stats(
     season_id: int,
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_perm(Perm.STATS)),
     db: AsyncSession = Depends(get_db),
 ) -> PlayerStatsResponse:
     repo = StatsRepository(db)
@@ -262,7 +263,7 @@ async def get_advanced_player_stats(
     season_id: int,
     min_played: int = 3,
     position: str | None = None,
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_perm(Perm.STATS)),
     db: AsyncSession = Depends(get_db),
 ) -> AdvancedPlayersResponse:
     service = AdvancedStatsService(db)
@@ -273,7 +274,7 @@ async def get_advanced_player_stats(
 async def get_position_value(
     season_id: int,
     min_played: int = 3,
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_perm(Perm.STATS)),
     db: AsyncSession = Depends(get_db),
 ) -> PositionValueResponse:
     service = AdvancedStatsService(db)
@@ -284,7 +285,7 @@ async def get_position_value(
 async def get_compare_players(
     season_id: int,
     player_ids: str = "",
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_perm(Perm.STATS)),
     db: AsyncSession = Depends(get_db),
 ) -> ComparePlayersResponse:
     parsed = [int(s) for s in player_ids.split(",") if s.strip()] if player_ids else []
@@ -296,7 +297,7 @@ async def get_compare_players(
 async def get_player_splits(
     season_id: int,
     player_id: int,
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_perm(Perm.STATS)),
     db: AsyncSession = Depends(get_db),
 ) -> PlayerSplitsResponse:
     service = AdvancedStatsService(db)
@@ -307,7 +308,7 @@ async def get_player_splits(
 async def get_team_dependency(
     season_id: int,
     min_played: int = 3,
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_perm(Perm.STATS)),
     db: AsyncSession = Depends(get_db),
 ) -> TeamDependencyResponse:
     service = AdvancedStatsService(db)
@@ -317,7 +318,7 @@ async def get_team_dependency(
 @router.get("/{season_id}/participants", response_model=ParticipantStatsResponse)
 async def get_participant_stats(
     season_id: int,
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_perm(Perm.STATS)),
     db: AsyncSession = Depends(get_db),
 ) -> ParticipantStatsResponse:
     repo = StatsRepository(db)
@@ -355,7 +356,7 @@ async def get_participant_stats(
 @router.get("/{season_id}/league", response_model=LeagueStatsResponse)
 async def get_league_stats(
     season_id: int,
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_perm(Perm.STATS)),
     db: AsyncSession = Depends(get_db),
 ) -> LeagueStatsResponse:
     repo = StatsRepository(db)

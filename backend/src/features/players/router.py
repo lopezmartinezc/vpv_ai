@@ -10,7 +10,8 @@ from src.features.players.schemas import (
     TeamOption,
 )
 from src.features.players.service import PlayerService
-from src.shared.dependencies import get_current_admin, get_db
+from src.shared.dependencies import get_db, require_perm
+from src.shared.permissions import Perm
 
 router = APIRouter(prefix="/players", tags=["players"])
 
@@ -28,7 +29,7 @@ def _get_service(db: AsyncSession = Depends(get_db)) -> PlayerService:
 async def list_teams(
     season_id: int,
     service: PlayerService = Depends(_get_service),
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_perm(Perm.PLAYERS)),
 ) -> list[TeamOption]:
     return await service.list_teams(season_id)
 
@@ -39,7 +40,7 @@ async def list_players(
     search: str | None = Query(default=None),
     team_id: int | None = Query(default=None),
     service: PlayerService = Depends(_get_service),
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_perm(Perm.PLAYERS)),
 ) -> PlayerListResponse:
     return await service.list_players(season_id, search, team_id)
 
@@ -49,6 +50,6 @@ async def update_player(
     player_id: int,
     body: PlayerUpdateRequest,
     service: PlayerService = Depends(_get_service),
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_perm(Perm.PLAYERS)),
 ) -> PlayerUpdateResponse:
     return await service.update_player(player_id, body.team_id, body.position)

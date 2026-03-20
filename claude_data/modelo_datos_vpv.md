@@ -75,11 +75,30 @@ CREATE TABLE users (
     display_name    VARCHAR(100) NOT NULL,
     email           VARCHAR(150),
     is_admin        BOOLEAN      NOT NULL DEFAULT FALSE,
+    permissions     INTEGER      NOT NULL DEFAULT 0,
+    session_id      VARCHAR(36),
     telegram_chat_id VARCHAR(50),
     created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 ```
+
+**`permissions`**: bitmap de permisos delegados (ver `backend/src/shared/permissions.py`). Cada bit habilita un grupo de endpoints admin:
+
+| Bit | Valor | Permiso |
+|-----|-------|---------|
+| 0 | 1 | SCRAPING |
+| 1 | 2 | STATS |
+| 2 | 4 | ACHIEVEMENTS |
+| 3 | 8 | DRAFT |
+| 4 | 16 | ECONOMY |
+| 5 | 32 | TELEGRAM |
+| 6 | 64 | MATCHDAYS |
+| 7 | 128 | PLAYERS |
+| 8 | 256 | LINEUPS_ADMIN |
+| 9 | 512 | PARTICIPANTS |
+
+`is_admin = TRUE` bypasea todos los permisos. Los permisos son combinables (ej: `permissions = 9` = SCRAPING + DRAFT).
 
 **Diferencia con MySQL actual**: `usuarios_temp` duplicaba el usuario por temporada. Ahora el usuario es único y se vincula a temporadas mediante `season_participants`.
 

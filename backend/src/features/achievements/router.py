@@ -9,7 +9,8 @@ from src.features.achievements.schemas import (
     SeasonAchievementsResponse,
 )
 from src.features.achievements.service import AchievementService
-from src.shared.dependencies import get_current_admin, get_db
+from src.shared.dependencies import get_db, require_perm
+from src.shared.permissions import Perm
 
 router = APIRouter(prefix="/achievements", tags=["achievements"])
 
@@ -35,7 +36,7 @@ async def list_definitions(
 async def get_season_achievements(
     season_id: int,
     service: AchievementService = Depends(_get_service),
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_perm(Perm.ACHIEVEMENTS)),
 ) -> SeasonAchievementsResponse:
     return await service.get_season_achievements(season_id)
 
@@ -48,7 +49,7 @@ async def get_participant_achievements(
     season_id: int,
     participant_id: int,
     service: AchievementService = Depends(_get_service),
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_perm(Perm.ACHIEVEMENTS)),
 ) -> SeasonAchievementsResponse:
     return await service.get_participant_achievements(season_id, participant_id)
 
@@ -66,7 +67,7 @@ async def evaluate_matchday(
     season_id: int,
     number: int,
     service: AchievementService = Depends(_get_service),
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_perm(Perm.ACHIEVEMENTS)),
 ) -> EvaluationResult:
     return await service.evaluate_matchday(season_id, number)
 
@@ -78,6 +79,6 @@ async def evaluate_matchday(
 async def evaluate_all_matchdays(
     season_id: int,
     service: AchievementService = Depends(_get_service),
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_perm(Perm.ACHIEVEMENTS)),
 ) -> list[EvaluationResult]:
     return await service.evaluate_all_matchdays(season_id)

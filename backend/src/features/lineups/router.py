@@ -13,7 +13,8 @@ from src.features.lineups.schemas import (
     MyLineupResponse,
 )
 from src.features.lineups.service import LineupService
-from src.shared.dependencies import get_current_admin, get_current_user, get_db
+from src.shared.dependencies import get_current_user, get_db, require_perm
+from src.shared.permissions import Perm
 
 router = APIRouter(prefix="/lineups", tags=["lineups"])
 
@@ -127,7 +128,7 @@ async def get_deadline_status(
 async def apply_deadline_lineups(
     season_id: int,
     matchday_number: int,
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_perm(Perm.LINEUPS_ADMIN)),
     service: LineupService = Depends(_get_service),
 ) -> dict:
     """Copy previous lineup for participants who missed the deadline."""

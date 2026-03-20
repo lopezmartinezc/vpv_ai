@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "@/lib/api-client";
+import { PERM, PERM_LABELS, hasPerm, type PermKey } from "@/lib/permissions";
 
 interface AdminUser {
   id: number;
@@ -9,30 +10,11 @@ interface AdminUser {
   display_name: string;
   email: string | null;
   is_admin: boolean;
-  is_draft_manager: boolean;
+  permissions: number;
   has_password: boolean;
   has_session: boolean;
   telegram_chat_id: string | null;
 }
-
-interface SeasonSummary {
-  id: number;
-  name: string;
-  status: string;
-  matchday_current: number;
-  total_participants: number;
-}
-
-interface SeasonParticipant {
-  id: number;
-  user_id: number;
-  display_name: string;
-  draft_order: number | null;
-  is_active: boolean;
-  group_name: string | null;
-}
-
-const GROUPS = ["Virtuales", "Petit Comite", "Vacas Sagradas", "Comando Badalona"] as const;
 
 
 export default function AdminUsuariosPage() {
@@ -42,89 +24,20 @@ export default function AdminUsuariosPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [copiedToken, setCopiedToken] = useState<number | null>(null);
 
-  // Season participants state
-  const [seasons, setSeasons] = useState<SeasonSummary[]>([]);
-  const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
-  const [participants, setParticipants] = useState<SeasonParticipant[]>([]);
-  const [participantsLoading, setParticipantsLoading] = useState(false);
-  const [togglingId, setTogglingId] = useState<number | null>(null);
-
   const fetchUsers = useCallback(async () => {
     try {
-      const [userData, seasonData] = await Promise.all([
-        apiClient.get<AdminUser[]>("/auth/admin/users"),
-        apiClient.get<SeasonSummary[]>("/seasons"),
-      ]);
+      const userData = await apiClient.get<AdminUser[]>("/auth/admin/users");
       setUsers(userData);
-      setSeasons(seasonData);
-      if (seasonData.length > 0 && selectedSeasonId === null) {
-        const active =
-          seasonData.find((s) => s.status === "active") ?? seasonData[0];
-        setSelectedSeasonId(active.id);
-      }
     } catch {
       // handled by auth context
     } finally {
       setLoading(false);
-    }
-  }, [selectedSeasonId]);
-
-  const fetchParticipants = useCallback(async (seasonId: number) => {
-    setParticipantsLoading(true);
-    try {
-      const data = await apiClient.get<SeasonParticipant[]>(
-        `/seasons/${seasonId}/participants`,
-      );
-      setParticipants(data);
-    } catch {
-      setParticipants([]);
-    } finally {
-      setParticipantsLoading(false);
     }
   }, []);
 
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
-
-  useEffect(() => {
-    if (selectedSeasonId !== null) {
-      fetchParticipants(selectedSeasonId);
-    }
-  }, [selectedSeasonId, fetchParticipants]);
-
-  async function handleToggleActive(participantId: number) {
-    if (selectedSeasonId === null) return;
-    setTogglingId(participantId);
-    try {
-      const updated = await apiClient.put<SeasonParticipant>(
-        `/seasons/admin/${selectedSeasonId}/participants/${participantId}/toggle-active`,
-        {},
-      );
-      setParticipants((prev) =>
-        prev.map((p) => (p.id === updated.id ? updated : p)),
-      );
-    } catch {
-      // error
-    } finally {
-      setTogglingId(null);
-    }
-  }
-
-  async function handleGroupChange(participantId: number, groupName: string | null) {
-    if (selectedSeasonId === null) return;
-    try {
-      const updated = await apiClient.put<SeasonParticipant>(
-        `/seasons/admin/${selectedSeasonId}/participants/${participantId}/group`,
-        { group_name: groupName },
-      );
-      setParticipants((prev) =>
-        prev.map((p) => (p.id === updated.id ? updated : p)),
-      );
-    } catch {
-      // error
-    }
-  }
 
   async function handleToggleAdmin(userId: number) {
     setActionLoading(userId);
@@ -145,20 +58,21 @@ export default function AdminUsuariosPage() {
     }
   }
 
-  async function handleToggleDraftManager(userId: number) {
+  async function handleTogglePerm(userId: number, currentPerms: number, perm: number) {
     setActionLoading(userId);
     setActionError(null);
+    const newPerms = currentPerms ^ perm; // XOR toggles the bit
     try {
       const updated = await apiClient.put<AdminUser>(
-        `/auth/admin/users/${userId}/toggle-draft-manager`,
-        {},
+        `/auth/admin/users/${userId}/permissions`,
+        { permissions: newPerms },
       );
       setUsers((prev) =>
         prev.map((u) => (u.id === updated.id ? updated : u)),
       );
     } catch (e) {
-      console.error("toggle-draft-manager error:", e);
-      setActionError(e instanceof Error ? e.message : "Error al cambiar gestor draft");
+      console.error("set-permissions error:", e);
+      setActionError(e instanceof Error ? e.message : "Error al cambiar permisos");
     } finally {
       setActionLoading(null);
     }
@@ -247,9 +161,9 @@ export default function AdminUsuariosPage() {
                     Admin
                   </span>
                 )}
-                {user.is_draft_manager && (
+                {user.permissions > 0 && !user.is_admin && (
                   <span className="rounded bg-blue-500/20 px-2 py-0.5 text-xs font-medium text-blue-400">
-                    Draft
+                    Permisos
                   </span>
                 )}
                 {!user.has_password && (
@@ -271,13 +185,6 @@ export default function AdminUsuariosPage() {
                 className="rounded border border-vpv-border px-2 py-1 text-xs text-vpv-text-muted transition-colors hover:text-vpv-text disabled:opacity-50"
               >
                 {user.is_admin ? "Quitar admin" : "Hacer admin"}
-              </button>
-              <button
-                onClick={() => handleToggleDraftManager(user.id)}
-                disabled={actionLoading === user.id}
-                className="rounded border border-vpv-border px-2 py-1 text-xs text-vpv-text-muted transition-colors hover:text-vpv-text disabled:opacity-50"
-              >
-                {user.is_draft_manager ? "Quitar draft" : "Gestor draft"}
               </button>
               <button
                 onClick={() => handleResetPassword(user.id)}
@@ -332,9 +239,9 @@ export default function AdminUsuariosPage() {
                         Admin
                       </span>
                     )}
-                    {user.is_draft_manager && (
+                    {user.permissions > 0 && !user.is_admin && (
                       <span className="rounded bg-blue-500/20 px-2 py-0.5 text-xs font-medium text-blue-400">
-                        Draft
+                        Permisos
                       </span>
                     )}
                     {!user.has_password && (
@@ -357,13 +264,6 @@ export default function AdminUsuariosPage() {
                       className="rounded border border-vpv-border px-2 py-1 text-xs text-vpv-text-muted transition-colors hover:text-vpv-text disabled:opacity-50"
                     >
                       {user.is_admin ? "Quitar admin" : "Hacer admin"}
-                    </button>
-                    <button
-                      onClick={() => handleToggleDraftManager(user.id)}
-                      disabled={actionLoading === user.id}
-                      className="rounded border border-vpv-border px-2 py-1 text-xs text-vpv-text-muted transition-colors hover:text-vpv-text disabled:opacity-50"
-                    >
-                      {user.is_draft_manager ? "Quitar draft" : "Gestor draft"}
                     </button>
                     <button
                       onClick={() => handleResetPassword(user.id)}
@@ -392,148 +292,57 @@ export default function AdminUsuariosPage() {
       </div>
     </div>
 
-    {/* Season Participants */}
+    {/* Permissions per user */}
     <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
-      <div className="flex items-center justify-between border-b border-vpv-border px-4 py-3">
-        <h2 className="font-semibold text-vpv-text">
-          Participantes por temporada
-        </h2>
-        <select
-          value={selectedSeasonId ?? ""}
-          onChange={(e) => setSelectedSeasonId(Number(e.target.value))}
-          className="rounded border border-vpv-border bg-vpv-bg px-3 py-1.5 text-sm text-vpv-text"
-        >
-          {seasons.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
+      <div className="border-b border-vpv-border px-4 py-3">
+        <h2 className="font-semibold text-vpv-text">Permisos</h2>
+        <p className="text-xs text-vpv-text-muted">
+          Los admins tienen acceso total. Los permisos solo aplican a usuarios no-admin.
+        </p>
       </div>
-
-      {participantsLoading ? (
-        <div className="space-y-2 p-4">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div
-              key={i}
-              className="h-10 animate-pulse rounded bg-vpv-border"
-            />
-          ))}
-        </div>
-      ) : (
-        <>
-          {/* Mobile: Cards */}
-          <div className="divide-y divide-vpv-border md:hidden">
-            {participants.map((p) => (
-              <div
-                key={p.id}
-                className="flex items-center justify-between px-4 py-3"
-              >
-                <div>
-                  <p
-                    className={`font-medium ${p.is_active ? "text-vpv-text" : "text-vpv-text-muted line-through"}`}
-                  >
-                    {p.display_name}
-                  </p>
-                  <p className="text-xs text-vpv-text-muted">
-                    {p.draft_order !== null
-                      ? `Draft #${p.draft_order}`
-                      : "Sin orden"}
-                  </p>
-                </div>
-                <button
-                  onClick={() => handleToggleActive(p.id)}
-                  disabled={togglingId === p.id}
-                  className={`rounded px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
-                    p.is_active
-                      ? "border border-vpv-danger/30 text-vpv-danger hover:bg-vpv-danger/10"
-                      : "border border-green-500/30 text-green-600 hover:bg-green-500/10"
-                  }`}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-vpv-border bg-vpv-bg text-left text-vpv-text-muted">
+              <th className="px-4 py-2">Usuario</th>
+              {(Object.keys(PERM) as PermKey[]).map((key) => (
+                <th key={key} className="px-2 py-2 text-center text-[10px]">
+                  {PERM_LABELS[key]}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {users
+              .filter((u) => !u.is_admin)
+              .map((user) => (
+                <tr
+                  key={user.id}
+                  className="border-b border-vpv-border last:border-0 hover:bg-vpv-bg/50"
                 >
-                  {p.is_active ? "Desactivar" : "Activar"}
-                </button>
-              </div>
-            ))}
-          </div>
-
-          {/* Desktop: Table */}
-          <div className="hidden overflow-x-auto md:block">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-vpv-border bg-vpv-bg text-left text-vpv-text-muted">
-                  <th className="px-4 py-2">Nombre</th>
-                  <th className="px-4 py-2">Orden draft</th>
-                  <th className="px-4 py-2">Grupo</th>
-                  <th className="px-4 py-2">Estado</th>
-                  <th className="px-4 py-2 text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {participants.map((p) => (
-                  <tr
-                    key={p.id}
-                    className="border-b border-vpv-border last:border-0 hover:bg-vpv-bg/50"
-                  >
-                    <td
-                      className={`px-4 py-2 font-medium ${p.is_active ? "text-vpv-text" : "text-vpv-text-muted line-through"}`}
-                    >
-                      {p.display_name}
-                    </td>
-                    <td className="px-4 py-2 text-vpv-text-muted">
-                      {p.draft_order !== null ? `#${p.draft_order}` : "—"}
-                    </td>
-                    <td className="px-4 py-2">
-                      <select
-                        value={p.group_name ?? ""}
-                        onChange={(e) =>
-                          handleGroupChange(p.id, e.target.value || null)
+                  <td className="px-4 py-2 font-medium text-vpv-text">
+                    {user.display_name}
+                  </td>
+                  {(Object.keys(PERM) as PermKey[]).map((key) => (
+                    <td key={key} className="px-2 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        checked={hasPerm(user.permissions, PERM[key])}
+                        onChange={() =>
+                          handleTogglePerm(user.id, user.permissions, PERM[key])
                         }
-                        className="rounded border border-vpv-border bg-vpv-bg px-2 py-1 text-xs text-vpv-text"
-                      >
-                        <option value="">Sin grupo</option>
-                        {GROUPS.map((g) => (
-                          <option key={g} value={g}>{g}</option>
-                        ))}
-                      </select>
+                        disabled={actionLoading === user.id}
+                        className="h-4 w-4 rounded border-vpv-border bg-vpv-bg text-vpv-accent accent-vpv-accent disabled:opacity-50"
+                      />
                     </td>
-                    <td className="px-4 py-2">
-                      {p.is_active ? (
-                        <span className="rounded bg-green-500/20 px-2 py-0.5 text-xs font-medium text-green-600">
-                          Activo
-                        </span>
-                      ) : (
-                        <span className="rounded bg-vpv-danger/20 px-2 py-0.5 text-xs font-medium text-vpv-danger">
-                          Inactivo
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2 text-right">
-                      <button
-                        onClick={() => handleToggleActive(p.id)}
-                        disabled={togglingId === p.id}
-                        className={`rounded px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
-                          p.is_active
-                            ? "border border-vpv-danger/30 text-vpv-danger hover:bg-vpv-danger/10"
-                            : "border border-green-500/30 text-green-600 hover:bg-green-500/10"
-                        }`}
-                      >
-                        {p.is_active ? "Desactivar" : "Activar"}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {participants.length === 0 && (
-            <p className="px-4 py-6 text-center text-sm text-vpv-text-muted">
-              No hay participantes en esta temporada
-            </p>
-          )}
-        </>
-      )}
+                  ))}
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
     </div>
+
     </div>
   );
 }

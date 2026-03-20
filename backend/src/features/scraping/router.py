@@ -12,7 +12,8 @@ from src.features.scraping.scheduler import (
     trigger_tick,
 )
 from src.features.scraping.service import ScrapingService
-from src.shared.dependencies import get_current_admin, get_db
+from src.shared.dependencies import get_db, require_perm
+from src.shared.permissions import Perm
 
 router = APIRouter(prefix="/scraping", tags=["scraping"])
 
@@ -29,7 +30,7 @@ def _get_service(db: AsyncSession = Depends(get_db)) -> ScrapingService:
 async def scrape_matchday_endpoint(
     season_id: int,
     number: int,
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_perm(Perm.SCRAPING)),
     service: ScrapingService = Depends(_get_service),
 ) -> dict:
     """Trigger a full scrape of player stats for the given matchday.
@@ -49,7 +50,7 @@ async def scrape_match_endpoint(
     season_id: int,
     number: int,
     match_id: int,
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_perm(Perm.SCRAPING)),
     service: ScrapingService = Depends(_get_service),
 ) -> dict:
     """Trigger a scrape of player stats for a single match.
@@ -67,7 +68,7 @@ async def scrape_match_endpoint(
 )
 async def scrape_calendar_endpoint(
     season_id: int,
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_perm(Perm.SCRAPING)),
     service: ScrapingService = Depends(_get_service),
 ) -> dict[str, int]:
     """Fetch the La Liga calendar page and update DB match scores and dates.
@@ -83,7 +84,7 @@ async def scrape_calendar_endpoint(
     response_model=dict,
 )
 async def check_updates_endpoint(
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_perm(Perm.SCRAPING)),
     service: ScrapingService = Depends(_get_service),
 ) -> dict:
     """Check whether the futbolfantasy homepage CRC has changed.
@@ -106,7 +107,7 @@ async def check_updates_endpoint(
     response_model=dict,
 )
 async def scheduler_status(
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_perm(Perm.SCRAPING)),
 ) -> dict:
     return get_scheduler_status()
 
@@ -117,7 +118,7 @@ async def scheduler_status(
     response_model=dict,
 )
 async def scheduler_trigger(
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_perm(Perm.SCRAPING)),
 ) -> dict:
     return await trigger_tick()
 
@@ -128,7 +129,7 @@ async def scheduler_trigger(
     response_model=dict,
 )
 async def scheduler_trigger_calendar(
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_perm(Perm.SCRAPING)),
 ) -> dict:
     """Manually fire a calendar sync outside the daily cron schedule."""
     return await trigger_calendar_sync()
@@ -140,7 +141,7 @@ async def scheduler_trigger_calendar(
     response_model=dict,
 )
 async def scheduler_trigger_deadline(
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_perm(Perm.SCRAPING)),
 ) -> dict:
     """Manually fire a deadline check outside the 60-second interval."""
     return await trigger_deadline_check()
@@ -152,7 +153,7 @@ async def scheduler_trigger_deadline(
     response_model=dict,
 )
 async def scheduler_start(
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_perm(Perm.SCRAPING)),
 ) -> dict:
     start_scheduler()
     return get_scheduler_status()
@@ -164,7 +165,7 @@ async def scheduler_start(
     response_model=dict,
 )
 async def scheduler_stop(
-    _admin: dict = Depends(get_current_admin),
+    _admin: dict = Depends(require_perm(Perm.SCRAPING)),
 ) -> dict:
     stop_scheduler()
     return get_scheduler_status()

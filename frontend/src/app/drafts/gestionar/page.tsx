@@ -7,6 +7,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { useSeason } from "@/contexts/season-context";
 import { apiClient } from "@/lib/api-client";
 import { SeasonSelector } from "@/components/layout/season-selector";
+import { PERM, userHasPerm } from "@/lib/permissions";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
 import type {
   CreateDraftResponse,
@@ -92,7 +93,7 @@ export default function GestionarDraftPage() {
 
   // Auth guard
   useEffect(() => {
-    if (!authLoading && user && !user.isAdmin && !user.isDraftManager) {
+    if (!authLoading && user && !user.isAdmin && !userHasPerm(user.isAdmin, user.permissions, PERM.DRAFT)) {
       router.push("/");
     }
   }, [user, authLoading, router]);
@@ -417,7 +418,7 @@ export default function GestionarDraftPage() {
     return <div className="h-8 w-40 animate-pulse rounded bg-vpv-border" />;
   }
 
-  if (!user || (!user.isAdmin && !user.isDraftManager)) {
+  if (!user || (!user.isAdmin && !userHasPerm(user.isAdmin, user.permissions, PERM.DRAFT))) {
     return null;
   }
 

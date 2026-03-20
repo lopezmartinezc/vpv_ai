@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, String
+from sqlalchemy import Boolean, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.shared.models.base import Base, TimestampMixin
@@ -20,7 +20,7 @@ class User(TimestampMixin, Base):
     display_name: Mapped[str] = mapped_column(String(100), nullable=False)
     email: Mapped[str | None] = mapped_column(String(150))
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    is_draft_manager: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    permissions: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     session_id: Mapped[str | None] = mapped_column(String(36))
     telegram_chat_id: Mapped[str | None] = mapped_column(String(50))
 

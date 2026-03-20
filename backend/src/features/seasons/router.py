@@ -22,7 +22,8 @@ from src.features.seasons.schemas import (
     ValidFormationResponse,
 )
 from src.features.seasons.service import SeasonService
-from src.shared.dependencies import get_current_admin, get_db
+from src.shared.dependencies import get_current_admin, get_db, require_perm
+from src.shared.permissions import Perm
 
 logger = logging.getLogger(__name__)
 
@@ -174,7 +175,7 @@ async def toggle_participant_active(
     season_id: int,
     participant_id: int,
     service: SeasonService = Depends(_get_service),
-    _admin: dict = Depends(get_current_admin),
+    _user: dict = Depends(require_perm(Perm.PARTICIPANTS)),
 ) -> SeasonParticipantResponse:
     participant = await service.toggle_participant_active(season_id, participant_id)
     return SeasonParticipantResponse.model_validate(participant)
@@ -189,7 +190,7 @@ async def assign_participant_group(
     participant_id: int,
     body: GroupAssignRequest,
     service: SeasonService = Depends(_get_service),
-    _admin: dict = Depends(get_current_admin),
+    _user: dict = Depends(require_perm(Perm.PARTICIPANTS)),
 ) -> SeasonParticipantResponse:
     participant = await service.assign_participant_group(
         season_id, participant_id, body.group_name
