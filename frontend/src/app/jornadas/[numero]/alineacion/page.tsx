@@ -541,7 +541,7 @@ export default function AlineacionPage() {
   const { selectedSeason, loading: seasonLoading } = useSeason();
 
   // API calls
-  const { data: myLineup, loading: myLineupLoading } =
+  const { data: myLineup, loading: myLineupLoading, refetch: refetchLineup } =
     useFetch<MyLineupResponse>(
       selectedSeason ? `/lineups/${selectedSeason.id}/${numero}/me` : null,
     );
@@ -779,6 +779,7 @@ export default function AlineacionPage() {
 
     try {
       await apiClient.post(`/lineups/${selectedSeason.id}/${numero}`, body);
+      refetchLineup();
       setSubmitResult({
         ok: true,
         message: "Alineacion enviada. Revisa Telegram para la confirmacion.",

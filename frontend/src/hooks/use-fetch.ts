@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "@/lib/api-client";
 
 interface UseFetchResult<T> {
   data: T | null;
   loading: boolean;
   error: boolean;
+  refetch: () => void;
 }
 
 export function useFetch<T>(path: string | null): UseFetchResult<T> {
@@ -15,6 +16,7 @@ export function useFetch<T>(path: string | null): UseFetchResult<T> {
     error: boolean;
     forPath: string | null;
   }>({ data: null, error: false, forPath: null });
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     if (!path) return;
@@ -33,7 +35,9 @@ export function useFetch<T>(path: string | null): UseFetchResult<T> {
     return () => {
       cancelled = true;
     };
-  }, [path]);
+  }, [path, tick]);
+
+  const refetch = useCallback(() => setTick((t) => t + 1), []);
 
   const loading = path !== null && result.forPath !== path;
 
@@ -41,5 +45,6 @@ export function useFetch<T>(path: string | null): UseFetchResult<T> {
     data: loading ? null : result.data,
     loading,
     error: loading ? false : result.error,
+    refetch,
   };
 }
