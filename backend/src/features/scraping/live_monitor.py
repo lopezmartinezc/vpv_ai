@@ -114,32 +114,41 @@ async def _check_live_matches(session: AsyncSession) -> None:
             home_team = team_map.get(match.home_team_id, "?")
             away_team = team_map.get(match.away_team_id, "?")
 
+            # Events that always send (regardless of VPV ownership)
+            always_send = {"goal"}
+
             # Get or create dedup set for this match
             is_first_scan = match.id not in _sent_events
             seen = _sent_events.setdefault(match.id, set())
 
             if is_first_scan:
-                # First time seeing this match — mark all current events as seen
-                # to avoid flooding with historical events
+                # First time seeing this match — mark non-goal events as seen
+                # to avoid flooding with historical cards/subs, but KEEP goals
+                # so they are sent even if the match started before the monitor
+                goals_to_send = []
                 for e in events:
-                    seen.add(e.dedup_key)
+                    if e.event_type in always_send:
+                        goals_to_send.append(e)
+                    else:
+                        seen.add(e.dedup_key)
                 scraping_log(
                     _JOB_ID,
                     f"Match {match.id} ({home_team} vs {away_team}): "
-                    f"primer scan, {len(events)} eventos marcados como vistos",
+                    f"primer scan, {len(events)} eventos ({len(goals_to_send)} goles pendientes)",
                 )
-                continue
+                if not goals_to_send:
+                    continue
+                new_events = goals_to_send
+            else:
+                new_events = [e for e in events if e.dedup_key not in seen]
+                if not new_events:
+                    continue
 
-            new_events = [e for e in events if e.dedup_key not in seen]
-            if not new_events:
-                continue
             score = (
                 f"{match.home_score}-{match.away_score}" if match.home_score is not None else "vs"
             )
 
             sends_this_tick = 0
-            # Events that always send (regardless of VPV ownership)
-            always_send = {"goal"}
 
             for event in new_events:
                 from html import escape
