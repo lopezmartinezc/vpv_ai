@@ -514,6 +514,8 @@ CREATE TABLE participant_matchday_scores (
 );
 ```
 
+Las filas se crean automáticamente por el `ScoreAggregator` (Step 3: INSERT ... ON CONFLICT) la primera vez que se ejecuta scraping para una jornada. Antes del scraping, la home usa `lineups.total_points` como fallback.
+
 ---
 
 ### 16. `transactions` — Movimientos económicos
