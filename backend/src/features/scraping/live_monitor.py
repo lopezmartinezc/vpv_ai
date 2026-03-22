@@ -149,12 +149,18 @@ async def _check_live_matches(session: AsyncSession) -> None:
                     continue
 
                 # Format and send Telegram alert
+                from html import escape
+
                 emoji = EVENT_EMOJI.get(event.event_type, "")
                 label = EVENT_LABEL.get(event.event_type, event.event_type)
+                safe_name = escape(event.player_name)
+                safe_owner = escape(owner_name)
+                safe_home = escape(home_team)
+                safe_away = escape(away_team)
                 msg = (
-                    f"{emoji} <b>{label}</b> \u2014 {event.player_name} ({event.minute})\n"
-                    f"{home_team} {score} {away_team} | J{md_number}\n"
-                    f"Propietario: {owner_name}"
+                    f"{emoji} <b>{label}</b> \u2014 {safe_name} ({event.minute})\n"
+                    f"{safe_home} {score} {safe_away} | J{md_number}\n"
+                    f"Propietario: {safe_owner}"
                 )
 
                 sent = await _send_telegram(session, msg)
@@ -207,12 +213,28 @@ async def _build_team_map(session: AsyncSession, season_id: int) -> dict[int, st
 async def _send_telegram(session: AsyncSession, text: str) -> bool:
     """Send a Telegram alert. Returns True on success."""
     try:
-        from src.features.telegram.service import TelegramNotifier
+        from src.features.telegram.client import TelegramClient
+        from src.features.telegram.config import telegram_settings
 
-        notifier = TelegramNotifier(session)
-        return await notifier.send_alert(text)
+        if not telegram_settings.telegram_enabled:
+            scraping_log("live_monitor", "Telegram desactivado", "warning")
+            return False
+
+        from src.core.config import settings
+
+        chat_id = settings.telegram_alerts_chat_id or telegram_settings.telegram_chat_id
+
+        async with TelegramClient() as client:
+            result = await client.send_message(chat_id=chat_id, text=text)
+
+        if result.get("ok"):
+            return True
+
+        error_desc = result.get("description", "unknown error")
+        scraping_log("live_monitor", f"Telegram API error: {error_desc}", "error")
+        return False
     except Exception as exc:
-        scraping_log("live_monitor", f"Telegram error: {exc}", "error")
+        scraping_log("live_monitor", f"Telegram exception: {exc}", "error")
         return False
 
 
