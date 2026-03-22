@@ -427,14 +427,14 @@ class ScrapingService:
                         _make_log(
                             player.id,
                             "ok",
-                            f"{player.name} ({team}): {breakdown.get('pts_total', 0)} pts",
+                            f"{player.name} ({team}): {breakdown.pts_total} pts",
                             {
                                 "position": position,
                                 "marca_rating": stats.marca_rating,
                                 "as_picas": stats.as_picas,
                                 "goals": stats.goals,
                                 "assists": stats.assists,
-                                "pts_total": breakdown.get("pts_total", 0),
+                                "pts_total": breakdown.pts_total,
                             },
                         )
                     )
