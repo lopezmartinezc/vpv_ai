@@ -169,7 +169,7 @@ function JobCard({
   const [showLogs, setShowLogs] = useState(false);
   const isTriggering = triggeringJob === job.id;
   const logs = job.logs ?? [];
-  const lastLogs = logs.slice(-15);
+  const lastLogs = logs.slice(-50);
 
   return (
     <div className="rounded-lg border border-vpv-card-border bg-vpv-card">

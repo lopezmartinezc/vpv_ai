@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections import deque
 from datetime import UTC, datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -38,26 +37,11 @@ _last_calendar_sync_at: datetime | None = None
 _last_deadline_check_at: datetime | None = None
 
 # ---------------------------------------------------------------------------
-# Per-job log buffer (circular, max 50 entries per job)
+# Per-job log buffer (shared module to avoid circular imports)
 # ---------------------------------------------------------------------------
-_MAX_LOG_ENTRIES = 50
-_job_logs: dict[str, deque[dict]] = {
-    "scraping_tick": deque(maxlen=_MAX_LOG_ENTRIES),
-    "calendar_sync": deque(maxlen=_MAX_LOG_ENTRIES),
-    "deadline_check": deque(maxlen=_MAX_LOG_ENTRIES),
-    "deadline_reminder": deque(maxlen=_MAX_LOG_ENTRIES),
-}
+from src.features.scraping.log_buffer import get_job_logs, scraping_log  # noqa: E402
 
-
-def _log(job_id: str, message: str, level: str = "info") -> None:
-    """Append a log entry to the per-job buffer and also emit via stdlib logger."""
-    entry = {
-        "ts": datetime.now(UTC).isoformat(),
-        "level": level,
-        "msg": message,
-    }
-    _job_logs[job_id].append(entry)
-    getattr(logger, level, logger.info)("scheduler.%s: %s", job_id, message)
+_log = scraping_log
 
 
 # ---------------------------------------------------------------------------
@@ -586,7 +570,7 @@ def get_scheduler_status() -> dict:
             "last_run_at": _last_tick_at.isoformat() if _last_tick_at else None,
             "next_run_at": next_run,
             "lock_held": _scrape_lock.locked(),
-            "logs": list(_job_logs["scraping_tick"]),
+            "logs": get_job_logs("scraping_tick"),
         },
         {
             "id": "calendar_sync",
@@ -595,7 +579,7 @@ def get_scheduler_status() -> dict:
             "schedule": "Diario 06:00 UTC",
             "last_run_at": _last_calendar_sync_at.isoformat() if _last_calendar_sync_at else None,
             "next_run_at": next_calendar_sync,
-            "logs": list(_job_logs["calendar_sync"]),
+            "logs": get_job_logs("calendar_sync"),
         },
         {
             "id": "deadline_check",
@@ -606,7 +590,7 @@ def get_scheduler_status() -> dict:
             if _last_deadline_check_at
             else None,
             "next_run_at": next_deadline_check,
-            "logs": list(_job_logs["deadline_check"]),
+            "logs": get_job_logs("deadline_check"),
         },
         {
             "id": "deadline_reminder",
@@ -617,7 +601,13 @@ def get_scheduler_status() -> dict:
             if _last_deadline_reminder_at
             else None,
             "next_run_at": next_deadline_reminder,
-            "logs": list(_job_logs["deadline_reminder"]),
+            "logs": get_job_logs("deadline_reminder"),
+        },
+        {
+            "id": "manual_scrape",
+            "name": "Scraping manual (admin)",
+            "type": "manual",
+            "logs": get_job_logs("manual_scrape"),
         },
     ]
 

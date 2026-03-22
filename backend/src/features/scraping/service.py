@@ -10,6 +10,7 @@ from src.features.economy.service import EconomyService
 from src.features.scraping.aggregation import ScoreAggregator
 from src.features.scraping.client import ScrapingClient, ScrapingError
 from src.features.scraping.config import scraping_settings
+from src.features.scraping.log_buffer import scraping_log
 from src.features.scraping.parsers import (
     parse_calendar,
     parse_homepage_matchday,
@@ -22,6 +23,8 @@ from src.features.scraping.scoring import ScoringEngine
 from src.shared.models.team import Team
 
 logger = logging.getLogger(__name__)
+
+_MANUAL = "manual_scrape"
 
 
 class ScrapingService:
@@ -346,6 +349,14 @@ class ScrapingService:
         match_players = await self.repo.get_players_for_teams(season_id, team_ids)
         team_names = await self._team_names(team_ids)
 
+        home_team = team_names.get(match.home_team_id, "?")
+        away_team = team_names.get(match.away_team_id, "?")
+        scraping_log(
+            _MANUAL,
+            f"Match {match_id} ({home_team} vs {away_team}) J{matchday_number}: "
+            f"scrapeando {len(match_players)} jugadores",
+        )
+
         total_processed = 0
         total_skipped = 0
         total_errors = 0
@@ -355,16 +366,8 @@ class ScrapingService:
         season_slug = await self._resolve_season_slug(season_id)
 
         async with ScrapingClient() as client:
-            total = len(match_players)
-            for idx, player in enumerate(match_players, start=1):
-                logger.info(
-                    "scrape_match_players: player %d/%d slug=%s match_id=%d",
-                    idx,
-                    total,
-                    player.slug,
-                    match_id,
-                )
-
+            for player in match_players:
+                team = team_names.get(player.team_id, "?")
                 url = f"{base_url}/jugadores/{player.slug}/{season_slug}"
                 try:
                     html = await client.fetch(url)
@@ -375,20 +378,12 @@ class ScrapingService:
                         and cause.response.status_code == 404
                     )
                     if is_not_found:
-                        logger.info(
-                            "scrape_match_players: player slug=%s not found (404), skipping",
-                            player.slug,
-                        )
                         total_skipped += 1
                         continue
-                    logger.warning(
-                        "scrape_match_players: fetch failed for slug=%s: %s",
-                        player.slug,
-                        exc,
-                    )
                     total_errors += 1
-                    team = team_names.get(player.team_id, "?")
-                    error_details.append(f"{player.name} ({team}): {exc.cause}")
+                    detail = f"{player.name} ({team}): {exc.cause}"
+                    error_details.append(detail)
+                    scraping_log(_MANUAL, detail, "error")
                     continue
 
                 stats = parse_player_stats(html, matchday_number)
@@ -408,6 +403,13 @@ class ScrapingService:
                     breakdown=breakdown,
                 )
                 total_processed += 1
+
+        scraping_log(
+            _MANUAL,
+            f"Match {match_id} ({home_team} vs {away_team}): "
+            f"procesados={total_processed}, skipped={total_skipped}, errores={total_errors}",
+            "error" if total_errors > 0 else "info",
+        )
 
         if total_errors == 0 and total_processed > 0:
             await self.repo.mark_match_stats_ok(match_id)
