@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.database import AsyncSessionLocal
 from src.shared.models.scraping_log import ScrapingLog
 
 
@@ -20,6 +21,17 @@ class ScrapingLogRepository:
         self.session.add_all(objects)
         await self.session.flush()
         return len(objects)
+
+    @staticmethod
+    async def write_log(log: dict) -> None:
+        """Write a single log entry in its own committed transaction.
+
+        Uses a separate session so the log is immediately visible to
+        polling queries while the main scraping transaction is still open.
+        """
+        async with AsyncSessionLocal() as session:
+            session.add(ScrapingLog(**log))
+            await session.commit()
 
     async def query(
         self,

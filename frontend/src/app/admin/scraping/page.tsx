@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiClient } from "@/lib/api-client";
 
 interface LogEntry {
@@ -292,34 +292,54 @@ export default function AdminScrapingPage() {
 
   // Inline DB logs per match
   const [matchLogs, setMatchLogs] = useState<Record<number, DbLogEntry[]>>({});
-  const [loadingLogs, setLoadingLogs] = useState<number | null>(null);
+  const [expandedLogs, setExpandedLogs] = useState<Set<number>>(new Set());
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  async function fetchMatchLogs(matchId: number) {
-    if (!manualSeason) return;
-    setLoadingLogs(matchId);
-    try {
-      const data = await apiClient.get<DbLogsResponse>(
-        `/scraping/logs?season_id=${manualSeason}&match_id=${matchId}&limit=200`,
-      );
-      setMatchLogs((prev) => ({ ...prev, [matchId]: data.items }));
-    } catch {
-      // error
-    } finally {
-      setLoadingLogs(null);
-    }
-  }
+  const fetchMatchLogs = useCallback(
+    async (matchId: number) => {
+      if (!manualSeason) return;
+      try {
+        const data = await apiClient.get<DbLogsResponse>(
+          `/scraping/logs?season_id=${manualSeason}&match_id=${matchId}&limit=200`,
+        );
+        setMatchLogs((prev) => ({ ...prev, [matchId]: data.items }));
+      } catch {
+        // keep previous
+      }
+    },
+    [manualSeason],
+  );
 
   function toggleMatchLogs(matchId: number) {
-    if (matchLogs[matchId]) {
-      setMatchLogs((prev) => {
-        const next = { ...prev };
-        delete next[matchId];
-        return next;
-      });
-    } else {
-      fetchMatchLogs(matchId);
+    setExpandedLogs((prev) => {
+      const next = new Set(prev);
+      if (next.has(matchId)) {
+        next.delete(matchId);
+      } else {
+        next.add(matchId);
+        fetchMatchLogs(matchId);
+      }
+      return next;
+    });
+  }
+
+  // Start polling logs for a match being scraped
+  function startLogPolling(matchId: number) {
+    stopLogPolling();
+    setExpandedLogs((prev) => new Set(prev).add(matchId));
+    pollRef.current = setInterval(() => fetchMatchLogs(matchId), 2000);
+  }
+
+  function stopLogPolling() {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
     }
   }
+
+  useEffect(() => {
+    return () => stopLogPolling();
+  }, []);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -471,6 +491,9 @@ export default function AdminScrapingPage() {
     setAbortController(controller);
     setScrapingMatchId(matchId);
     setMatchScrapeResult(null);
+    // Clear old logs and start live polling
+    setMatchLogs((prev) => ({ ...prev, [matchId]: [] }));
+    startLogPolling(matchId);
     try {
       const data = await apiClient.post<{
         processed?: number;
@@ -489,10 +512,7 @@ export default function AdminScrapingPage() {
         ...details,
       ];
       setMatchScrapeResult({ matchId, lines });
-      await Promise.all([
-        fetchMatchday(Number(manualSeason), Number(manualMatchday)),
-        fetchMatchLogs(matchId),
-      ]);
+      await fetchMatchday(Number(manualSeason), Number(manualMatchday));
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
         setMatchScrapeResult({ matchId, lines: ["Scraping cancelado"] });
@@ -500,6 +520,9 @@ export default function AdminScrapingPage() {
         setMatchScrapeResult({ matchId, lines: ["Error al scrapear partido"] });
       }
     } finally {
+      stopLogPolling();
+      // Final fetch to get all logs
+      await fetchMatchLogs(matchId);
       setScrapingMatchId(null);
       setAbortController(null);
     }
@@ -741,7 +764,7 @@ export default function AdminScrapingPage() {
                     )}
                     <button
                       onClick={() => toggleMatchLogs(match.id)}
-                      disabled={loadingLogs === match.id}
+                      disabled={scrapingMatchId === match.id}
                       className="shrink-0 rounded border border-vpv-border px-2 py-0.5 text-[11px] text-vpv-text-muted transition-colors hover:text-vpv-text disabled:opacity-40"
                     >
                       {matchLogs[match.id] ? "Ocultar" : "Logs"}
@@ -764,16 +787,20 @@ export default function AdminScrapingPage() {
                     )}
                   </div>
                   {/* Inline DB logs */}
-                  {matchLogs[match.id] && (
+                  {expandedLogs.has(match.id) && (
                     <div className="border-t border-vpv-border/30 bg-vpv-bg/30">
                       <div className="px-4 py-1.5">
                         <div className="mb-1 flex items-center justify-between">
                           <span className="text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted">
-                            Logs ({matchLogs[match.id].length})
-                            {(() => {
-                              const errs = matchLogs[match.id].filter((l) => l.status === "error").length;
-                              const skips = matchLogs[match.id].filter((l) => l.status === "skip").length;
-                              const oks = matchLogs[match.id].filter((l) => l.status === "ok").length;
+                            {scrapingMatchId === match.id && (
+                              <span className="mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-vpv-accent" />
+                            )}
+                            Logs ({(matchLogs[match.id] ?? []).length})
+                            {(matchLogs[match.id] ?? []).length > 0 && (() => {
+                              const entries = matchLogs[match.id];
+                              const oks = entries.filter((l) => l.status === "ok").length;
+                              const skips = entries.filter((l) => l.status === "skip").length;
+                              const errs = entries.filter((l) => l.status === "error").length;
                               return (
                                 <span className="ml-2 font-normal normal-case">
                                   <span className="text-green-400">{oks} ok</span>
@@ -783,53 +810,62 @@ export default function AdminScrapingPage() {
                               );
                             })()}
                           </span>
-                          <button
-                            onClick={() => toggleMatchLogs(match.id)}
-                            className="text-[10px] text-vpv-text-muted hover:text-vpv-text"
-                          >
-                            Cerrar
-                          </button>
-                        </div>
-                        <div className="max-h-60 space-y-px overflow-y-auto">
-                          {matchLogs[match.id].map((log) => (
-                            <div
-                              key={log.id}
-                              className={`flex items-start gap-2 rounded px-2 py-1 text-xs ${
-                                log.status === "error"
-                                  ? "bg-red-500/10"
-                                  : log.status === "skip"
-                                    ? "bg-amber-500/5"
-                                    : ""
-                              }`}
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => fetchMatchLogs(match.id)}
+                              className="text-[10px] text-vpv-text-muted hover:text-vpv-text"
                             >
-                              <span
-                                className={`mt-0.5 shrink-0 rounded px-1 py-px text-[9px] font-bold uppercase ${
-                                  log.status === "ok"
-                                    ? "bg-green-500/20 text-green-400"
+                              Refrescar
+                            </button>
+                            <button
+                              onClick={() => toggleMatchLogs(match.id)}
+                              className="text-[10px] text-vpv-text-muted hover:text-vpv-text"
+                            >
+                              Cerrar
+                            </button>
+                          </div>
+                        </div>
+                        {(matchLogs[match.id] ?? []).length === 0 ? (
+                          <p className="py-2 text-xs text-vpv-text-muted">
+                            {scrapingMatchId === match.id ? "Esperando logs..." : "Sin logs"}
+                          </p>
+                        ) : (
+                          <div className="max-h-72 space-y-px overflow-y-auto">
+                            {(matchLogs[match.id] ?? []).map((log) => (
+                              <div
+                                key={log.id}
+                                className={`flex items-start gap-2 rounded px-2 py-1 text-xs ${
+                                  log.status === "error"
+                                    ? "bg-red-500/10"
                                     : log.status === "skip"
-                                      ? "bg-amber-500/20 text-amber-400"
-                                      : "bg-red-500/20 text-red-400"
+                                      ? "bg-amber-500/5"
+                                      : ""
                                 }`}
                               >
-                                {log.status}
-                              </span>
-                              <span className={`min-w-0 flex-1 ${log.status === "error" ? "text-red-400" : "text-vpv-text-muted"}`}>
-                                {log.message}
-                              </span>
-                              {log.detail && (
-                                <span className="shrink-0 text-[10px] text-vpv-text-muted/60">
-                                  {log.detail.pts_total != null && `${log.detail.pts_total} pts`}
+                                <span
+                                  className={`mt-0.5 shrink-0 rounded px-1 py-px text-[9px] font-bold uppercase ${
+                                    log.status === "ok"
+                                      ? "bg-green-500/20 text-green-400"
+                                      : log.status === "skip"
+                                        ? "bg-amber-500/20 text-amber-400"
+                                        : "bg-red-500/20 text-red-400"
+                                  }`}
+                                >
+                                  {log.status}
                                 </span>
-                              )}
-                            </div>
-                          ))}
-                        </div>
+                                <span className={`min-w-0 flex-1 ${log.status === "error" ? "text-red-400" : "text-vpv-text-muted"}`}>
+                                  {log.message}
+                                </span>
+                                {log.detail && log.detail.pts_total != null && (
+                                  <span className="shrink-0 tabular-nums text-[10px] text-vpv-text-muted/60">
+                                    {String(log.detail.pts_total)} pts
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  )}
-                  {loadingLogs === match.id && (
-                    <div className="border-t border-vpv-border/30 bg-vpv-bg/30 px-4 py-2">
-                      <div className="h-4 w-32 animate-pulse rounded bg-vpv-border" />
                     </div>
                   )}
                 </div>

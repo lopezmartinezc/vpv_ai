@@ -372,10 +372,17 @@ class ScrapingService:
         total_skipped = 0
         total_errors = 0
         error_details: list[str] = []
-        db_logs: list[dict] = []
 
         base_url = self._settings.scraping_base_url
         season_slug = await self._resolve_season_slug(season_id)
+
+        async def _wlog(
+            pid: int | None, status: str, msg: str, detail: dict | None = None
+        ) -> None:
+            """Write a single log entry committed immediately (visible to polling)."""
+            await ScrapingLogRepository.write_log(_make_log(pid, status, msg, detail))
+
+        await _wlog(None, "ok", f"Inicio: {match_label} — {len(match_players)} jugadores")
 
         try:
             async with ScrapingClient() as client:
@@ -392,23 +399,18 @@ class ScrapingService:
                         )
                         if is_not_found:
                             total_skipped += 1
-                            db_logs.append(
-                                _make_log(player.id, "skip", f"{player.name} ({team}): 404")
-                            )
+                            await _wlog(player.id, "skip", f"{player.name} ({team}): 404")
                             continue
                         total_errors += 1
                         err_msg = f"{player.name} ({team}): {cause}"
                         error_details.append(err_msg)
-                        scraping_log(_MANUAL, err_msg, "error")
-                        db_logs.append(_make_log(player.id, "error", err_msg))
+                        await _wlog(player.id, "error", err_msg)
                         continue
 
                     stats = parse_player_stats(html, matchday_number)
                     if stats is None:
                         total_skipped += 1
-                        db_logs.append(
-                            _make_log(player.id, "skip", f"{player.name} ({team}): sin stats")
-                        )
+                        await _wlog(player.id, "skip", f"{player.name} ({team}): sin stats")
                         continue
 
                     position = player.position
@@ -423,30 +425,30 @@ class ScrapingService:
                         breakdown=breakdown,
                     )
                     total_processed += 1
-                    db_logs.append(
-                        _make_log(
-                            player.id,
-                            "ok",
-                            f"{player.name} ({team}): {breakdown.pts_total} pts",
-                            {
-                                "position": position,
-                                "marca_rating": stats.marca_rating,
-                                "as_picas": stats.as_picas,
-                                "goals": stats.goals,
-                                "assists": stats.assists,
-                                "pts_total": breakdown.pts_total,
-                            },
-                        )
+                    await _wlog(
+                        player.id,
+                        "ok",
+                        f"{player.name} ({team}): {breakdown.pts_total} pts",
+                        {
+                            "position": position,
+                            "marca_rating": stats.marca_rating,
+                            "as_picas": stats.as_picas,
+                            "goals": stats.goals,
+                            "assists": stats.assists,
+                            "pts_total": breakdown.pts_total,
+                        },
                     )
         except Exception as exc:
-            err_msg = f"Error fatal scrapeando match {match_id} ({match_label}): {exc}"
-            scraping_log(_MANUAL, err_msg, "error")
-            db_logs.append(_make_log(None, "error", err_msg))
+            err_msg = f"Error fatal: {exc}"
+            await _wlog(None, "error", err_msg)
             total_errors += 1
             error_details.append(err_msg)
-        finally:
-            # Always persist logs, even on error
-            await log_repo.bulk_insert(db_logs)
+
+        await _wlog(
+            None,
+            "error" if total_errors > 0 else "ok",
+            f"Fin: {total_processed} ok, {total_skipped} skip, {total_errors} error",
+        )
 
         scraping_log(
             _MANUAL,
