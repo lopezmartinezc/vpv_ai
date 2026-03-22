@@ -6,6 +6,7 @@ Telegram alerts when VPV-owned players score, get carded, etc.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -109,15 +110,28 @@ async def _check_live_matches(session: AsyncSession) -> None:
             if not events:
                 continue
 
+            home_team = team_map.get(match.home_team_id, "?")
+            away_team = team_map.get(match.away_team_id, "?")
+
             # Get or create dedup set for this match
+            is_first_scan = match.id not in _sent_events
             seen = _sent_events.setdefault(match.id, set())
+
+            if is_first_scan:
+                # First time seeing this match — mark all current events as seen
+                # to avoid flooding with historical events
+                for e in events:
+                    seen.add(e.dedup_key)
+                scraping_log(
+                    _JOB_ID,
+                    f"Match {match.id} ({home_team} vs {away_team}): "
+                    f"primer scan, {len(events)} eventos marcados como vistos",
+                )
+                continue
 
             new_events = [e for e in events if e.dedup_key not in seen]
             if not new_events:
                 continue
-
-            home_team = team_map.get(match.home_team_id, "?")
-            away_team = team_map.get(match.away_team_id, "?")
             score = (
                 f"{match.home_score}-{match.away_score}" if match.home_score is not None else "vs"
             )
@@ -150,6 +164,7 @@ async def _check_live_matches(session: AsyncSession) -> None:
                         _JOB_ID,
                         f"Enviado: {label} {event.player_name} ({event.minute}) -> {owner_name}",
                     )
+                    await asyncio.sleep(1)  # rate limit: 1 msg/sec
                 else:
                     scraping_log(
                         _JOB_ID,
