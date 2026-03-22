@@ -138,31 +138,31 @@ async def _check_live_matches(session: AsyncSession) -> None:
             )
 
             sends_this_tick = 0
+            # Events that always send (regardless of VPV ownership)
+            always_send = {"goal"}
+
             for event in new_events:
-                # Check if player belongs to a VPV participant
-                info = player_map.get(event.player_slug)
-                if info is None:
-                    seen.add(event.dedup_key)  # not a VPV player, skip permanently
-                    continue
-
-                _player, owner_name = info
-                if owner_name is None:
-                    seen.add(event.dedup_key)  # no owner, skip permanently
-                    continue
-
-                # Format and send Telegram alert
                 from html import escape
+
+                info = player_map.get(event.player_slug)
+                _player, owner_name = info if info else (None, None)
+
+                is_vpv = owner_name is not None
+                if not is_vpv and event.event_type not in always_send:
+                    seen.add(event.dedup_key)
+                    continue
 
                 emoji = EVENT_EMOJI.get(event.event_type, "")
                 label = EVENT_LABEL.get(event.event_type, event.event_type)
                 safe_name = escape(event.player_name)
-                safe_owner = escape(owner_name)
                 safe_home = escape(home_team)
                 safe_away = escape(away_team)
+
+                owner_line = f"\nPropietario: {escape(owner_name)}" if is_vpv else ""
                 msg = (
                     f"{emoji} <b>{label}</b> \u2014 {safe_name} ({event.minute})\n"
-                    f"{safe_home} {score} {safe_away} | J{md_number}\n"
-                    f"Propietario: {safe_owner}"
+                    f"{safe_home} {score} {safe_away} | J{md_number}"
+                    f"{owner_line}"
                 )
 
                 sent = await _send_telegram(session, msg)
