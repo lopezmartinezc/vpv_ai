@@ -240,12 +240,17 @@ class MatchdayRepository:
         ]
 
     async def get_lineups_as_scores(self, matchday_id: int) -> list[ParticipantScoreRow]:
-        """Return lineup-based scores (0 pts) when no scraping has happened yet."""
+        """Fallback when participant_matchday_scores not yet populated.
+
+        Uses lineup total_points (sum of lineup_players.points) so partial
+        scraping results are reflected immediately.
+        """
         stmt = (
             select(
                 SeasonParticipant.id.label("participant_id"),
                 User.display_name,
                 Lineup.formation,
+                Lineup.total_points,
             )
             .join(User, SeasonParticipant.user_id == User.id)
             .join(
@@ -255,19 +260,19 @@ class MatchdayRepository:
                     Lineup.matchday_id == matchday_id,
                 ),
             )
-            .order_by(User.display_name.asc())
+            .order_by(Lineup.total_points.desc(), User.display_name.asc())
         )
         result = await self.session.execute(stmt)
         return [
             ParticipantScoreRow(
-                rank=None,
+                rank=i + 1,
                 participant_id=row.participant_id,
                 display_name=row.display_name,
-                total_points=0,
+                total_points=row.total_points or 0,
                 formation=row.formation,
                 pending_players=0,
             )
-            for row in result.all()
+            for i, row in enumerate(result.all())
         ]
 
     async def get_participant_display_name(self, participant_id: int) -> str:
