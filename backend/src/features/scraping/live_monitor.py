@@ -158,7 +158,7 @@ async def _check_live_matches(session: AsyncSession) -> None:
                 safe_home = escape(home_team)
                 safe_away = escape(away_team)
 
-                owner_line = f"\nPropietario: {escape(owner_name)}" if is_vpv else ""
+                owner_line = f"\nPropietario: {escape(owner_name or '')}" if is_vpv else ""
                 msg = (
                     f"{emoji} <b>{label}</b> \u2014 {safe_name} ({event.minute})\n"
                     f"{safe_home} {score} {safe_away} | J{md_number}"
