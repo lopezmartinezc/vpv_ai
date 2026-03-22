@@ -29,17 +29,17 @@ ICON_MAP: dict[str, str] = {
 }
 
 EVENT_EMOJI: dict[str, str] = {
-    "goal": "\u26bd",           # ⚽
-    "assist": "\U0001f45f",     # 👟
-    "yellow": "\U0001f7e8",     # 🟨
-    "red": "\U0001f7e5",        # 🟥
+    "goal": "\u26bd",  # ⚽
+    "assist": "\U0001f45f",  # 👟
+    "yellow": "\U0001f7e8",  # 🟨
+    "red": "\U0001f7e5",  # 🟥
     "double_yellow": "\U0001f7e8\U0001f7e8",
-    "sub_in": "\U0001f53c",     # 🔼
-    "sub_out": "\U0001f53d",    # 🔽
+    "sub_in": "\U0001f53c",  # 🔼
+    "sub_out": "\U0001f53d",  # 🔽
     "penalty_saved": "\U0001f9e4",  # 🧤
-    "penalty_missed": "\u274c",     # ❌
-    "own_goal": "\U0001f631",       # 😱
-    "woodwork": "\U0001fab5",       # 🪵
+    "penalty_missed": "\u274c",  # ❌
+    "own_goal": "\U0001f631",  # 😱
+    "woodwork": "\U0001fab5",  # 🪵
     "last_man_tackle": "\U0001f6e1\ufe0f",  # 🛡️
 }
 
@@ -93,7 +93,7 @@ def parse_live_events(html: str) -> list[LiveEvent]:
         # Identify event type from icon
         event_type: str | None = None
         for img in imgs:
-            src = img.get("src", "")
+            src = str(img.get("src", ""))
             filename = src.rsplit("/", 1)[-1] if "/" in src else src
             if filename in ICON_MAP:
                 event_type = ICON_MAP[filename]
@@ -108,7 +108,7 @@ def parse_live_events(html: str) -> list[LiveEvent]:
             continue
 
         player_name = player_link.get_text(strip=True)
-        href = player_link.get("href", "")
+        href = str(player_link.get("href", ""))
         # href like: https://www.futbolfantasy.com/jugadores/ronald-araujo
         player_slug = href.rsplit("/", 1)[-1] if "/" in href else ""
         if not player_slug:

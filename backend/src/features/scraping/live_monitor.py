@@ -102,7 +102,7 @@ async def _check_live_matches(session: AsyncSession) -> None:
     async with ScrapingClient() as client:
         for match, md_number in live_matches:
             try:
-                html = await client.fetch(match.source_url)
+                html = await client.fetch(match.source_url)  # type: ignore[arg-type]
             except ScrapingError:
                 scraping_log(_JOB_ID, f"Error fetch match {match.id}", "warning")
                 continue
