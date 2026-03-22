@@ -10,6 +10,7 @@ from src.shared.models.player_ownership_log import PlayerOwnershipLog
 from src.shared.models.player_stat import PlayerStat
 from src.shared.models.push_subscription import PushSubscription
 from src.shared.models.score import ParticipantMatchdayScore
+from src.shared.models.scraping_log import ScrapingLog
 from src.shared.models.season import ScoringRule, Season, SeasonPayment, ValidFormation
 from src.shared.models.team import Team
 from src.shared.models.transaction import Transaction
@@ -30,6 +31,7 @@ __all__ = [
     "PlayerOwnershipLog",
     "PlayerStat",
     "PushSubscription",
+    "ScrapingLog",
     "ScoringRule",
     "Season",
     "SeasonParticipant",

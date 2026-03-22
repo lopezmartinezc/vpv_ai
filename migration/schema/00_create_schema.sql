@@ -476,6 +476,26 @@ CREATE TABLE push_subscriptions (
 CREATE INDEX idx_push_subscriptions_user ON push_subscriptions(user_id);
 
 -- ----------------------------------------------------------------------------
+-- Scraping logs (persistent, per-player detail)
+-- ----------------------------------------------------------------------------
+CREATE TABLE scraping_logs (
+    id              SERIAL PRIMARY KEY,
+    season_id       INT          NOT NULL REFERENCES seasons(id),
+    matchday_number SMALLINT,
+    match_id        INT          REFERENCES matches(id),
+    player_id       INT          REFERENCES players(id),
+    job_type        VARCHAR(30)  NOT NULL,
+    status          VARCHAR(10)  NOT NULL,
+    message         TEXT,
+    detail          JSONB,
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_scraping_logs_season  ON scraping_logs(season_id, matchday_number DESC);
+CREATE INDEX idx_scraping_logs_status  ON scraping_logs(status) WHERE status != 'ok';
+CREATE INDEX idx_scraping_logs_created ON scraping_logs(created_at DESC);
+
+-- ----------------------------------------------------------------------------
 -- Alembic version tracking
 -- ----------------------------------------------------------------------------
 CREATE TABLE alembic_version (

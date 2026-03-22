@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.features.scraping.log_repository import ScrapingLogRepository
 from src.features.scraping.scheduler import (
     get_scheduler_status,
     start_scheduler,
@@ -94,6 +95,48 @@ async def check_updates_endpoint(
     """
     match_ids = await service.check_for_updates()
     return {"changed": len(match_ids) > 0, "ready_match_ids": match_ids}
+
+
+# ---------------------------------------------------------------------------
+# Scraping logs
+# ---------------------------------------------------------------------------
+
+
+@router.get("/logs", summary="Query persistent scraping logs")
+async def get_scraping_logs(
+    season_id: int = Query(...),
+    matchday: int | None = Query(None),
+    match_id: int | None = Query(None),
+    status: str | None = Query(None),
+    job_type: str | None = Query(None),
+    search: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    _user: dict = Depends(require_perm(Perm.SCRAPING)),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    repo = ScrapingLogRepository(db)
+    items, total = (
+        await repo.query(
+            season_id=season_id,
+            matchday_number=matchday,
+            match_id=match_id,
+            status=status,
+            job_type=job_type,
+            search=search,
+            limit=limit,
+            offset=offset,
+        ),
+        await repo.count(
+            season_id=season_id,
+            matchday_number=matchday,
+            match_id=match_id,
+            status=status,
+            job_type=job_type,
+            search=search,
+        ),
+    )
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
 # ---------------------------------------------------------------------------

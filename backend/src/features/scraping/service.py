@@ -11,6 +11,7 @@ from src.features.scraping.aggregation import ScoreAggregator
 from src.features.scraping.client import ScrapingClient, ScrapingError
 from src.features.scraping.config import scraping_settings
 from src.features.scraping.log_buffer import scraping_log
+from src.features.scraping.log_repository import ScrapingLogRepository
 from src.features.scraping.parsers import (
     parse_calendar,
     parse_homepage_matchday,
@@ -361,9 +362,22 @@ class ScrapingService:
         total_skipped = 0
         total_errors = 0
         error_details: list[str] = []
+        db_logs: list[dict] = []
 
         base_url = self._settings.scraping_base_url
         season_slug = await self._resolve_season_slug(season_id)
+
+        def _make_log(pid: int | None, status: str, msg: str, detail: dict | None = None) -> dict:
+            return {
+                "season_id": season_id,
+                "matchday_number": matchday_number,
+                "match_id": match_id,
+                "player_id": pid,
+                "job_type": "match",
+                "status": status,
+                "message": msg,
+                "detail": detail,
+            }
 
         async with ScrapingClient() as client:
             for player in match_players:
@@ -379,16 +393,23 @@ class ScrapingService:
                     )
                     if is_not_found:
                         total_skipped += 1
+                        db_logs.append(
+                            _make_log(player.id, "skip", f"{player.name} ({team}): 404")
+                        )
                         continue
                     total_errors += 1
-                    detail = f"{player.name} ({team}): {exc.cause}"
-                    error_details.append(detail)
-                    scraping_log(_MANUAL, detail, "error")
+                    err_msg = f"{player.name} ({team}): {cause}"
+                    error_details.append(err_msg)
+                    scraping_log(_MANUAL, err_msg, "error")
+                    db_logs.append(_make_log(player.id, "error", err_msg))
                     continue
 
                 stats = parse_player_stats(html, matchday_number)
                 if stats is None:
                     total_skipped += 1
+                    db_logs.append(
+                        _make_log(player.id, "skip", f"{player.name} ({team}): sin stats")
+                    )
                     continue
 
                 position = player.position
@@ -403,6 +424,25 @@ class ScrapingService:
                     breakdown=breakdown,
                 )
                 total_processed += 1
+                db_logs.append(
+                    _make_log(
+                        player.id,
+                        "ok",
+                        f"{player.name} ({team}): {breakdown.get('pts_total', 0)} pts",
+                        {
+                            "position": position,
+                            "marca_rating": stats.marca_rating,
+                            "as_picas": stats.as_picas,
+                            "goals": stats.goals,
+                            "assists": stats.assists,
+                            "pts_total": breakdown.get("pts_total", 0),
+                        },
+                    )
+                )
+
+        # Persist logs to DB
+        log_repo = ScrapingLogRepository(self.session)
+        await log_repo.bulk_insert(db_logs)
 
         scraping_log(
             _MANUAL,

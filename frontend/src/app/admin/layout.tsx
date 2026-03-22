@@ -16,6 +16,7 @@ const ROUTE_PERM: Record<string, number | null> = {
   "/admin/invitaciones": null,
   "/admin/economia": PERM.ECONOMY,
   "/admin/scraping": PERM.SCRAPING,
+  "/admin/scraping/logs": PERM.SCRAPING,
   "/admin/telegram": PERM.TELEGRAM,
   "/admin/backup": null,
   "/admin/logros": PERM.ACHIEVEMENTS,
@@ -48,6 +49,7 @@ const ADMIN_NAV = [
     group: "Operaciones",
     items: [
       { href: "/admin/scraping", label: "Scraping" },
+      { href: "/admin/scraping/logs", label: "Scraping Logs" },
       { href: "/admin/telegram", label: "Telegram" },
       { href: "/admin/backup", label: "Backup" },
       { href: "/admin/logros", label: "Logros" },
