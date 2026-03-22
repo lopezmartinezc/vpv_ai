@@ -29,18 +29,18 @@ ICON_MAP: dict[str, str] = {
 }
 
 EVENT_EMOJI: dict[str, str] = {
-    "goal": "\u26bd",
-    "assist": "\ud83d\udc5f",
-    "yellow": "\ud83d\udfe8",
-    "red": "\ud83d\udfe5",
-    "double_yellow": "\ud83d\udfe8\ud83d\udfe8",
-    "sub_in": "\ud83d\udd3c",
-    "sub_out": "\ud83d\udd3d",
-    "penalty_saved": "\ud83e\udde4",
-    "penalty_missed": "\u274c",
-    "own_goal": "\ud83d\ude31",
-    "woodwork": "\ud83e\udeb5",
-    "last_man_tackle": "\ud83d\udee1\ufe0f",
+    "goal": "\u26bd",           # ⚽
+    "assist": "\U0001f45f",     # 👟
+    "yellow": "\U0001f7e8",     # 🟨
+    "red": "\U0001f7e5",        # 🟥
+    "double_yellow": "\U0001f7e8\U0001f7e8",
+    "sub_in": "\U0001f53c",     # 🔼
+    "sub_out": "\U0001f53d",    # 🔽
+    "penalty_saved": "\U0001f9e4",  # 🧤
+    "penalty_missed": "\u274c",     # ❌
+    "own_goal": "\U0001f631",       # 😱
+    "woodwork": "\U0001fab5",       # 🪵
+    "last_man_tackle": "\U0001f6e1\ufe0f",  # 🛡️
 }
 
 EVENT_LABEL: dict[str, str] = {
