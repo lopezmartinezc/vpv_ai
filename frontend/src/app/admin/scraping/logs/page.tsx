@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSeason } from "@/contexts/season-context";
 import { apiClient } from "@/lib/api-client";
 
@@ -25,40 +25,45 @@ interface LogsResponse {
   offset: number;
 }
 
-const STATUS_OPTIONS = ["", "ok", "skip", "error"] as const;
-const STATUS_LABELS: Record<string, string> = {
-  "": "Todos",
-  ok: "OK",
-  skip: "Skip",
-  error: "Error",
-};
-const STATUS_COLORS: Record<string, string> = {
+const STATUS_BADGE: Record<string, string> = {
   ok: "bg-green-500/20 text-green-400",
   skip: "bg-amber-500/20 text-amber-400",
   error: "bg-red-500/20 text-red-400",
 };
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 100;
+
+function formatTime(iso: string | null) {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  return d.toLocaleString("es-ES", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
 
 export default function ScrapingLogsPage() {
   const { selectedSeason } = useSeason();
 
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
+  const [autoRefresh, setAutoRefresh] = useState(true);
 
   // Filters
   const [matchday, setMatchday] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
 
-  // Expanded row
-  const [expandedId, setExpandedId] = useState<number | null>(null);
+  // Expanded rows
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
   const fetchLogs = useCallback(async () => {
     if (!selectedSeason) return;
-    setLoading(true);
     try {
       const params = new URLSearchParams({
         season_id: String(selectedSeason.id),
@@ -75,39 +80,74 @@ export default function ScrapingLogsPage() {
       setLogs(data.items);
       setTotal(data.total);
     } catch {
-      setLogs([]);
-      setTotal(0);
+      // keep previous data
     } finally {
       setLoading(false);
     }
   }, [selectedSeason, page, matchday, statusFilter, search]);
 
+  // Initial fetch + on filter change
   useEffect(() => {
+    setLoading(true);
     fetchLogs();
   }, [fetchLogs]);
 
-  function handleFilter() {
+  // Auto-refresh every 5s
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    if (autoRefresh) {
+      intervalRef.current = setInterval(fetchLogs, 5000);
+    }
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [autoRefresh, fetchLogs]);
+
+  function applyFilter() {
     setPage(0);
-    fetchLogs();
+  }
+
+  function toggleExpand(id: number) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
-  function formatTime(iso: string | null) {
-    if (!iso) return "-";
-    const d = new Date(iso);
-    return d.toLocaleString("es-ES", {
-      day: "2-digit",
-      month: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
+  // Compute summary stats from current page
+  const summary = { ok: 0, skip: 0, error: 0 };
+  for (const l of logs) {
+    if (l.status in summary) summary[l.status as keyof typeof summary]++;
   }
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-bold text-vpv-text">Scraping Logs</h2>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-vpv-text">Scraping Logs</h2>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-xs text-vpv-text-muted">
+            <input
+              type="checkbox"
+              checked={autoRefresh}
+              onChange={(e) => setAutoRefresh(e.target.checked)}
+              className="h-3.5 w-3.5 rounded accent-vpv-accent"
+            />
+            Auto-refresh
+          </label>
+          <button
+            onClick={fetchLogs}
+            className="rounded border border-vpv-border px-2 py-1 text-xs text-vpv-text-muted hover:text-vpv-text"
+          >
+            Refrescar
+          </button>
+        </div>
+      </div>
 
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-3 rounded-lg border border-vpv-card-border bg-vpv-card p-3">
@@ -119,6 +159,7 @@ export default function ScrapingLogsPage() {
             type="number"
             value={matchday}
             onChange={(e) => setMatchday(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && applyFilter()}
             placeholder="Todas"
             className="w-20 rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
           />
@@ -128,7 +169,7 @@ export default function ScrapingLogsPage() {
             Status
           </label>
           <div className="flex gap-1">
-            {STATUS_OPTIONS.map((s) => (
+            {(["", "ok", "skip", "error"] as const).map((s) => (
               <button
                 key={s}
                 onClick={() => {
@@ -141,12 +182,12 @@ export default function ScrapingLogsPage() {
                     : "border border-vpv-border text-vpv-text-muted hover:text-vpv-text"
                 }`}
               >
-                {STATUS_LABELS[s]}
+                {s || "Todos"}
               </button>
             ))}
           </div>
         </div>
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted">
             Buscar
           </label>
@@ -154,30 +195,51 @@ export default function ScrapingLogsPage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleFilter()}
-            placeholder="Nombre jugador, error..."
+            onKeyDown={(e) => e.key === "Enter" && applyFilter()}
+            placeholder="Jugador, equipo, error..."
             className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
           />
         </div>
         <button
-          onClick={handleFilter}
-          className="rounded bg-vpv-accent px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-vpv-accent-hover"
+          onClick={applyFilter}
+          className="rounded bg-vpv-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-vpv-accent-hover"
         >
           Buscar
         </button>
       </div>
 
-      {/* Results count */}
-      <p className="text-xs text-vpv-text-muted">
-        {total} resultados{totalPages > 1 && ` \u2014 pagina ${page + 1}/${totalPages}`}
-      </p>
+      {/* Summary bar */}
+      <div className="flex items-center gap-4 text-xs text-vpv-text-muted">
+        <span>{total} registros</span>
+        {total > 0 && (
+          <>
+            <span className="text-green-400">{summary.ok} ok</span>
+            <span className="text-amber-400">{summary.skip} skip</span>
+            <span className="text-red-400">{summary.error} error</span>
+          </>
+        )}
+        {totalPages > 1 && (
+          <span>
+            Pag {page + 1}/{totalPages}
+          </span>
+        )}
+        {autoRefresh && (
+          <span className="flex items-center gap-1">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-400" />
+            Live
+          </span>
+        )}
+      </div>
 
-      {/* Table */}
+      {/* Log entries */}
       <div className="rounded-lg border border-vpv-card-border bg-vpv-card overflow-hidden">
-        {loading ? (
-          <div className="space-y-2 p-4">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="h-8 animate-pulse rounded bg-vpv-border" />
+        {loading && logs.length === 0 ? (
+          <div className="space-y-1.5 p-3">
+            {Array.from({ length: 10 }).map((_, i) => (
+              <div
+                key={i}
+                className="h-7 animate-pulse rounded bg-vpv-border"
+              />
             ))}
           </div>
         ) : logs.length === 0 ? (
@@ -185,106 +247,90 @@ export default function ScrapingLogsPage() {
             Sin logs para estos filtros
           </p>
         ) : (
-          <>
-            {/* Desktop table */}
-            <div className="hidden overflow-x-auto md:block">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-vpv-border bg-vpv-bg text-left text-vpv-text-muted">
-                    <th className="px-3 py-2">Hora</th>
-                    <th className="px-3 py-2">J</th>
-                    <th className="px-3 py-2">Partido</th>
-                    <th className="px-3 py-2">Jugador</th>
-                    <th className="px-3 py-2">Status</th>
-                    <th className="px-3 py-2">Mensaje</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {logs.map((log) => (
-                    <>
-                      <tr
-                        key={log.id}
-                        onClick={() =>
-                          setExpandedId(expandedId === log.id ? null : log.id)
-                        }
-                        className={`border-b border-vpv-border last:border-0 cursor-pointer transition-colors hover:bg-vpv-bg/50 ${
-                          expandedId === log.id ? "bg-vpv-bg/50" : ""
-                        }`}
-                      >
-                        <td className="px-3 py-2 text-xs text-vpv-text-muted whitespace-nowrap">
-                          {formatTime(log.created_at)}
-                        </td>
-                        <td className="px-3 py-2 text-vpv-text">
-                          {log.matchday_number ?? "-"}
-                        </td>
-                        <td className="px-3 py-2 text-vpv-text text-xs">
-                          {log.match_label ?? "-"}
-                        </td>
-                        <td className="px-3 py-2 text-vpv-text">
-                          {log.player_name ?? "-"}
-                        </td>
-                        <td className="px-3 py-2">
-                          <span
-                            className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[log.status] ?? "text-vpv-text-muted"}`}
-                          >
-                            {log.status}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 text-xs text-vpv-text-muted max-w-xs truncate">
-                          {log.message}
-                        </td>
-                      </tr>
-                      {expandedId === log.id && log.detail && (
-                        <tr key={`${log.id}-detail`}>
-                          <td colSpan={6} className="bg-vpv-bg/30 px-4 py-3">
-                            <pre className="text-xs text-vpv-text-muted whitespace-pre-wrap font-mono">
-                              {JSON.stringify(log.detail, null, 2)}
-                            </pre>
-                          </td>
-                        </tr>
-                      )}
-                    </>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <div className="divide-y divide-vpv-border">
+            {logs.map((log) => {
+              const isError = log.status === "error";
+              const isExpanded = expandedIds.has(log.id);
 
-            {/* Mobile cards */}
-            <div className="divide-y divide-vpv-border md:hidden">
-              {logs.map((log) => (
+              return (
                 <div
                   key={log.id}
-                  onClick={() =>
-                    setExpandedId(expandedId === log.id ? null : log.id)
-                  }
-                  className="cursor-pointer px-3 py-2.5 active:bg-vpv-bg/50"
+                  className={`${isExpanded ? "bg-vpv-bg/40" : ""} ${isError ? "border-l-2 border-l-red-500" : ""}`}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-vpv-text">
-                        {log.player_name ?? log.match_label ?? log.message}
-                      </p>
-                      <p className="text-[10px] text-vpv-text-muted">
-                        J{log.matchday_number} &middot;{" "}
-                        {log.match_label ?? "-"} &middot;{" "}
-                        {formatTime(log.created_at)}
-                      </p>
-                    </div>
+                  <button
+                    type="button"
+                    onClick={() => toggleExpand(log.id)}
+                    className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-vpv-bg/30"
+                  >
+                    {/* Status badge */}
                     <span
-                      className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[log.status] ?? "text-vpv-text-muted"}`}
+                      className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${STATUS_BADGE[log.status] ?? "text-vpv-text-muted"}`}
                     >
                       {log.status}
                     </span>
-                  </div>
-                  {expandedId === log.id && log.detail && (
-                    <pre className="mt-2 rounded bg-vpv-bg p-2 text-[10px] text-vpv-text-muted whitespace-pre-wrap font-mono">
-                      {JSON.stringify(log.detail, null, 2)}
-                    </pre>
+
+                    {/* Content */}
+                    <div className="min-w-0 flex-1">
+                      <p
+                        className={`text-sm ${isError ? "font-medium text-red-400" : "text-vpv-text"} ${isError ? "" : "truncate"}`}
+                      >
+                        {log.message}
+                      </p>
+                      <p className="mt-0.5 text-[10px] text-vpv-text-muted">
+                        {log.player_name && (
+                          <span className="font-medium text-vpv-text-muted/80">
+                            {log.player_name}
+                          </span>
+                        )}
+                        {log.match_label && (
+                          <span>
+                            {log.player_name ? " \u00b7 " : ""}
+                            {log.match_label}
+                          </span>
+                        )}
+                        {log.matchday_number && (
+                          <span> \u00b7 J{log.matchday_number}</span>
+                        )}
+                        <span> \u00b7 {formatTime(log.created_at)}</span>
+                      </p>
+                    </div>
+
+                    {/* Expand indicator */}
+                    {log.detail && (
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        className={`mt-1 h-4 w-4 shrink-0 text-vpv-text-muted transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    )}
+                  </button>
+
+                  {/* Expanded detail */}
+                  {isExpanded && log.detail && (
+                    <div className="border-t border-vpv-border/50 bg-vpv-bg/20 px-3 py-2">
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3 md:grid-cols-4">
+                        {Object.entries(log.detail).map(([k, v]) => (
+                          <div key={k}>
+                            <span className="text-vpv-text-muted">{k}: </span>
+                            <span className="font-medium text-vpv-text">
+                              {String(v ?? "-")}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </div>
-              ))}
-            </div>
-          </>
+              );
+            })}
+          </div>
         )}
       </div>
 
@@ -294,7 +340,7 @@ export default function ScrapingLogsPage() {
           <button
             disabled={page === 0}
             onClick={() => setPage(page - 1)}
-            className="rounded border border-vpv-border px-3 py-1 text-xs text-vpv-text-muted disabled:opacity-30"
+            className="rounded border border-vpv-border px-3 py-1.5 text-xs text-vpv-text-muted disabled:opacity-30"
           >
             Anterior
           </button>
@@ -304,7 +350,7 @@ export default function ScrapingLogsPage() {
           <button
             disabled={page >= totalPages - 1}
             onClick={() => setPage(page + 1)}
-            className="rounded border border-vpv-border px-3 py-1 text-xs text-vpv-text-muted disabled:opacity-30"
+            className="rounded border border-vpv-border px-3 py-1.5 text-xs text-vpv-text-muted disabled:opacity-30"
           >
             Siguiente
           </button>
