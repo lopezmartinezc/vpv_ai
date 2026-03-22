@@ -17,9 +17,12 @@ EnvironmentFile=/opt/vpv/backend/.env
 ExecStart=/opt/vpv/backend/.venv/bin/uvicorn src.app:app \
     --host 127.0.0.1 \
     --port 8000 \
-    --workers 4 \
+    --workers 1 \
     --access-log \
     --log-level info
+# NOTE: --workers 1 is intentional. The APScheduler runs in-process,
+# so multiple workers would create duplicate scheduler instances.
+# For 15 users, 1 async worker is more than sufficient.
 Restart=always
 RestartSec=5
 StandardOutput=journal

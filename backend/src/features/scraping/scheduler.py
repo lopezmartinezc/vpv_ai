@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from datetime import UTC, datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -475,31 +474,15 @@ async def _calendar_sync() -> None:
 # ---------------------------------------------------------------------------
 
 
-_lock_fd: int | None = None  # file descriptor for singleton lock
-
-
-def start_scheduler() -> None:
+def start_scheduler(**_kwargs: object) -> None:
     """Create and start the AsyncIOScheduler.  Idempotent.
 
-    Uses a file lock to ensure only ONE uvicorn worker runs the scheduler,
-    even with ``--workers 4``.  Other workers skip silently.
+    IMPORTANT: uvicorn must run with --workers 1 to avoid duplicate schedulers.
     """
-    global _scheduler, _lock_fd
+    global _scheduler
 
     if _scheduler is not None and _scheduler.running:
         logger.warning("scheduler.start: already running")
-        return
-
-    # Acquire exclusive lock — only one process wins
-    import fcntl
-    import tempfile
-
-    lock_path = os.path.join(tempfile.gettempdir(), "vpv_scheduler.lock")
-    try:
-        _lock_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR)
-        fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        logger.info("scheduler.start: another worker holds the lock, skipping")
         return
 
     interval = scraping_settings.scraping_poll_interval_seconds
@@ -563,22 +546,14 @@ def start_scheduler() -> None:
 
 
 def stop_scheduler() -> None:
-    """Shut down the scheduler gracefully and release the file lock."""
-    global _scheduler, _lock_fd
+    """Shut down the scheduler gracefully."""
+    global _scheduler
 
     if _scheduler is None or not _scheduler.running:
         return
 
     _scheduler.shutdown(wait=False)
     _scheduler = None
-
-    if _lock_fd is not None:
-        import fcntl
-
-        fcntl.flock(_lock_fd, fcntl.LOCK_UN)
-        os.close(_lock_fd)
-        _lock_fd = None
-
     logger.info("scheduler.stop: stopped")
 
 
