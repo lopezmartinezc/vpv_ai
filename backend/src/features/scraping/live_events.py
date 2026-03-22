@@ -16,16 +16,13 @@ ICON_MAP: dict[str, str] = {
     "balon.png": "goal",
     "bota.png": "assist",
     "apercibido_box_min.png": "yellow",
+    "sancionadoR_box_min.png": "red",
     "icono_entra.png": "sub_in",
     "icono_sale.png": "sub_out",
+    "penalti_cometido.png": "penalty_committed",
+    "tiro_palo.png": "woodwork",
+    "error_garrafal.png": "error_garrafal",
     "balon_robado_ultimo_hombre.png": "last_man_tackle",
-    # Pending discovery:
-    # "???": "red",
-    # "???": "double_yellow",
-    # "???": "penalty_saved",
-    # "???": "penalty_missed",
-    # "???": "own_goal",
-    # "???": "woodwork",
 }
 
 EVENT_EMOJI: dict[str, str] = {
@@ -33,13 +30,11 @@ EVENT_EMOJI: dict[str, str] = {
     "assist": "\U0001f45f",  # 👟
     "yellow": "\U0001f7e8",  # 🟨
     "red": "\U0001f7e5",  # 🟥
-    "double_yellow": "\U0001f7e8\U0001f7e8",
     "sub_in": "\U0001f53c",  # 🔼
     "sub_out": "\U0001f53d",  # 🔽
-    "penalty_saved": "\U0001f9e4",  # 🧤
-    "penalty_missed": "\u274c",  # ❌
-    "own_goal": "\U0001f631",  # 😱
+    "penalty_committed": "\u26a0\ufe0f",  # ⚠️
     "woodwork": "\U0001fab5",  # 🪵
+    "error_garrafal": "\U0001f4a5",  # 💥
     "last_man_tackle": "\U0001f6e1\ufe0f",  # 🛡️
 }
 
@@ -48,13 +43,11 @@ EVENT_LABEL: dict[str, str] = {
     "assist": "ASISTENCIA",
     "yellow": "AMARILLA",
     "red": "ROJA",
-    "double_yellow": "DOBLE AMARILLA",
     "sub_in": "ENTRA",
     "sub_out": "SALE",
-    "penalty_saved": "PENALTI PARADO",
-    "penalty_missed": "PENALTI FALLADO",
-    "own_goal": "GOL EN PROPIA",
+    "penalty_committed": "PENALTI COMETIDO",
     "woodwork": "PALO",
+    "error_garrafal": "ERROR GARRAFAL",
     "last_man_tackle": "ROBO ULTIMO HOMBRE",
 }
 
