@@ -224,6 +224,20 @@ class ScrapingService:
                 if match_errors == 0 and match_processed > 0:
                     await self.repo.mark_match_stats_ok(match.id)
                     logger.info("scrape_matchday: marked match_id=%d stats_ok", match.id)
+
+                    # Compute and store CRC for future change detection
+                    if match.source_url:
+                        try:
+                            match_html = await client.fetch(match.source_url)
+                            from src.features.scraping.parsers import parse_match_crc
+
+                            crc = parse_match_crc(match_html)
+                            await self.repo.update_match_crc(match.id, crc)
+                        except Exception:
+                            logger.warning(
+                                "scrape_matchday: failed to compute CRC for match_id=%d",
+                                match.id,
+                            )
                 elif match_errors > 0:
                     logger.warning(
                         "scrape_matchday: match_id=%d had %d errors, NOT marking stats_ok",
@@ -397,6 +411,21 @@ class ScrapingService:
 
         if total_errors == 0 and total_processed > 0:
             await self.repo.mark_match_stats_ok(match_id)
+
+            # Compute and store CRC so the scheduler can detect future changes
+            if match.source_url:
+                try:
+                    async with ScrapingClient() as crc_client:
+                        match_html = await crc_client.fetch(match.source_url)
+                    from src.features.scraping.parsers import parse_match_crc
+
+                    crc = parse_match_crc(match_html)
+                    await self.repo.update_match_crc(match_id, crc)
+                except Exception:
+                    logger.warning(
+                        "scrape_match_players: failed to compute CRC for match_id=%d",
+                        match_id,
+                    )
         elif total_processed == 0 and total_errors == 0:
             logger.warning(
                 "scrape_match_players: match_id=%d — no stats found (all skipped), NOT marking stats_ok",
