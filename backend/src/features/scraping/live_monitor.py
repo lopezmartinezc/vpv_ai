@@ -123,31 +123,40 @@ async def _check_live_matches(session: AsyncSession) -> None:
             )
 
             for event in new_events:
-                seen.add(event.dedup_key)
-
                 # Check if player belongs to a VPV participant
                 info = player_map.get(event.player_slug)
                 if info is None:
+                    seen.add(event.dedup_key)  # not a VPV player, skip permanently
                     continue
 
                 _player, owner_name = info
                 if owner_name is None:
+                    seen.add(event.dedup_key)  # no owner, skip permanently
                     continue
 
                 # Format and send Telegram alert
                 emoji = EVENT_EMOJI.get(event.event_type, "")
                 label = EVENT_LABEL.get(event.event_type, event.event_type)
                 msg = (
-                    f"{emoji} <b>{label}</b> — {event.player_name} ({event.minute})\n"
+                    f"{emoji} <b>{label}</b> \u2014 {event.player_name} ({event.minute})\n"
                     f"{home_team} {score} {away_team} | J{md_number}\n"
-                    f"\ud83d\udc64 {owner_name}"
+                    f"Propietario: {owner_name}"
                 )
 
-                await _send_telegram(session, msg)
-                scraping_log(
-                    _JOB_ID,
-                    f"{label}: {event.player_name} ({event.minute}) — owner: {owner_name}",
-                )
+                sent = await _send_telegram(session, msg)
+                if sent:
+                    seen.add(event.dedup_key)  # only mark sent on success
+                    scraping_log(
+                        _JOB_ID,
+                        f"Enviado: {label} {event.player_name} ({event.minute}) -> {owner_name}",
+                    )
+                else:
+                    scraping_log(
+                        _JOB_ID,
+                        f"FALLO envio: {label} {event.player_name} ({event.minute})",
+                        "error",
+                    )
+                    # Will retry on next tick
 
     # Cleanup finished matches from dedup cache
     live_match_ids = {m.id for m, _ in live_matches}
@@ -180,15 +189,16 @@ async def _build_team_map(session: AsyncSession, season_id: int) -> dict[int, st
     return {r.id: r.short_name or r.name for r in result.all()}
 
 
-async def _send_telegram(session: AsyncSession, text: str) -> None:
-    """Send a Telegram alert. Errors are logged, not raised."""
+async def _send_telegram(session: AsyncSession, text: str) -> bool:
+    """Send a Telegram alert. Returns True on success."""
     try:
         from src.features.telegram.service import TelegramNotifier
 
         notifier = TelegramNotifier(session)
-        await notifier.send_alert(text)
-    except Exception:
-        logger.exception("Failed to send live event Telegram alert")
+        return await notifier.send_alert(text)
+    except Exception as exc:
+        scraping_log("live_monitor", f"Telegram error: {exc}", "error")
+        return False
 
 
 def get_live_monitor_status() -> dict:
