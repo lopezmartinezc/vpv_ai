@@ -21,7 +21,7 @@ from src.features.scraping.live_events import (
     parse_live_events,
 )
 from src.features.scraping.log_buffer import scraping_log
-from src.shared.models.matchday import Match
+from src.shared.models.matchday import Match, Matchday
 from src.shared.models.participant import SeasonParticipant
 from src.shared.models.player import Player
 from src.shared.models.team import Team
@@ -59,29 +59,28 @@ async def _check_live_matches(session: AsyncSession) -> None:
     if season is None:
         return
 
-    # Check current + previous matchday (matches can overlap)
-    matchday_numbers = [season.matchday_current]
-    if season.matchday_current > 1:
-        matchday_numbers.append(season.matchday_current - 1)
-
     now = datetime.now(UTC)
     live_matches: list[tuple[Match, int]] = []  # (match, matchday_number)
 
-    for md_number in matchday_numbers:
-        md = await repo.get_matchday(season.id, md_number)
-        if md is None:
-            continue
-        matches = await repo.get_matches_for_matchday(md.id)
-        for m in matches:
-            if not m.source_url or not m.played_at:
-                continue
-            played_at = m.played_at
-            if played_at.tzinfo is None:
-                played_at = played_at.replace(tzinfo=UTC)
-            # Match is "live" if started within last 3 hours
-            elapsed = now - played_at
-            if timedelta(minutes=-15) < elapsed < timedelta(hours=3):
-                live_matches.append((m, md_number))
+    # Find ALL live matches across any matchday (not just current)
+    # by querying matches with played_at in the live window
+    live_window_start = now - timedelta(hours=3)
+    live_window_end = now + timedelta(minutes=15)
+
+    stmt = (
+        select(Match, Matchday.number)
+        .join(Matchday, Match.matchday_id == Matchday.id)
+        .where(
+            Matchday.season_id == season.id,
+            Match.source_url.isnot(None),
+            Match.played_at.isnot(None),
+            Match.played_at > live_window_start,
+            Match.played_at < live_window_end,
+        )
+    )
+    result = await session.execute(stmt)
+    for match, md_number in result.all():
+        live_matches.append((match, md_number))
 
     if not live_matches:
         # Cleanup all sent events when no live matches
@@ -122,27 +121,19 @@ async def _check_live_matches(session: AsyncSession) -> None:
             seen = _sent_events.setdefault(match.id, set())
 
             if is_first_scan:
-                # First time seeing this match — mark non-goal events as seen
-                # to avoid flooding with historical cards/subs, but KEEP goals
-                # so they are sent even if the match started before the monitor
-                goals_to_send = []
+                # First time seeing this match — mark all current events as seen
                 for e in events:
-                    if e.event_type in always_send:
-                        goals_to_send.append(e)
-                    else:
-                        seen.add(e.dedup_key)
+                    seen.add(e.dedup_key)
                 scraping_log(
                     _JOB_ID,
                     f"Match {match.id} ({home_team} vs {away_team}): "
-                    f"primer scan, {len(events)} eventos ({len(goals_to_send)} goles pendientes)",
+                    f"primer scan, {len(events)} eventos marcados como vistos",
                 )
-                if not goals_to_send:
-                    continue
-                new_events = goals_to_send
-            else:
-                new_events = [e for e in events if e.dedup_key not in seen]
-                if not new_events:
-                    continue
+                continue
+
+            new_events = [e for e in events if e.dedup_key not in seen]
+            if not new_events:
+                continue
 
             score = (
                 f"{match.home_score}-{match.away_score}" if match.home_score is not None else "vs"
