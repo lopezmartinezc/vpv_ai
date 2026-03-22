@@ -756,3 +756,4 @@ ORDER BY dp.pick_number;
 | 19 | `invites` | Invitaciones de registro |
 | 20 | `player_ownership_log` | Historico de propiedad de jugadores |
 | 21 | `push_subscriptions` | Suscripciones Web Push por usuario |
+| 22 | `scraping_logs` | Logs persistentes de scraping por jugador/partido (status, detail JSONB) |
