@@ -41,12 +41,13 @@ async def live_match_monitor() -> None:
     global _last_run_at
     _last_run_at = datetime.now(UTC)
 
-    async with AsyncSessionLocal() as session:
-        try:
+    try:
+        async with AsyncSessionLocal() as session:
             await _check_live_matches(session)
-        except Exception as exc:
-            scraping_log(_JOB_ID, f"Error: {exc}", "error")
-            logger.exception("live_match_monitor error")
+    except Exception as exc:
+        # Catch ALL exceptions to prevent APScheduler from killing the job
+        scraping_log(_JOB_ID, f"Error fatal: {exc}", "error")
+        logger.exception("live_match_monitor error")
 
 
 async def _check_live_matches(session: AsyncSession) -> None:
@@ -136,6 +137,7 @@ async def _check_live_matches(session: AsyncSession) -> None:
                 f"{match.home_score}-{match.away_score}" if match.home_score is not None else "vs"
             )
 
+            sends_this_tick = 0
             for event in new_events:
                 # Check if player belongs to a VPV participant
                 info = player_map.get(event.player_slug)
@@ -166,11 +168,14 @@ async def _check_live_matches(session: AsyncSession) -> None:
                 sent = await _send_telegram(session, msg)
                 if sent:
                     seen.add(event.dedup_key)  # only mark sent on success
+                    sends_this_tick += 1
                     scraping_log(
                         _JOB_ID,
                         f"Enviado: {label} {event.player_name} ({event.minute}) -> {owner_name}",
                     )
-                    await asyncio.sleep(1)  # rate limit: 1 msg/sec
+                    if sends_this_tick >= 5:
+                        break  # max 5 per tick, rest will be sent next tick
+                    await asyncio.sleep(1.5)  # rate limit
                 else:
                     scraping_log(
                         _JOB_ID,
