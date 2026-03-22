@@ -113,95 +113,105 @@ async def _run_tick() -> None:
             except Exception as exc:
                 _log("scraping_tick", f"Error calendario: {exc}", "error")
 
-            # 3. Load matchday + matches (re-read after calendar update)
+            # 3. Collect matchdays to check: current + previous (for late Marca/AS updates)
+            matchdays_to_check: list[tuple[int, int]] = []  # (matchday_id, number)
+
             matchday = await repo.get_matchday(season_id, md_current)
-            if matchday is None:
+            if matchday is not None:
+                matchdays_to_check.append((matchday.id, md_current))
+
+            if md_current > 1:
+                prev_md = await repo.get_matchday(season_id, md_current - 1)
+                if prev_md is not None:
+                    matchdays_to_check.append((prev_md.id, md_current - 1))
+
+            if not matchdays_to_check:
                 _log("scraping_tick", f"Jornada {md_current} no encontrada")
                 return
 
-            matches = await repo.get_matches_for_matchday(matchday.id)
-            if not matches:
-                _log("scraping_tick", f"Sin partidos en J{md_current}")
-                return
-
-            # 4a. Matches with result + source_url → CRC check
-            played = [m for m in matches if m.source_url is not None and m.home_score is not None]
-            # 4b. Matches that should have ended but have no score yet
-            #     (calendar didn't update, but match page may have it)
+            # 4-5. Per-matchday CRC check + score discovery
+            matches_to_scrape: list[tuple[int, int, int]] = []  # (match_id, md_id, md_number)
+            pending_crcs: dict[int, str] = {}
             buffer_minutes = scraping_settings.scraping_buffer_minutes
             now_utc = datetime.now(UTC)
-            pending_score = [
-                m
-                for m in matches
-                if m.source_url is not None
-                and m.home_score is None
-                and m.played_at is not None
-                and (now_utc - m.played_at) > timedelta(minutes=buffer_minutes)
-            ]
-
-            if not played and not pending_score:
-                _log("scraping_tick", f"J{md_current}: sin partidos jugados aun")
-                return
-
-            _log(
-                "scraping_tick",
-                f"J{md_current}: {len(played)} con resultado, {len(pending_score)} pendientes de resultado, comprobando",
-            )
-
-            # 5. Per-match CRC check + score discovery
-            matches_to_scrape: list[int] = []
-            # Store new CRCs — only persist after successful scraping
-            pending_crcs: dict[int, str] = {}
 
             async with ScrapingClient() as client:
-                # 5a. Check pending-score matches — try to discover result from match page
-                for match in pending_score:
-                    try:
-                        html = await client.fetch(match.source_url)  # type: ignore[arg-type]
-                    except ScrapingError:
-                        _log("scraping_tick", f"Error fetch match id={match.id}", "warning")
+                for md_id, md_number in matchdays_to_check:
+                    matches = await repo.get_matches_for_matchday(md_id)
+                    if not matches:
                         continue
 
-                    score = parse_match_score(html)
-                    if score is None:
+                    played = [
+                        m for m in matches if m.source_url is not None and m.home_score is not None
+                    ]
+                    pending_score = (
+                        [
+                            m
+                            for m in matches
+                            if m.source_url is not None
+                            and m.home_score is None
+                            and m.played_at is not None
+                            and (now_utc - m.played_at) > timedelta(minutes=buffer_minutes)
+                        ]
+                        if md_number == md_current
+                        else []
+                    )  # only discover scores for current
+
+                    if not played and not pending_score:
                         continue
 
-                    home_score, away_score = score
                     _log(
                         "scraping_tick",
-                        f"Match {match.id}: resultado descubierto {home_score}-{away_score}",
-                    )
-                    await repo.update_match_score(
-                        match_id=match.id,
-                        home_score=home_score,
-                        away_score=away_score,
-                        result=f"{home_score}-{away_score}",
+                        f"J{md_number}: {len(played)} con resultado, {len(pending_score)} pendientes",
                     )
 
-                    new_crc = parse_match_crc(html)
-                    if new_crc != match.stats_crc:
+                    # Score discovery (current matchday only)
+                    for match in pending_score:
+                        try:
+                            html = await client.fetch(match.source_url)  # type: ignore[arg-type]
+                        except ScrapingError:
+                            _log("scraping_tick", f"Error fetch match id={match.id}", "warning")
+                            continue
+
+                        score = parse_match_score(html)
+                        if score is None:
+                            continue
+
+                        home_score, away_score = score
+                        _log(
+                            "scraping_tick",
+                            f"Match {match.id}: resultado descubierto {home_score}-{away_score}",
+                        )
+                        await repo.update_match_score(
+                            match_id=match.id,
+                            home_score=home_score,
+                            away_score=away_score,
+                            result=f"{home_score}-{away_score}",
+                        )
+
+                        new_crc = parse_match_crc(html)
+                        if new_crc != match.stats_crc:
+                            pending_crcs[match.id] = new_crc
+                            matches_to_scrape.append((match.id, md_id, md_number))
+
+                    # CRC check for played matches
+                    for match in played:
+                        try:
+                            html = await client.fetch(match.source_url)  # type: ignore[arg-type]
+                        except ScrapingError:
+                            _log("scraping_tick", f"Error fetch match id={match.id}", "warning")
+                            continue
+
+                        new_crc = parse_match_crc(html)
+                        if match.stats_crc == new_crc:
+                            continue
+
+                        _log(
+                            "scraping_tick",
+                            f"Match {match.id} (J{md_number}): CRC cambio {match.stats_crc} -> {new_crc}",
+                        )
                         pending_crcs[match.id] = new_crc
-                        matches_to_scrape.append(match.id)
-
-                # 5b. Normal CRC check for matches already with result
-                for match in played:
-                    try:
-                        html = await client.fetch(match.source_url)  # type: ignore[arg-type]
-                    except ScrapingError:
-                        _log("scraping_tick", f"Error fetch match id={match.id}", "warning")
-                        continue
-
-                    new_crc = parse_match_crc(html)
-
-                    if match.stats_crc == new_crc:
-                        continue
-
-                    _log(
-                        "scraping_tick",
-                        f"Match {match.id}: CRC cambio {match.stats_crc} -> {new_crc}",
-                    )
-                    pending_crcs[match.id] = new_crc
-                    matches_to_scrape.append(match.id)
+                        matches_to_scrape.append((match.id, md_id, md_number))
 
             if not matches_to_scrape:
                 _log("scraping_tick", "CRCs sin cambios, nada que scrapear")
@@ -211,22 +221,20 @@ async def _run_tick() -> None:
             # 6. Scrape changed matches
             _log(
                 "scraping_tick",
-                f"Scrapeando {len(matches_to_scrape)} partidos: {matches_to_scrape}",
+                f"Scrapeando {len(matches_to_scrape)} partidos",
             )
-            for match_id in matches_to_scrape:
+            for match_id, _md_id, md_number in matches_to_scrape:
                 try:
                     result = await service.scrape_match_players(
                         season_id,
-                        md_current,
+                        md_number,
                         match_id,
                     )
                     processed = result.get("processed", 0)
                     _log(
                         "scraping_tick",
-                        f"Match {match_id}: procesados={processed}, errores={result.get('errors', 0)}",
+                        f"Match {match_id} (J{md_number}): procesados={processed}, errores={result.get('errors', 0)}",
                     )
-                    # Only persist CRC if stats were actually found;
-                    # otherwise the next tick will retry this match.
                     if processed and match_id in pending_crcs:
                         await repo.update_match_crc(match_id, pending_crcs[match_id])
                     elif not processed and match_id in pending_crcs:
