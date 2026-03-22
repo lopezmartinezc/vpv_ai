@@ -50,6 +50,20 @@ interface MatchEntry {
   played_at: string | null;
 }
 
+interface DbLogEntry {
+  id: number;
+  status: string;
+  message: string | null;
+  detail: Record<string, unknown> | null;
+  player_name: string | null;
+  created_at: string | null;
+}
+
+interface DbLogsResponse {
+  items: DbLogEntry[];
+  total: number;
+}
+
 interface MatchdayDetail {
   season_id: number;
   number: number;
@@ -276,6 +290,37 @@ export default function AdminScrapingPage() {
   } | null>(null);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
 
+  // Inline DB logs per match
+  const [matchLogs, setMatchLogs] = useState<Record<number, DbLogEntry[]>>({});
+  const [loadingLogs, setLoadingLogs] = useState<number | null>(null);
+
+  async function fetchMatchLogs(matchId: number) {
+    if (!manualSeason) return;
+    setLoadingLogs(matchId);
+    try {
+      const data = await apiClient.get<DbLogsResponse>(
+        `/scraping/logs?season_id=${manualSeason}&match_id=${matchId}&limit=200`,
+      );
+      setMatchLogs((prev) => ({ ...prev, [matchId]: data.items }));
+    } catch {
+      // error
+    } finally {
+      setLoadingLogs(null);
+    }
+  }
+
+  function toggleMatchLogs(matchId: number) {
+    if (matchLogs[matchId]) {
+      setMatchLogs((prev) => {
+        const next = { ...prev };
+        delete next[matchId];
+        return next;
+      });
+    } else {
+      fetchMatchLogs(matchId);
+    }
+  }
+
   const fetchStatus = useCallback(async () => {
     try {
       const data = await apiClient.get<SchedulerStatus>("/scraping/admin/status");
@@ -444,7 +489,10 @@ export default function AdminScrapingPage() {
         ...details,
       ];
       setMatchScrapeResult({ matchId, lines });
-      await fetchMatchday(Number(manualSeason), Number(manualMatchday));
+      await Promise.all([
+        fetchMatchday(Number(manualSeason), Number(manualMatchday)),
+        fetchMatchLogs(matchId),
+      ]);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
         setMatchScrapeResult({ matchId, lines: ["Scraping cancelado"] });
@@ -691,6 +739,13 @@ export default function AdminScrapingPage() {
                         NC
                       </span>
                     )}
+                    <button
+                      onClick={() => toggleMatchLogs(match.id)}
+                      disabled={loadingLogs === match.id}
+                      className="shrink-0 rounded border border-vpv-border px-2 py-0.5 text-[11px] text-vpv-text-muted transition-colors hover:text-vpv-text disabled:opacity-40"
+                    >
+                      {matchLogs[match.id] ? "Ocultar" : "Logs"}
+                    </button>
                     {scrapingMatchId === match.id ? (
                       <button
                         onClick={handleCancelScrape}
@@ -708,16 +763,73 @@ export default function AdminScrapingPage() {
                       </button>
                     )}
                   </div>
-                  {hasResult && matchScrapeResult && (
-                    <div className="border-t border-vpv-border/30 bg-vpv-bg/40 px-4 py-1.5 pl-10">
-                      {matchScrapeResult.lines.map((line, i) => (
-                        <div
-                          key={i}
-                          className={`text-xs ${i > 0 ? "text-red-400" : "text-vpv-text-muted"}`}
-                        >
-                          {line}
+                  {/* Inline DB logs */}
+                  {matchLogs[match.id] && (
+                    <div className="border-t border-vpv-border/30 bg-vpv-bg/30">
+                      <div className="px-4 py-1.5">
+                        <div className="mb-1 flex items-center justify-between">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted">
+                            Logs ({matchLogs[match.id].length})
+                            {(() => {
+                              const errs = matchLogs[match.id].filter((l) => l.status === "error").length;
+                              const skips = matchLogs[match.id].filter((l) => l.status === "skip").length;
+                              const oks = matchLogs[match.id].filter((l) => l.status === "ok").length;
+                              return (
+                                <span className="ml-2 font-normal normal-case">
+                                  <span className="text-green-400">{oks} ok</span>
+                                  {skips > 0 && <span className="text-amber-400"> {skips} skip</span>}
+                                  {errs > 0 && <span className="text-red-400"> {errs} error</span>}
+                                </span>
+                              );
+                            })()}
+                          </span>
+                          <button
+                            onClick={() => toggleMatchLogs(match.id)}
+                            className="text-[10px] text-vpv-text-muted hover:text-vpv-text"
+                          >
+                            Cerrar
+                          </button>
                         </div>
-                      ))}
+                        <div className="max-h-60 space-y-px overflow-y-auto">
+                          {matchLogs[match.id].map((log) => (
+                            <div
+                              key={log.id}
+                              className={`flex items-start gap-2 rounded px-2 py-1 text-xs ${
+                                log.status === "error"
+                                  ? "bg-red-500/10"
+                                  : log.status === "skip"
+                                    ? "bg-amber-500/5"
+                                    : ""
+                              }`}
+                            >
+                              <span
+                                className={`mt-0.5 shrink-0 rounded px-1 py-px text-[9px] font-bold uppercase ${
+                                  log.status === "ok"
+                                    ? "bg-green-500/20 text-green-400"
+                                    : log.status === "skip"
+                                      ? "bg-amber-500/20 text-amber-400"
+                                      : "bg-red-500/20 text-red-400"
+                                }`}
+                              >
+                                {log.status}
+                              </span>
+                              <span className={`min-w-0 flex-1 ${log.status === "error" ? "text-red-400" : "text-vpv-text-muted"}`}>
+                                {log.message}
+                              </span>
+                              {log.detail && (
+                                <span className="shrink-0 text-[10px] text-vpv-text-muted/60">
+                                  {log.detail.pts_total != null && `${log.detail.pts_total} pts`}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {loadingLogs === match.id && (
+                    <div className="border-t border-vpv-border/30 bg-vpv-bg/30 px-4 py-2">
+                      <div className="h-4 w-32 animate-pulse rounded bg-vpv-border" />
                     </div>
                   )}
                 </div>
