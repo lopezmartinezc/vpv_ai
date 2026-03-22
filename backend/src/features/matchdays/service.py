@@ -74,6 +74,10 @@ class MatchdayService:
         match_rows = await self.repo.get_matches(matchday.id)
         score_rows = await self.repo.get_scores(matchday.id)
 
+        # Fallback: if no scores yet (pre-scraping), show lineups as 0-pt entries
+        if not score_rows:
+            score_rows = await self.repo.get_lineups_as_scores(matchday.id)
+
         return MatchdayDetailResponse(
             season_id=season_id,
             number=matchday.number,
@@ -144,12 +148,7 @@ class MatchdayService:
         )
 
         # Get participant display name
-        score_rows = await self.repo.get_scores(matchday.id)
-        display_name = ""
-        for s in score_rows:
-            if s.participant_id == participant_id:
-                display_name = s.display_name
-                break
+        display_name = await self.repo.get_participant_display_name(participant_id)
 
         return LineupDetailResponse(
             participant_id=participant_id,

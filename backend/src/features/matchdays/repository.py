@@ -239,6 +239,46 @@ class MatchdayRepository:
             for row in result.all()
         ]
 
+    async def get_lineups_as_scores(self, matchday_id: int) -> list[ParticipantScoreRow]:
+        """Return lineup-based scores (0 pts) when no scraping has happened yet."""
+        stmt = (
+            select(
+                SeasonParticipant.id.label("participant_id"),
+                User.display_name,
+                Lineup.formation,
+            )
+            .join(User, SeasonParticipant.user_id == User.id)
+            .join(
+                Lineup,
+                and_(
+                    Lineup.participant_id == SeasonParticipant.id,
+                    Lineup.matchday_id == matchday_id,
+                ),
+            )
+            .order_by(User.display_name.asc())
+        )
+        result = await self.session.execute(stmt)
+        return [
+            ParticipantScoreRow(
+                rank=None,
+                participant_id=row.participant_id,
+                display_name=row.display_name,
+                total_points=0,
+                formation=row.formation,
+                pending_players=0,
+            )
+            for row in result.all()
+        ]
+
+    async def get_participant_display_name(self, participant_id: int) -> str:
+        stmt = (
+            select(User.display_name)
+            .join(SeasonParticipant, SeasonParticipant.user_id == User.id)
+            .where(SeasonParticipant.id == participant_id)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none() or ""
+
     async def get_lineup(
         self,
         matchday_id: int,
