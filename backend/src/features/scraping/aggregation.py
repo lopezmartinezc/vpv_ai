@@ -118,15 +118,19 @@ class ScoreAggregator:
         )
 
     async def _update_participant_scores(self, matchday_id: int) -> None:
-        """Step 3: copy lineups.total_points into participant_matchday_scores.total_points."""
+        """Step 3: upsert lineups.total_points into participant_matchday_scores.
+
+        Uses INSERT ... ON CONFLICT so rows are created for new matchdays
+        (not just updated for migrated ones).
+        """
         sql = text(
             """
-            UPDATE participant_matchday_scores pms
-            SET    total_points = l.total_points
+            INSERT INTO participant_matchday_scores (participant_id, matchday_id, total_points)
+            SELECT l.participant_id, l.matchday_id, l.total_points
             FROM   lineups l
-            WHERE  l.matchday_id     = :matchday_id
-              AND  l.participant_id  = pms.participant_id
-              AND  pms.matchday_id   = :matchday_id
+            WHERE  l.matchday_id = :matchday_id
+            ON CONFLICT (participant_id, matchday_id)
+            DO UPDATE SET total_points = EXCLUDED.total_points
             """
         )
         result = await self.session.execute(sql, {"matchday_id": matchday_id})

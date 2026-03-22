@@ -371,8 +371,8 @@ async def _deadline_reminder() -> None:
             for label, window_minutes in _REMINDER_WINDOWS:
                 if label in sent_for_md:
                     continue
-                # Fire when within 1 minute of the window
-                if abs(minutes_left - window_minutes) > 1.5:
+                # Fire once when we cross the window threshold
+                if minutes_left > window_minutes or minutes_left < window_minutes - 5:
                     continue
 
                 # Get participants without lineup
