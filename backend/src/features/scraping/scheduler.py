@@ -197,6 +197,27 @@ async def _run_tick() -> None:
                         pending_crcs[match.id] = new_crc
                         matches_to_scrape.append((match.id, md_id, md_number))
 
+                    # Force re-scrape for recently finished matches (player pages
+                    # may update independently of the match page CRC).
+                    rescrape_window = timedelta(hours=3)
+                    already_queued = {m_id for m_id, _, _ in matches_to_scrape}
+                    for match in played:
+                        if match.id in already_queued:
+                            continue
+                        if not match.stats_ok or not match.played_at:
+                            continue
+                        played_at = match.played_at
+                        if played_at.tzinfo is None:
+                            played_at = played_at.replace(tzinfo=UTC)
+                        elapsed = now_utc - played_at
+                        if elapsed < rescrape_window:
+                            _log(
+                                "scraping_tick",
+                                f"Match {match.id} (J{md_number}): re-scrape forzado "
+                                f"({int(elapsed.total_seconds() // 60)} min desde inicio)",
+                            )
+                            matches_to_scrape.append((match.id, md_id, md_number))
+
             if not matches_to_scrape:
                 _log("scraping_tick", "CRCs sin cambios, nada que scrapear")
                 await session.commit()
