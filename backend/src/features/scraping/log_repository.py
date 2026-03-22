@@ -129,4 +129,4 @@ class ScrapingLogRepository:
         cutoff = datetime.now(UTC) - timedelta(days=days)
         stmt = delete(ScrapingLog).where(ScrapingLog.created_at < cutoff)
         result = await self.session.execute(stmt)
-        return result.rowcount  # type: ignore[return-value]
+        return getattr(result, "rowcount", 0) or 0
