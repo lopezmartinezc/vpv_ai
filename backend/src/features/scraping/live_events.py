@@ -1,0 +1,136 @@
+"""Parser for live match events from futbolfantasy.com match pages.
+
+Extracts goal, assist, card, and substitution events from the
+``div.comentario`` elements in the live commentary section.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from bs4 import BeautifulSoup
+
+# Map icon filenames to event types.  Extensible — add new icons here
+# as they are discovered on futbolfantasy.com.
+ICON_MAP: dict[str, str] = {
+    "balon.png": "goal",
+    "bota.png": "assist",
+    "apercibido_box_min.png": "yellow",
+    "icono_entra.png": "sub_in",
+    "icono_sale.png": "sub_out",
+    "balon_robado_ultimo_hombre.png": "last_man_tackle",
+    # Pending discovery:
+    # "???": "red",
+    # "???": "double_yellow",
+    # "???": "penalty_saved",
+    # "???": "penalty_missed",
+    # "???": "own_goal",
+    # "???": "woodwork",
+}
+
+EVENT_EMOJI: dict[str, str] = {
+    "goal": "\u26bd",
+    "assist": "\ud83d\udc5f",
+    "yellow": "\ud83d\udfe8",
+    "red": "\ud83d\udfe5",
+    "double_yellow": "\ud83d\udfe8\ud83d\udfe8",
+    "sub_in": "\ud83d\udd3c",
+    "sub_out": "\ud83d\udd3d",
+    "penalty_saved": "\ud83e\udde4",
+    "penalty_missed": "\u274c",
+    "own_goal": "\ud83d\ude31",
+    "woodwork": "\ud83e\udeb5",
+    "last_man_tackle": "\ud83d\udee1\ufe0f",
+}
+
+EVENT_LABEL: dict[str, str] = {
+    "goal": "GOL",
+    "assist": "ASISTENCIA",
+    "yellow": "AMARILLA",
+    "red": "ROJA",
+    "double_yellow": "DOBLE AMARILLA",
+    "sub_in": "ENTRA",
+    "sub_out": "SALE",
+    "penalty_saved": "PENALTI PARADO",
+    "penalty_missed": "PENALTI FALLADO",
+    "own_goal": "GOL EN PROPIA",
+    "woodwork": "PALO",
+    "last_man_tackle": "ROBO ULTIMO HOMBRE",
+}
+
+
+@dataclass(frozen=True)
+class LiveEvent:
+    """A single parsed event from live match commentary."""
+
+    minute: str
+    event_type: str
+    player_name: str
+    player_slug: str
+    raw_text: str
+
+    @property
+    def dedup_key(self) -> tuple[str, str, str]:
+        """Key for deduplication: (minute, event_type, player_slug)."""
+        return (self.minute, self.event_type, self.player_slug)
+
+
+def parse_live_events(html: str) -> list[LiveEvent]:
+    """Extract relevant events from a futbolfantasy.com match page.
+
+    Only returns events that have a known icon (in ICON_MAP) AND
+    a linked player (``a.player``).
+    """
+    soup = BeautifulSoup(html, "lxml")
+    events: list[LiveEvent] = []
+
+    for comment in soup.find_all("div", class_="comentario"):
+        # Must have at least one icon image
+        imgs = comment.find_all("img")
+        if not imgs:
+            continue
+
+        # Identify event type from icon
+        event_type: str | None = None
+        for img in imgs:
+            src = img.get("src", "")
+            filename = src.rsplit("/", 1)[-1] if "/" in src else src
+            if filename in ICON_MAP:
+                event_type = ICON_MAP[filename]
+                break
+
+        if event_type is None:
+            continue
+
+        # Extract player link
+        player_link = comment.find("a", class_="player")
+        if player_link is None:
+            continue
+
+        player_name = player_link.get_text(strip=True)
+        href = player_link.get("href", "")
+        # href like: https://www.futbolfantasy.com/jugadores/ronald-araujo
+        player_slug = href.rsplit("/", 1)[-1] if "/" in href else ""
+        if not player_slug:
+            continue
+
+        # Extract minute
+        minute_span = comment.find("span", class_="minutos")
+        minute = minute_span.get_text(strip=True) if minute_span else "?"
+
+        # Clean up minute (remove trailing dash, colon suffixes)
+        minute = minute.rstrip("-").strip()
+
+        raw_text = comment.get_text(strip=True)[:200]
+
+        events.append(
+            LiveEvent(
+                minute=minute,
+                event_type=event_type,
+                player_name=player_name,
+                player_slug=player_slug,
+                raw_text=raw_text,
+            )
+        )
+
+    return events

@@ -22,5 +22,9 @@ class ScrapingSettings(BaseSettings):
     scraping_poll_interval_seconds: int = 900  # 15 minutes between ticks
     scraping_buffer_minutes: int = 120  # minutes after played_at to consider match ended
 
+    # Live match monitor
+    live_monitor_interval_seconds: int = 60
+    live_monitor_enabled: bool = True
+
 
 scraping_settings = ScrapingSettings()

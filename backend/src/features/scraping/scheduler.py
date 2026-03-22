@@ -521,10 +521,24 @@ def start_scheduler() -> None:
         replace_existing=True,
         misfire_grace_time=30,
     )
+    if scraping_settings.live_monitor_enabled:
+        from src.features.scraping.live_monitor import live_match_monitor
+
+        live_interval = scraping_settings.live_monitor_interval_seconds
+        _scheduler.add_job(
+            live_match_monitor,
+            trigger="interval",
+            seconds=live_interval,
+            id="live_monitor",
+            max_instances=1,
+            replace_existing=True,
+            misfire_grace_time=30,
+        )
     _scheduler.start()
     logger.info(
-        "scheduler.start: started, tick_interval=%ds, calendar_sync=daily@06:00, deadline_check=60s, deadline_reminder=60s",
+        "scheduler.start: started, tick_interval=%ds, calendar_sync=daily@06:00, deadline_check=60s, live_monitor=%ds",
         interval,
+        scraping_settings.live_monitor_interval_seconds,
     )
 
 
@@ -559,6 +573,14 @@ def get_scheduler_status() -> dict:
     next_calendar_sync = _next("calendar_sync")
     next_deadline_check = _next("deadline_check")
     next_deadline_reminder = _next("deadline_reminder")
+
+    try:
+        from src.features.scraping.live_monitor import get_live_monitor_status
+
+        _live_status = get_live_monitor_status()
+        _live_last_run = _live_status["last_run_at"]
+    except Exception:
+        _live_last_run = None
 
     # --- structured per-job list ---
     jobs: list[dict] = [
@@ -608,6 +630,15 @@ def get_scheduler_status() -> dict:
             "name": "Scraping manual (admin)",
             "type": "manual",
             "logs": get_job_logs("manual_scrape"),
+        },
+        {
+            "id": "live_monitor",
+            "name": "Monitor en directo (Telegram)",
+            "type": "interval",
+            "interval_seconds": scraping_settings.live_monitor_interval_seconds,
+            "last_run_at": _live_last_run,
+            "next_run_at": _next("live_monitor"),
+            "logs": get_job_logs("live_monitor"),
         },
     ]
 

@@ -19,6 +19,7 @@ _job_logs: dict[str, deque[dict]] = {
     "deadline_check": deque(maxlen=_MAX_LOG_ENTRIES),
     "deadline_reminder": deque(maxlen=_MAX_LOG_ENTRIES),
     "manual_scrape": deque(maxlen=_MAX_LOG_ENTRIES),
+    "live_monitor": deque(maxlen=_MAX_LOG_ENTRIES),
 }
 
 
