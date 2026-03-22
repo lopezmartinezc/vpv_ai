@@ -321,51 +321,7 @@ class ScrapingService:
         -------
         dict with keys ``processed``, ``skipped``, ``errors``.
         """
-        rules = await self.repo.get_scoring_rules(season_id)
-        engine = ScoringEngine(rules)
-
-        matchday = await self.repo.get_matchday(season_id, matchday_number)
-        if matchday is None:
-            logger.error(
-                "scrape_match_players: matchday not found season_id=%d number=%d",
-                season_id,
-                matchday_number,
-            )
-            return {"processed": 0, "skipped": 0, "errors": 0}
-
-        matchday_id = matchday.id
-
-        # Find the target match among this matchday's matches.
-        matches = await self.repo.get_matches_for_matchday(matchday_id)
-        match = next((m for m in matches if m.id == match_id), None)
-        if match is None:
-            logger.error(
-                "scrape_match_players: match_id=%d not found in matchday_id=%d",
-                match_id,
-                matchday_id,
-            )
-            return {"processed": 0, "skipped": 0, "errors": 0}
-
-        team_ids = {match.home_team_id, match.away_team_id}
-        match_players = await self.repo.get_players_for_teams(season_id, team_ids)
-        team_names = await self._team_names(team_ids)
-
-        home_team = team_names.get(match.home_team_id, "?")
-        away_team = team_names.get(match.away_team_id, "?")
-        scraping_log(
-            _MANUAL,
-            f"Match {match_id} ({home_team} vs {away_team}) J{matchday_number}: "
-            f"scrapeando {len(match_players)} jugadores",
-        )
-
-        total_processed = 0
-        total_skipped = 0
-        total_errors = 0
-        error_details: list[str] = []
-        db_logs: list[dict] = []
-
-        base_url = self._settings.scraping_base_url
-        season_slug = await self._resolve_season_slug(season_id)
+        log_repo = ScrapingLogRepository(self.session)
 
         def _make_log(pid: int | None, status: str, msg: str, detail: dict | None = None) -> dict:
             return {
@@ -379,74 +335,122 @@ class ScrapingService:
                 "detail": detail,
             }
 
-        async with ScrapingClient() as client:
-            for player in match_players:
-                team = team_names.get(player.team_id, "?")
-                url = f"{base_url}/jugadores/{player.slug}/{season_slug}"
-                try:
-                    html = await client.fetch(url)
-                except ScrapingError as exc:
-                    cause = exc.cause
-                    is_not_found = (
-                        isinstance(cause, httpx.HTTPStatusError)
-                        and cause.response.status_code == 404
-                    )
-                    if is_not_found:
+        rules = await self.repo.get_scoring_rules(season_id)
+        engine = ScoringEngine(rules)
+
+        matchday = await self.repo.get_matchday(season_id, matchday_number)
+        if matchday is None:
+            msg = f"Jornada no encontrada: season={season_id} number={matchday_number}"
+            scraping_log(_MANUAL, msg, "error")
+            await log_repo.bulk_insert([_make_log(None, "error", msg)])
+            return {"processed": 0, "skipped": 0, "errors": 1, "error_details": [msg]}
+
+        matchday_id = matchday.id
+
+        matches = await self.repo.get_matches_for_matchday(matchday_id)
+        match = next((m for m in matches if m.id == match_id), None)
+        if match is None:
+            msg = f"Partido {match_id} no encontrado en J{matchday_number}"
+            scraping_log(_MANUAL, msg, "error")
+            await log_repo.bulk_insert([_make_log(None, "error", msg)])
+            return {"processed": 0, "skipped": 0, "errors": 1, "error_details": [msg]}
+
+        team_ids = {match.home_team_id, match.away_team_id}
+        match_players = await self.repo.get_players_for_teams(season_id, team_ids)
+        team_names = await self._team_names(team_ids)
+
+        home_team = team_names.get(match.home_team_id, "?")
+        away_team = team_names.get(match.away_team_id, "?")
+        match_label = f"{home_team} vs {away_team}"
+        scraping_log(
+            _MANUAL,
+            f"Match {match_id} ({match_label}) J{matchday_number}: "
+            f"scrapeando {len(match_players)} jugadores",
+        )
+
+        total_processed = 0
+        total_skipped = 0
+        total_errors = 0
+        error_details: list[str] = []
+        db_logs: list[dict] = []
+
+        base_url = self._settings.scraping_base_url
+        season_slug = await self._resolve_season_slug(season_id)
+
+        try:
+            async with ScrapingClient() as client:
+                for player in match_players:
+                    team = team_names.get(player.team_id, "?")
+                    url = f"{base_url}/jugadores/{player.slug}/{season_slug}"
+                    try:
+                        html = await client.fetch(url)
+                    except ScrapingError as exc:
+                        cause = exc.cause
+                        is_not_found = (
+                            isinstance(cause, httpx.HTTPStatusError)
+                            and cause.response.status_code == 404
+                        )
+                        if is_not_found:
+                            total_skipped += 1
+                            db_logs.append(
+                                _make_log(player.id, "skip", f"{player.name} ({team}): 404")
+                            )
+                            continue
+                        total_errors += 1
+                        err_msg = f"{player.name} ({team}): {cause}"
+                        error_details.append(err_msg)
+                        scraping_log(_MANUAL, err_msg, "error")
+                        db_logs.append(_make_log(player.id, "error", err_msg))
+                        continue
+
+                    stats = parse_player_stats(html, matchday_number)
+                    if stats is None:
                         total_skipped += 1
                         db_logs.append(
-                            _make_log(player.id, "skip", f"{player.name} ({team}): 404")
+                            _make_log(player.id, "skip", f"{player.name} ({team}): sin stats")
                         )
                         continue
-                    total_errors += 1
-                    err_msg = f"{player.name} ({team}): {cause}"
-                    error_details.append(err_msg)
-                    scraping_log(_MANUAL, err_msg, "error")
-                    db_logs.append(_make_log(player.id, "error", err_msg))
-                    continue
 
-                stats = parse_player_stats(html, matchday_number)
-                if stats is None:
-                    total_skipped += 1
+                    position = player.position
+                    breakdown = engine.calculate(stats, position)
+
+                    await self.repo.upsert_player_stat(
+                        player_id=player.id,
+                        matchday_id=matchday_id,
+                        match_id=match_id,
+                        position=position,
+                        stats=stats,
+                        breakdown=breakdown,
+                    )
+                    total_processed += 1
                     db_logs.append(
-                        _make_log(player.id, "skip", f"{player.name} ({team}): sin stats")
+                        _make_log(
+                            player.id,
+                            "ok",
+                            f"{player.name} ({team}): {breakdown.get('pts_total', 0)} pts",
+                            {
+                                "position": position,
+                                "marca_rating": stats.marca_rating,
+                                "as_picas": stats.as_picas,
+                                "goals": stats.goals,
+                                "assists": stats.assists,
+                                "pts_total": breakdown.get("pts_total", 0),
+                            },
+                        )
                     )
-                    continue
-
-                position = player.position
-                breakdown = engine.calculate(stats, position)
-
-                await self.repo.upsert_player_stat(
-                    player_id=player.id,
-                    matchday_id=matchday_id,
-                    match_id=match_id,
-                    position=position,
-                    stats=stats,
-                    breakdown=breakdown,
-                )
-                total_processed += 1
-                db_logs.append(
-                    _make_log(
-                        player.id,
-                        "ok",
-                        f"{player.name} ({team}): {breakdown.get('pts_total', 0)} pts",
-                        {
-                            "position": position,
-                            "marca_rating": stats.marca_rating,
-                            "as_picas": stats.as_picas,
-                            "goals": stats.goals,
-                            "assists": stats.assists,
-                            "pts_total": breakdown.get("pts_total", 0),
-                        },
-                    )
-                )
-
-        # Persist logs to DB
-        log_repo = ScrapingLogRepository(self.session)
-        await log_repo.bulk_insert(db_logs)
+        except Exception as exc:
+            err_msg = f"Error fatal scrapeando match {match_id} ({match_label}): {exc}"
+            scraping_log(_MANUAL, err_msg, "error")
+            db_logs.append(_make_log(None, "error", err_msg))
+            total_errors += 1
+            error_details.append(err_msg)
+        finally:
+            # Always persist logs, even on error
+            await log_repo.bulk_insert(db_logs)
 
         scraping_log(
             _MANUAL,
-            f"Match {match_id} ({home_team} vs {away_team}): "
+            f"Match {match_id} ({match_label}): "
             f"procesados={total_processed}, skipped={total_skipped}, errores={total_errors}",
             "error" if total_errors > 0 else "info",
         )

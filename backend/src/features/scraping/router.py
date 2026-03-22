@@ -59,7 +59,13 @@ async def scrape_match_endpoint(
     Useful for re-scraping an individual match without touching the rest of
     the matchday.  Returns a summary of processed / skipped / error counts.
     """
-    return await service.scrape_match_players(season_id, number, match_id)
+    try:
+        return await service.scrape_match_players(season_id, number, match_id)
+    except Exception as exc:
+        from src.features.scraping.log_buffer import scraping_log
+
+        scraping_log("manual_scrape", f"Endpoint error match {match_id}: {exc}", "error")
+        return {"processed": 0, "skipped": 0, "errors": 1, "error_details": [str(exc)]}
 
 
 @router.post(
