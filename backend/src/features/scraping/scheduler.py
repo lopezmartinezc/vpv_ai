@@ -491,6 +491,54 @@ async def _calendar_sync() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Nightly full re-scrape of played matchdays
+# ---------------------------------------------------------------------------
+
+_last_nightly_rescrape_at: datetime | None = None
+
+
+async def _nightly_rescrape() -> None:
+    """Re-scrape all matches with stats_ok in current + previous matchday.
+
+    Runs once daily at 23:30 UTC to catch any late player page updates
+    (stat corrections, media ratings) that the CRC check may have missed.
+    """
+    global _last_nightly_rescrape_at
+    _last_nightly_rescrape_at = datetime.now(UTC)
+    _log("nightly_rescrape", "Inicio re-scrape nocturno")
+
+    async with AsyncSessionLocal() as session:
+        try:
+            repo = ScrapingRepository(session)
+            service = ScrapingService(session)
+
+            season = await repo.get_active_season()
+            if season is None:
+                _log("nightly_rescrape", "Sin temporada activa")
+                return
+
+            # Re-scrape current + previous matchday
+            for md_number in [season.matchday_current, season.matchday_current - 1]:
+                if md_number < 1:
+                    continue
+                _log("nightly_rescrape", f"Re-scrapeando J{md_number}")
+                try:
+                    result = await service.scrape_matchday(season.id, md_number)
+                    _log(
+                        "nightly_rescrape",
+                        f"J{md_number}: procesados={result.get('processed', 0)}, "
+                        f"errores={result.get('errors', 0)}",
+                    )
+                except Exception as exc:
+                    _log("nightly_rescrape", f"Error J{md_number}: {exc}", "error")
+
+            await session.commit()
+            _log("nightly_rescrape", "Re-scrape nocturno completado")
+        except Exception as exc:
+            _log("nightly_rescrape", f"Error fatal: {exc}", "error")
+
+
+# ---------------------------------------------------------------------------
 # Lifecycle helpers
 # ---------------------------------------------------------------------------
 
@@ -544,6 +592,16 @@ def start_scheduler(**_kwargs: object) -> None:
         max_instances=1,
         replace_existing=True,
         misfire_grace_time=30,
+    )
+    _scheduler.add_job(
+        _nightly_rescrape,
+        trigger="cron",
+        hour=23,
+        minute=30,
+        id="nightly_rescrape",
+        max_instances=1,
+        replace_existing=True,
+        misfire_grace_time=3600,
     )
     if scraping_settings.live_monitor_enabled:
         from src.features.scraping.live_monitor import live_match_monitor
@@ -659,6 +717,19 @@ def get_scheduler_status() -> dict:
             "logs": get_job_logs("deadline_reminder"),
         },
         {
+            "id": "nightly_rescrape",
+            "name": "Re-scrape nocturno",
+            "icon": "N",
+            "type": "cron",
+            "schedule": "Diario 23:30 UTC",
+            "last_run_at": _last_nightly_rescrape_at.isoformat()
+            if _last_nightly_rescrape_at
+            else None,
+            "next_run_at": _next("nightly_rescrape"),
+            "triggerable": True,
+            "logs": get_job_logs("nightly_rescrape"),
+        },
+        {
             "id": "live_monitor",
             "name": "Monitor en directo",
             "icon": "L",
@@ -700,6 +771,12 @@ async def trigger_calendar_sync() -> dict:
 async def trigger_deadline_check() -> dict:
     """Manually trigger a deadline check."""
     _background_task = asyncio.create_task(_deadline_check())  # noqa: RUF006
+    return {"triggered": True}
+
+
+async def trigger_nightly_rescrape() -> dict:
+    """Manually trigger a nightly re-scrape."""
+    _background_task = asyncio.create_task(_nightly_rescrape())  # noqa: RUF006
     return {"triggered": True}
 
 

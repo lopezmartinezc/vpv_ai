@@ -137,6 +137,7 @@ const JOB_TRIGGER_MAP: Record<string, string> = {
   scraping_tick: "/scraping/admin/trigger",
   calendar_sync: "/scraping/admin/trigger/calendar-sync",
   deadline_check: "/scraping/admin/trigger/deadline-check",
+  nightly_rescrape: "/scraping/admin/trigger/nightly-rescrape",
   live_monitor: "/scraping/admin/trigger/live-monitor",
 };
 
@@ -145,6 +146,7 @@ const JOB_COLORS: Record<string, string> = {
   calendar_sync: "bg-blue-500/15 text-blue-400",
   deadline_check: "bg-amber-500/15 text-amber-400",
   deadline_reminder: "bg-amber-500/15 text-amber-400",
+  nightly_rescrape: "bg-purple-500/15 text-purple-400",
   live_monitor: "bg-green-500/15 text-green-400",
 };
 

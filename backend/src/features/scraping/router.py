@@ -12,6 +12,7 @@ from src.features.scraping.scheduler import (
     trigger_calendar_sync,
     trigger_deadline_check,
     trigger_live_monitor,
+    trigger_nightly_rescrape,
     trigger_tick,
 )
 from src.features.scraping.service import ScrapingService
@@ -196,6 +197,17 @@ async def scheduler_trigger_deadline(
 ) -> dict:
     """Manually fire a deadline check outside the 60-second interval."""
     return await trigger_deadline_check()
+
+
+@router.post(
+    "/admin/trigger/nightly-rescrape",
+    summary="Trigger nightly re-scrape",
+    response_model=dict,
+)
+async def scheduler_trigger_nightly(
+    _admin: dict = Depends(require_perm(Perm.SCRAPING)),
+) -> dict:
+    return await trigger_nightly_rescrape()
 
 
 @router.post(
