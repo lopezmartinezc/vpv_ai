@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiClient } from "@/lib/api-client";
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
 interface LogEntry {
   ts: string;
   level: string;
@@ -12,24 +16,24 @@ interface LogEntry {
 interface JobStatus {
   id: string;
   name: string;
-  type: "interval" | "cron";
+  icon: string;
+  type: "interval" | "cron" | "manual";
   interval_seconds?: number;
   schedule?: string;
   last_run_at: string | null;
   next_run_at: string | null;
   lock_held?: boolean;
+  triggerable?: boolean;
+  active?: boolean;
+  tracked_matches?: number;
+  total_events_sent?: number;
   logs?: LogEntry[];
 }
 
 interface SchedulerStatus {
   running: boolean;
-  poll_interval_seconds: number;
-  last_tick_at: string | null;
-  next_run_at: string | null;
-  lock_held: boolean;
-  last_calendar_sync_at: string | null;
-  next_calendar_sync_at: string | null;
   jobs: JobStatus[];
+  manual_logs: LogEntry[];
 }
 
 interface SeasonSummary {
@@ -50,20 +54,6 @@ interface MatchEntry {
   played_at: string | null;
 }
 
-interface DbLogEntry {
-  id: number;
-  status: string;
-  message: string | null;
-  detail: Record<string, unknown> | null;
-  player_name: string | null;
-  created_at: string | null;
-}
-
-interface DbLogsResponse {
-  items: DbLogEntry[];
-  total: number;
-}
-
 interface MatchdayDetail {
   season_id: number;
   number: number;
@@ -73,190 +63,217 @@ interface MatchdayDetail {
   matches: MatchEntry[];
 }
 
-function formatDateTime(iso: string | null): string {
-  if (!iso) return "\u2014";
-  const d = new Date(iso);
-  return d.toLocaleString("es-ES", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
+interface DbLogEntry {
+  id: number;
+  matchday_number: number | null;
+  match_id: number | null;
+  status: string;
+  message: string | null;
+  detail: Record<string, unknown> | null;
+  player_name: string | null;
+  match_label: string | null;
+  created_at: string | null;
+}
+
+interface DbLogsResponse {
+  items: DbLogEntry[];
+  total: number;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function formatRelative(iso: string | null): string {
+  if (!iso) return "";
+  const diffMs = new Date(iso).getTime() - Date.now();
+  const abs = Math.abs(diffMs);
+  const past = diffMs < 0;
+  if (abs < 60_000) return past ? "hace <1 min" : "en <1 min";
+  const mins = Math.floor(abs / 60_000);
+  if (mins < 60) return past ? `hace ${mins} min` : `en ${mins} min`;
+  const hours = Math.floor(mins / 60);
+  return past ? `hace ${hours}h` : `en ${hours}h`;
+}
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString("es-ES", {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
   });
 }
 
-function formatRelative(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const now = new Date();
-  const diffMs = d.getTime() - now.getTime();
-  const absDiffMs = Math.abs(diffMs);
-
-  if (absDiffMs < 60_000) return diffMs < 0 ? "hace <1 min" : "en <1 min";
-
-  const mins = Math.floor(absDiffMs / 60_000);
-  if (mins < 60) return diffMs < 0 ? `hace ${mins} min` : `en ${mins} min`;
-
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return diffMs < 0 ? `hace ${hours}h` : `en ${hours}h`;
-
-  const days = Math.floor(hours / 24);
-  return diffMs < 0 ? `hace ${days}d` : `en ${days}d`;
-}
-
 function formatMatchDate(iso: string | null): string {
   if (!iso) return "Sin fecha";
   const d = new Date(iso);
-  const now = new Date();
-  const diffMs = d.getTime() - now.getTime();
-  const diffH = Math.round(diffMs / (1000 * 60 * 60));
-
-  const dateStr = d.toLocaleString("es-ES", {
+  const diffH = Math.round((d.getTime() - Date.now()) / 3_600_000);
+  const s = d.toLocaleString("es-ES", {
     weekday: "short",
     day: "2-digit",
     month: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
   });
-
-  if (diffMs < 0) return `${dateStr} (jugado)`;
-  if (diffH < 24) return `${dateStr} (en ${diffH}h)`;
-  return dateStr;
+  if (diffH < -2) return `${s} (jugado)`;
+  if (diffH < 0) return `${s} (en juego)`;
+  if (diffH < 24) return `${s} (en ${diffH}h)`;
+  return s;
 }
 
-function matchStatus(match: MatchEntry): "played" | "live" | "upcoming" {
-  if (match.home_score !== null) return "played";
-  if (!match.played_at) return "upcoming";
-  const d = new Date(match.played_at);
-  const now = new Date();
-  const elapsedMs = now.getTime() - d.getTime();
-  if (elapsedMs < 0) return "upcoming";
-  // A football match lasts ~2h; after 3h without score it's "finished" not "live"
-  if (elapsedMs > 3 * 60 * 60 * 1000) return "played";
-  return "live";
-}
-
-const JOB_TRIGGER_MAP: Record<string, string> = {
-  scraping_tick: "/scraping/admin/trigger",
-  calendar_sync: "/scraping/admin/trigger/calendar-sync",
-  deadline_check: "/scraping/admin/trigger/deadline-check",
-};
-
-const JOB_ICONS: Record<string, string> = {
-  scraping_tick: "M",
-  calendar_sync: "C",
-  deadline_check: "D",
-};
-
-function formatFrequency(job: JobStatus): string {
-  if (job.type === "cron" && job.schedule) return job.schedule;
-  if (job.interval_seconds) {
-    if (job.interval_seconds >= 60) return `Cada ${Math.floor(job.interval_seconds / 60)} min`;
-    return `Cada ${job.interval_seconds}s`;
-  }
-  return "\u2014";
-}
-
-const LOG_LEVEL_COLORS: Record<string, string> = {
+const LOG_COLORS: Record<string, string> = {
   info: "text-vpv-text-muted",
   warning: "text-yellow-400",
   error: "text-red-400",
 };
 
-function formatLogTime(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-}
+const STATUS_BADGE: Record<string, string> = {
+  ok: "bg-green-500/20 text-green-400",
+  skip: "bg-amber-500/20 text-amber-400",
+  error: "bg-red-500/20 text-red-400",
+};
+
+const JOB_TRIGGER_MAP: Record<string, string> = {
+  scraping_tick: "/scraping/admin/trigger",
+  calendar_sync: "/scraping/admin/trigger/calendar-sync",
+  deadline_check: "/scraping/admin/trigger/deadline-check",
+  live_monitor: "/scraping/admin/trigger/live-monitor",
+};
+
+const JOB_COLORS: Record<string, string> = {
+  scraping_tick: "bg-vpv-accent/15 text-vpv-accent",
+  calendar_sync: "bg-blue-500/15 text-blue-400",
+  deadline_check: "bg-amber-500/15 text-amber-400",
+  deadline_reminder: "bg-amber-500/15 text-amber-400",
+  live_monitor: "bg-green-500/15 text-green-400",
+};
+
+// ---------------------------------------------------------------------------
+// JobCard component
+// ---------------------------------------------------------------------------
 
 function JobCard({
   job,
   schedulerRunning,
   onTrigger,
+  onToggle,
   triggeringJob,
 }: {
   job: JobStatus;
   schedulerRunning: boolean;
   onTrigger: (jobId: string) => void;
+  onToggle?: () => void;
   triggeringJob: string | null;
 }) {
   const [showLogs, setShowLogs] = useState(false);
-  const isTriggering = triggeringJob === job.id;
   const logs = job.logs ?? [];
-  const lastLogs = logs.slice(-50);
+  const lastLogs = logs.slice(-30);
+  const isLive = job.id === "live_monitor";
 
   return (
     <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
-      <div className="flex items-center justify-between border-b border-vpv-border px-4 py-2.5">
+      <div className="flex items-center justify-between border-b border-vpv-border px-3 py-2">
         <div className="flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-vpv-accent/15 text-xs font-bold text-vpv-accent">
-            {JOB_ICONS[job.id] ?? "?"}
+          <span
+            className={`flex h-7 w-7 items-center justify-center rounded-md text-xs font-bold ${JOB_COLORS[job.id] ?? "bg-vpv-border text-vpv-text-muted"}`}
+          >
+            {job.icon}
           </span>
           <div>
             <h3 className="text-sm font-semibold text-vpv-text">{job.name}</h3>
-            <p className="text-[11px] text-vpv-text-muted">{formatFrequency(job)}</p>
+            <p className="text-[10px] text-vpv-text-muted">
+              {job.type === "cron" && job.schedule
+                ? job.schedule
+                : job.interval_seconds
+                  ? job.interval_seconds >= 60
+                    ? `Cada ${Math.floor(job.interval_seconds / 60)} min`
+                    : `Cada ${job.interval_seconds}s`
+                  : "Manual"}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           {job.lock_held && (
-            <span className="rounded bg-yellow-500/20 px-2 py-0.5 text-[10px] font-medium text-yellow-400">
+            <span className="rounded bg-yellow-500/20 px-1.5 py-0.5 text-[10px] font-medium text-yellow-400">
               En curso
             </span>
           )}
-          <button
-            onClick={() => onTrigger(job.id)}
-            disabled={!schedulerRunning || triggeringJob !== null}
-            className="rounded bg-vpv-accent/10 px-2.5 py-1 text-[11px] font-medium text-vpv-accent transition-colors hover:bg-vpv-accent/20 disabled:opacity-40"
-          >
-            {isTriggering ? "Ejecutando..." : "Forzar"}
-          </button>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1 px-4 py-2.5 text-xs">
-        <div>
-          <p className="text-vpv-text-muted">Ultima ejecucion</p>
-          <p className="font-medium text-vpv-text">{formatDateTime(job.last_run_at)}</p>
-          {job.last_run_at && (
-            <p className="text-[10px] text-vpv-text-muted">{formatRelative(job.last_run_at)}</p>
+          {isLive && onToggle && (
+            <button
+              onClick={onToggle}
+              className={`rounded px-2 py-0.5 text-[10px] font-bold transition-colors ${
+                job.active
+                  ? "bg-green-500/20 text-green-400 hover:bg-green-500/30"
+                  : "bg-vpv-border text-vpv-text-muted hover:text-vpv-text"
+              }`}
+            >
+              {job.active ? "ON" : "OFF"}
+            </button>
           )}
-        </div>
-        <div>
-          <p className="text-vpv-text-muted">Proxima ejecucion</p>
-          <p className="font-medium text-vpv-text">{formatDateTime(job.next_run_at)}</p>
-          {job.next_run_at && (
-            <p className="text-[10px] text-vpv-text-muted">{formatRelative(job.next_run_at)}</p>
+          {job.triggerable && (
+            <button
+              onClick={() => onTrigger(job.id)}
+              disabled={!schedulerRunning || triggeringJob !== null}
+              className="rounded bg-vpv-accent/10 px-2 py-0.5 text-[10px] font-medium text-vpv-accent hover:bg-vpv-accent/20 disabled:opacity-40"
+            >
+              {triggeringJob === job.id ? "..." : "Forzar"}
+            </button>
           )}
         </div>
       </div>
 
-      {/* Log section */}
+      {/* Metrics */}
+      <div className="grid grid-cols-2 gap-x-3 px-3 py-2 text-[11px]">
+        <div>
+          <span className="text-vpv-text-muted">Ultimo </span>
+          <span className="font-medium text-vpv-text">
+            {formatRelative(job.last_run_at) || "\u2014"}
+          </span>
+        </div>
+        <div>
+          <span className="text-vpv-text-muted">Proximo </span>
+          <span className="font-medium text-vpv-text">
+            {formatRelative(job.next_run_at) || "\u2014"}
+          </span>
+        </div>
+        {isLive && (
+          <>
+            <div>
+              <span className="text-vpv-text-muted">En curso </span>
+              <span className="font-medium text-green-400">
+                {job.tracked_matches ?? 0} partidos
+              </span>
+            </div>
+            <div>
+              <span className="text-vpv-text-muted">Enviados </span>
+              <span className="font-medium text-vpv-text">
+                {job.total_events_sent ?? 0} eventos
+              </span>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Logs toggle */}
       {logs.length > 0 && (
         <div className="border-t border-vpv-border">
           <button
             type="button"
             onClick={() => setShowLogs((p) => !p)}
-            className="flex w-full items-center justify-between px-4 py-1.5 text-[11px] text-vpv-text-muted transition-colors hover:text-vpv-text"
+            className="flex w-full items-center justify-between px-3 py-1 text-[10px] text-vpv-text-muted hover:text-vpv-text"
           >
-            <span>Log ({logs.length})</span>
-            <svg
-              className={`h-3 w-3 transition-transform ${showLogs ? "rotate-180" : ""}`}
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
-                clipRule="evenodd"
-              />
-            </svg>
+            <span>Logs ({logs.length})</span>
+            <span>{showLogs ? "\u25B2" : "\u25BC"}</span>
           </button>
           {showLogs && (
-            <div className="max-h-48 overflow-y-auto border-t border-vpv-border/50 bg-vpv-bg/50 px-3 py-1.5 font-mono text-[10px] leading-relaxed">
-              {lastLogs.map((entry, i) => (
-                <div key={i} className="flex gap-2">
-                  <span className="shrink-0 text-vpv-text-muted/60">{formatLogTime(entry.ts)}</span>
-                  <span className={LOG_LEVEL_COLORS[entry.level] ?? "text-vpv-text-muted"}>
-                    {entry.msg}
+            <div className="max-h-40 overflow-y-auto border-t border-vpv-border/50 bg-vpv-bg/50 px-2 py-1 font-mono text-[10px] leading-relaxed">
+              {lastLogs.map((e, i) => (
+                <div key={i} className="flex gap-1.5">
+                  <span className="shrink-0 text-vpv-text-muted/50">
+                    {formatTime(e.ts)}
+                  </span>
+                  <span className={LOG_COLORS[e.level] ?? "text-vpv-text-muted"}>
+                    {e.msg}
                   </span>
                 </div>
               ))}
@@ -268,64 +285,144 @@ function JobCard({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Main page
+// ---------------------------------------------------------------------------
+
 export default function AdminScrapingPage() {
   const [status, setStatus] = useState<SchedulerStatus | null>(null);
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [triggeringJob, setTriggeringJob] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [scrapeResult, setScrapeResult] = useState<string | null>(null);
 
-  // Season list + selection
+  // Season + matchday
   const [seasons, setSeasons] = useState<SeasonSummary[]>([]);
-  const [season, setSeason] = useState<SeasonSummary | null>(null);
-  const [matchdayDetail, setMatchdayDetail] = useState<MatchdayDetail | null>(null);
-
-  // Manual scraping overrides
   const [manualSeason, setManualSeason] = useState("");
   const [manualMatchday, setManualMatchday] = useState("");
+  const [matchdayDetail, setMatchdayDetail] = useState<MatchdayDetail | null>(null);
   const [scrapingMatchId, setScrapingMatchId] = useState<number | null>(null);
-  const [matchScrapeResult, setMatchScrapeResult] = useState<{
-    matchId: number;
-    lines: string[];
-  } | null>(null);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
 
-  // Inline DB logs per match
+  // Inline match logs
   const [matchLogs, setMatchLogs] = useState<Record<number, DbLogEntry[]>>({});
   const [expandedLogs, setExpandedLogs] = useState<Set<number>>(new Set());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // DB logs section
+  const [dbLogs, setDbLogs] = useState<DbLogEntry[]>([]);
+  const [dbLogsTotal, setDbLogsTotal] = useState(0);
+  const [dbLogsPage, setDbLogsPage] = useState(0);
+  const [dbStatusFilter, setDbStatusFilter] = useState("");
+  const [dbSearch, setDbSearch] = useState("");
+  const [dbMatchday, setDbMatchday] = useState("");
+  const [dbAutoRefresh, setDbAutoRefresh] = useState(false);
+  const [showDbLogs, setShowDbLogs] = useState(false);
+
+  // ---------------------------------------------------------------------------
+  // Data fetching
+  // ---------------------------------------------------------------------------
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const data = await apiClient.get<SchedulerStatus>("/scraping/admin/status");
+      setStatus(data);
+    } catch {
+      /* */
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const fetchMatchday = useCallback(async (sid: number, num: number) => {
+    try {
+      setMatchdayDetail(
+        await apiClient.get<MatchdayDetail>(`/matchdays/${sid}/${num}`)
+      );
+    } catch {
+      setMatchdayDetail(null);
+    }
+  }, []);
 
   const fetchMatchLogs = useCallback(
     async (matchId: number) => {
       if (!manualSeason) return;
       try {
         const data = await apiClient.get<DbLogsResponse>(
-          `/scraping/logs?season_id=${manualSeason}&match_id=${matchId}&limit=200`,
+          `/scraping/logs?season_id=${manualSeason}&match_id=${matchId}&limit=200`
         );
         setMatchLogs((prev) => ({ ...prev, [matchId]: data.items }));
       } catch {
-        // keep previous
+        /* */
       }
     },
-    [manualSeason],
+    [manualSeason]
   );
 
-  function toggleMatchLogs(matchId: number) {
-    setExpandedLogs((prev) => {
-      const next = new Set(prev);
-      if (next.has(matchId)) {
-        next.delete(matchId);
-      } else {
-        next.add(matchId);
-        fetchMatchLogs(matchId);
-      }
-      return next;
+  const fetchDbLogs = useCallback(async () => {
+    if (!manualSeason) return;
+    const params = new URLSearchParams({
+      season_id: manualSeason,
+      limit: "50",
+      offset: String(dbLogsPage * 50),
     });
-  }
+    if (dbMatchday) params.set("matchday", dbMatchday);
+    if (dbStatusFilter) params.set("status", dbStatusFilter);
+    if (dbSearch) params.set("search", dbSearch);
+    try {
+      const data = await apiClient.get<DbLogsResponse>(
+        `/scraping/logs?${params.toString()}`
+      );
+      setDbLogs(data.items);
+      setDbLogsTotal(data.total);
+    } catch {
+      /* */
+    }
+  }, [manualSeason, dbLogsPage, dbMatchday, dbStatusFilter, dbSearch]);
 
-  // Start polling logs for a match being scraped
+  // ---------------------------------------------------------------------------
+  // Effects
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    fetchStatus();
+    apiClient.get<SeasonSummary[]>("/seasons").then((all) => {
+      setSeasons(all);
+      const active = all.find((s) => s.status === "active") ?? all[0];
+      if (active) {
+        setManualSeason(String(active.id));
+        setManualMatchday(String(active.matchday_current));
+        fetchMatchday(active.id, active.matchday_current);
+      }
+    });
+    const interval = setInterval(fetchStatus, 10_000);
+    return () => clearInterval(interval);
+  }, [fetchStatus, fetchMatchday]);
+
+  useEffect(() => {
+    if (showDbLogs) fetchDbLogs();
+  }, [showDbLogs, fetchDbLogs]);
+
+  // DB logs auto-refresh
+  useEffect(() => {
+    if (!dbAutoRefresh || !showDbLogs) return;
+    const id = setInterval(fetchDbLogs, 5000);
+    return () => clearInterval(id);
+  }, [dbAutoRefresh, showDbLogs, fetchDbLogs]);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Handlers
+  // ---------------------------------------------------------------------------
+
   function startLogPolling(matchId: number) {
-    stopLogPolling();
+    if (pollRef.current) clearInterval(pollRef.current);
     setExpandedLogs((prev) => new Set(prev).add(matchId));
     pollRef.current = setInterval(() => fetchMatchLogs(matchId), 2000);
   }
@@ -337,106 +434,72 @@ export default function AdminScrapingPage() {
     }
   }
 
-  useEffect(() => {
-    return () => stopLogPolling();
-  }, []);
-
-  const fetchStatus = useCallback(async () => {
-    try {
-      const data = await apiClient.get<SchedulerStatus>("/scraping/admin/status");
-      setStatus(data);
-    } catch {
-      // handled
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const fetchMatchday = useCallback(async (seasonId: number, number: number) => {
-    try {
-      const detail = await apiClient.get<MatchdayDetail>(
-        `/matchdays/${seasonId}/${number}`,
-      );
-      setMatchdayDetail(detail);
-    } catch {
-      setMatchdayDetail(null);
-    }
-  }, []);
-
-  const fetchSeasons = useCallback(async () => {
-    try {
-      const allSeasons = await apiClient.get<SeasonSummary[]>("/seasons");
-      setSeasons(allSeasons);
-
-      // Auto-select active season and load its current matchday
-      const active = allSeasons.find((s) => s.status === "active") ?? allSeasons[0];
-      if (active) {
-        setSeason(active);
-        setManualSeason(String(active.id));
-        setManualMatchday(String(active.matchday_current));
-        fetchMatchday(active.id, active.matchday_current);
-      }
-    } catch {
-      // no seasons
-    }
-  }, [fetchMatchday]);
-
-  useEffect(() => {
-    fetchStatus();
-    fetchSeasons();
-    const interval = setInterval(fetchStatus, 10_000);
-    return () => clearInterval(interval);
-  }, [fetchStatus, fetchSeasons]);
-
-  function handleSearch() {
-    const sid = Number(manualSeason);
-    const md = Number(manualMatchday);
-    if (sid > 0 && md > 0) {
-      fetchMatchday(sid, md);
-    }
-  }
-
-  function handleCancelScrape() {
-    if (abortController) {
-      abortController.abort();
-      setAbortController(null);
-    }
-  }
-
   async function handleAction(action: "start" | "stop") {
     setActionLoading(action);
     try {
-      const data = await apiClient.post<SchedulerStatus>(`/scraping/admin/${action}`, {});
-      setStatus(data);
+      setStatus(
+        await apiClient.post<SchedulerStatus>(`/scraping/admin/${action}`, {})
+      );
     } catch {
-      // error
+      /* */
     } finally {
       setActionLoading(null);
     }
   }
 
   async function handleTriggerJob(jobId: string) {
-    const endpoint = JOB_TRIGGER_MAP[jobId];
-    if (!endpoint) return;
-
+    const ep = JOB_TRIGGER_MAP[jobId];
+    if (!ep) return;
     setTriggeringJob(jobId);
     try {
-      await apiClient.post(endpoint, {});
-      // Give the job a moment to start, then refresh status + matchday
-      setTimeout(() => {
-        fetchStatus();
-        fetchMatchday(Number(manualSeason), Number(manualMatchday));
-      }, 1500);
+      await apiClient.post(ep, {});
+      setTimeout(fetchStatus, 1500);
     } catch {
-      // error
+      /* */
     } finally {
       setTriggeringJob(null);
     }
   }
 
-  async function handleManualScrape() {
-    const controller = new AbortController();
-    setAbortController(controller);
+  async function handleToggleLiveMonitor() {
+    try {
+      await apiClient.post("/scraping/admin/live-monitor/toggle", {});
+      fetchStatus();
+    } catch {
+      /* */
+    }
+  }
+
+  async function handleScrapeMatch(matchId: number) {
+    if (!manualSeason || !manualMatchday) return;
+    const ctrl = new AbortController();
+    setAbortController(ctrl);
+    setScrapingMatchId(matchId);
+    setMatchLogs((prev) => ({ ...prev, [matchId]: [] }));
+    startLogPolling(matchId);
+    try {
+      const data = await apiClient.post<{
+        processed?: number;
+        errors?: number;
+        error_details?: string[];
+      }>(`/scraping/match/${manualSeason}/${manualMatchday}/${matchId}`, {}, {
+        signal: ctrl.signal,
+      });
+      setScrapeResult(
+        `Procesados: ${data.processed ?? 0}, Errores: ${data.errors ?? 0}`
+      );
+      fetchMatchday(Number(manualSeason), Number(manualMatchday));
+    } catch {
+      /* */
+    } finally {
+      stopLogPolling();
+      await fetchMatchLogs(matchId);
+      setScrapingMatchId(null);
+      setAbortController(null);
+    }
+  }
+
+  async function handleScrapeMatchday() {
     setActionLoading("scrape");
     setScrapeResult(null);
     try {
@@ -445,163 +508,112 @@ export default function AdminScrapingPage() {
         skipped?: number;
         errors?: number;
         error_details?: string[];
-      }>(`/scraping/matchday/${manualSeason}/${manualMatchday}`, {}, { signal: controller.signal });
-      const errors = data.errors ?? 0;
+      }>(`/scraping/matchday/${manualSeason}/${manualMatchday}`, {});
       const details = data.error_details ?? [];
-      let msg = `Procesados: ${data.processed ?? 0}, Saltados: ${data.skipped ?? 0}, Errores: ${errors}`;
-      if (details.length > 0) {
-        msg += "\n" + details.join("\n");
-      }
+      let msg = `Procesados: ${data.processed ?? 0}, Saltados: ${data.skipped ?? 0}, Errores: ${data.errors ?? 0}`;
+      if (details.length > 0) msg += "\n" + details.join("\n");
       setScrapeResult(msg);
-      await Promise.all([fetchStatus(), fetchMatchday(Number(manualSeason), Number(manualMatchday))]);
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        setScrapeResult("Scraping cancelado");
-      } else {
-        setScrapeResult("Error al ejecutar scraping");
-      }
+      fetchMatchday(Number(manualSeason), Number(manualMatchday));
+      fetchStatus();
+    } catch {
+      setScrapeResult("Error al ejecutar scraping");
     } finally {
       setActionLoading(null);
-      setAbortController(null);
     }
   }
 
-  async function handleCalendarScrape() {
+  async function handleCalendar() {
     setActionLoading("calendar");
-    setScrapeResult(null);
     try {
-      const data = await apiClient.post<Record<string, number>>(
+      const d = await apiClient.post<Record<string, number>>(
         `/scraping/calendar/${manualSeason}`,
-        {},
+        {}
       );
       setScrapeResult(
-        `Resultados actualizados: ${data.scores_updated ?? 0}, Fechas actualizadas: ${data.dates_updated ?? 0}`,
+        `Resultados: ${d.scores_updated ?? 0}, Fechas: ${d.dates_updated ?? 0}`
       );
-      await fetchMatchday(Number(manualSeason), Number(manualMatchday));
+      fetchMatchday(Number(manualSeason), Number(manualMatchday));
     } catch {
-      setScrapeResult("Error al actualizar calendario");
+      setScrapeResult("Error calendario");
     } finally {
       setActionLoading(null);
     }
   }
 
-  async function handleScrapeMatch(matchId: number) {
-    if (!manualSeason || !manualMatchday) return;
-    const controller = new AbortController();
-    setAbortController(controller);
-    setScrapingMatchId(matchId);
-    setMatchScrapeResult(null);
-    // Clear old logs and start live polling
-    setMatchLogs((prev) => ({ ...prev, [matchId]: [] }));
-    startLogPolling(matchId);
-    try {
-      const data = await apiClient.post<{
-        processed?: number;
-        skipped?: number;
-        errors?: number;
-        error_details?: string[];
-      }>(
-        `/scraping/match/${manualSeason}/${manualMatchday}/${matchId}`,
-        {},
-        { signal: controller.signal },
-      );
-      const errors = data.errors ?? 0;
-      const details = data.error_details ?? [];
-      const lines = [
-        `Procesados: ${data.processed ?? 0}, Saltados: ${data.skipped ?? 0}, Errores: ${errors}`,
-        ...details,
-      ];
-      setMatchScrapeResult({ matchId, lines });
-      await fetchMatchday(Number(manualSeason), Number(manualMatchday));
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        setMatchScrapeResult({ matchId, lines: ["Scraping cancelado"] });
-      } else {
-        setMatchScrapeResult({ matchId, lines: ["Error al scrapear partido"] });
-      }
-    } finally {
-      stopLogPolling();
-      // Final fetch to get all logs
-      await fetchMatchLogs(matchId);
-      setScrapingMatchId(null);
-      setAbortController(null);
-    }
-  }
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
 
   if (loading) {
     return (
-      <div className="space-y-4 py-4">
-        <div className="h-32 animate-pulse rounded-lg bg-vpv-border" />
-        <div className="h-48 animate-pulse rounded-lg bg-vpv-border" />
+      <div className="space-y-3 py-4">
+        <div className="h-12 animate-pulse rounded-lg bg-vpv-border" />
+        <div className="grid gap-3 md:grid-cols-2">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-28 animate-pulse rounded-lg bg-vpv-border" />
+          ))}
+        </div>
       </div>
     );
   }
 
+  const jobs = status?.jobs ?? [];
   const playedCount =
     matchdayDetail?.matches.filter((m) => m.home_score !== null).length ?? 0;
-  const totalCount = matchdayDetail?.matches.length ?? 0;
-  const jobs = status?.jobs ?? [];
+  const dbPages = Math.ceil(dbLogsTotal / 50);
 
   return (
     <div className="space-y-4">
-      {/* Scheduler Global Controls */}
-      <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
-        <div className="flex items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-3">
-            <span
-              className={`h-3 w-3 rounded-full ${status?.running ? "bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]" : "bg-red-500"}`}
-            />
-            <h2 className="font-semibold text-vpv-text">
-              Tareas programadas
-            </h2>
-            <span className="text-xs text-vpv-text-muted">
-              {status?.running ? "Scheduler activo" : "Scheduler detenido"}
-            </span>
-          </div>
-          <div className="flex gap-2">
-            {status?.running ? (
-              <button
-                onClick={() => handleAction("stop")}
-                disabled={actionLoading !== null}
-                className="rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
-              >
-                {actionLoading === "stop" ? "Deteniendo..." : "Detener todo"}
-              </button>
-            ) : (
-              <button
-                onClick={() => handleAction("start")}
-                disabled={actionLoading !== null}
-                className="rounded bg-green-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50"
-              >
-                {actionLoading === "start" ? "Iniciando..." : "Iniciar todo"}
-              </button>
-            )}
-          </div>
+      {/* ── Scheduler control ── */}
+      <div className="flex items-center justify-between rounded-lg border border-vpv-card-border bg-vpv-card px-4 py-2.5">
+        <div className="flex items-center gap-2">
+          <span
+            className={`h-2.5 w-2.5 rounded-full ${
+              status?.running
+                ? "bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]"
+                : "bg-red-500"
+            }`}
+          />
+          <span className="text-sm font-semibold text-vpv-text">
+            {status?.running ? "Scheduler activo" : "Scheduler detenido"}
+          </span>
         </div>
+        <button
+          onClick={() => handleAction(status?.running ? "stop" : "start")}
+          disabled={actionLoading !== null}
+          className={`rounded px-3 py-1 text-xs font-medium text-white disabled:opacity-50 ${
+            status?.running
+              ? "bg-red-600 hover:bg-red-700"
+              : "bg-green-600 hover:bg-green-700"
+          }`}
+        >
+          {status?.running ? "Detener" : "Iniciar"}
+        </button>
       </div>
 
-      {/* Per-Job Cards */}
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      {/* ── Jobs grid ── */}
+      <div className="grid gap-3 md:grid-cols-2">
         {jobs.map((job) => (
           <JobCard
             key={job.id}
             job={job}
             schedulerRunning={status?.running ?? false}
             onTrigger={handleTriggerJob}
+            onToggle={job.id === "live_monitor" ? handleToggleLiveMonitor : undefined}
             triggeringJob={triggeringJob}
           />
         ))}
       </div>
 
-      {/* Manual Scraping */}
+      {/* ── Manual scraping ── */}
       <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
-        <div className="border-b border-vpv-border px-4 py-3">
-          <h2 className="font-semibold text-vpv-text">Scraping manual</h2>
+        <div className="border-b border-vpv-border px-4 py-2.5">
+          <h2 className="text-sm font-semibold text-vpv-text">Scraping manual</h2>
         </div>
         <div className="space-y-3 px-4 py-3">
-          <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-wrap items-end gap-2">
             <div>
-              <label className="mb-1 block text-xs text-vpv-text-muted">
+              <label className="mb-0.5 block text-[10px] text-vpv-text-muted">
                 Temporada
               </label>
               <select
@@ -609,170 +621,135 @@ export default function AdminScrapingPage() {
                 onChange={(e) => {
                   setManualSeason(e.target.value);
                   const s = seasons.find((s) => String(s.id) === e.target.value);
-                  if (s) {
-                    setSeason(s);
-                    setManualMatchday(String(s.matchday_current));
-                  }
+                  if (s) setManualMatchday(String(s.matchday_current));
                 }}
-                className="rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+                className="rounded border border-vpv-border bg-vpv-bg px-2 py-1 text-sm text-vpv-text"
               >
                 {seasons.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.name} {s.status === "active" ? "(activa)" : ""}
+                    {s.name}
                   </option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-xs text-vpv-text-muted">
+              <label className="mb-0.5 block text-[10px] text-vpv-text-muted">
                 Jornada
               </label>
               <input
                 type="number"
                 value={manualMatchday}
                 onChange={(e) => setManualMatchday(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                className="w-20 rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+                onKeyDown={(e) =>
+                  e.key === "Enter" &&
+                  fetchMatchday(Number(manualSeason), Number(manualMatchday))
+                }
+                className="w-16 rounded border border-vpv-border bg-vpv-bg px-2 py-1 text-sm text-vpv-text"
               />
             </div>
             <button
-              onClick={handleSearch}
-              className="rounded border border-vpv-accent px-3 py-1.5 text-xs font-medium text-vpv-accent transition-colors hover:bg-vpv-accent/10"
+              onClick={() =>
+                fetchMatchday(Number(manualSeason), Number(manualMatchday))
+              }
+              className="rounded border border-vpv-accent px-2.5 py-1 text-xs font-medium text-vpv-accent hover:bg-vpv-accent/10"
             >
               Buscar
             </button>
-            <div className="h-6 w-px bg-vpv-border" />
+            <div className="h-5 w-px bg-vpv-border" />
             <button
-              onClick={handleManualScrape}
+              onClick={handleScrapeMatchday}
               disabled={actionLoading !== null}
-              className="rounded bg-vpv-accent px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-vpv-accent/80 disabled:opacity-50"
+              className="rounded bg-vpv-accent px-2.5 py-1 text-xs font-medium text-white hover:bg-vpv-accent/80 disabled:opacity-50"
             >
-              {actionLoading === "scrape"
-                ? "Scrapeando..."
-                : "Scrapear jornada"}
+              {actionLoading === "scrape" ? "Scrapeando..." : "Scrapear jornada"}
             </button>
             {abortController && (
               <button
-                onClick={handleCancelScrape}
-                className="rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700"
+                onClick={() => abortController.abort()}
+                className="rounded bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700"
               >
                 Cancelar
               </button>
             )}
             <button
-              onClick={handleCalendarScrape}
+              onClick={handleCalendar}
               disabled={actionLoading !== null}
-              className="rounded border border-vpv-border px-3 py-1.5 text-xs font-medium text-vpv-text-muted transition-colors hover:text-vpv-text disabled:opacity-50"
+              className="rounded border border-vpv-border px-2.5 py-1 text-xs text-vpv-text-muted hover:text-vpv-text disabled:opacity-50"
             >
-              {actionLoading === "calendar"
-                ? "Actualizando..."
-                : "Actualizar calendario"}
+              {actionLoading === "calendar" ? "..." : "Calendario"}
             </button>
           </div>
 
           {scrapeResult && (
-            <div className="rounded bg-vpv-bg px-3 py-2 text-sm text-vpv-text whitespace-pre-line">
-              {scrapeResult.split("\n").map((line, i) => (
-                <div
-                  key={i}
-                  className={
-                    i > 0 ? "pl-2 text-xs text-red-400" : ""
-                  }
-                >
-                  {line}
-                </div>
-              ))}
+            <div className="rounded bg-vpv-bg px-3 py-2 text-xs text-vpv-text whitespace-pre-line">
+              {scrapeResult}
             </div>
           )}
         </div>
-      </div>
 
-      {/* Matchday Matches */}
-      {matchdayDetail && (
-        <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
-          <div className="border-b border-vpv-border px-4 py-3">
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold text-vpv-text">
-                Jornada {matchdayDetail.number} — {season?.name ?? `Temporada ${manualSeason}`}
-              </h2>
-              <span className="text-xs text-vpv-text-muted">
-                {playedCount}/{totalCount} jugados
-                {matchdayDetail.stats_ok && (
-                  <span className="ml-2 rounded bg-green-500/20 px-1.5 py-0.5 text-green-400">
-                    Stats OK
-                  </span>
-                )}
+        {/* Match list */}
+        {matchdayDetail && (
+          <div className="border-t border-vpv-border">
+            <div className="flex items-center justify-between px-4 py-2">
+              <span className="text-xs font-medium text-vpv-text">
+                J{matchdayDetail.number} — {playedCount}/
+                {matchdayDetail.matches.length} jugados
               </span>
+              {matchdayDetail.stats_ok && (
+                <span className="rounded bg-green-500/20 px-1.5 py-0.5 text-[10px] text-green-400">
+                  Stats OK
+                </span>
+              )}
             </div>
-          </div>
-          <div className="divide-y divide-vpv-border">
-            {matchdayDetail.matches.map((match) => {
-              const st = matchStatus(match);
-              const hasResult = matchScrapeResult?.matchId === match.id;
-              return (
+            <div className="divide-y divide-vpv-border/50">
+              {matchdayDetail.matches.map((match) => (
                 <div key={match.id}>
-                  <div className="flex items-center gap-3 px-4 py-2">
+                  <div className="flex items-center gap-2 px-4 py-1.5">
                     <span
                       className={`h-2 w-2 shrink-0 rounded-full ${
                         match.stats_ok
                           ? "bg-green-500"
-                          : st === "played"
+                          : match.home_score !== null
                             ? "bg-yellow-500 animate-pulse"
                             : "bg-vpv-border"
                       }`}
-                      title={
-                        match.stats_ok
-                          ? "Stats scrapeados"
-                          : st === "played"
-                            ? "Pendiente de scrapear"
-                            : "No jugado"
-                      }
                     />
-                    <div className="flex-1">
-                      <span className="text-sm text-vpv-text">
-                        {match.home_team} vs {match.away_team}
+                    <span className="flex-1 text-xs text-vpv-text">
+                      {match.home_team} vs {match.away_team}
+                    </span>
+                    {match.home_score !== null && (
+                      <span className="text-xs font-medium text-vpv-text tabular-nums">
+                        {match.home_score}-{match.away_score}
                       </span>
-                    </div>
-                    <div className="text-right">
-                      {st === "played" ? (
-                        <span className="text-sm font-medium text-vpv-text">
-                          {match.home_score} - {match.away_score}
-                        </span>
-                      ) : st === "live" ? (
-                        <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-xs font-medium text-red-400">
-                          En juego
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="w-44 text-right">
-                      <span
-                        className={`text-xs ${
-                          st === "played"
-                            ? "text-vpv-text-muted"
-                            : st === "live"
-                              ? "text-red-400"
-                              : "text-vpv-text"
-                        }`}
-                      >
-                        {formatMatchDate(match.played_at)}
-                      </span>
-                    </div>
+                    )}
+                    <span className="hidden w-36 text-right text-[10px] text-vpv-text-muted sm:inline">
+                      {formatMatchDate(match.played_at)}
+                    </span>
                     {!match.counts && (
-                      <span className="rounded bg-yellow-500/20 px-1.5 py-0.5 text-xs text-yellow-400">
+                      <span className="rounded bg-yellow-500/20 px-1 py-0.5 text-[9px] text-yellow-400">
                         NC
                       </span>
                     )}
                     <button
-                      onClick={() => toggleMatchLogs(match.id)}
-                      disabled={scrapingMatchId === match.id}
-                      className="shrink-0 rounded border border-vpv-border px-2 py-0.5 text-[11px] text-vpv-text-muted transition-colors hover:text-vpv-text disabled:opacity-40"
+                      onClick={() => {
+                        const set = new Set(expandedLogs);
+                        if (set.has(match.id)) {
+                          set.delete(match.id);
+                          setExpandedLogs(set);
+                        } else {
+                          set.add(match.id);
+                          setExpandedLogs(set);
+                          fetchMatchLogs(match.id);
+                        }
+                      }}
+                      className="rounded border border-vpv-border px-1.5 py-0.5 text-[10px] text-vpv-text-muted hover:text-vpv-text"
                     >
-                      {matchLogs[match.id] ? "Ocultar" : "Logs"}
+                      {expandedLogs.has(match.id) ? "Ocultar" : "Logs"}
                     </button>
                     {scrapingMatchId === match.id ? (
                       <button
-                        onClick={handleCancelScrape}
-                        className="shrink-0 rounded bg-red-600 px-2 py-0.5 text-[11px] font-medium text-white transition-colors hover:bg-red-700"
+                        onClick={() => abortController?.abort()}
+                        className="rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-medium text-white"
                       >
                         Cancelar
                       </button>
@@ -780,100 +757,204 @@ export default function AdminScrapingPage() {
                       <button
                         onClick={() => handleScrapeMatch(match.id)}
                         disabled={scrapingMatchId !== null || actionLoading !== null}
-                        className="shrink-0 rounded border border-vpv-border px-2 py-0.5 text-[11px] text-vpv-text-muted transition-colors hover:border-vpv-accent hover:text-vpv-accent disabled:opacity-40"
+                        className="rounded border border-vpv-border px-1.5 py-0.5 text-[10px] text-vpv-text-muted hover:border-vpv-accent hover:text-vpv-accent disabled:opacity-40"
                       >
                         Scrapear
                       </button>
                     )}
                   </div>
-                  {/* Inline DB logs */}
+
+                  {/* Inline logs */}
                   {expandedLogs.has(match.id) && (
-                    <div className="border-t border-vpv-border/30 bg-vpv-bg/30">
-                      <div className="px-4 py-1.5">
-                        <div className="mb-1 flex items-center justify-between">
-                          <span className="text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted">
-                            {scrapingMatchId === match.id && (
-                              <span className="mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-vpv-accent" />
-                            )}
-                            Logs ({(matchLogs[match.id] ?? []).length})
-                            {(matchLogs[match.id] ?? []).length > 0 && (() => {
-                              const entries = matchLogs[match.id];
-                              const oks = entries.filter((l) => l.status === "ok").length;
-                              const skips = entries.filter((l) => l.status === "skip").length;
-                              const errs = entries.filter((l) => l.status === "error").length;
-                              return (
-                                <span className="ml-2 font-normal normal-case">
-                                  <span className="text-green-400">{oks} ok</span>
-                                  {skips > 0 && <span className="text-amber-400"> {skips} skip</span>}
-                                  {errs > 0 && <span className="text-red-400"> {errs} error</span>}
-                                </span>
-                              );
-                            })()}
-                          </span>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => fetchMatchLogs(match.id)}
-                              className="text-[10px] text-vpv-text-muted hover:text-vpv-text"
+                    <div className="bg-vpv-bg/30 px-4 py-1.5">
+                      {scrapingMatchId === match.id && (
+                        <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-vpv-accent" />
+                      )}
+                      {(matchLogs[match.id] ?? []).length === 0 ? (
+                        <p className="text-[10px] text-vpv-text-muted">
+                          {scrapingMatchId === match.id
+                            ? "Esperando logs..."
+                            : "Sin logs"}
+                        </p>
+                      ) : (
+                        <div className="max-h-56 space-y-px overflow-y-auto">
+                          {(matchLogs[match.id] ?? []).map((log) => (
+                            <div
+                              key={log.id}
+                              className={`flex items-start gap-1.5 rounded px-1.5 py-0.5 text-[10px] ${
+                                log.status === "error" ? "bg-red-500/10" : ""
+                              }`}
                             >
-                              Refrescar
-                            </button>
-                            <button
-                              onClick={() => toggleMatchLogs(match.id)}
-                              className="text-[10px] text-vpv-text-muted hover:text-vpv-text"
-                            >
-                              Cerrar
-                            </button>
-                          </div>
-                        </div>
-                        {(matchLogs[match.id] ?? []).length === 0 ? (
-                          <p className="py-2 text-xs text-vpv-text-muted">
-                            {scrapingMatchId === match.id ? "Esperando logs..." : "Sin logs"}
-                          </p>
-                        ) : (
-                          <div className="max-h-72 space-y-px overflow-y-auto">
-                            {(matchLogs[match.id] ?? []).map((log) => (
-                              <div
-                                key={log.id}
-                                className={`flex items-start gap-2 rounded px-2 py-1 text-xs ${
-                                  log.status === "error"
-                                    ? "bg-red-500/10"
-                                    : log.status === "skip"
-                                      ? "bg-amber-500/5"
-                                      : ""
+                              <span
+                                className={`mt-px shrink-0 rounded px-1 text-[8px] font-bold uppercase ${
+                                  STATUS_BADGE[log.status] ?? ""
                                 }`}
                               >
-                                <span
-                                  className={`mt-0.5 shrink-0 rounded px-1 py-px text-[9px] font-bold uppercase ${
-                                    log.status === "ok"
-                                      ? "bg-green-500/20 text-green-400"
-                                      : log.status === "skip"
-                                        ? "bg-amber-500/20 text-amber-400"
-                                        : "bg-red-500/20 text-red-400"
-                                  }`}
-                                >
-                                  {log.status}
-                                </span>
-                                <span className={`min-w-0 flex-1 ${log.status === "error" ? "text-red-400" : "text-vpv-text-muted"}`}>
-                                  {log.message}
-                                </span>
-                                {log.detail && log.detail.pts_total != null && (
-                                  <span className="shrink-0 tabular-nums text-[10px] text-vpv-text-muted/60">
-                                    {String(log.detail.pts_total)} pts
-                                  </span>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+                                {log.status}
+                              </span>
+                              <span
+                                className={
+                                  log.status === "error"
+                                    ? "text-red-400"
+                                    : "text-vpv-text-muted"
+                                }
+                              >
+                                {log.message}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-              );
-            })}
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
+
+      {/* ── DB Logs section ── */}
+      <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
+        <button
+          type="button"
+          onClick={() => setShowDbLogs((p) => !p)}
+          className="flex w-full items-center justify-between px-4 py-2.5"
+        >
+          <h2 className="text-sm font-semibold text-vpv-text">
+            Historial de logs
+          </h2>
+          <span className="text-xs text-vpv-text-muted">
+            {showDbLogs ? "\u25B2" : "\u25BC"}
+          </span>
+        </button>
+
+        {showDbLogs && (
+          <div className="border-t border-vpv-border">
+            {/* Filters */}
+            <div className="flex flex-wrap items-end gap-2 px-4 py-2">
+              <input
+                type="number"
+                value={dbMatchday}
+                onChange={(e) => setDbMatchday(e.target.value)}
+                placeholder="J"
+                className="w-14 rounded border border-vpv-border bg-vpv-bg px-1.5 py-1 text-xs text-vpv-text"
+              />
+              <div className="flex gap-0.5">
+                {["", "ok", "skip", "error"].map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => {
+                      setDbStatusFilter(s);
+                      setDbLogsPage(0);
+                    }}
+                    className={`rounded px-2 py-1 text-[10px] font-medium ${
+                      dbStatusFilter === s
+                        ? "bg-vpv-accent text-white"
+                        : "border border-vpv-border text-vpv-text-muted"
+                    }`}
+                  >
+                    {s || "Todos"}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="text"
+                value={dbSearch}
+                onChange={(e) => setDbSearch(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && fetchDbLogs()}
+                placeholder="Buscar..."
+                className="min-w-0 flex-1 rounded border border-vpv-border bg-vpv-bg px-1.5 py-1 text-xs text-vpv-text"
+              />
+              <label className="flex items-center gap-1 text-[10px] text-vpv-text-muted">
+                <input
+                  type="checkbox"
+                  checked={dbAutoRefresh}
+                  onChange={(e) => setDbAutoRefresh(e.target.checked)}
+                  className="h-3 w-3 accent-vpv-accent"
+                />
+                Auto
+              </label>
+              <span className="text-[10px] text-vpv-text-muted">
+                {dbLogsTotal} registros
+              </span>
+            </div>
+
+            {/* Log entries */}
+            <div className="max-h-80 divide-y divide-vpv-border/30 overflow-y-auto">
+              {dbLogs.map((log) => (
+                <div
+                  key={log.id}
+                  className={`flex items-start gap-1.5 px-4 py-1 text-[11px] ${
+                    log.status === "error" ? "border-l-2 border-l-red-500" : ""
+                  }`}
+                >
+                  <span
+                    className={`mt-0.5 shrink-0 rounded px-1 text-[9px] font-bold uppercase ${
+                      STATUS_BADGE[log.status] ?? ""
+                    }`}
+                  >
+                    {log.status}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <span
+                      className={
+                        log.status === "error"
+                          ? "text-red-400"
+                          : "text-vpv-text-muted"
+                      }
+                    >
+                      {log.message}
+                    </span>
+                    {(log.match_label || log.matchday_number) && (
+                      <span className="ml-1.5 text-[9px] text-vpv-text-muted/50">
+                        {log.match_label && log.match_label}
+                        {log.matchday_number && ` J${log.matchday_number}`}
+                      </span>
+                    )}
+                  </div>
+                  <span className="shrink-0 text-[9px] text-vpv-text-muted/50">
+                    {log.created_at
+                      ? new Date(log.created_at).toLocaleTimeString("es-ES", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : ""}
+                  </span>
+                </div>
+              ))}
+              {dbLogs.length === 0 && (
+                <p className="px-4 py-4 text-center text-xs text-vpv-text-muted">
+                  Sin logs
+                </p>
+              )}
+            </div>
+
+            {/* Pagination */}
+            {dbPages > 1 && (
+              <div className="flex items-center justify-center gap-2 border-t border-vpv-border py-1.5">
+                <button
+                  disabled={dbLogsPage === 0}
+                  onClick={() => setDbLogsPage((p) => p - 1)}
+                  className="rounded border border-vpv-border px-2 py-0.5 text-[10px] disabled:opacity-30"
+                >
+                  Ant
+                </button>
+                <span className="text-[10px] text-vpv-text-muted">
+                  {dbLogsPage + 1}/{dbPages}
+                </span>
+                <button
+                  disabled={dbLogsPage >= dbPages - 1}
+                  onClick={() => setDbLogsPage((p) => p + 1)}
+                  className="rounded border border-vpv-border px-2 py-0.5 text-[10px] disabled:opacity-30"
+                >
+                  Sig
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

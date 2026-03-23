@@ -602,83 +602,83 @@ def get_scheduler_status() -> dict:
         from src.features.scraping.live_monitor import get_live_monitor_status
 
         _live_status = get_live_monitor_status()
-        _live_last_run = _live_status["last_run_at"]
     except Exception:
-        _live_last_run = None
+        _live_status = {"last_run_at": None, "tracked_matches": 0, "total_events_sent": 0}
+
+    live_monitor_active = _scheduler is not None and _scheduler.get_job("live_monitor") is not None
 
     # --- structured per-job list ---
     jobs: list[dict] = [
         {
             "id": "scraping_tick",
             "name": "Scraping stats",
+            "icon": "S",
             "type": "interval",
             "interval_seconds": scraping_settings.scraping_poll_interval_seconds,
             "last_run_at": _last_tick_at.isoformat() if _last_tick_at else None,
             "next_run_at": next_run,
             "lock_held": _scrape_lock.locked(),
+            "triggerable": True,
             "logs": get_job_logs("scraping_tick"),
         },
         {
             "id": "calendar_sync",
-            "name": "Sync calendario La Liga",
+            "name": "Calendario La Liga",
+            "icon": "C",
             "type": "cron",
             "schedule": "Diario 06:00 UTC",
             "last_run_at": _last_calendar_sync_at.isoformat() if _last_calendar_sync_at else None,
             "next_run_at": next_calendar_sync,
+            "triggerable": True,
             "logs": get_job_logs("calendar_sync"),
         },
         {
             "id": "deadline_check",
-            "name": "Check deadline alineaciones",
+            "name": "Deadline alineaciones",
+            "icon": "D",
             "type": "interval",
             "interval_seconds": 60,
             "last_run_at": _last_deadline_check_at.isoformat()
             if _last_deadline_check_at
             else None,
             "next_run_at": next_deadline_check,
+            "triggerable": True,
             "logs": get_job_logs("deadline_check"),
         },
         {
             "id": "deadline_reminder",
-            "name": "Recordatorio deadline (Telegram)",
+            "name": "Recordatorio Telegram",
+            "icon": "R",
             "type": "interval",
             "interval_seconds": 60,
             "last_run_at": _last_deadline_reminder_at.isoformat()
             if _last_deadline_reminder_at
             else None,
             "next_run_at": next_deadline_reminder,
+            "triggerable": False,
             "logs": get_job_logs("deadline_reminder"),
         },
         {
-            "id": "manual_scrape",
-            "name": "Scraping manual (admin)",
-            "type": "manual",
-            "logs": get_job_logs("manual_scrape"),
-        },
-        {
             "id": "live_monitor",
-            "name": "Monitor en directo (Telegram)",
+            "name": "Monitor en directo",
+            "icon": "L",
             "type": "interval",
             "interval_seconds": scraping_settings.live_monitor_interval_seconds,
-            "last_run_at": _live_last_run,
+            "last_run_at": _live_status["last_run_at"],
             "next_run_at": _next("live_monitor"),
+            "triggerable": True,
+            "active": live_monitor_active,
+            "tracked_matches": _live_status["tracked_matches"],
+            "total_events_sent": _live_status["total_events_sent"],
             "logs": get_job_logs("live_monitor"),
         },
     ]
 
     return {
-        # --- legacy flat fields (backward compatibility) ---
         "running": running,
-        "poll_interval_seconds": scraping_settings.scraping_poll_interval_seconds,
-        "last_tick_at": _last_tick_at.isoformat() if _last_tick_at else None,
-        "next_run_at": next_run,
-        "lock_held": _scrape_lock.locked(),
-        "last_calendar_sync_at": _last_calendar_sync_at.isoformat()
-        if _last_calendar_sync_at
-        else None,
-        "next_calendar_sync_at": next_calendar_sync,
-        # --- new structured list ---
         "jobs": jobs,
+        # Manual scrape logs (not a scheduler job, just a log buffer)
+        "manual_logs": get_job_logs("manual_scrape"),
     }
 
 
@@ -701,3 +701,37 @@ async def trigger_deadline_check() -> dict:
     """Manually trigger a deadline check."""
     _background_task = asyncio.create_task(_deadline_check())  # noqa: RUF006
     return {"triggered": True}
+
+
+async def trigger_live_monitor() -> dict:
+    """Manually trigger a live monitor tick."""
+    from src.features.scraping.live_monitor import live_match_monitor
+
+    _background_task = asyncio.create_task(live_match_monitor())  # noqa: RUF006
+    return {"triggered": True}
+
+
+def toggle_live_monitor() -> dict:
+    """Enable or disable the live monitor job dynamically."""
+    if _scheduler is None or not _scheduler.running:
+        return {"active": False, "error": "scheduler not running"}
+
+    existing = _scheduler.get_job("live_monitor")
+    if existing:
+        _scheduler.remove_job("live_monitor")
+        logger.info("live_monitor: disabled")
+        return {"active": False}
+
+    from src.features.scraping.live_monitor import live_match_monitor
+
+    _scheduler.add_job(
+        live_match_monitor,
+        trigger="interval",
+        seconds=scraping_settings.live_monitor_interval_seconds,
+        id="live_monitor",
+        max_instances=1,
+        replace_existing=True,
+        misfire_grace_time=30,
+    )
+    logger.info("live_monitor: enabled")
+    return {"active": True}
