@@ -80,6 +80,17 @@ interface DbLogsResponse {
   total: number;
 }
 
+interface MatchLogSummary {
+  matchday_number: number | null;
+  match_id: number | null;
+  match_label: string | null;
+  ok: number;
+  skip: number;
+  error: number;
+  total: number;
+  last_at: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -311,15 +322,13 @@ export default function AdminScrapingPage() {
   const [expandedLogs, setExpandedLogs] = useState<Set<number>>(new Set());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // DB logs section
-  const [dbLogs, setDbLogs] = useState<DbLogEntry[]>([]);
-  const [dbLogsTotal, setDbLogsTotal] = useState(0);
-  const [dbLogsPage, setDbLogsPage] = useState(0);
-  const [dbStatusFilter, setDbStatusFilter] = useState("");
-  const [dbSearch, setDbSearch] = useState("");
-  const [dbMatchday, setDbMatchday] = useState("");
-  const [dbAutoRefresh, setDbAutoRefresh] = useState(false);
+  // DB logs section — grouped by match
+  const [logSummary, setLogSummary] = useState<MatchLogSummary[]>([]);
+  const [logJobType, setLogJobType] = useState("");
+  const [logMatchday, setLogMatchday] = useState("");
   const [showDbLogs, setShowDbLogs] = useState(false);
+  const [expandedLogMatch, setExpandedLogMatch] = useState<number | null>(null);
+  const [expandedLogEntries, setExpandedLogEntries] = useState<DbLogEntry[]>([]);
 
   // ---------------------------------------------------------------------------
   // Data fetching
@@ -361,26 +370,32 @@ export default function AdminScrapingPage() {
     [manualSeason]
   );
 
-  const fetchDbLogs = useCallback(async () => {
+  const fetchLogSummary = useCallback(async () => {
     if (!manualSeason) return;
-    const params = new URLSearchParams({
-      season_id: manualSeason,
-      limit: "50",
-      offset: String(dbLogsPage * 50),
-    });
-    if (dbMatchday) params.set("matchday", dbMatchday);
-    if (dbStatusFilter) params.set("status", dbStatusFilter);
-    if (dbSearch) params.set("search", dbSearch);
+    const params = new URLSearchParams({ season_id: manualSeason });
+    if (logMatchday) params.set("matchday", logMatchday);
+    if (logJobType) params.set("job_type", logJobType);
     try {
-      const data = await apiClient.get<DbLogsResponse>(
-        `/scraping/logs?${params.toString()}`
+      const data = await apiClient.get<MatchLogSummary[]>(
+        `/scraping/logs/summary?${params.toString()}`
       );
-      setDbLogs(data.items);
-      setDbLogsTotal(data.total);
+      setLogSummary(data);
     } catch {
       /* */
     }
-  }, [manualSeason, dbLogsPage, dbMatchday, dbStatusFilter, dbSearch]);
+  }, [manualSeason, logMatchday, logJobType]);
+
+  async function fetchMatchLogEntries(matchId: number) {
+    if (!manualSeason) return;
+    try {
+      const data = await apiClient.get<DbLogsResponse>(
+        `/scraping/logs?season_id=${manualSeason}&match_id=${matchId}&limit=200`
+      );
+      setExpandedLogEntries(data.items);
+    } catch {
+      /* */
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Effects
@@ -402,15 +417,8 @@ export default function AdminScrapingPage() {
   }, [fetchStatus, fetchMatchday]);
 
   useEffect(() => {
-    if (showDbLogs) fetchDbLogs();
-  }, [showDbLogs, fetchDbLogs]);
-
-  // DB logs auto-refresh
-  useEffect(() => {
-    if (!dbAutoRefresh || !showDbLogs) return;
-    const id = setInterval(fetchDbLogs, 5000);
-    return () => clearInterval(id);
-  }, [dbAutoRefresh, showDbLogs, fetchDbLogs]);
+    if (showDbLogs) fetchLogSummary();
+  }, [showDbLogs, fetchLogSummary]);
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -562,7 +570,6 @@ export default function AdminScrapingPage() {
   const jobs = status?.jobs ?? [];
   const playedCount =
     matchdayDetail?.matches.filter((m) => m.home_score !== null).length ?? 0;
-  const dbPages = Math.ceil(dbLogsTotal / 50);
 
   return (
     <div className="space-y-4">
@@ -816,7 +823,7 @@ export default function AdminScrapingPage() {
         )}
       </div>
 
-      {/* ── DB Logs section ── */}
+      {/* ── Log history (grouped by match) ── */}
       <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
         <button
           type="button"
@@ -835,125 +842,133 @@ export default function AdminScrapingPage() {
           <div className="border-t border-vpv-border">
             {/* Filters */}
             <div className="flex flex-wrap items-end gap-2 px-4 py-2">
-              <input
-                type="number"
-                value={dbMatchday}
-                onChange={(e) => setDbMatchday(e.target.value)}
-                placeholder="J"
-                className="w-14 rounded border border-vpv-border bg-vpv-bg px-1.5 py-1 text-xs text-vpv-text"
-              />
-              <div className="flex gap-0.5">
-                {["", "ok", "skip", "error"].map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => {
-                      setDbStatusFilter(s);
-                      setDbLogsPage(0);
-                    }}
-                    className={`rounded px-2 py-1 text-[10px] font-medium ${
-                      dbStatusFilter === s
-                        ? "bg-vpv-accent text-white"
-                        : "border border-vpv-border text-vpv-text-muted"
-                    }`}
-                  >
-                    {s || "Todos"}
-                  </button>
-                ))}
-              </div>
-              <input
-                type="text"
-                value={dbSearch}
-                onChange={(e) => setDbSearch(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && fetchDbLogs()}
-                placeholder="Buscar..."
-                className="min-w-0 flex-1 rounded border border-vpv-border bg-vpv-bg px-1.5 py-1 text-xs text-vpv-text"
-              />
-              <label className="flex items-center gap-1 text-[10px] text-vpv-text-muted">
+              <div>
+                <label className="mb-0.5 block text-[9px] text-vpv-text-muted">
+                  Jornada
+                </label>
                 <input
-                  type="checkbox"
-                  checked={dbAutoRefresh}
-                  onChange={(e) => setDbAutoRefresh(e.target.checked)}
-                  className="h-3 w-3 accent-vpv-accent"
+                  type="number"
+                  value={logMatchday}
+                  onChange={(e) => setLogMatchday(e.target.value)}
+                  placeholder="Todas"
+                  className="w-16 rounded border border-vpv-border bg-vpv-bg px-1.5 py-1 text-xs text-vpv-text"
                 />
-                Auto
-              </label>
+              </div>
+              <div>
+                <label className="mb-0.5 block text-[9px] text-vpv-text-muted">
+                  Tipo
+                </label>
+                <div className="flex gap-0.5">
+                  {[
+                    { value: "", label: "Todos" },
+                    { value: "match", label: "Manual" },
+                    { value: "matchday", label: "Jornada" },
+                    { value: "scheduler", label: "Auto" },
+                  ].map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setLogJobType(opt.value)}
+                      className={`rounded px-2 py-1 text-[10px] font-medium ${
+                        logJobType === opt.value
+                          ? "bg-vpv-accent text-white"
+                          : "border border-vpv-border text-vpv-text-muted"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <button
+                onClick={fetchLogSummary}
+                className="rounded bg-vpv-accent/10 px-2 py-1 text-[10px] font-medium text-vpv-accent hover:bg-vpv-accent/20"
+              >
+                Actualizar
+              </button>
               <span className="text-[10px] text-vpv-text-muted">
-                {dbLogsTotal} registros
+                {logSummary.length} partidos
               </span>
             </div>
 
-            {/* Log entries */}
-            <div className="max-h-80 divide-y divide-vpv-border/30 overflow-y-auto">
-              {dbLogs.map((log) => (
-                <div
-                  key={log.id}
-                  className={`flex items-start gap-1.5 px-4 py-1 text-[11px] ${
-                    log.status === "error" ? "border-l-2 border-l-red-500" : ""
-                  }`}
-                >
-                  <span
-                    className={`mt-0.5 shrink-0 rounded px-1 text-[9px] font-bold uppercase ${
-                      STATUS_BADGE[log.status] ?? ""
-                    }`}
-                  >
-                    {log.status}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <span
-                      className={
-                        log.status === "error"
-                          ? "text-red-400"
-                          : "text-vpv-text-muted"
+            {/* Grouped entries */}
+            <div className="max-h-96 divide-y divide-vpv-border/30 overflow-y-auto">
+              {logSummary.map((s) => (
+                <div key={`${s.matchday_number}-${s.match_id}`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (expandedLogMatch === s.match_id) {
+                        setExpandedLogMatch(null);
+                      } else {
+                        setExpandedLogMatch(s.match_id);
+                        if (s.match_id) fetchMatchLogEntries(s.match_id);
                       }
-                    >
-                      {log.message}
+                    }}
+                    className="flex w-full items-center gap-2 px-4 py-1.5 text-left hover:bg-vpv-bg/30"
+                  >
+                    <span className="text-[10px] text-vpv-text-muted">
+                      J{s.matchday_number}
                     </span>
-                    {(log.match_label || log.matchday_number) && (
-                      <span className="ml-1.5 text-[9px] text-vpv-text-muted/50">
-                        {log.match_label && log.match_label}
-                        {log.matchday_number && ` J${log.matchday_number}`}
+                    <span className="flex-1 text-xs font-medium text-vpv-text">
+                      {s.match_label ?? `Match #${s.match_id}`}
+                    </span>
+                    <span className="text-[10px] text-green-400">
+                      {s.ok}
+                    </span>
+                    {s.skip > 0 && (
+                      <span className="text-[10px] text-amber-400">
+                        {s.skip}
                       </span>
                     )}
-                  </div>
-                  <span className="shrink-0 text-[9px] text-vpv-text-muted/50">
-                    {log.created_at
-                      ? new Date(log.created_at).toLocaleTimeString("es-ES", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
-                      : ""}
-                  </span>
+                    {s.error > 0 && (
+                      <span className="text-[10px] font-bold text-red-400">
+                        {s.error}
+                      </span>
+                    )}
+                    <span className="text-[9px] text-vpv-text-muted/50">
+                      {s.last_at ? formatRelative(s.last_at) : ""}
+                    </span>
+                    <span className="text-[10px] text-vpv-text-muted">
+                      {expandedLogMatch === s.match_id ? "\u25B2" : "\u25BC"}
+                    </span>
+                  </button>
+
+                  {/* Expanded: per-player logs */}
+                  {expandedLogMatch === s.match_id && (
+                    <div className="max-h-60 overflow-y-auto bg-vpv-bg/20 px-4 py-1">
+                      {expandedLogEntries.length === 0 ? (
+                        <p className="py-2 text-[10px] text-vpv-text-muted">
+                          Cargando...
+                        </p>
+                      ) : (
+                        expandedLogEntries.map((log) => (
+                          <div
+                            key={log.id}
+                            className={`flex items-start gap-1.5 py-0.5 text-[10px] ${
+                              log.status === "error" ? "text-red-400" : "text-vpv-text-muted"
+                            }`}
+                          >
+                            <span
+                              className={`mt-px shrink-0 rounded px-1 text-[8px] font-bold uppercase ${
+                                STATUS_BADGE[log.status] ?? ""
+                              }`}
+                            >
+                              {log.status}
+                            </span>
+                            <span className="min-w-0 flex-1">{log.message}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
-              {dbLogs.length === 0 && (
+              {logSummary.length === 0 && (
                 <p className="px-4 py-4 text-center text-xs text-vpv-text-muted">
                   Sin logs
                 </p>
               )}
             </div>
-
-            {/* Pagination */}
-            {dbPages > 1 && (
-              <div className="flex items-center justify-center gap-2 border-t border-vpv-border py-1.5">
-                <button
-                  disabled={dbLogsPage === 0}
-                  onClick={() => setDbLogsPage((p) => p - 1)}
-                  className="rounded border border-vpv-border px-2 py-0.5 text-[10px] disabled:opacity-30"
-                >
-                  Ant
-                </button>
-                <span className="text-[10px] text-vpv-text-muted">
-                  {dbLogsPage + 1}/{dbPages}
-                </span>
-                <button
-                  disabled={dbLogsPage >= dbPages - 1}
-                  onClick={() => setDbLogsPage((p) => p + 1)}
-                  className="rounded border border-vpv-border px-2 py-0.5 text-[10px] disabled:opacity-30"
-                >
-                  Sig
-                </button>
-              </div>
-            )}
           </div>
         )}
       </div>

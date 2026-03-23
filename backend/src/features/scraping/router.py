@@ -148,6 +148,22 @@ async def get_scraping_logs(
     return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
+@router.get("/logs/summary", summary="Log summary grouped by match")
+async def get_scraping_logs_summary(
+    season_id: int = Query(...),
+    matchday: int | None = Query(None),
+    job_type: str | None = Query(None),
+    _user: dict = Depends(require_perm(Perm.SCRAPING)),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    repo = ScrapingLogRepository(db)
+    return await repo.summary_by_match(
+        season_id=season_id,
+        matchday_number=matchday,
+        job_type=job_type,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Admin endpoints
 # ---------------------------------------------------------------------------

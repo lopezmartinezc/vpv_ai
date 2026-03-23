@@ -136,6 +136,70 @@ class ScrapingLogRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one()
 
+    async def summary_by_match(
+        self,
+        *,
+        season_id: int,
+        matchday_number: int | None = None,
+        job_type: str | None = None,
+    ) -> list[dict]:
+        """Return log summary grouped by match: ok/skip/error counts + last_at."""
+        from src.shared.models.matchday import Match
+        from src.shared.models.team import Team
+
+        home = Team.__table__.alias("home_team")
+        away = Team.__table__.alias("away_team")
+
+        stmt = (
+            select(
+                ScrapingLog.matchday_number,
+                ScrapingLog.match_id,
+                func.count().filter(ScrapingLog.status == "ok").label("ok_count"),
+                func.count().filter(ScrapingLog.status == "skip").label("skip_count"),
+                func.count().filter(ScrapingLog.status == "error").label("error_count"),
+                func.count().label("total"),
+                func.max(ScrapingLog.created_at).label("last_at"),
+                home.c.short_name.label("home_team"),
+                away.c.short_name.label("away_team"),
+            )
+            .outerjoin(Match, ScrapingLog.match_id == Match.id)
+            .outerjoin(home, Match.home_team_id == home.c.id)
+            .outerjoin(away, Match.away_team_id == away.c.id)
+            .where(
+                ScrapingLog.season_id == season_id,
+                ScrapingLog.match_id.isnot(None),
+            )
+            .group_by(
+                ScrapingLog.matchday_number,
+                ScrapingLog.match_id,
+                home.c.short_name,
+                away.c.short_name,
+            )
+            .order_by(func.max(ScrapingLog.created_at).desc())
+        )
+
+        if matchday_number is not None:
+            stmt = stmt.where(ScrapingLog.matchday_number == matchday_number)
+        if job_type is not None:
+            stmt = stmt.where(ScrapingLog.job_type == job_type)
+
+        result = await self.session.execute(stmt)
+        return [
+            {
+                "matchday_number": r.matchday_number,
+                "match_id": r.match_id,
+                "match_label": f"{r.home_team} vs {r.away_team}"
+                if r.home_team and r.away_team
+                else None,
+                "ok": r.ok_count,
+                "skip": r.skip_count,
+                "error": r.error_count,
+                "total": r.total,
+                "last_at": r.last_at.isoformat() if r.last_at else None,
+            }
+            for r in result.all()
+        ]
+
     async def cleanup(self, days: int = 90) -> int:
         """Delete logs older than *days*. Returns count deleted."""
         cutoff = datetime.now(UTC) - timedelta(days=days)
