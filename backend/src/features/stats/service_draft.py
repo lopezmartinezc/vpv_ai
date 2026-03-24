@@ -243,7 +243,7 @@ class DraftValueService:
         reasons: list[str] = []
 
         # Positive signals
-        if ensemble_score > simple_avg * 1.05:
+        if simple_avg > 0 and ensemble_score > simple_avg * 1.05:
             reasons.append(f"Ensemble +{(ensemble_score / simple_avg - 1) * 100:.0f}% vs media")
         if career_trend_pct and career_trend_pct > 0.1:
             reasons.append(f"Tendencia +{career_trend_pct * 100:.0f}%")
