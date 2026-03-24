@@ -498,10 +498,12 @@ _last_nightly_rescrape_at: datetime | None = None
 
 
 async def _nightly_rescrape() -> None:
-    """Re-scrape all matches with stats_ok in current + previous matchday.
+    """Re-scrape the last played matchday to catch late Marca/AS updates.
 
-    Runs once daily at 23:30 UTC to catch any late player page updates
-    (stat corrections, media ratings) that the CRC check may have missed.
+    Logic: find the most recent matchday that has played matches (stats_ok).
+    Keep re-scraping it nightly until the deadline of the NEXT matchday passes
+    (by then Marca/AS ratings are stable). Also re-scrape the one before it
+    in case corrections are still coming in.
     """
     global _last_nightly_rescrape_at
     _last_nightly_rescrape_at = datetime.now(UTC)
@@ -517,17 +519,35 @@ async def _nightly_rescrape() -> None:
                 _log("nightly_rescrape", "Sin temporada activa")
                 return
 
-            # Re-scrape current + previous matchday
-            for md_number in [season.matchday_current, season.matchday_current - 1]:
-                if md_number < 1:
-                    continue
+            # Find last matchday with played matches (has any match with stats_ok)
+            from sqlalchemy import text
+
+            result = await session.execute(
+                text("""
+                    SELECT md.number
+                    FROM matchdays md
+                    JOIN matches m ON m.matchday_id = md.id AND m.stats_ok = TRUE
+                    WHERE md.season_id = :sid AND md.counts = TRUE
+                    GROUP BY md.number
+                    ORDER BY md.number DESC
+                    LIMIT 2
+                """),
+                {"sid": season.id},
+            )
+            played_matchdays = [r.number for r in result.all()]
+
+            if not played_matchdays:
+                _log("nightly_rescrape", "Sin jornadas con partidos jugados")
+                return
+
+            for md_number in played_matchdays:
                 _log("nightly_rescrape", f"Re-scrapeando J{md_number}")
                 try:
-                    result = await service.scrape_matchday(season.id, md_number)
+                    scrape_result = await service.scrape_matchday(season.id, md_number)
                     _log(
                         "nightly_rescrape",
-                        f"J{md_number}: procesados={result.get('processed', 0)}, "
-                        f"errores={result.get('errors', 0)}",
+                        f"J{md_number}: procesados={scrape_result.get('processed', 0)}, "
+                        f"errores={scrape_result.get('errors', 0)}",
                     )
                 except Exception as exc:
                     _log("nightly_rescrape", f"Error J{md_number}: {exc}", "error")

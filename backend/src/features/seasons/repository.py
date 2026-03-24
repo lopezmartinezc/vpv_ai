@@ -209,6 +209,7 @@ class SeasonRepository(BaseRepository[Season]):
             scraping_slug=scraping_slug,
             matchday_start=matchday_start,
             matchday_end=matchday_end,
+            matchday_current=1,  # Start scraping from J1 (pre-draft stats)
             draft_pool_size=draft_pool_size,
             lineup_deadline_min=lineup_deadline_min,
         )
