@@ -54,7 +54,7 @@ const STAT_TABS = [
   { key: "participantes", label: "Participantes" },
   { key: "liga", label: "Liga" },
   { key: "avanzado", label: "Avanzado" },
-  { key: "draft", label: "Draft" },
+  { key: "draft", label: "Draft Valor" },
 ] as const;
 
 type StatTab = (typeof STAT_TABS)[number]["key"];
@@ -1895,13 +1895,16 @@ function DraftValueTab({ seasonId }: { seasonId: number }) {
   const [sortKey, setSortKey] = useState<string>("ensemble_score");
   const [signalFilter, setSignalFilter] = useState("");
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [error, setError] = useState(false);
+  const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    setError(false);
     apiClient
       .get<DraftValueResponse>(`/stats/${seasonId}/players/draft-value`)
       .then((d) => { if (!cancelled) setData(d); })
-      .catch(() => {})
+      .catch(() => { if (!cancelled) setError(true); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [seasonId]);
@@ -1920,6 +1923,17 @@ function DraftValueTab({ seasonId }: { seasonId: number }) {
         {Array.from({ length: 8 }).map((_, i) => (
           <div key={i} className="h-10 animate-pulse rounded bg-vpv-border" />
         ))}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+        Error al cargar datos de draft.{" "}
+        <button onClick={() => { setLoading(true); setError(false); }} className="underline">
+          Reintentar
+        </button>
       </div>
     );
   }
@@ -2000,7 +2014,7 @@ function DraftValueTab({ seasonId }: { seasonId: number }) {
         </div>
 
         <div className="divide-y divide-vpv-border/50">
-          {players.slice(0, 100).map((p, i) => {
+          {(showAll ? players : players.slice(0, 100)).map((p, i) => {
             const badge = SIGNAL_BADGE[p.signal] ?? SIGNAL_BADGE.hold;
             const isExpanded = expandedId === p.player_id;
 
@@ -2134,6 +2148,15 @@ function DraftValueTab({ seasonId }: { seasonId: number }) {
           })}
         </div>
       </div>
+
+      {!showAll && players.length > 100 && (
+        <button
+          onClick={() => setShowAll(true)}
+          className="w-full rounded-lg border border-vpv-border py-2 text-xs text-vpv-text-muted hover:text-vpv-text"
+        >
+          Mostrando 100 de {players.length} — Ver todos
+        </button>
+      )}
 
       {/* Model legend */}
       <div className="rounded-lg border border-vpv-card-border bg-vpv-card px-4 py-2.5">
@@ -2350,7 +2373,7 @@ export default function AdminEstadisticasPage() {
                 {([
                   { key: "valoracion", label: "Valoracion" },
                   { key: "posiciones", label: "Posiciones" },
-                  { key: "draft", label: "Draft" },
+                  { key: "draft", label: "Historial Draft" },
                   { key: "contexto", label: "Contexto" },
                 ] as const).map(({ key, label }) => (
                   <button
