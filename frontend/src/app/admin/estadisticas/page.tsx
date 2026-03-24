@@ -1897,12 +1897,13 @@ function DraftValueTab({ seasonId }: { seasonId: number }) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
   useEffect(() => {
-    setLoading(true);
+    let cancelled = false;
     apiClient
       .get<DraftValueResponse>(`/stats/${seasonId}/players/draft-value`)
-      .then(setData)
+      .then((d) => { if (!cancelled) setData(d); })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [seasonId]);
 
   const players = useMemo(() => {
