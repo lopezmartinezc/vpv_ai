@@ -167,12 +167,15 @@ class AdvancedStatsRepository:
         p50 = func.percentile_cont(0.50).within_group(PlayerStat.pts_total)
         p90 = func.percentile_cont(0.90).within_group(PlayerStat.pts_total)
 
+        # Most frequent position per player (mode)
+        pos_mode = func.mode().within_group(PlayerStat.position)
+
         stmt = (
             select(
                 Player.id.label("player_id"),
                 Player.display_name,
                 Player.photo_path,
-                PlayerStat.position,
+                pos_mode.label("position"),
                 Team.name.label("team_name"),
                 md_count.label("matchdays_played"),
                 func.coalesce(func.sum(PlayerStat.minutes_played), 0).label("minutes_played"),
@@ -201,7 +204,6 @@ class AdvancedStatsRepository:
                 Player.id,
                 Player.display_name,
                 Player.photo_path,
-                PlayerStat.position,
                 Team.name,
             )
             .having(md_count >= min_played)
