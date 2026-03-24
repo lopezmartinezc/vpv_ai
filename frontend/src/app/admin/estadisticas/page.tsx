@@ -41,6 +41,8 @@ import type {
   ComparePlayersResponse,
   PlayerSplit,
   PlayerSplitsResponse,
+  DraftValuePlayer,
+  DraftValueResponse,
 } from "@/types";
 
 // ---------------------------------------------------------------------------
@@ -52,6 +54,7 @@ const STAT_TABS = [
   { key: "participantes", label: "Participantes" },
   { key: "liga", label: "Liga" },
   { key: "avanzado", label: "Avanzado" },
+  { key: "draft", label: "Draft" },
 ] as const;
 
 type StatTab = (typeof STAT_TABS)[number]["key"];
@@ -1865,6 +1868,289 @@ function RadarChart({ players }: { players: ComparePlayerAxis[] }) {
 // Main Page
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Draft Value Tab
+// ---------------------------------------------------------------------------
+
+const SIGNAL_BADGE: Record<string, { bg: string; text: string; label: string }> = {
+  strong_buy: { bg: "bg-green-500/20", text: "text-green-400", label: "Comprar" },
+  buy: { bg: "bg-green-500/10", text: "text-green-400", label: "Bien" },
+  hold: { bg: "bg-amber-500/15", text: "text-amber-400", label: "Neutro" },
+  avoid: { bg: "bg-red-500/20", text: "text-red-400", label: "Evitar" },
+};
+
+const DRAFT_SORT_OPTIONS = [
+  { key: "ensemble_score", label: "Ensemble (mejor)" },
+  { key: "simple_avg", label: "Media simple" },
+  { key: "stability_score", label: "Seguridad" },
+  { key: "productivity_score", label: "Productividad" },
+  { key: "trend_score", label: "Tendencia" },
+  { key: "consistency", label: "Consistencia" },
+] as const;
+
+function DraftValueTab({ seasonId }: { seasonId: number }) {
+  const [data, setData] = useState<DraftValueResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [posFilter, setPosFilter] = useState("");
+  const [sortKey, setSortKey] = useState<string>("ensemble_score");
+  const [signalFilter, setSignalFilter] = useState("");
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    apiClient
+      .get<DraftValueResponse>(`/stats/${seasonId}/players/draft-value`)
+      .then(setData)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [seasonId]);
+
+  const players = useMemo(() => {
+    if (!data) return [];
+    let list = data.players;
+    if (posFilter) list = list.filter((p) => p.position === posFilter);
+    if (signalFilter) list = list.filter((p) => p.signal === signalFilter);
+    return sorted(list, sortKey as keyof DraftValuePlayer, "desc");
+  }, [data, posFilter, signalFilter, sortKey]);
+
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="h-10 animate-pulse rounded bg-vpv-border" />
+        ))}
+      </div>
+    );
+  }
+
+  if (!data) return <p className="text-sm text-vpv-text-muted">Sin datos</p>;
+
+  return (
+    <div className="space-y-3">
+      {/* Header info */}
+      <div className="rounded-lg border border-vpv-card-border bg-vpv-card px-4 py-2.5">
+        <div className="flex flex-wrap items-center gap-3 text-xs text-vpv-text-muted">
+          <span>
+            <b className="text-vpv-text">{data.draft_type === "winter" ? "Draft Invierno" : "Draft Pretemporada"}</b>
+            {" "}{data.season_name}
+          </span>
+          <span>J{data.matchdays_played} jugadas</span>
+          <span>Peso historial: {(data.peso_historico * 100).toFixed(0)}%</span>
+          <span>{players.length} jugadores</span>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="flex gap-0.5">
+          {["", "POR", "DEF", "MED", "DEL"].map((p) => (
+            <button
+              key={p}
+              onClick={() => setPosFilter(p)}
+              className={`rounded px-2 py-1 text-[10px] font-medium ${
+                posFilter === p ? "bg-vpv-accent text-white" : "border border-vpv-border text-vpv-text-muted"
+              }`}
+            >
+              {p || "Todas"}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-0.5">
+          {["", "strong_buy", "buy", "hold", "avoid"].map((s) => {
+            const badge = SIGNAL_BADGE[s];
+            return (
+              <button
+                key={s}
+                onClick={() => setSignalFilter(s)}
+                className={`rounded px-2 py-1 text-[10px] font-medium ${
+                  signalFilter === s ? "bg-vpv-accent text-white" : "border border-vpv-border text-vpv-text-muted"
+                }`}
+              >
+                {badge?.label || "Todos"}
+              </button>
+            );
+          })}
+        </div>
+        <select
+          value={sortKey}
+          onChange={(e) => setSortKey(e.target.value)}
+          className="rounded border border-vpv-border bg-vpv-bg px-2 py-1 text-[10px] text-vpv-text"
+        >
+          {DRAFT_SORT_OPTIONS.map((o) => (
+            <option key={o.key} value={o.key}>{o.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Table */}
+      <div className="rounded-lg border border-vpv-card-border bg-vpv-card overflow-hidden">
+        {/* Desktop header */}
+        <div className="hidden border-b border-vpv-border bg-vpv-bg px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted md:flex">
+          <span className="w-8">#</span>
+          <span className="flex-1">Jugador</span>
+          <span className="w-12 text-center">Pos</span>
+          <span className="w-14 text-right">Ens</span>
+          <span className="w-14 text-right">Avg</span>
+          <span className="w-14 text-right">Form</span>
+          <span className="w-14 text-right">Stab</span>
+          <span className="w-14 text-right">Trend</span>
+          <span className="w-10 text-center">Cons</span>
+          <span className="w-16 text-center">Signal</span>
+        </div>
+
+        <div className="divide-y divide-vpv-border/50">
+          {players.slice(0, 100).map((p, i) => {
+            const badge = SIGNAL_BADGE[p.signal] ?? SIGNAL_BADGE.hold;
+            const isExpanded = expandedId === p.player_id;
+
+            return (
+              <div key={p.player_id}>
+                <button
+                  type="button"
+                  onClick={() => setExpandedId(isExpanded ? null : p.player_id)}
+                  className={`flex w-full items-center px-3 py-1.5 text-left hover:bg-vpv-bg/30 ${isExpanded ? "bg-vpv-bg/40" : ""}`}
+                >
+                  {/* Mobile: compact */}
+                  <div className="flex flex-1 items-center gap-2 md:hidden">
+                    <span className="w-6 text-[10px] text-vpv-text-muted">{i + 1}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-medium text-vpv-text">{p.display_name}</p>
+                      <p className="text-[10px] text-vpv-text-muted">{p.team_name} · {p.position}</p>
+                    </div>
+                    <span className="text-xs font-bold tabular-nums text-vpv-text">{p.ensemble_score.toFixed(1)}</span>
+                    <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${badge.bg} ${badge.text}`}>
+                      {badge.label}
+                    </span>
+                  </div>
+
+                  {/* Desktop: full row */}
+                  <div className="hidden w-full items-center md:flex">
+                    <span className="w-8 text-[10px] text-vpv-text-muted">{i + 1}</span>
+                    <span className="flex-1 truncate text-xs font-medium text-vpv-text">
+                      {p.display_name}
+                      <span className="ml-1 text-[10px] font-normal text-vpv-text-muted">{p.team_name}</span>
+                      {p.seasons_played === 1 && (
+                        <span className="ml-1 rounded bg-amber-500/15 px-1 text-[8px] text-amber-400">NEW</span>
+                      )}
+                    </span>
+                    <span className="w-12 text-center text-[10px] text-vpv-text-muted">{p.position}</span>
+                    <span className="w-14 text-right text-xs font-bold tabular-nums text-vpv-accent">{p.ensemble_score.toFixed(1)}</span>
+                    <span className="w-14 text-right text-xs tabular-nums text-vpv-text-muted">{p.simple_avg.toFixed(1)}</span>
+                    <span className="w-14 text-right text-xs tabular-nums text-vpv-text-muted">
+                      {p.second_half_score?.toFixed(1) ?? "—"}
+                    </span>
+                    <span className="w-14 text-right text-xs tabular-nums text-vpv-text-muted">{p.stability_score.toFixed(1)}</span>
+                    <span className={`w-14 text-right text-xs tabular-nums ${
+                      p.career_trend_pct && p.career_trend_pct > 0.05 ? "text-green-400" :
+                      p.career_trend_pct && p.career_trend_pct < -0.05 ? "text-red-400" : "text-vpv-text-muted"
+                    }`}>
+                      {p.career_trend_pct != null ? `${p.career_trend_pct > 0 ? "+" : ""}${(p.career_trend_pct * 100).toFixed(0)}%` : "—"}
+                    </span>
+                    <span className="w-10 text-center">
+                      <span className={`inline-block h-2 w-2 rounded-full ${
+                        p.consistency > 0.6 ? "bg-green-500" : p.consistency > 0.3 ? "bg-amber-500" : "bg-red-500"
+                      }`} />
+                    </span>
+                    <span className={`w-16 text-center rounded px-1.5 py-0.5 text-[9px] font-bold ${badge.bg} ${badge.text}`}>
+                      {badge.label}
+                    </span>
+                  </div>
+                </button>
+
+                {/* Expanded detail */}
+                {isExpanded && (
+                  <div className="border-t border-vpv-border/30 bg-vpv-bg/20 px-4 py-2.5 text-xs">
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 sm:grid-cols-3 md:grid-cols-4">
+                      <div>
+                        <span className="text-vpv-text-muted">Temporadas: </span>
+                        <span className="font-medium text-vpv-text">{p.seasons_played}</span>
+                      </div>
+                      <div>
+                        <span className="text-vpv-text-muted">Partidos: </span>
+                        <span className="font-medium text-vpv-text">{p.games_played}</span>
+                      </div>
+                      <div>
+                        <span className="text-vpv-text-muted">Pts totales: </span>
+                        <span className="font-medium text-vpv-text">{p.total_points.toFixed(0)}</span>
+                      </div>
+                      <div>
+                        <span className="text-vpv-text-muted">Disponibilidad: </span>
+                        <span className={`font-medium ${p.availability > 0.8 ? "text-green-400" : p.availability > 0.6 ? "text-amber-400" : "text-red-400"}`}>
+                          {(p.availability * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-vpv-text-muted">Goles: </span>
+                        <span className="font-medium text-vpv-text">{p.goals}</span>
+                      </div>
+                      <div>
+                        <span className="text-vpv-text-muted">Asistencias: </span>
+                        <span className="font-medium text-vpv-text">{p.assists}</span>
+                      </div>
+                      {p.marca_avg != null && (
+                        <div>
+                          <span className="text-vpv-text-muted">Marca: </span>
+                          <span className="font-medium text-vpv-text">{p.marca_avg.toFixed(1)} estrellas</span>
+                        </div>
+                      )}
+                      {p.as_avg != null && (
+                        <div>
+                          <span className="text-vpv-text-muted">AS: </span>
+                          <span className="font-medium text-vpv-text">{p.as_avg.toFixed(1)} picas</span>
+                        </div>
+                      )}
+                      {p.second_half_avg != null && (
+                        <div>
+                          <span className="text-vpv-text-muted">2a mitad: </span>
+                          <span className="font-medium text-vpv-text">{p.second_half_avg.toFixed(1)} pts/j</span>
+                        </div>
+                      )}
+                      <div>
+                        <span className="text-vpv-text-muted">Productividad: </span>
+                        <span className="font-medium text-vpv-text">{p.productivity_score.toFixed(1)}</span>
+                      </div>
+                    </div>
+                    {p.signal_reasons.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {p.signal_reasons.map((r, ri) => (
+                          <span
+                            key={ri}
+                            className={`rounded px-1.5 py-0.5 text-[9px] ${
+                              r.startsWith("En declive") || r.startsWith("Poca") || r.startsWith("Muy") || r.startsWith("Sin")
+                                ? "bg-red-500/10 text-red-400"
+                                : "bg-green-500/10 text-green-400"
+                            }`}
+                          >
+                            {r}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Model legend */}
+      <div className="rounded-lg border border-vpv-card-border bg-vpv-card px-4 py-2.5">
+        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted">Modelos (backtested)</p>
+        <div className="grid grid-cols-1 gap-1 text-[10px] sm:grid-cols-2">
+          {data.model_info && Object.entries(data.model_info).map(([key, desc]) => (
+            <div key={key}>
+              <span className="font-medium text-vpv-text">{key}: </span>
+              <span className="text-vpv-text-muted">{desc}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 export default function AdminEstadisticasPage() {
   const [seasons, setSeasons] = useState<SeasonOption[]>([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
@@ -2052,6 +2338,9 @@ export default function AdminEstadisticasPage() {
               matchdayAverages={matchdayAverages}
               records={records}
             />
+          )}
+          {activeTab === "draft" && selectedSeasonId && (
+            <DraftValueTab seasonId={selectedSeasonId} />
           )}
           {activeTab === "avanzado" && (
             <div className="space-y-4">

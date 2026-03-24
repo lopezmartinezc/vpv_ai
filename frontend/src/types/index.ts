@@ -903,3 +903,45 @@ export interface PalmaresResponse {
   records: AllTimeRecord[];
   group_history: SeasonGroupResult[];
 }
+
+// ---------------------------------------------------------------------------
+// Draft Value Predictions
+// ---------------------------------------------------------------------------
+
+export interface DraftValuePlayer {
+  player_id: number;
+  display_name: string;
+  team_name: string;
+  position: string;
+  photo_path: string | null;
+  games_played: number;
+  seasons_played: number;
+  avg_points: number;
+  total_points: number;
+  ensemble_score: number;
+  simple_avg: number;
+  second_half_score: number | null;
+  productivity_score: number;
+  stability_score: number;
+  trend_score: number | null;
+  career_trend_pct: number | null;
+  marca_avg: number | null;
+  as_avg: number | null;
+  availability: number;
+  consistency: number;
+  second_half_avg: number | null;
+  goals: number;
+  assists: number;
+  signal: string;
+  signal_reasons: string[];
+}
+
+export interface DraftValueResponse {
+  season_id: number;
+  season_name: string;
+  matchdays_played: number;
+  draft_type: string;
+  peso_historico: number;
+  model_info: Record<string, string>;
+  players: DraftValuePlayer[];
+}
