@@ -2002,20 +2002,47 @@ function DraftValueTab({ seasonId }: { seasonId: number }) {
         </select>
       </div>
 
+      {/* Signal legend */}
+      <div className="rounded-lg border border-vpv-card-border bg-vpv-card px-4 py-2">
+        <div className="flex flex-wrap items-start gap-x-6 gap-y-1 text-[10px]">
+          <div>
+            <span className="font-semibold text-vpv-text">Signal </span>
+            <span className="text-vpv-text-muted">se calcula con:</span>
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-vpv-text-muted">
+            <span><span className="text-green-400">+</span> Ensemble supera media</span>
+            <span><span className="text-green-400">+</span> Tendencia positiva (&gt;10%)</span>
+            <span><span className="text-green-400">+</span> Disponibilidad &gt;85%</span>
+            <span><span className="text-green-400">+</span> Consistencia alta</span>
+            <span><span className="text-green-400">+</span> 3+ temporadas</span>
+            <span><span className="text-red-400">-</span> Declive &gt;15%</span>
+            <span><span className="text-red-400">-</span> Disponibilidad &lt;60%</span>
+            <span><span className="text-red-400">-</span> Muy volatil</span>
+            <span><span className="text-red-400">-</span> Sin historial</span>
+          </div>
+        </div>
+        <div className="mt-1 flex gap-3 text-[10px]">
+          <span className="rounded bg-green-500/20 px-1.5 py-0.5 text-green-400">Comprar = 3+ positivas, 0 negativas</span>
+          <span className="rounded bg-green-500/10 px-1.5 py-0.5 text-green-400">Bien = 2+ positivas</span>
+          <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-400">Neutro = resto</span>
+          <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-red-400">Evitar = 2+ negativas</span>
+        </div>
+      </div>
+
       {/* Table */}
       <div className="rounded-lg border border-vpv-card-border bg-vpv-card overflow-hidden">
         {/* Desktop header */}
         <div className="hidden border-b border-vpv-border bg-vpv-bg px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted md:flex">
           <span className="w-8">#</span>
           <span className="flex-1">Jugador</span>
-          <span className="w-12 text-center">Pos</span>
-          <span className="w-14 text-right">Ens</span>
-          <span className="w-14 text-right">Avg</span>
-          <span className="w-14 text-right">Form</span>
-          <span className="w-14 text-right">Stab</span>
-          <span className="w-14 text-right">Trend</span>
-          <span className="w-10 text-center">Cons</span>
-          <span className="w-16 text-center">Signal</span>
+          <span className="w-12 text-center" title="Posicion del jugador">Pos</span>
+          <span className="w-14 text-right" title="Ensemble: Media de 4 modelos (mejor predictor global, Spearman 0.718)">Ens</span>
+          <span className="w-14 text-right" title="Media simple: pts/partido de la temporada anterior (baseline)">Avg</span>
+          <span className="w-14 text-right" title="Forma 2a mitad: rendimiento J20-J38 (predice inicio siguiente temporada)">Form</span>
+          <span className="w-14 text-right" title="Estabilidad: premia titulares indiscutibles con minutos altos (menos riesgo de busto)">Stab</span>
+          <span className="w-14 text-right" title="Tendencia interanual: % de mejora o declive respecto a la temporada anterior">Trend</span>
+          <span className="w-10 text-center" title="Consistencia: 1-CV (verde = fiable, rojo = impredecible)">Cons</span>
+          <span className="w-16 text-center" title="Signal de draft: Comprar (3+ senales positivas), Bien (2+), Neutro, Evitar (2+ negativas)">Signal</span>
         </div>
 
         <div className="divide-y divide-vpv-border/50">
