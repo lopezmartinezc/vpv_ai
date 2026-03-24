@@ -1879,24 +1879,38 @@ const SIGNAL_BADGE: Record<string, { bg: string; text: string; label: string }> 
   avoid: { bg: "bg-red-500/20", text: "text-red-400", label: "Evitar" },
 };
 
-const DRAFT_SORT_OPTIONS = [
-  { key: "ensemble_score", label: "Ensemble (mejor)" },
-  { key: "simple_avg", label: "Media simple" },
-  { key: "stability_score", label: "Seguridad" },
-  { key: "productivity_score", label: "Productividad" },
-  { key: "trend_score", label: "Tendencia" },
-  { key: "consistency", label: "Consistencia" },
-] as const;
+type DraftSortKey = keyof DraftValuePlayer;
+
+const DRAFT_COLS: { key: DraftSortKey; label: string; title: string; w: string }[] = [
+  { key: "ensemble_score", label: "Ens", title: "Ensemble: Media de 4 modelos (mejor predictor, Spearman 0.718)", w: "w-14" },
+  { key: "simple_avg", label: "Avg", title: "Media simple: pts/partido temporada anterior (baseline)", w: "w-14" },
+  { key: "second_half_score", label: "Form", title: "Forma 2a mitad: rendimiento J20-J38 (predice siguiente temporada)", w: "w-14" },
+  { key: "stability_score", label: "Stab", title: "Estabilidad: minutos altos y constantes (menor riesgo busto)", w: "w-14" },
+  { key: "productivity_score", label: "Prod", title: "Productividad: bonificado por G+A por 90 minutos", w: "w-14" },
+  { key: "career_trend_pct", label: "Trend", title: "Tendencia interanual: % mejora o declive", w: "w-14" },
+  { key: "availability", label: "Disp", title: "Disponibilidad: % partidos con 45+ min jugados", w: "w-12" },
+  { key: "consistency", label: "Cons", title: "Consistencia: 1-CV (1=muy fiable, 0=impredecible)", w: "w-12" },
+];
 
 function DraftValueTab({ seasonId }: { seasonId: number }) {
   const [data, setData] = useState<DraftValueResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [posFilter, setPosFilter] = useState("");
-  const [sortKey, setSortKey] = useState<string>("ensemble_score");
+  const [sortKey, setSortKey] = useState<DraftSortKey>("ensemble_score");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [signalFilter, setSignalFilter] = useState("");
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [error, setError] = useState(false);
   const [showAll, setShowAll] = useState(false);
+
+  const handleSort = (key: DraftSortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -1919,8 +1933,8 @@ function DraftValueTab({ seasonId }: { seasonId: number }) {
     let list = data.players;
     if (posFilter) list = list.filter((p) => p.position === posFilter);
     if (signalFilter) list = list.filter((p) => p.signal === signalFilter);
-    return sorted(list, sortKey as keyof DraftValuePlayer, "desc");
-  }, [data, posFilter, signalFilter, sortKey]);
+    return sorted(list, sortKey, sortDir);
+  }, [data, posFilter, signalFilter, sortKey, sortDir]);
 
   if (loading) {
     return (
@@ -1991,15 +2005,7 @@ function DraftValueTab({ seasonId }: { seasonId: number }) {
             );
           })}
         </div>
-        <select
-          value={sortKey}
-          onChange={(e) => setSortKey(e.target.value)}
-          className="rounded border border-vpv-border bg-vpv-bg px-2 py-1 text-[10px] text-vpv-text"
-        >
-          {DRAFT_SORT_OPTIONS.map((o) => (
-            <option key={o.key} value={o.key}>{o.label}</option>
-          ))}
-        </select>
+        <span className="text-[10px] text-vpv-text-muted">Click columna para ordenar</span>
       </div>
 
       {/* Signal legend */}
@@ -2035,14 +2041,21 @@ function DraftValueTab({ seasonId }: { seasonId: number }) {
         <div className="hidden border-b border-vpv-border bg-vpv-bg px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted md:flex">
           <span className="w-8">#</span>
           <span className="flex-1">Jugador</span>
-          <span className="w-12 text-center" title="Posicion del jugador">Pos</span>
-          <span className="w-14 text-right" title="Ensemble: Media de 4 modelos (mejor predictor global, Spearman 0.718)">Ens</span>
-          <span className="w-14 text-right" title="Media simple: pts/partido de la temporada anterior (baseline)">Avg</span>
-          <span className="w-14 text-right" title="Forma 2a mitad: rendimiento J20-J38 (predice inicio siguiente temporada)">Form</span>
-          <span className="w-14 text-right" title="Estabilidad: premia titulares indiscutibles con minutos altos (menos riesgo de busto)">Stab</span>
-          <span className="w-14 text-right" title="Tendencia interanual: % de mejora o declive respecto a la temporada anterior">Trend</span>
-          <span className="w-10 text-center" title="Consistencia: 1-CV (verde = fiable, rojo = impredecible)">Cons</span>
-          <span className="w-16 text-center" title="Signal de draft: Comprar (3+ senales positivas), Bien (2+), Neutro, Evitar (2+ negativas)">Signal</span>
+          <span className="w-12 text-center">Pos</span>
+          {DRAFT_COLS.map((col) => (
+            <button
+              key={col.key}
+              onClick={() => handleSort(col.key)}
+              title={col.title}
+              className={`${col.w} text-right hover:text-vpv-text ${sortKey === col.key ? "text-vpv-accent" : ""}`}
+            >
+              {col.label}
+              {sortKey === col.key && (
+                <span className="ml-0.5">{sortDir === "desc" ? "\u25BC" : "\u25B2"}</span>
+              )}
+            </button>
+          ))}
+          <span className="w-16 text-center" title="Signal de draft: Comprar / Bien / Neutro / Evitar">Signal</span>
         </div>
 
         <div className="divide-y divide-vpv-border/50">
@@ -2081,23 +2094,35 @@ function DraftValueTab({ seasonId }: { seasonId: number }) {
                       )}
                     </span>
                     <span className="w-12 text-center text-[10px] text-vpv-text-muted">{p.position}</span>
-                    <span className="w-14 text-right text-xs font-bold tabular-nums text-vpv-accent">{p.ensemble_score.toFixed(1)}</span>
-                    <span className="w-14 text-right text-xs tabular-nums text-vpv-text-muted">{p.simple_avg.toFixed(1)}</span>
-                    <span className="w-14 text-right text-xs tabular-nums text-vpv-text-muted">
-                      {p.second_half_score?.toFixed(1) ?? "—"}
-                    </span>
-                    <span className="w-14 text-right text-xs tabular-nums text-vpv-text-muted">{p.stability_score.toFixed(1)}</span>
-                    <span className={`w-14 text-right text-xs tabular-nums ${
-                      p.career_trend_pct && p.career_trend_pct > 0.05 ? "text-green-400" :
-                      p.career_trend_pct && p.career_trend_pct < -0.05 ? "text-red-400" : "text-vpv-text-muted"
-                    }`}>
-                      {p.career_trend_pct != null ? `${p.career_trend_pct > 0 ? "+" : ""}${(p.career_trend_pct * 100).toFixed(0)}%` : "—"}
-                    </span>
-                    <span className="w-10 text-center">
-                      <span className={`inline-block h-2 w-2 rounded-full ${
-                        p.consistency > 0.6 ? "bg-green-500" : p.consistency > 0.3 ? "bg-amber-500" : "bg-red-500"
-                      }`} />
-                    </span>
+                    {DRAFT_COLS.map((col) => {
+                      const val = p[col.key];
+                      const isActive = sortKey === col.key;
+                      if (col.key === "career_trend_pct") {
+                        return (
+                          <span key={col.key} className={`${col.w} text-right text-xs tabular-nums ${
+                            val != null && (val as number) > 0.05 ? "text-green-400" :
+                            val != null && (val as number) < -0.05 ? "text-red-400" : "text-vpv-text-muted"
+                          } ${isActive ? "font-bold" : ""}`}>
+                            {val != null ? `${(val as number) > 0 ? "+" : ""}${((val as number) * 100).toFixed(0)}%` : "—"}
+                          </span>
+                        );
+                      }
+                      if (col.key === "availability" || col.key === "consistency") {
+                        const n = (val as number) ?? 0;
+                        return (
+                          <span key={col.key} className={`${col.w} text-right text-xs tabular-nums ${isActive ? "font-bold text-vpv-accent" : "text-vpv-text-muted"}`}>
+                            {(n * 100).toFixed(0)}%
+                          </span>
+                        );
+                      }
+                      return (
+                        <span key={col.key} className={`${col.w} text-right text-xs tabular-nums ${
+                          isActive ? "font-bold text-vpv-accent" : col.key === "ensemble_score" ? "font-bold text-vpv-accent" : "text-vpv-text-muted"
+                        }`}>
+                          {val != null ? (val as number).toFixed(1) : "—"}
+                        </span>
+                      );
+                    })}
                     <span className={`w-16 text-center rounded px-1.5 py-0.5 text-[9px] font-bold ${badge.bg} ${badge.text}`}>
                       {badge.label}
                     </span>
