@@ -1900,12 +1900,17 @@ function DraftValueTab({ seasonId }: { seasonId: number }) {
 
   useEffect(() => {
     let cancelled = false;
-    setError(false);
     apiClient
       .get<DraftValueResponse>(`/stats/${seasonId}/players/draft-value`)
-      .then((d) => { if (!cancelled) setData(d); })
-      .catch(() => { if (!cancelled) setError(true); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+      .then((d) => {
+        if (!cancelled) { setData(d); setError(false); }
+      })
+      .catch(() => {
+        if (!cancelled) setError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
     return () => { cancelled = true; };
   }, [seasonId]);
 
