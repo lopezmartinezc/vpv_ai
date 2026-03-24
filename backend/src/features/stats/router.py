@@ -40,11 +40,30 @@ from src.features.stats.schemas_advanced import (
     PredictionsResponse,
     TeamDependencyResponse,
 )
+from src.features.stats.schemas_draft import DraftValueResponse
 from src.features.stats.service_advanced import AdvancedStatsService
+from src.features.stats.service_draft import DraftValueService
 from src.shared.dependencies import get_db, require_perm
 from src.shared.permissions import Perm
 
 router = APIRouter(prefix="/stats", tags=["stats"])
+
+
+# ---------------------------------------------------------------------------
+# Draft value predictions
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{season_id}/players/draft-value", response_model=DraftValueResponse)
+async def get_draft_values(
+    season_id: int,
+    min_games: int = Query(default=10, ge=1, le=30),
+    admin: dict = Depends(require_perm(Perm.STATS)),
+    db: AsyncSession = Depends(get_db),
+) -> DraftValueResponse:
+    """Draft value predictions using backtested models."""
+    service = DraftValueService(db)
+    return await service.get_draft_values(season_id, min_games=min_games)
 
 
 # ---------------------------------------------------------------------------
