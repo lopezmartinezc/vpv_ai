@@ -31,7 +31,7 @@ class MysqlSyncService:
     def __init__(self, pg_session: AsyncSession) -> None:
         self.pg = pg_session
 
-    def _get_mysql_conn(self) -> mysql.connector.MySQLConnection:  # type: ignore[name-defined]
+    def _get_mysql_conn(self):  # type: ignore[no-untyped-def]
         """Create a synchronous MySQL connection (short-lived)."""
         import mysql.connector
 
