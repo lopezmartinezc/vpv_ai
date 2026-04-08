@@ -549,31 +549,16 @@ export default function AdminAlineacionesPage() {
     setTimeout(() => setToast(null), 4000);
   }
 
-  function handleSave(participantId: number, result: SaveResult) {
-    setLineups((prev) =>
-      prev.map((p) => {
-        if (p.participant_id !== participantId) return p;
-        return {
-          ...p,
-          has_lineup: true,
-          formation: result.formation,
-          total_points: result.new_total_points,
-          players: result.players.map((rp, i) => ({
-            player_id: rp.player_id,
-            display_name: rp.display_name,
-            position_slot: rp.position_slot,
-            display_order: i,
-            points: rp.points,
-            photo_path: null,
-          })),
-        };
-      }),
-    );
+  function handleSave(_participantId: number, result: SaveResult) {
     setEditingId(null);
     const sign = result.delta >= 0 ? "+" : "";
     showToast(
       `Puntos: ${result.old_total_points} \u2192 ${result.new_total_points} (${sign}${result.delta})`,
     );
+    // Refetch all lineups to get fresh data with photo_path
+    if (selectedSeasonId && searchedMatchday) {
+      fetchLineups(selectedSeasonId, searchedMatchday);
+    }
   }
 
   if (loading) {
