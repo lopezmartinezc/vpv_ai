@@ -1,7 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiClient } from "@/lib/api-client";
+import { PitchView } from "@/components/ui/pitch-view";
+import type { PitchPlayer } from "@/components/ui/pitch-view";
+import { PlayerAvatar } from "@/components/ui/player-avatar";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -42,11 +45,10 @@ interface LineupsResponse {
 interface SquadPlayer {
   player_id: number;
   display_name: string;
-  /** "POR" | "DEF" | "MED" | "DEL" */
   position: string;
   team_name: string;
   photo_path: string | null;
-  points_this_matchday: number;
+  points_this_matchday: number | null;
 }
 
 interface SquadResponse {
@@ -61,7 +63,12 @@ interface SaveResult {
   old_total_points: number;
   new_total_points: number;
   delta: number;
-  players: { player_id: number; display_name: string; position_slot: string; points: number }[];
+  players: {
+    player_id: number;
+    display_name: string;
+    position_slot: string;
+    points: number;
+  }[];
   rankings_updated: boolean;
 }
 
@@ -79,29 +86,31 @@ const VALID_FORMATIONS = [
   "1-5-4-1",
 ] as const;
 
-type Formation = (typeof VALID_FORMATIONS)[number];
+const POSITIONS = ["POR", "DEF", "MED", "DEL"] as const;
 
-/** Parse "1-4-3-3" → { POR: 1, DEF: 4, MED: 3, DEL: 3 } */
-function parseFormation(f: string): { POR: number; DEF: number; MED: number; DEL: number } {
+const POS_COLORS: Record<string, string> = {
+  POR: "bg-amber-500/15 text-amber-400 border-amber-500/30",
+  DEF: "bg-blue-500/15 text-blue-400 border-blue-500/30",
+  MED: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+  DEL: "bg-rose-500/15 text-rose-400 border-rose-500/30",
+};
+
+function parseFormation(f: string): Record<string, number> {
   const parts = f.split("-").map(Number);
   return { POR: parts[0] ?? 1, DEF: parts[1] ?? 4, MED: parts[2] ?? 3, DEL: parts[3] ?? 3 };
 }
 
-/** Build ordered list of position slots for a formation, e.g. ["POR-1","DEF-1",...] */
-function buildSlots(formation: string): { slot: string; pos: string }[] {
-  const counts = parseFormation(formation);
-  const result: { slot: string; pos: string }[] = [];
-  const positions: Array<keyof typeof counts> = ["POR", "DEF", "MED", "DEL"];
-  for (const pos of positions) {
-    for (let i = 1; i <= counts[pos]; i++) {
-      result.push({ slot: `${pos}-${i}`, pos });
-    }
+function inferFormation(players: { position_slot: string }[]): string {
+  const counts: Record<string, number> = { POR: 0, DEF: 0, MED: 0, DEL: 0 };
+  for (const p of players) {
+    const pos = p.position_slot.split("-")[0];
+    counts[pos] = (counts[pos] ?? 0) + 1;
   }
-  return result;
+  return `${counts.POR}-${counts.DEF}-${counts.MED}-${counts.DEL}`;
 }
 
 // ---------------------------------------------------------------------------
-// Inline editor component
+// Visual editor with pitch + squad sidebar
 // ---------------------------------------------------------------------------
 
 interface EditorProps {
@@ -113,23 +122,22 @@ interface EditorProps {
 }
 
 function LineupEditor({ participant, seasonId, matchdayNumber, onSave, onCancel }: EditorProps) {
-  const [formation, setFormation] = useState<string>(
-    participant.formation ?? "1-4-3-3",
+  const [formation, setFormation] = useState<string>(participant.formation ?? "1-4-3-3");
+  const [selectedPlayers, setSelectedPlayers] = useState<
+    { player_id: number; display_name: string; position_slot: string; photo_path: string | null }[]
+  >(() =>
+    participant.players.map((p) => ({
+      player_id: p.player_id,
+      display_name: p.display_name,
+      position_slot: p.position_slot.split("-")[0],
+      photo_path: p.photo_path,
+    })),
   );
-  /** slot → player_id (string for select value, "" = empty) */
-  const [slotMap, setSlotMap] = useState<Record<string, string>>(() => {
-    const initial: Record<string, string> = {};
-    for (const p of participant.players) {
-      initial[p.position_slot] = String(p.player_id);
-    }
-    return initial;
-  });
   const [squad, setSquad] = useState<SquadPlayer[]>([]);
   const [squadLoading, setSquadLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load squad on mount
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -146,42 +154,61 @@ function LineupEditor({ participant, seasonId, matchdayNumber, onSave, onCancel 
       }
     }
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [seasonId, matchdayNumber, participant.participant_id]);
+
+  const selectedIds = useMemo(
+    () => new Set(selectedPlayers.map((p) => p.player_id)),
+    [selectedPlayers],
+  );
+
+  const formationCounts = useMemo(() => parseFormation(formation), [formation]);
+
+  // Count how many of each position are currently selected
+  const currentCounts = useMemo(() => {
+    const c: Record<string, number> = { POR: 0, DEF: 0, MED: 0, DEL: 0 };
+    for (const p of selectedPlayers) c[p.position_slot] = (c[p.position_slot] ?? 0) + 1;
+    return c;
+  }, [selectedPlayers]);
+
+  function handleRemovePlayer(playerId: number) {
+    setSelectedPlayers((prev) => prev.filter((p) => p.player_id !== playerId));
+  }
+
+  function handleAddPlayer(player: SquadPlayer) {
+    const pos = player.position;
+    const needed = formationCounts[pos] ?? 0;
+    const current = currentCounts[pos] ?? 0;
+    if (current >= needed) return; // position full
+
+    setSelectedPlayers((prev) => [
+      ...prev,
+      {
+        player_id: player.player_id,
+        display_name: player.display_name,
+        position_slot: pos,
+        photo_path: player.photo_path,
+      },
+    ]);
+  }
 
   function handleFormationChange(newFormation: string) {
     setFormation(newFormation);
-    // Reset all slots when formation changes
-    setSlotMap({});
-  }
-
-  function handleSlotChange(slot: string, playerId: string) {
-    setSlotMap((prev) => {
-      const next = { ...prev };
-      // Unassign the player from any other slot to avoid duplicates
-      if (playerId !== "") {
-        for (const s of Object.keys(next)) {
-          if (next[s] === playerId && s !== slot) {
-            next[s] = "";
-          }
-        }
-      }
-      next[slot] = playerId;
-      return next;
-    });
+    setSelectedPlayers([]);
   }
 
   async function handleSave() {
-    const slots = buildSlots(formation);
-    const players: { player_id: number; position_slot: string }[] = [];
-    for (const { slot } of slots) {
-      const pid = slotMap[slot];
-      if (!pid) {
-        setError("Debes asignar un jugador a cada posicion");
-        return;
-      }
-      players.push({ player_id: Number(pid), position_slot: slot });
+    if (selectedPlayers.length !== 11) {
+      setError("Debes seleccionar exactamente 11 jugadores");
+      return;
     }
+    // Build players with position_slot like "POR", "DEF", etc.
+    const players = selectedPlayers.map((p) => ({
+      player_id: p.player_id,
+      position_slot: p.position_slot,
+    }));
     setSaving(true);
     setError(null);
     try {
@@ -197,109 +224,138 @@ function LineupEditor({ participant, seasonId, matchdayNumber, onSave, onCancel 
     }
   }
 
-  const slots = buildSlots(formation);
-
-  // Group slots by position for display
-  const positionGroups: Record<string, { slot: string; pos: string }[]> = {};
-  for (const s of slots) {
-    if (!positionGroups[s.pos]) positionGroups[s.pos] = [];
-    positionGroups[s.pos].push(s);
-  }
-
-  // Players by position for dropdowns
-  const byPosition: Record<string, SquadPlayer[]> = {};
-  for (const p of squad) {
-    if (!byPosition[p.position]) byPosition[p.position] = [];
-    byPosition[p.position].push(p);
-  }
-
-  const positionLabels: Record<string, string> = {
-    POR: "Portero",
-    DEF: "Defensas",
-    MED: "Mediocampistas",
-    DEL: "Delanteros",
-  };
-
-  const positionOrder = ["POR", "DEF", "MED", "DEL"] as const;
+  // PitchView players
+  const pitchPlayers: PitchPlayer[] = selectedPlayers.map((p) => ({
+    player_id: p.player_id,
+    name: p.display_name,
+    photo_path: p.photo_path,
+    position_slot: p.position_slot,
+  }));
 
   if (squadLoading) {
     return (
-      <div className="mt-2 space-y-2 rounded-lg border border-vpv-border bg-vpv-bg p-4">
+      <div className="mt-3 space-y-2 rounded-lg border border-vpv-border bg-vpv-bg p-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-8 animate-pulse rounded bg-vpv-border" />
+          <div key={i} className="h-10 animate-pulse rounded bg-vpv-border" />
         ))}
       </div>
     );
   }
 
   return (
-    <div className="mt-2 rounded-lg border border-vpv-accent/40 bg-vpv-bg p-4">
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <label className="text-sm font-medium text-vpv-text">Formacion:</label>
-        <select
-          value={formation}
-          onChange={(e) => handleFormationChange(e.target.value)}
-          className="rounded border border-vpv-border bg-vpv-card px-3 py-1.5 text-sm text-vpv-text"
-        >
+    <div className="mt-3 rounded-lg border border-vpv-accent/40 bg-vpv-bg p-4">
+      {/* Formation selector */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className="text-xs font-semibold uppercase tracking-wider text-vpv-text-muted">
+          Formacion
+        </span>
+        <div className="flex gap-1">
           {VALID_FORMATIONS.map((f) => (
-            <option key={f} value={f}>
+            <button
+              key={f}
+              onClick={() => handleFormationChange(f)}
+              className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
+                formation === f
+                  ? "bg-vpv-accent text-white"
+                  : "border border-vpv-border text-vpv-text-muted hover:text-vpv-text"
+              }`}
+            >
               {f}
-            </option>
+            </button>
           ))}
-        </select>
+        </div>
+        <span className="ml-2 text-xs text-vpv-text-muted">
+          {selectedPlayers.length}/11 seleccionados
+        </span>
       </div>
 
-      <div className="space-y-4">
-        {positionOrder.map((pos) => {
-          const posSlots = positionGroups[pos];
-          if (!posSlots || posSlots.length === 0) return null;
-          const candidates = byPosition[pos] ?? [];
+      {/* Pitch + Squad side by side */}
+      <div className="flex flex-col gap-4 lg:flex-row">
+        {/* Pitch */}
+        <div className="w-full max-w-sm shrink-0">
+          <PitchView
+            formation={formation}
+            players={pitchPlayers}
+            onRemovePlayer={handleRemovePlayer}
+            className="shadow-lg"
+          />
+          <p className="mt-1 text-center text-[10px] text-vpv-text-muted">
+            Click en un jugador del campo para quitarlo
+          </p>
+        </div>
 
-          return (
-            <div key={pos}>
-              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-vpv-text-muted">
-                {positionLabels[pos]} ({posSlots.length})
-              </p>
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {posSlots.map(({ slot }) => (
-                  <div key={slot} className="flex items-center gap-2">
-                    <span className="w-14 rounded bg-vpv-border px-1.5 py-0.5 text-center text-xs text-vpv-text-muted">
-                      {slot}
-                    </span>
-                    <select
-                      value={slotMap[slot] ?? ""}
-                      onChange={(e) => handleSlotChange(slot, e.target.value)}
-                      className="flex-1 rounded border border-vpv-border bg-vpv-card px-2 py-1.5 text-sm text-vpv-text"
-                      aria-label={`Jugador para ${slot}`}
-                    >
-                      <option value="">-- Elige jugador --</option>
-                      {candidates.map((p) => (
-                        <option key={p.player_id} value={String(p.player_id)}>
-                          {p.display_name} ({p.team_name}) — {p.points_this_matchday} pts
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ))}
+        {/* Squad sidebar */}
+        <div className="flex-1 space-y-3">
+          {POSITIONS.map((pos) => {
+            const needed = formationCounts[pos] ?? 0;
+            const current = currentCounts[pos] ?? 0;
+            const isFull = current >= needed;
+            const posPlayers = squad.filter((p) => p.position === pos);
+            if (posPlayers.length === 0) return null;
+
+            return (
+              <div key={pos}>
+                <div className="mb-1 flex items-center gap-2">
+                  <span
+                    className={`rounded border px-1.5 py-0.5 text-[10px] font-bold ${POS_COLORS[pos]}`}
+                  >
+                    {pos}
+                  </span>
+                  <span className="text-[10px] text-vpv-text-muted">
+                    {current}/{needed}
+                  </span>
+                  {isFull && (
+                    <span className="text-[10px] text-green-400">Completo</span>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+                  {posPlayers.map((p) => {
+                    const isSelected = selectedIds.has(p.player_id);
+                    const canAdd = !isSelected && !isFull;
+                    return (
+                      <button
+                        key={p.player_id}
+                        onClick={() => canAdd && handleAddPlayer(p)}
+                        disabled={isSelected || isFull}
+                        className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-colors ${
+                          isSelected
+                            ? "border-vpv-accent/40 bg-vpv-accent/10 opacity-50"
+                            : canAdd
+                              ? "border-vpv-border hover:border-vpv-accent/40 hover:bg-vpv-accent/5"
+                              : "border-vpv-border/50 opacity-30"
+                        }`}
+                      >
+                        <PlayerAvatar photoPath={p.photo_path} name={p.display_name} size={28} />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-medium text-vpv-text">
+                            {p.display_name}
+                          </p>
+                          <p className="text-[10px] text-vpv-text-muted">{p.team_name}</p>
+                        </div>
+                        <span className="shrink-0 text-xs font-medium text-vpv-text-muted">
+                          {p.points_this_matchday ?? "-"} pts
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
 
       {error && (
-        <p className="mt-3 rounded bg-red-500/10 px-3 py-2 text-sm text-red-400">
-          {error}
-        </p>
+        <p className="mt-3 rounded bg-red-500/10 px-3 py-2 text-sm text-red-400">{error}</p>
       )}
 
       <div className="mt-4 flex gap-2">
         <button
           onClick={handleSave}
-          disabled={saving}
+          disabled={saving || selectedPlayers.length !== 11}
           className="rounded bg-vpv-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
         >
-          {saving ? "Guardando..." : "Guardar"}
+          {saving ? "Guardando..." : "Guardar alineacion"}
         </button>
         <button
           onClick={onCancel}
@@ -314,7 +370,7 @@ function LineupEditor({ participant, seasonId, matchdayNumber, onSave, onCancel 
 }
 
 // ---------------------------------------------------------------------------
-// Participant card
+// Participant card with mini pitch
 // ---------------------------------------------------------------------------
 
 interface CardProps {
@@ -322,7 +378,7 @@ interface CardProps {
   isEditing: boolean;
   seasonId: number;
   matchdayNumber: number;
-  onEditOpen: (id: number) => void;
+  onToggleEdit: (id: number) => void;
   onSave: (participantId: number, result: SaveResult) => void;
   onCancel: () => void;
 }
@@ -332,92 +388,84 @@ function ParticipantCard({
   isEditing,
   seasonId,
   matchdayNumber,
-  onEditOpen,
+  onToggleEdit,
   onSave,
   onCancel,
 }: CardProps) {
-  const positionOrder = ["POR", "DEF", "MED", "DEL"] as const;
-  const positionLabels: Record<string, string> = {
-    POR: "POR",
-    DEF: "DEF",
-    MED: "MED",
-    DEL: "DEL",
-  };
-
-  /** Group lineup players by position extracted from position_slot ("DEF-2" → "DEF") */
-  const byPosition: Record<string, LineupPlayer[]> = {};
-  for (const p of participant.players) {
-    const pos = p.position_slot.split("-")[0];
-    if (!byPosition[pos]) byPosition[pos] = [];
-    byPosition[pos].push(p);
-  }
-  // Sort each group by display_order
-  for (const pos of Object.keys(byPosition)) {
-    byPosition[pos].sort((a, b) => a.display_order - b.display_order);
-  }
+  const pitchPlayers: PitchPlayer[] = participant.players.map((p) => ({
+    player_id: p.player_id,
+    name: p.display_name,
+    photo_path: p.photo_path,
+    position_slot: p.position_slot.split("-")[0],
+  }));
 
   return (
     <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
-      {/* Card header */}
-      <div className="flex flex-wrap items-center gap-3 border-b border-vpv-border px-4 py-3">
-        <span className="flex-1 font-semibold text-vpv-text">
-          {participant.display_name}
-        </span>
-        {participant.has_lineup ? (
-          <>
-            {participant.formation && (
-              <span className="rounded bg-vpv-accent/20 px-2 py-0.5 text-xs font-medium text-vpv-accent">
-                {participant.formation}
+      <div className="flex items-start gap-4 px-4 py-3">
+        {/* Mini pitch */}
+        {participant.has_lineup && participant.formation && (
+          <div className="hidden w-36 shrink-0 sm:block">
+            <PitchView formation={participant.formation} players={pitchPlayers} className="rounded-lg" />
+          </div>
+        )}
+
+        {/* Info */}
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold text-vpv-text">{participant.display_name}</h3>
+            {participant.has_lineup ? (
+              <>
+                <span className="rounded bg-vpv-accent/20 px-2 py-0.5 text-xs font-medium text-vpv-accent">
+                  {participant.formation}
+                </span>
+                <span className="text-sm font-bold text-vpv-text">
+                  {participant.total_points} pts
+                </span>
+              </>
+            ) : (
+              <span className="rounded bg-yellow-500/20 px-2 py-0.5 text-xs text-yellow-400">
+                Sin alineacion
               </span>
             )}
-            <span className="rounded bg-vpv-bg px-2 py-0.5 text-xs text-vpv-text-muted">
-              {participant.total_points} pts
-            </span>
-          </>
-        ) : (
-          <span className="rounded bg-yellow-500/20 px-2 py-0.5 text-xs text-yellow-400">
-            Sin alineacion
-          </span>
-        )}
+          </div>
+
+          {/* Player names with points */}
+          {participant.has_lineup && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {participant.players
+                .sort((a, b) => a.display_order - b.display_order)
+                .map((p) => {
+                  const pos = p.position_slot.split("-")[0];
+                  return (
+                    <span
+                      key={p.player_id}
+                      className={`rounded border px-1.5 py-0.5 text-[10px] ${POS_COLORS[pos] ?? "text-vpv-text-muted border-vpv-border"}`}
+                    >
+                      {p.display_name.split(" ").pop()}{" "}
+                      <span className="font-bold">{p.points}</span>
+                    </span>
+                  );
+                })}
+            </div>
+          )}
+        </div>
+
+        {/* Edit button */}
         <button
-          onClick={() => onEditOpen(participant.participant_id)}
-          className="rounded border border-vpv-border px-3 py-1 text-xs font-medium text-vpv-text-muted transition-colors hover:border-vpv-accent hover:text-vpv-accent"
-          aria-expanded={isEditing}
+          onClick={() => onToggleEdit(participant.participant_id)}
+          className={`shrink-0 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+            isEditing
+              ? "bg-vpv-accent text-white"
+              : "border border-vpv-border text-vpv-text-muted hover:border-vpv-accent hover:text-vpv-accent"
+          }`}
         >
-          {isEditing ? "Cerrando..." : participant.has_lineup ? "Editar" : "Crear"}
+          {isEditing ? "Cerrar" : participant.has_lineup ? "Editar" : "Crear"}
         </button>
       </div>
 
-      {/* Players grouped by position */}
-      {participant.has_lineup && participant.players.length > 0 && (
-        <div className="divide-y divide-vpv-border/40 px-4 py-2">
-          {positionOrder.map((pos) => {
-            const group = byPosition[pos];
-            if (!group || group.length === 0) return null;
-            return (
-              <div key={pos} className="flex flex-wrap gap-x-4 gap-y-0.5 py-1.5">
-                <span className="w-8 shrink-0 text-xs font-semibold text-vpv-text-muted">
-                  {positionLabels[pos]}
-                </span>
-                <div className="flex flex-wrap gap-x-4 gap-y-0.5">
-                  {group.map((p) => (
-                    <span key={p.player_id} className="text-sm text-vpv-text">
-                      {p.display_name}
-                      <span className="ml-1 text-xs text-vpv-text-muted">
-                        ({p.points})
-                      </span>
-                    </span>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
       {/* Inline editor */}
       {isEditing && (
-        <div className="px-4 pb-4">
+        <div className="border-t border-vpv-border px-4 pb-4">
           <LineupEditor
             participant={participant}
             seasonId={seasonId}
@@ -438,7 +486,7 @@ function ParticipantCard({
 export default function AdminAlineacionesPage() {
   const [seasons, setSeasons] = useState<SeasonDetail[]>([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
-  const [matchdayInput, setMatchdayInput] = useState<string>("");
+  const [matchdayInput, setMatchdayInput] = useState("");
   const [searchedMatchday, setSearchedMatchday] = useState<number | null>(null);
   const [lineups, setLineups] = useState<ParticipantLineup[]>([]);
   const [loading, setLoading] = useState(true);
@@ -448,7 +496,6 @@ export default function AdminAlineacionesPage() {
 
   const selectedSeason = seasons.find((s) => s.id === selectedSeasonId) ?? null;
 
-  // Load seasons on mount
   useEffect(() => {
     async function fetchSeasons() {
       try {
@@ -460,7 +507,7 @@ export default function AdminAlineacionesPage() {
           setMatchdayInput(String(active.matchday_current));
         }
       } catch {
-        // handled by auth context
+        /* auth handles */
       } finally {
         setLoading(false);
       }
@@ -468,7 +515,6 @@ export default function AdminAlineacionesPage() {
     fetchSeasons();
   }, []);
 
-  // When season changes, reset matchday input to that season's current matchday
   useEffect(() => {
     if (selectedSeason) {
       setMatchdayInput(String(selectedSeason.matchday_current));
@@ -485,10 +531,9 @@ export default function AdminAlineacionesPage() {
       const data = await apiClient.get<LineupsResponse>(
         `/lineups/admin/${seasonId}/${matchday}/all`,
       );
-      const sorted = [...data.participants].sort((a, b) =>
-        a.display_name.localeCompare(b.display_name),
+      setLineups(
+        [...data.participants].sort((a, b) => a.display_name.localeCompare(b.display_name)),
       );
-      setLineups(sorted);
     } catch {
       setLineups([]);
     } finally {
@@ -503,17 +548,12 @@ export default function AdminAlineacionesPage() {
     fetchLineups(selectedSeasonId, n);
   }
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter") handleSearch();
-  }
-
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(null), 4000);
   }
 
   function handleSave(participantId: number, result: SaveResult) {
-    // Update lineup in state
     setLineups((prev) =>
       prev.map((p) => {
         if (p.participant_id !== participantId) return p;
@@ -534,16 +574,11 @@ export default function AdminAlineacionesPage() {
       }),
     );
     setEditingId(null);
-
     const sign = result.delta >= 0 ? "+" : "";
     showToast(
       `Puntos: ${result.old_total_points} \u2192 ${result.new_total_points} (${sign}${result.delta})`,
     );
   }
-
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
 
   if (loading) {
     return (
@@ -557,7 +592,6 @@ export default function AdminAlineacionesPage() {
 
   return (
     <div className="space-y-4">
-      {/* Toast */}
       {toast && (
         <div
           role="status"
@@ -584,7 +618,6 @@ export default function AdminAlineacionesPage() {
             ))}
           </select>
         </div>
-
         <div className="flex flex-col gap-1">
           <label className="text-xs text-vpv-text-muted">Jornada</label>
           <input
@@ -592,12 +625,10 @@ export default function AdminAlineacionesPage() {
             min={1}
             value={matchdayInput}
             onChange={(e) => setMatchdayInput(e.target.value)}
-            onKeyDown={handleKeyDown}
+            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
             className="w-24 rounded border border-vpv-border bg-vpv-bg px-3 py-1.5 text-sm text-vpv-text"
-            aria-label="Numero de jornada"
           />
         </div>
-
         <button
           onClick={handleSearch}
           disabled={!selectedSeasonId || !matchdayInput || lineupsLoading}
@@ -605,7 +636,6 @@ export default function AdminAlineacionesPage() {
         >
           {lineupsLoading ? "Cargando..." : "Buscar"}
         </button>
-
         {searchedMatchday !== null && selectedSeason && (
           <span className="text-xs text-vpv-text-muted">
             {selectedSeason.name} — J{searchedMatchday}
@@ -613,14 +643,12 @@ export default function AdminAlineacionesPage() {
         )}
       </div>
 
-      {/* Empty state before first search */}
       {searchedMatchday === null && !lineupsLoading && (
         <div className="rounded-lg border border-vpv-card-border bg-vpv-card px-4 py-10 text-center text-sm text-vpv-text-muted">
           Selecciona una temporada y jornada y pulsa Buscar
         </div>
       )}
 
-      {/* Loading skeleton */}
       {lineupsLoading && (
         <div className="space-y-3">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -629,7 +657,6 @@ export default function AdminAlineacionesPage() {
         </div>
       )}
 
-      {/* Lineup cards */}
       {!lineupsLoading && searchedMatchday !== null && (
         <div className="space-y-3">
           {lineups.length === 0 && (
@@ -637,15 +664,14 @@ export default function AdminAlineacionesPage() {
               No hay participantes para esta jornada
             </div>
           )}
-
-          {lineups.map((participant) => (
+          {lineups.map((p) => (
             <ParticipantCard
-              key={participant.participant_id}
-              participant={participant}
-              isEditing={editingId === participant.participant_id}
+              key={p.participant_id}
+              participant={p}
+              isEditing={editingId === p.participant_id}
               seasonId={selectedSeasonId!}
               matchdayNumber={searchedMatchday}
-              onEditOpen={(id) => setEditingId((prev) => (prev === id ? null : id))}
+              onToggleEdit={(id) => setEditingId((prev) => (prev === id ? null : id))}
               onSave={handleSave}
               onCancel={() => setEditingId(null)}
             />
