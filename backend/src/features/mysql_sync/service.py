@@ -74,7 +74,8 @@ class MysqlSyncService:
         # The migration used usuarios_temp.id as slot. We need the reverse.
         slot_rows = await self.pg.execute(
             text(
-                "SELECT sp.id as participant_id, sp.user_id, u.username "
+                "SELECT sp.id as participant_id, sp.user_id, "
+                "u.username, u.display_name "
                 "FROM season_participants sp "
                 "JOIN users u ON sp.user_id = u.id "
                 "WHERE sp.season_id = :sid AND sp.is_active = TRUE "
@@ -145,27 +146,39 @@ class MysqlSyncService:
                 (season_name,),
             )
             mysql_slots = cursor.fetchall()
-            # Map by username match
-            username_to_slot: dict[str, int] = {}
+            # Map by display_name match (MySQL nombre = PG display_name)
+            name_to_slot: dict[str, int] = {}
             for ms in mysql_slots:
-                username_to_slot[ms["nombre"].strip().lower()] = ms["id"]
+                name_to_slot[ms["nombre"].strip().lower()] = ms["id"]
 
             # Map participant_id → mysql slot
             part_to_slot: dict[int, int] = {}
             for p in participants:
-                # Try matching by username
-                slot = username_to_slot.get(p.username.strip().lower())
+                slot = name_to_slot.get(p.display_name.strip().lower())
                 if slot is not None:
                     part_to_slot[p.participant_id] = slot
+                else:
+                    logger.warning(
+                        "reverse_sync: no MySQL slot for '%s' (part=%d)",
+                        p.display_name,
+                        p.participant_id,
+                    )
 
             # 5. UPSERT player_stats into jornadas_temp
             stats_count = 0
             for s in stats:
-                # Determine alineado and id_user
+                # Determine alineado, id_user, and order
                 lu = lineup_map.get(s.slug)
                 alineado = 1 if lu else 0
-                id_user = part_to_slot.get(lu[0], 0) if lu else 0
                 order_ast = lu[1] if lu else 0
+
+                # id_user: from lineup if alineado, else from player owner
+                if lu:
+                    id_user = part_to_slot.get(lu[0], 0)
+                elif s.owner_id:
+                    id_user = part_to_slot.get(s.owner_id, 0)
+                else:
+                    id_user = 0
 
                 try:
                     cursor.execute(
