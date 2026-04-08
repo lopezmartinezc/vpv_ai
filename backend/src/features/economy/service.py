@@ -231,3 +231,18 @@ class EconomyService:
             created,
         )
         return created
+
+    async def regenerate_weekly_payments(
+        self,
+        season_id: int,
+        matchday_id: int,
+    ) -> int:
+        """Delete existing weekly_payment transactions and regenerate from current rankings."""
+        deleted = await self.repo.delete_weekly_payments(matchday_id)
+        if deleted:
+            logger.info(
+                "regenerate_weekly_payments: matchday_id=%d — deleted %d old payments",
+                matchday_id,
+                deleted,
+            )
+        return await self.generate_weekly_payments(season_id, matchday_id)

@@ -803,6 +803,15 @@ class LineupService:
         except Exception:
             logger.exception("Failed to re-evaluate achievements after admin edit")
 
+        # Regenerate weekly payments (rankings may have changed)
+        try:
+            from src.features.economy.service import EconomyService
+
+            eco_svc = EconomyService(self.session)
+            await eco_svc.regenerate_weekly_payments(season_id, matchday.id)
+        except Exception:
+            logger.exception("Failed to regenerate weekly payments after admin edit")
+
         # Reload lineup to get updated total
         await self.session.refresh(lineup)
         new_total = lineup.total_points or 0

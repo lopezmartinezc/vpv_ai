@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.shared.models.matchday import Matchday
@@ -203,6 +203,14 @@ class EconomyRepository:
         )
         result = await self.session.execute(stmt)
         return result.scalar_one()
+
+    async def delete_weekly_payments(self, matchday_id: int) -> int:
+        stmt = delete(Transaction).where(
+            Transaction.matchday_id == matchday_id,
+            Transaction.type == "weekly_payment",
+        )
+        result = await self.session.execute(stmt)
+        return getattr(result, "rowcount", 0) or 0
 
     async def get_matchday_rankings(self, matchday_id: int) -> list[MatchdayRankingRow]:
         stmt = (
