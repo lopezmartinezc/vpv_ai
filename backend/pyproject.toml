@@ -20,6 +20,7 @@ dependencies = [
     "apscheduler>=3.10",
     "slowapi>=0.1.9",
     "pywebpush>=2.0.0",
+    "mysql-connector-python>=9.0.0",
 ]
 
 [project.optional-dependencies]

@@ -66,6 +66,13 @@ class Settings(BaseSettings):
     )
     telegram_enabled: bool = False
 
+    # Legacy MySQL (for reverse sync PG → MySQL)
+    mysql_host: str = ""
+    mysql_port: int = 3306
+    mysql_user: str = ""
+    mysql_password: str = ""
+    mysql_database: str = "ligavpv"
+
     # Push notifications (VAPID)
     vapid_public_key: str = ""
     vapid_private_key: str = ""
