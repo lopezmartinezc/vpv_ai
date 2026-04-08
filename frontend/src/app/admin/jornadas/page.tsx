@@ -156,6 +156,26 @@ export default function AdminJornadasPage() {
     }
   }
 
+  async function handleSyncToMysql(number: number) {
+    if (!selectedSeasonId) return;
+    setActionLoading(`sync-${number}`);
+    try {
+      const data = await apiClient.post<{
+        stats_upserted: number;
+        lineups_upserted: number;
+        errors: string[];
+      }>(`/mysql-sync/admin/${selectedSeasonId}/${number}`, {});
+      const errMsg = data.errors.length > 0 ? ` (${data.errors.length} errores)` : "";
+      showMessage(
+        `J${number} sincronizada a MySQL: ${data.stats_upserted} stats, ${data.lineups_upserted} alineaciones${errMsg}`,
+      );
+    } catch {
+      showMessage("Error al sincronizar a MySQL");
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
   function showMessage(msg: string) {
     setMessage(msg);
     setTimeout(() => setMessage(null), 3000);
@@ -292,6 +312,14 @@ export default function AdminJornadasPage() {
                     }`}
                   >
                     {md.counts ? "Computa" : "No computa"}
+                  </button>
+                  <button
+                    onClick={() => handleSyncToMysql(md.number)}
+                    disabled={actionLoading === `sync-${md.number}`}
+                    className="rounded bg-vpv-accent/10 px-2 py-1 text-xs font-medium text-vpv-accent transition-colors hover:bg-vpv-accent/20 disabled:opacity-50"
+                    title="Sincronizar datos de esta jornada a MySQL (web antigua)"
+                  >
+                    {actionLoading === `sync-${md.number}` ? "Sync..." : "MySQL"}
                   </button>
                 </div>
 
