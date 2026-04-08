@@ -95,11 +95,6 @@ const POS_COLORS: Record<string, string> = {
   DEL: "bg-rose-500/15 text-rose-400 border-rose-500/30",
 };
 
-function parseFormation(f: string): Record<string, number> {
-  const parts = f.split("-").map(Number);
-  return { POR: parts[0] ?? 1, DEF: parts[1] ?? 4, MED: parts[2] ?? 3, DEL: parts[3] ?? 3 };
-}
-
 // ---------------------------------------------------------------------------
 // Visual editor with pitch + squad sidebar
 // ---------------------------------------------------------------------------
@@ -113,7 +108,6 @@ interface EditorProps {
 }
 
 function LineupEditor({ participant, seasonId, matchdayNumber, onSave, onCancel }: EditorProps) {
-  const [formation, setFormation] = useState<string>(participant.formation ?? "1-4-3-3");
   const [selectedPlayers, setSelectedPlayers] = useState<
     { player_id: number; display_name: string; position_slot: string; photo_path: string | null }[]
   >(() =>
@@ -155,8 +149,6 @@ function LineupEditor({ participant, seasonId, matchdayNumber, onSave, onCancel 
     [selectedPlayers],
   );
 
-  const formationCounts = useMemo(() => parseFormation(formation), [formation]);
-
   // Count how many of each position are currently selected
   const currentCounts = useMemo(() => {
     const c: Record<string, number> = { POR: 0, DEF: 0, MED: 0, DEL: 0 };
@@ -164,16 +156,34 @@ function LineupEditor({ participant, seasonId, matchdayNumber, onSave, onCancel 
     return c;
   }, [selectedPlayers]);
 
+  // Auto-detect formation from selected players
+  const detectedFormation = useMemo(() => {
+    const f = `${currentCounts.POR}-${currentCounts.DEF}-${currentCounts.MED}-${currentCounts.DEL}`;
+    return f;
+  }, [currentCounts]);
+
+  const isValidFormation = useMemo(
+    () => (VALID_FORMATIONS as readonly string[]).includes(detectedFormation) && selectedPlayers.length === 11,
+    [detectedFormation, selectedPlayers.length],
+  );
+
+  // Find closest valid formation for PitchView rendering
+  const pitchFormation = useMemo(() => {
+    if ((VALID_FORMATIONS as readonly string[]).includes(detectedFormation)) return detectedFormation;
+    // Fallback: use participant's original formation or first valid
+    return participant.formation ?? "1-4-3-3";
+  }, [detectedFormation, participant.formation]);
+
   function handleRemovePlayer(playerId: number) {
     setSelectedPlayers((prev) => prev.filter((p) => p.player_id !== playerId));
   }
 
   function handleAddPlayer(player: SquadPlayer) {
+    if (selectedPlayers.length >= 11) return;
     const pos = player.position;
-    const needed = formationCounts[pos] ?? 0;
-    const current = currentCounts[pos] ?? 0;
-    if (current >= needed) return; // position full
-
+    // Max 1 POR
+    if (pos === "POR" && currentCounts.POR >= 1) return;
+    // Max 10 field players total (no hard per-position limit except POR)
     setSelectedPlayers((prev) => [
       ...prev,
       {
@@ -185,17 +195,15 @@ function LineupEditor({ participant, seasonId, matchdayNumber, onSave, onCancel 
     ]);
   }
 
-  function handleFormationChange(newFormation: string) {
-    setFormation(newFormation);
-    setSelectedPlayers([]);
-  }
-
   async function handleSave() {
     if (selectedPlayers.length !== 11) {
       setError("Debes seleccionar exactamente 11 jugadores");
       return;
     }
-    // Build players with position_slot like "POR", "DEF", etc.
+    if (!isValidFormation) {
+      setError(`Formacion ${detectedFormation} no es valida. Formaciones validas: ${VALID_FORMATIONS.join(", ")}`);
+      return;
+    }
     const players = selectedPlayers.map((p) => ({
       player_id: p.player_id,
       position_slot: p.position_slot,
@@ -205,7 +213,7 @@ function LineupEditor({ participant, seasonId, matchdayNumber, onSave, onCancel 
     try {
       const result = await apiClient.put<SaveResult>(
         `/lineups/admin/${seasonId}/${matchdayNumber}/${participant.participant_id}`,
-        { formation, players },
+        { formation: detectedFormation, players },
       );
       onSave(participant.participant_id, result);
     } catch (e) {
@@ -235,29 +243,29 @@ function LineupEditor({ participant, seasonId, matchdayNumber, onSave, onCancel 
 
   return (
     <div className="mt-3 rounded-lg border border-vpv-accent/40 bg-vpv-bg p-4">
-      {/* Formation selector */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+      {/* Auto-detected formation + count */}
+      <div className="mb-3 flex flex-wrap items-center gap-3">
         <span className="text-xs font-semibold uppercase tracking-wider text-vpv-text-muted">
-          Formacion
-        </span>
-        <div className="flex gap-1">
-          {VALID_FORMATIONS.map((f) => (
-            <button
-              key={f}
-              onClick={() => handleFormationChange(f)}
-              className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
-                formation === f
-                  ? "bg-vpv-accent text-white"
-                  : "border border-vpv-border text-vpv-text-muted hover:text-vpv-text"
-              }`}
-            >
-              {f}
-            </button>
-          ))}
-        </div>
-        <span className="ml-2 text-xs text-vpv-text-muted">
           {selectedPlayers.length}/11 seleccionados
         </span>
+        <span className={`rounded px-2 py-0.5 text-xs font-bold ${
+          isValidFormation
+            ? "bg-green-500/20 text-green-400"
+            : selectedPlayers.length === 11
+              ? "bg-red-500/20 text-red-400"
+              : "bg-vpv-border text-vpv-text-muted"
+        }`}>
+          {detectedFormation}
+          {selectedPlayers.length === 11 && !isValidFormation && " (no valida)"}
+        </span>
+        {selectedPlayers.length > 0 && (
+          <button
+            onClick={() => setSelectedPlayers([])}
+            className="text-[10px] text-vpv-text-muted hover:text-red-400"
+          >
+            Limpiar todo
+          </button>
+        )}
       </div>
 
       {/* Pitch + Squad side by side */}
@@ -265,7 +273,7 @@ function LineupEditor({ participant, seasonId, matchdayNumber, onSave, onCancel 
         {/* Pitch */}
         <div className="w-full max-w-sm shrink-0">
           <PitchView
-            formation={formation}
+            formation={pitchFormation}
             players={pitchPlayers}
             onRemovePlayer={handleRemovePlayer}
             className="shadow-lg"
@@ -278,11 +286,11 @@ function LineupEditor({ participant, seasonId, matchdayNumber, onSave, onCancel 
         {/* Squad sidebar */}
         <div className="flex-1 space-y-3">
           {POSITIONS.map((pos) => {
-            const needed = formationCounts[pos] ?? 0;
             const current = currentCounts[pos] ?? 0;
-            const isFull = current >= needed;
             const posPlayers = squad.filter((p) => p.position === pos);
             if (posPlayers.length === 0) return null;
+            const atMax = selectedPlayers.length >= 11;
+            const porFull = pos === "POR" && current >= 1;
 
             return (
               <div key={pos}>
@@ -293,21 +301,18 @@ function LineupEditor({ participant, seasonId, matchdayNumber, onSave, onCancel 
                     {pos}
                   </span>
                   <span className="text-[10px] text-vpv-text-muted">
-                    {current}/{needed}
+                    {current} seleccionados
                   </span>
-                  {isFull && (
-                    <span className="text-[10px] text-green-400">Completo</span>
-                  )}
                 </div>
                 <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
                   {posPlayers.map((p) => {
                     const isSelected = selectedIds.has(p.player_id);
-                    const canAdd = !isSelected && !isFull;
+                    const canAdd = !isSelected && !atMax && !porFull;
                     return (
                       <button
                         key={p.player_id}
                         onClick={() => canAdd && handleAddPlayer(p)}
-                        disabled={isSelected || isFull}
+                        disabled={!canAdd && !isSelected}
                         className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-colors ${
                           isSelected
                             ? "border-vpv-accent/40 bg-vpv-accent/10 opacity-50"
