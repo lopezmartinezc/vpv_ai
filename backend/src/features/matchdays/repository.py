@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import and_, func, select, true
+from sqlalchemy import and_, case, func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -245,12 +245,36 @@ class MatchdayRepository:
         Uses lineup total_points (sum of lineup_players.points) so partial
         scraping results are reflected immediately.
         """
+        # Count pending players (same subquery as get_scores)
+        pending_sub = (
+            select(
+                Lineup.participant_id,
+                func.count(LineupPlayer.id).label("pending"),
+            )
+            .join(LineupPlayer, LineupPlayer.lineup_id == Lineup.id)
+            .join(Player, Player.id == LineupPlayer.player_id)
+            .join(
+                Match,
+                and_(
+                    Match.matchday_id == matchday_id,
+                    Match.counts.is_(True),
+                    Match.stats_ok.is_(False),
+                    (Player.team_id == Match.home_team_id)
+                    | (Player.team_id == Match.away_team_id),
+                ),
+            )
+            .where(Lineup.matchday_id == matchday_id)
+            .group_by(Lineup.participant_id)
+            .subquery()
+        )
+
         stmt = (
             select(
                 SeasonParticipant.id.label("participant_id"),
                 User.display_name,
                 Lineup.formation,
                 Lineup.total_points,
+                func.coalesce(pending_sub.c.pending, 0).label("pending_players"),
             )
             .join(User, SeasonParticipant.user_id == User.id)
             .join(
@@ -259,6 +283,10 @@ class MatchdayRepository:
                     Lineup.participant_id == SeasonParticipant.id,
                     Lineup.matchday_id == matchday_id,
                 ),
+            )
+            .outerjoin(
+                pending_sub,
+                pending_sub.c.participant_id == SeasonParticipant.id,
             )
             .order_by(Lineup.total_points.desc(), User.display_name.asc())
         )
@@ -270,7 +298,7 @@ class MatchdayRepository:
                 display_name=row.display_name,
                 total_points=row.total_points or 0,
                 formation=row.formation,
-                pending_players=0,
+                pending_players=row.pending_players,
             )
             for i, row in enumerate(result.all())
         ]
@@ -332,7 +360,16 @@ class MatchdayRepository:
                 ),
             )
             .where(LineupPlayer.lineup_id == lineup_id)
-            .order_by(LineupPlayer.display_order.asc())
+            .order_by(
+                case(
+                    (LineupPlayer.position_slot.startswith("POR"), 1),
+                    (LineupPlayer.position_slot.startswith("DEF"), 2),
+                    (LineupPlayer.position_slot.startswith("MED"), 3),
+                    (LineupPlayer.position_slot.startswith("DEL"), 4),
+                    else_=5,
+                ),
+                Player.display_name.asc(),
+            )
         )
         result = await self.session.execute(stmt)
         return [
