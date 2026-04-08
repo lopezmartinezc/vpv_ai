@@ -100,15 +100,6 @@ function parseFormation(f: string): Record<string, number> {
   return { POR: parts[0] ?? 1, DEF: parts[1] ?? 4, MED: parts[2] ?? 3, DEL: parts[3] ?? 3 };
 }
 
-function inferFormation(players: { position_slot: string }[]): string {
-  const counts: Record<string, number> = { POR: 0, DEF: 0, MED: 0, DEL: 0 };
-  for (const p of players) {
-    const pos = p.position_slot.split("-")[0];
-    counts[pos] = (counts[pos] ?? 0) + 1;
-  }
-  return `${counts.POR}-${counts.DEF}-${counts.MED}-${counts.DEL}`;
-}
-
 // ---------------------------------------------------------------------------
 // Visual editor with pitch + squad sidebar
 // ---------------------------------------------------------------------------
