@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,7 +32,7 @@ class MysqlSyncService:
     def __init__(self, pg_session: AsyncSession) -> None:
         self.pg = pg_session
 
-    def _get_mysql_conn(self):  # type: ignore[no-untyped-def]
+    def _get_mysql_conn(self) -> Any:
         """Create a synchronous MySQL connection (short-lived)."""
         import mysql.connector
 
