@@ -95,6 +95,7 @@ def create_app() -> FastAPI:
     from src.features.health.router import router as health_router
     from src.features.lineups.router import router as lineups_router
     from src.features.matchdays.router import router as matchdays_router
+    from src.features.mysql_sync.router import router as mysql_sync_router
     from src.features.notifications.router import router as notifications_router
     from src.features.palmares.router import router as palmares_router
     from src.features.players.router import router as players_router
@@ -103,7 +104,6 @@ def create_app() -> FastAPI:
     from src.features.squads.router import router as squads_router
     from src.features.standings.router import router as standings_router
     from src.features.stats.router import router as stats_router
-    from src.features.mysql_sync.router import router as mysql_sync_router
     from src.features.telegram.router import router as telegram_router
 
     app.include_router(achievements_router, prefix="/api")
