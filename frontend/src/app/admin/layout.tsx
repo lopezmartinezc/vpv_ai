@@ -23,6 +23,7 @@ const ROUTE_PERM: Record<string, number | null> = {
   "/plantillas": null,
   "/drafts/gestionar": PERM.DRAFT,
   "/admin/participantes": PERM.PARTICIPANTS,
+  "/admin/alineaciones": PERM.LINEUPS_ADMIN,
 };
 
 const ADMIN_NAV = [
@@ -31,6 +32,7 @@ const ADMIN_NAV = [
     items: [
       { href: "/admin/temporadas", label: "Temporadas" },
       { href: "/admin/jornadas", label: "Jornadas" },
+      { href: "/admin/alineaciones", label: "Alineaciones" },
       { href: "/admin/jugadores", label: "Jugadores" },
       { href: "/admin/estadisticas", label: "Estadisticas" },
     ],

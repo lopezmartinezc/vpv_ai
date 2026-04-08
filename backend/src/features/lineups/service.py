@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import BusinessRuleError, NotFoundError
@@ -13,6 +14,13 @@ from src.features.lineups.schemas import (
     AccuracyRankingEntry,
     AccuracyRankingResponse,
     AccuracyResponse,
+    AdminLineupEditPlayerEntry,
+    AdminLineupEditResponse,
+    AdminLineupPlayerEntry,
+    AdminMatchdayLineupsResponse,
+    AdminParticipantLineup,
+    AdminSquadPlayer,
+    AdminSquadResponse,
     DeadlineStatusResponse,
     FormMatch,
     LineupHistoryEntry,
@@ -28,6 +36,7 @@ from src.features.lineups.schemas import (
     PlayerRecentForm,
     SquadPlayerForLineup,
 )
+from src.shared.models.participant import SeasonParticipant
 
 logger = logging.getLogger(__name__)
 
@@ -662,3 +671,176 @@ class LineupService:
             await notifier.send_lineup_image(lineup_id)
         except Exception:
             logger.exception("Failed to send Telegram notification for lineup=%d", lineup_id)
+
+    # ------------------------------------------------------------------
+    # Admin lineup editing
+    # ------------------------------------------------------------------
+
+    async def get_admin_matchday_lineups(
+        self, season_id: int, matchday_number: int
+    ) -> AdminMatchdayLineupsResponse:
+        """Get all participant lineups for a matchday (admin view)."""
+        matchday = await self.repo.get_matchday(season_id, matchday_number)
+        if matchday is None:
+            raise NotFoundError("Jornada", matchday_number)
+
+        raw = await self.repo.get_all_lineups_for_matchday(season_id, matchday.id)
+        participants = [
+            AdminParticipantLineup(
+                participant_id=r["participant_id"],
+                display_name=r["display_name"],
+                has_lineup=r["has_lineup"],
+                formation=r["formation"],
+                total_points=r["total_points"] or 0,
+                confirmed_at=r["confirmed_at"],
+                players=[
+                    AdminLineupPlayerEntry(
+                        player_id=p["player_id"],
+                        display_name=p["display_name"],
+                        position_slot=p["position_slot"],
+                        display_order=p["display_order"],
+                        points=p["points"],
+                        photo_path=p["photo_path"],
+                    )
+                    for p in r["players"]
+                ],
+            )
+            for r in raw
+        ]
+        return AdminMatchdayLineupsResponse(
+            season_id=season_id,
+            matchday_number=matchday_number,
+            participants=participants,
+        )
+
+    async def get_admin_squad(
+        self, season_id: int, matchday_number: int, participant_id: int
+    ) -> AdminSquadResponse:
+        """Get participant squad with points for a specific matchday."""
+        from src.shared.models.user import User
+
+        matchday = await self.repo.get_matchday(season_id, matchday_number)
+        if matchday is None:
+            raise NotFoundError("Jornada", matchday_number)
+
+        # Get participant display name
+        part = await self.session.get(SeasonParticipant, participant_id)
+        if part is None:
+            raise NotFoundError("Participante", participant_id)
+        user = await self.session.get(User, part.user_id)
+        display_name = user.display_name if user else "?"
+
+        raw = await self.repo.get_squad_for_matchday(season_id, participant_id, matchday.id)
+        squad = [
+            AdminSquadPlayer(
+                player_id=r["player_id"],
+                display_name=r["display_name"],
+                position=r["position"],
+                team_name=r["team_name"],
+                photo_path=r["photo_path"],
+                points_this_matchday=r["points_this_matchday"],
+            )
+            for r in raw
+        ]
+        return AdminSquadResponse(
+            participant_id=participant_id,
+            display_name=display_name,
+            squad=squad,
+        )
+
+    async def admin_edit_lineup(
+        self,
+        season_id: int,
+        matchday_number: int,
+        participant_id: int,
+        data: LineupSubmitRequest,
+    ) -> AdminLineupEditResponse:
+        """Admin edit: update lineup and recalculate everything."""
+        matchday = await self.repo.get_matchday(season_id, matchday_number)
+        if matchday is None:
+            raise NotFoundError("Jornada", matchday_number)
+
+        # Validate formation
+        vf = await self.repo.get_valid_formation(data.formation)
+        if vf is None:
+            raise BusinessRuleError(f"Formacion invalida: {data.formation}")
+
+        # Validate positions match formation
+        self._validate_positions(data.players, vf)
+
+        # Validate no duplicates
+        self._validate_no_duplicates(data.players)
+
+        # Get old total points
+        old_lineup = await self.repo.get_lineup(participant_id, matchday.id)
+        old_total = old_lineup.total_points if old_lineup else 0
+
+        # Upsert lineup
+        players_dicts = [
+            {"player_id": p.player_id, "position_slot": p.position_slot} for p in data.players
+        ]
+        lineup = await self.repo.upsert_lineup(
+            participant_id=participant_id,
+            matchday_id=matchday.id,
+            formation=data.formation,
+            players=players_dicts,
+        )
+        await self.session.flush()
+
+        # Recalculate everything
+        from src.features.scraping.aggregation import ScoreAggregator
+
+        aggregator = ScoreAggregator(self.session)
+        await aggregator.aggregate_matchday(matchday.id)
+        await self.session.flush()
+
+        # Re-evaluate achievements
+        try:
+            from src.features.achievements.service import AchievementService
+
+            ach_svc = AchievementService(self.session)
+            await ach_svc.evaluate_matchday(season_id, matchday_number)
+        except Exception:
+            logger.exception("Failed to re-evaluate achievements after admin edit")
+
+        # Reload lineup to get updated total
+        await self.session.refresh(lineup)
+        new_total = lineup.total_points or 0
+
+        # Get updated players with points
+        players_raw = await self.repo.get_lineup_players_response(lineup.id)
+        # Enrich with points from lineup_players
+        from src.shared.models.lineup import LineupPlayer as LPModel
+
+        lp_stmt = select(LPModel.player_id, LPModel.points).where(LPModel.lineup_id == lineup.id)
+        lp_result = await self.session.execute(lp_stmt)
+        pts_map = {r.player_id: r.points or 0 for r in lp_result.all()}
+
+        players_response = [
+            AdminLineupEditPlayerEntry(
+                player_id=p["player_id"],
+                display_name=p["player_name"],
+                position_slot=p["position_slot"],
+                points=pts_map.get(p["player_id"], 0),
+            )
+            for p in players_raw
+        ]
+
+        logger.info(
+            "Admin lineup edit: lineup=%d participant=%d matchday=%d old=%d new=%d",
+            lineup.id,
+            participant_id,
+            matchday_number,
+            old_total,
+            new_total,
+        )
+
+        return AdminLineupEditResponse(
+            lineup_id=lineup.id,
+            formation=data.formation,
+            old_total_points=old_total or 0,
+            new_total_points=new_total,
+            delta=new_total - (old_total or 0),
+            players=players_response,
+            rankings_updated=True,
+        )

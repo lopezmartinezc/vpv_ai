@@ -38,6 +38,7 @@ const ROUTE_PERM: Record<string, number | null> = {
   "/admin/invitaciones": null,
   "/admin/economia": PERM.ECONOMY,
   "/admin/participantes": PERM.PARTICIPANTS,
+  "/admin/alineaciones": PERM.LINEUPS_ADMIN,
   "/admin/scraping": PERM.SCRAPING,
   "/admin/logros": PERM.ACHIEVEMENTS,
   "/admin/predicciones": PERM.STATS,
@@ -51,6 +52,7 @@ const ADMIN_SECTIONS = [
     items: [
       { href: "/admin/temporadas", label: "Temporadas" },
       { href: "/admin/jornadas", label: "Jornadas" },
+      { href: "/admin/alineaciones", label: "Alineaciones" },
       { href: "/admin/jugadores", label: "Jugadores" },
       { href: "/admin/estadisticas", label: "Estadisticas" },
     ],

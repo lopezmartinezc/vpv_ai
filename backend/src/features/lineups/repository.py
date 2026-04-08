@@ -643,3 +643,125 @@ class LineupRepository:
         stmt = select(ValidFormation)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    # ------------------------------------------------------------------
+    # Admin lineup editing
+    # ------------------------------------------------------------------
+
+    async def get_all_lineups_for_matchday(self, season_id: int, matchday_id: int) -> list[dict]:
+        """Get all participant lineups for a matchday (admin view)."""
+        from src.shared.models.user import User
+
+        # All active participants
+        part_stmt = (
+            select(
+                SeasonParticipant.id.label("participant_id"),
+                User.display_name,
+            )
+            .join(User, SeasonParticipant.user_id == User.id)
+            .where(
+                SeasonParticipant.season_id == season_id,
+                SeasonParticipant.is_active.is_(True),
+            )
+            .order_by(User.display_name)
+        )
+        part_result = await self.session.execute(part_stmt)
+        participants = part_result.all()
+
+        # Lineups for this matchday
+        lineup_stmt = select(Lineup).where(Lineup.matchday_id == matchday_id)
+        lineup_result = await self.session.execute(lineup_stmt)
+        lineups_by_part: dict[int, Lineup] = {
+            lu.participant_id: lu for lu in lineup_result.scalars().all()
+        }
+
+        # All lineup players in one query
+        lineup_ids = [lu.id for lu in lineups_by_part.values()]
+        players_by_lineup: dict[int, list[dict]] = {}
+        if lineup_ids:
+            lp_stmt = (
+                select(
+                    LineupPlayer.lineup_id,
+                    LineupPlayer.player_id,
+                    Player.display_name.label("display_name"),
+                    LineupPlayer.position_slot,
+                    LineupPlayer.display_order,
+                    LineupPlayer.points,
+                    Player.photo_path,
+                )
+                .join(Player, LineupPlayer.player_id == Player.id)
+                .where(LineupPlayer.lineup_id.in_(lineup_ids))
+                .order_by(LineupPlayer.lineup_id, LineupPlayer.display_order)
+            )
+            lp_result = await self.session.execute(lp_stmt)
+            for r in lp_result.all():
+                players_by_lineup.setdefault(r.lineup_id, []).append(
+                    {
+                        "player_id": r.player_id,
+                        "display_name": r.display_name,
+                        "position_slot": r.position_slot,
+                        "display_order": r.display_order,
+                        "points": r.points or 0,
+                        "photo_path": r.photo_path,
+                    }
+                )
+
+        result_list = []
+        for p in participants:
+            lu = lineups_by_part.get(p.participant_id)
+            result_list.append(
+                {
+                    "participant_id": p.participant_id,
+                    "display_name": p.display_name,
+                    "has_lineup": lu is not None,
+                    "formation": lu.formation if lu else None,
+                    "total_points": lu.total_points if lu else 0,
+                    "confirmed_at": lu.confirmed_at if lu else None,
+                    "players": players_by_lineup.get(lu.id, []) if lu else [],
+                }
+            )
+        return result_list
+
+    async def get_squad_for_matchday(
+        self, season_id: int, participant_id: int, matchday_id: int
+    ) -> list[dict]:
+        """Get participant squad with points for a specific matchday."""
+        pos_order = case(
+            (Player.position == "POR", 1),
+            (Player.position == "DEF", 2),
+            (Player.position == "MED", 3),
+            (Player.position == "DEL", 4),
+            else_=5,
+        )
+
+        # Points from player_stats for this matchday (respecting match.counts)
+        pts_sub = (
+            select(func.coalesce(PlayerStat.pts_total, 0))
+            .outerjoin(Match, PlayerStat.match_id == Match.id)
+            .where(
+                PlayerStat.player_id == Player.id,
+                PlayerStat.matchday_id == matchday_id,
+                func.coalesce(Match.counts, literal(True)).is_(True),
+            )
+            .correlate(Player)
+            .scalar_subquery()
+        )
+
+        stmt = (
+            select(
+                Player.id.label("player_id"),
+                Player.display_name,
+                Player.position,
+                Team.name.label("team_name"),
+                Player.photo_path,
+                pts_sub.label("points_this_matchday"),
+            )
+            .join(Team, Player.team_id == Team.id)
+            .where(
+                Player.season_id == season_id,
+                Player.owner_id == participant_id,
+            )
+            .order_by(pos_order.asc(), Player.display_name)
+        )
+        result = await self.session.execute(stmt)
+        return [dict(r._mapping) for r in result.all()]

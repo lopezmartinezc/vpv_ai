@@ -6,6 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.features.lineups.schemas import (
     AccuracyRankingResponse,
     AccuracyResponse,
+    AdminLineupEditResponse,
+    AdminMatchdayLineupsResponse,
+    AdminSquadResponse,
     DeadlineStatusResponse,
     LineupHistoryResponse,
     LineupSubmitRequest,
@@ -133,3 +136,48 @@ async def apply_deadline_lineups(
 ) -> dict:
     """Copy previous lineup for participants who missed the deadline."""
     return await service.apply_deadline_lineups(season_id, matchday_number)
+
+
+@router.get(
+    "/admin/{season_id}/{matchday_number}/all",
+    response_model=AdminMatchdayLineupsResponse,
+)
+async def get_admin_matchday_lineups(
+    season_id: int,
+    matchday_number: int,
+    _admin: dict = Depends(require_perm(Perm.LINEUPS_ADMIN)),
+    service: LineupService = Depends(_get_service),
+) -> AdminMatchdayLineupsResponse:
+    """Get all participant lineups for a matchday (admin view)."""
+    return await service.get_admin_matchday_lineups(season_id, matchday_number)
+
+
+@router.get(
+    "/admin/{season_id}/{matchday_number}/{participant_id}/squad",
+    response_model=AdminSquadResponse,
+)
+async def get_admin_squad(
+    season_id: int,
+    matchday_number: int,
+    participant_id: int,
+    _admin: dict = Depends(require_perm(Perm.LINEUPS_ADMIN)),
+    service: LineupService = Depends(_get_service),
+) -> AdminSquadResponse:
+    """Get participant squad with matchday-specific points."""
+    return await service.get_admin_squad(season_id, matchday_number, participant_id)
+
+
+@router.put(
+    "/admin/{season_id}/{matchday_number}/{participant_id}",
+    response_model=AdminLineupEditResponse,
+)
+async def admin_edit_lineup(
+    season_id: int,
+    matchday_number: int,
+    participant_id: int,
+    data: LineupSubmitRequest,
+    _admin: dict = Depends(require_perm(Perm.LINEUPS_ADMIN)),
+    service: LineupService = Depends(_get_service),
+) -> AdminLineupEditResponse:
+    """Admin: edit a participant's lineup and recalculate scores."""
+    return await service.admin_edit_lineup(season_id, matchday_number, participant_id, data)

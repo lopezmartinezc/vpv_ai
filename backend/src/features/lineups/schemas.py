@@ -182,3 +182,65 @@ class AccuracyRankingResponse(BaseModel):
     matchday_number: int | None = None
     entries: list[AccuracyRankingEntry]
     matchday_entries: list[AccuracyMatchdayRankingEntry] | None = None
+
+
+# ---------------------------------------------------------------------------
+# Admin lineup editing
+# ---------------------------------------------------------------------------
+
+
+class AdminLineupPlayerEntry(BaseModel):
+    player_id: int
+    display_name: str
+    position_slot: str
+    display_order: int
+    points: int
+    photo_path: str | None = None
+
+
+class AdminParticipantLineup(BaseModel):
+    participant_id: int
+    display_name: str
+    has_lineup: bool
+    formation: str | None = None
+    total_points: int = 0
+    confirmed_at: datetime | None = None
+    players: list[AdminLineupPlayerEntry]
+
+
+class AdminMatchdayLineupsResponse(BaseModel):
+    season_id: int
+    matchday_number: int
+    participants: list[AdminParticipantLineup]
+
+
+class AdminSquadPlayer(BaseModel):
+    player_id: int
+    display_name: str
+    position: str
+    team_name: str
+    photo_path: str | None = None
+    points_this_matchday: int | None = None
+
+
+class AdminSquadResponse(BaseModel):
+    participant_id: int
+    display_name: str
+    squad: list[AdminSquadPlayer]
+
+
+class AdminLineupEditPlayerEntry(BaseModel):
+    player_id: int
+    display_name: str
+    position_slot: str
+    points: int
+
+
+class AdminLineupEditResponse(BaseModel):
+    lineup_id: int
+    formation: str
+    old_total_points: int
+    new_total_points: int
+    delta: int
+    players: list[AdminLineupEditPlayerEntry]
+    rankings_updated: bool
