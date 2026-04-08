@@ -171,8 +171,7 @@ class MysqlSyncService:
                 (season_name, matchday_number),
             )
             existing_orders: dict[str, int] = {
-                row["nom_url"]: row["order_astudillo"] or 0
-                for row in cursor.fetchall()
+                row["nom_url"]: row["order_astudillo"] or 0 for row in cursor.fetchall()
             }
 
             # If no existing data, get orders from the nearest previous matchday
@@ -183,8 +182,7 @@ class MysqlSyncService:
                     (season_name, matchday_number - 1),
                 )
                 existing_orders = {
-                    row["nom_url"]: row["order_astudillo"] or 0
-                    for row in cursor.fetchall()
+                    row["nom_url"]: row["order_astudillo"] or 0 for row in cursor.fetchall()
                 }
 
             # 6. UPSERT player_stats into jornadas_temp
