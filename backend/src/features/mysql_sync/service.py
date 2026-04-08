@@ -164,13 +164,36 @@ class MysqlSyncService:
                         p.participant_id,
                     )
 
-            # 5. UPSERT player_stats into jornadas_temp
+            # 5. Read existing order_astudillo from MySQL (preserve on update)
+            cursor.execute(
+                "SELECT nom_url, order_astudillo FROM jornadas_temp "
+                "WHERE temporada = %s AND jornada = %s",
+                (season_name, matchday_number),
+            )
+            existing_orders: dict[str, int] = {
+                row["nom_url"]: row["order_astudillo"] or 0
+                for row in cursor.fetchall()
+            }
+
+            # If no existing data, get orders from the nearest previous matchday
+            if not existing_orders and matchday_number > 1:
+                cursor.execute(
+                    "SELECT nom_url, order_astudillo FROM jornadas_temp "
+                    "WHERE temporada = %s AND jornada = %s",
+                    (season_name, matchday_number - 1),
+                )
+                existing_orders = {
+                    row["nom_url"]: row["order_astudillo"] or 0
+                    for row in cursor.fetchall()
+                }
+
+            # 6. UPSERT player_stats into jornadas_temp
             stats_count = 0
             for s in stats:
                 # Determine alineado, id_user, and order
                 lu = lineup_map.get(s.slug)
                 alineado = 1 if lu else 0
-                order_ast = lu[1] if lu else 0
+                order_ast = existing_orders.get(s.slug, 0)
 
                 # id_user: from lineup if alineado, else from player owner
                 if lu:
@@ -214,7 +237,7 @@ class MysqlSyncService:
                         )
                         ON DUPLICATE KEY UPDATE
                             equipo=VALUES(equipo), pos=VALUES(pos), nom_hum=VALUES(nom_hum),
-                            id_user=VALUES(id_user), order_astudillo=VALUES(order_astudillo),
+                            id_user=VALUES(id_user),
                             alineado=VALUES(alineado), estadistica=VALUES(estadistica),
                             play=VALUES(play), res_l=VALUES(res_l), res_v=VALUES(res_v),
                             res=VALUES(res), gol_f=VALUES(gol_f), gol_c=VALUES(gol_c),
