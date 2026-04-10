@@ -176,12 +176,27 @@ class ScrapingService:
                             isinstance(cause, _httpx.HTTPStatusError)
                             and cause.response.status_code == 404
                         )
+                        is_server_error = (
+                            isinstance(cause, _httpx.HTTPStatusError)
+                            and cause.response.status_code >= 500
+                        )
                         if is_not_found:
                             logger.info(
                                 "scrape_matchday: player slug=%s not found (404), skipping",
                                 player.slug,
                             )
                             total_skipped += 1
+                            continue
+                        if is_server_error:
+                            # 5xx = remote server issue — treat as skip, don't block stats_ok
+                            logger.warning(
+                                "scrape_matchday: server error for player slug=%s: %s",
+                                player.slug,
+                                exc,
+                            )
+                            total_skipped += 1
+                            team = team_names.get(player.team_id, "?")
+                            error_details.append(self._format_scrape_error(player.name, team, exc))
                             continue
                         logger.warning(
                             "scrape_matchday: fetch failed for player slug=%s: %s",
@@ -397,9 +412,21 @@ class ScrapingService:
                             isinstance(cause, httpx.HTTPStatusError)
                             and cause.response.status_code == 404
                         )
+                        is_server_error = (
+                            isinstance(cause, httpx.HTTPStatusError)
+                            and cause.response.status_code >= 500
+                        )
                         if is_not_found:
                             total_skipped += 1
                             await _wlog(player.id, "skip", f"{player.name} ({team}): 404")
+                            continue
+                        if is_server_error:
+                            # 5xx = remote server issue, not our fault.
+                            # Treat as skip so it doesn't block stats_ok.
+                            total_skipped += 1
+                            err_msg = f"{player.name} ({team}): {cause}"
+                            error_details.append(err_msg)
+                            await _wlog(player.id, "error", err_msg)
                             continue
                         total_errors += 1
                         err_msg = f"{player.name} ({team}): {cause}"
