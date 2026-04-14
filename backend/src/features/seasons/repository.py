@@ -205,7 +205,7 @@ class SeasonRepository(BaseRepository[Season]):
                 description=description,
             )
             .on_conflict_do_update(
-                constraint="uq_season_payment",
+                index_elements=["season_id", "payment_type", "position_rank"],
                 set_={"amount": amount, "description": description},
             )
             .returning(SeasonPayment.__table__.c.id)
