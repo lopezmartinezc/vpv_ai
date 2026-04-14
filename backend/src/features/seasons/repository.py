@@ -211,8 +211,8 @@ class SeasonRepository(BaseRepository[Season]):
         payment = result.scalar_one_or_none()
 
         if payment is not None:
-            payment.amount = amount  # type: ignore[assignment]
-            payment.description = description  # type: ignore[assignment]
+            payment.amount = amount
+            payment.description = description
         else:
             payment = SeasonPayment(
                 season_id=season_id,
