@@ -193,28 +193,37 @@ class SeasonRepository(BaseRepository[Season]):
         amount: object,
         description: str | None,
     ) -> SeasonPayment:
-        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        # Manual upsert: ON CONFLICT doesn't work with NULL position_rank
+        if position_rank is None:
+            where = and_(
+                SeasonPayment.season_id == season_id,
+                SeasonPayment.payment_type == payment_type,
+                SeasonPayment.position_rank.is_(None),
+            )
+        else:
+            where = and_(
+                SeasonPayment.season_id == season_id,
+                SeasonPayment.payment_type == payment_type,
+                SeasonPayment.position_rank == position_rank,
+            )
 
-        stmt = (
-            pg_insert(SeasonPayment)
-            .values(
+        result = await self.session.execute(select(SeasonPayment).where(where))
+        payment = result.scalar_one_or_none()
+
+        if payment is not None:
+            payment.amount = amount  # type: ignore[assignment]
+            payment.description = description  # type: ignore[assignment]
+        else:
+            payment = SeasonPayment(
                 season_id=season_id,
                 payment_type=payment_type,
                 position_rank=position_rank,
                 amount=amount,
                 description=description,
             )
-            .on_conflict_do_update(
-                index_elements=["season_id", "payment_type", "position_rank"],
-                set_={"amount": amount, "description": description},
-            )
-            .returning(SeasonPayment.__table__.c.id)
-        )
+            self.session.add(payment)
+            await self.session.flush()
 
-        result = await self.session.execute(stmt)
-        payment_id = result.scalar_one()
-        payment = await self.session.get(SeasonPayment, payment_id)
-        assert payment is not None
         return payment
 
     async def update_scoring_rule(self, rule_id: int, value: object) -> ScoringRule | None:
