@@ -208,11 +208,14 @@ class SeasonRepository(BaseRepository[Season]):
                 constraint="uq_season_payment",
                 set_={"amount": amount, "description": description},
             )
-            .returning(SeasonPayment)
+            .returning(SeasonPayment.__table__.c.id)
         )
 
         result = await self.session.execute(stmt)
-        return result.scalar_one()
+        payment_id = result.scalar_one()
+        payment = await self.session.get(SeasonPayment, payment_id)
+        assert payment is not None
+        return payment
 
     async def update_scoring_rule(self, rule_id: int, value: object) -> ScoringRule | None:
         rule = await self.session.get(ScoringRule, rule_id)
