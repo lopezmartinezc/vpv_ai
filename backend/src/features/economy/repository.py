@@ -223,7 +223,7 @@ class EconomyRepository:
             )
             tx = existing.scalar_one_or_none()
             if tx is not None:
-                tx.amount = amount  # type: ignore[assignment]
+                tx.amount = amount
             else:
                 self.session.add(
                     Transaction(
@@ -276,8 +276,8 @@ class EconomyRepository:
             )
             tx = existing.scalar_one_or_none()
             if tx is not None:
-                tx.amount = total_fee  # type: ignore[assignment]
-                tx.description = f"{num_changes} cambio(s) x {cost_per_change}"  # type: ignore[assignment]
+                tx.amount = total_fee
+                tx.description = f"{num_changes} cambio(s) x {cost_per_change}"
             else:
                 self.session.add(
                     Transaction(
