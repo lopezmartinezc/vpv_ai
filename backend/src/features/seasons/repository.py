@@ -185,6 +185,35 @@ class SeasonRepository(BaseRepository[Season]):
         payment.amount = amount  # type: ignore[assignment]
         return payment
 
+    async def upsert_payment(
+        self,
+        season_id: int,
+        payment_type: str,
+        position_rank: int | None,
+        amount: object,
+        description: str | None,
+    ) -> SeasonPayment:
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        stmt = (
+            pg_insert(SeasonPayment)
+            .values(
+                season_id=season_id,
+                payment_type=payment_type,
+                position_rank=position_rank,
+                amount=amount,
+                description=description,
+            )
+            .on_conflict_do_update(
+                constraint="uq_season_payment",
+                set_={"amount": amount, "description": description},
+            )
+            .returning(SeasonPayment)
+        )
+
+        result = await self.session.execute(stmt)
+        return result.scalar_one()
+
     async def update_scoring_rule(self, rule_id: int, value: object) -> ScoringRule | None:
         rule = await self.session.get(ScoringRule, rule_id)
         if rule is None:

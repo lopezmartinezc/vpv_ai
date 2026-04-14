@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.features.seasons.schemas import (
     GroupAssignRequest,
     PaymentsBatchUpdate,
+    PaymentUpsertRequest,
     PhotoDownloadResponse,
     ScoringRuleResponse,
     ScoringRulesBatchUpdate,
@@ -165,6 +166,21 @@ async def update_payments(
 ) -> list[SeasonPaymentResponse]:
     updates = [(p.id, p.amount) for p in body.payments]
     return await service.update_payments(season_id, updates)
+
+
+@router.post(
+    "/admin/{season_id}/payments",
+    response_model=SeasonPaymentResponse,
+)
+async def upsert_payment(
+    season_id: int,
+    body: PaymentUpsertRequest,
+    service: SeasonService = Depends(_get_service),
+    _admin: dict = Depends(get_current_admin),
+) -> SeasonPaymentResponse:
+    return await service.upsert_payment(
+        season_id, body.payment_type, body.position_rank, body.amount, body.description,
+    )
 
 
 @router.put(

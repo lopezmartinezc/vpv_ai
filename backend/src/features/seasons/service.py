@@ -126,6 +126,24 @@ class SeasonService:
         payments = await self.repo.get_payments(season_id)
         return [SeasonPaymentResponse.model_validate(p) for p in payments]
 
+    async def upsert_payment(
+        self,
+        season_id: int,
+        payment_type: str,
+        position_rank: int | None,
+        amount: Decimal,
+        description: str | None,
+    ) -> SeasonPaymentResponse:
+        await self.get_season(season_id)
+        valid_types = {"initial_fee", "weekly_position", "winter_draft_change", "prize"}
+        if payment_type not in valid_types:
+            raise BusinessRuleError(f"Tipo de pago invalido: {payment_type}")
+        payment = await self.repo.upsert_payment(
+            season_id, payment_type, position_rank, amount, description,
+        )
+        await self.repo.session.commit()
+        return SeasonPaymentResponse.model_validate(payment)
+
     async def update_scoring_rules(
         self,
         season_id: int,

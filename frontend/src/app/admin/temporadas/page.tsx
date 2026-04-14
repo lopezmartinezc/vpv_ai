@@ -94,6 +94,11 @@ export default function AdminTemporadasPage() {
   const [newCopyFrom, setNewCopyFrom] = useState<number | "">("");
   const [creatingSeason, setCreatingSeason] = useState(false);
 
+  // Fee fields
+  const [editInitialFee, setEditInitialFee] = useState("");
+  const [editWinterDraft, setEditWinterDraft] = useState("");
+  const [savingFees, setSavingFees] = useState(false);
+
   // Action states
   const [downloadingPhotos, setDownloadingPhotos] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
@@ -125,6 +130,13 @@ export default function AdminTemporadasPage() {
       setPayments(seasonPayments);
       setEditedRules({});
       setEditedPayments({});
+      // Populate fee fields from payments
+      const fee = seasonPayments.find((p) => p.payment_type === "initial_fee");
+      const winter = seasonPayments.find(
+        (p) => p.payment_type === "winter_draft_change",
+      );
+      setEditInitialFee(fee ? String(fee.amount) : "");
+      setEditWinterDraft(winter ? String(winter.amount) : "");
       // Populate edit fields
       setEditStatus(detail.status);
       setEditMatchdayStart(String(detail.matchday_start));
@@ -223,6 +235,12 @@ export default function AdminTemporadasPage() {
     (p) => p.payment_type === "weekly_position",
   );
 
+  const initialFee = payments.find((p) => p.payment_type === "initial_fee");
+  const winterDraftChange = payments.find(
+    (p) => p.payment_type === "winter_draft_change",
+  );
+
+
   async function handleSavePayments() {
     if (!selectedId) return;
     const changed = Object.entries(editedPayments)
@@ -252,6 +270,60 @@ export default function AdminTemporadasPage() {
       setMessage("Error al guardar pagos");
     } finally {
       setSavingPayments(false);
+    }
+  }
+
+  async function handleSaveFees() {
+    if (!selectedId) return;
+    setSavingFees(true);
+    setMessage(null);
+    let saved = 0;
+    try {
+      const feeVal = editInitialFee.trim();
+      const winterVal = editWinterDraft.trim();
+
+      if (feeVal && (!initialFee || String(initialFee.amount) !== feeVal)) {
+        await apiClient.post<SeasonPayment>(
+          `/seasons/admin/${selectedId}/payments`,
+          {
+            payment_type: "initial_fee",
+            amount: Number(feeVal),
+            description: "Cuota inicial",
+          },
+        );
+        saved++;
+      }
+
+      if (
+        winterVal &&
+        (!winterDraftChange || String(winterDraftChange.amount) !== winterVal)
+      ) {
+        await apiClient.post<SeasonPayment>(
+          `/seasons/admin/${selectedId}/payments`,
+          {
+            payment_type: "winter_draft_change",
+            amount: Number(winterVal),
+            description: "Coste por cambio en draft de invierno",
+          },
+        );
+        saved++;
+      }
+
+      if (saved === 0) {
+        setMessage("Sin cambios en cuotas");
+      } else {
+        // Refresh payments list
+        const updated = await apiClient.get<SeasonPayment[]>(
+          `/seasons/${selectedId}/payments`,
+        );
+        setPayments(updated);
+        setMessage(`${saved} cuota(s) actualizada(s)`);
+      }
+      setTimeout(() => setMessage(null), 3000);
+    } catch {
+      setMessage("Error al guardar cuotas");
+    } finally {
+      setSavingFees(false);
     }
   }
 
@@ -643,6 +715,56 @@ export default function AdminTemporadasPage() {
                 className="rounded bg-vpv-accent px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-vpv-accent/80 disabled:opacity-50"
               >
                 {savingRules ? "Guardando..." : "Guardar reglas"}
+              </button>
+            </div>
+          </div>
+
+          {/* Cuota inicial + Coste draft invierno */}
+          <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
+            <div className="border-b border-vpv-border px-4 py-3">
+              <h2 className="font-semibold text-vpv-text">Cuotas y costes</h2>
+            </div>
+            <div className="space-y-3 px-4 py-3">
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                <div>
+                  <label className="mb-1 block text-xs text-vpv-text-muted">
+                    Cuota inicial
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={editInitialFee}
+                      onChange={(e) => setEditInitialFee(e.target.value)}
+                      placeholder="0.00"
+                      className="w-24 rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+                    />
+                    <span className="text-xs text-vpv-text-muted">EUR</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-vpv-text-muted">
+                    Coste cambio draft invierno
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={editWinterDraft}
+                      onChange={(e) => setEditWinterDraft(e.target.value)}
+                      placeholder="0.00"
+                      className="w-24 rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+                    />
+                    <span className="text-xs text-vpv-text-muted">EUR</span>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={handleSaveFees}
+                disabled={savingFees}
+                className="rounded bg-vpv-accent px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-vpv-accent/80 disabled:opacity-50"
+              >
+                {savingFees ? "Guardando..." : "Guardar cuotas"}
               </button>
             </div>
           </div>

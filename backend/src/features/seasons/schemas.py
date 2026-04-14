@@ -96,6 +96,13 @@ class PaymentsBatchUpdate(BaseModel):
     payments: list[PaymentUpdateRequest]
 
 
+class PaymentUpsertRequest(BaseModel):
+    payment_type: str
+    position_rank: int | None = None
+    amount: Decimal
+    description: str | None = None
+
+
 class SeasonParticipantResponse(BaseModel):
     id: int
     user_id: int
