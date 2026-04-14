@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from decimal import Decimal
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import BusinessRuleError, NotFoundError
@@ -246,3 +247,48 @@ class EconomyService:
                 deleted,
             )
         return await self.generate_weekly_payments(season_id, matchday_id)
+
+    async def regenerate_all_weekly_payments(
+        self,
+        season_id: int,
+    ) -> dict[str, int]:
+        """Regenerate weekly payments for ALL counting matchdays in a season."""
+        from src.shared.models.matchday import Matchday
+
+        season = await self.season_repo.get_by_id(season_id)
+        if season is None:
+            raise NotFoundError("Season", season_id)
+
+        # Get all counting matchdays with stats_ok
+        stmt = (
+            select(Matchday.id, Matchday.number)
+            .where(
+                Matchday.season_id == season_id,
+                Matchday.counts.is_(True),
+                Matchday.stats_ok.is_(True),
+            )
+            .order_by(Matchday.number)
+        )
+        result = await self.repo.session.execute(stmt)
+        matchdays = result.all()
+
+        total_deleted = 0
+        total_created = 0
+        for md_id, md_number in matchdays:
+            deleted = await self.repo.delete_weekly_payments(md_id)
+            total_deleted += deleted
+            created = await self.generate_weekly_payments(season_id, md_id)
+            total_created += created
+            logger.info(
+                "regenerate_all: J%d — deleted %d, created %d",
+                md_number,
+                deleted,
+                created,
+            )
+
+        await self.repo.session.commit()
+        return {
+            "matchdays_processed": len(matchdays),
+            "deleted": total_deleted,
+            "created": total_created,
+        }

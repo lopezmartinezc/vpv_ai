@@ -62,6 +62,16 @@ async def create_transaction(
     )
 
 
+@router.post("/admin/{season_id}/regenerate-weekly")
+async def regenerate_all_weekly(
+    season_id: int,
+    service: EconomyService = Depends(_get_service),
+    _admin: dict = Depends(require_perm(Perm.ECONOMY)),
+) -> dict:
+    """Delete and regenerate weekly payments for all counting matchdays."""
+    return await service.regenerate_all_weekly_payments(season_id)
+
+
 @router.delete(
     "/admin/{season_id}/transaction/{tx_id}",
 )

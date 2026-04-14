@@ -95,6 +95,7 @@ export default function AdminEconomiaPage() {
     Map<number, TransactionEntry[]>
   >(new Map());
   const [txLoading, setTxLoading] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   const fetchSeasons = useCallback(async () => {
     try {
@@ -217,6 +218,34 @@ export default function AdminEconomiaPage() {
     }
   }
 
+  async function handleRegenerateWeekly() {
+    if (!selectedSeasonId) return;
+    if (
+      !confirm(
+        "Regenerar TODOS los pagos semanales de esta temporada? Se borran los existentes y se recalculan con las reglas actuales.",
+      )
+    )
+      return;
+    setRegenerating(true);
+    try {
+      const result = await apiClient.post<{
+        matchdays_processed: number;
+        deleted: number;
+        created: number;
+      }>(`/economy/admin/${selectedSeasonId}/regenerate-weekly`, {});
+      await fetchBalances(selectedSeasonId);
+      setParticipantTxs(new Map());
+      setExpandedParticipant(null);
+      showMsg(
+        `Regenerados: ${result.matchdays_processed} jornadas, ${result.deleted} borrados, ${result.created} creados`,
+      );
+    } catch {
+      showMsg("Error al regenerar pagos semanales");
+    } finally {
+      setRegenerating(false);
+    }
+  }
+
   function showMsg(msg: string) {
     setMessage(msg);
     setTimeout(() => setMessage(null), 3000);
@@ -256,6 +285,13 @@ export default function AdminEconomiaPage() {
           className="rounded bg-vpv-accent px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-vpv-accent/80"
         >
           {showForm ? "Cancelar" : "Nueva transaccion"}
+        </button>
+        <button
+          onClick={handleRegenerateWeekly}
+          disabled={regenerating}
+          className="rounded bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-700 disabled:opacity-50"
+        >
+          {regenerating ? "Regenerando..." : "Regenerar pagos semanales"}
         </button>
         {message && (
           <span className="text-xs text-vpv-text-muted">{message}</span>
