@@ -194,6 +194,47 @@ class EconomyRepository:
         await self.session.delete(tx)
         return True
 
+    async def upsert_initial_fees(
+        self,
+        season_id: int,
+        amount: Decimal,
+    ) -> int:
+        """Create or update initial_fee transaction for every active participant.
+
+        Returns number of participants affected.
+        """
+        # Get all active participants
+        stmt = select(SeasonParticipant.id).where(
+            SeasonParticipant.season_id == season_id,
+            SeasonParticipant.is_active.is_(True),
+        )
+        result = await self.session.execute(stmt)
+        participant_ids = [row[0] for row in result.all()]
+
+        for pid in participant_ids:
+            # Check if initial_fee tx already exists
+            existing = await self.session.execute(
+                select(Transaction).where(
+                    Transaction.season_id == season_id,
+                    Transaction.participant_id == pid,
+                    Transaction.type == "initial_fee",
+                )
+            )
+            tx = existing.scalar_one_or_none()
+            if tx is not None:
+                tx.amount = amount  # type: ignore[assignment]
+            else:
+                self.session.add(
+                    Transaction(
+                        season_id=season_id,
+                        participant_id=pid,
+                        type="initial_fee",
+                        amount=amount,
+                        description="Cuota inicial",
+                    )
+                )
+        return len(participant_ids)
+
     # --- Weekly payment helpers ---
 
     async def count_weekly_payments(self, matchday_id: int) -> int:

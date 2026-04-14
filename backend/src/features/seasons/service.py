@@ -145,6 +145,17 @@ class SeasonService:
             amount,
             description,
         )
+
+        # Apply initial_fee transactions to all active participants
+        if payment_type == "initial_fee":
+            from src.features.economy.repository import EconomyRepository
+
+            economy_repo = EconomyRepository(self.repo.session)
+            count = await economy_repo.upsert_initial_fees(season_id, amount)
+            logger.info(
+                "upsert_payment: applied initial_fee=%.2f to %d participants", amount, count
+            )
+
         await self.repo.session.commit()
         return SeasonPaymentResponse.model_validate(payment)
 
