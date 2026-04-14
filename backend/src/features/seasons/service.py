@@ -146,14 +146,22 @@ class SeasonService:
             description,
         )
 
-        # Apply initial_fee transactions to all active participants
-        if payment_type == "initial_fee":
-            from src.features.economy.repository import EconomyRepository
+        # Apply transactions to participants when updating fees
+        from src.features.economy.repository import EconomyRepository
 
-            economy_repo = EconomyRepository(self.repo.session)
+        economy_repo = EconomyRepository(self.repo.session)
+
+        if payment_type == "initial_fee":
             count = await economy_repo.upsert_initial_fees(season_id, amount)
             logger.info(
                 "upsert_payment: applied initial_fee=%.2f to %d participants", amount, count
+            )
+        elif payment_type == "winter_draft_change":
+            count = await economy_repo.recalculate_winter_draft_fees(season_id, amount)
+            logger.info(
+                "upsert_payment: recalculated winter_draft_fee at %.2f/change for %d participants",
+                amount,
+                count,
             )
 
         await self.repo.session.commit()

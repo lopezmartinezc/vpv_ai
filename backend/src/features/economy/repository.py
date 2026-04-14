@@ -7,6 +7,7 @@ from decimal import Decimal
 from sqlalchemy import case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.shared.models.draft import Draft, DraftPick
 from src.shared.models.matchday import Matchday
 from src.shared.models.participant import SeasonParticipant
 from src.shared.models.score import ParticipantMatchdayScore
@@ -234,6 +235,61 @@ class EconomyRepository:
                     )
                 )
         return len(participant_ids)
+
+    async def recalculate_winter_draft_fees(
+        self,
+        season_id: int,
+        cost_per_change: Decimal,
+    ) -> int:
+        """Recalculate winter_draft_fee transactions based on actual picks.
+
+        Counts picks per participant in the winter draft, then creates or
+        updates a single winter_draft_fee transaction per participant.
+        Returns number of participants affected.
+        """
+        # Count picks per participant in winter draft
+        stmt = (
+            select(
+                DraftPick.participant_id,
+                func.count().label("num_changes"),
+            )
+            .join(Draft, DraftPick.draft_id == Draft.id)
+            .where(Draft.season_id == season_id, Draft.phase == "winter")
+            .group_by(DraftPick.participant_id)
+        )
+        result = await self.session.execute(stmt)
+        picks_by_participant = {row.participant_id: row.num_changes for row in result.all()}
+
+        if not picks_by_participant:
+            return 0
+
+        affected = 0
+        for pid, num_changes in picks_by_participant.items():
+            total_fee = cost_per_change * num_changes
+            # Check if winter_draft_fee tx already exists
+            existing = await self.session.execute(
+                select(Transaction).where(
+                    Transaction.season_id == season_id,
+                    Transaction.participant_id == pid,
+                    Transaction.type == "winter_draft_fee",
+                )
+            )
+            tx = existing.scalar_one_or_none()
+            if tx is not None:
+                tx.amount = total_fee  # type: ignore[assignment]
+                tx.description = f"{num_changes} cambio(s) x {cost_per_change}"  # type: ignore[assignment]
+            else:
+                self.session.add(
+                    Transaction(
+                        season_id=season_id,
+                        participant_id=pid,
+                        type="winter_draft_fee",
+                        amount=total_fee,
+                        description=f"{num_changes} cambio(s) x {cost_per_change}",
+                    )
+                )
+            affected += 1
+        return affected
 
     # --- Weekly payment helpers ---
 
