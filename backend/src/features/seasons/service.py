@@ -139,7 +139,11 @@ class SeasonService:
         if payment_type not in valid_types:
             raise BusinessRuleError(f"Tipo de pago invalido: {payment_type}")
         payment = await self.repo.upsert_payment(
-            season_id, payment_type, position_rank, amount, description,
+            season_id,
+            payment_type,
+            position_rank,
+            amount,
+            description,
         )
         await self.repo.session.commit()
         return SeasonPaymentResponse.model_validate(payment)

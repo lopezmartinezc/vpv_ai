@@ -179,7 +179,11 @@ async def upsert_payment(
     _admin: dict = Depends(get_current_admin),
 ) -> SeasonPaymentResponse:
     return await service.upsert_payment(
-        season_id, body.payment_type, body.position_rank, body.amount, body.description,
+        season_id,
+        body.payment_type,
+        body.position_rank,
+        body.amount,
+        body.description,
     )
 
 
