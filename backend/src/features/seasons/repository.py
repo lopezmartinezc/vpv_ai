@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import and_, func, insert, literal_column, select, update
@@ -190,7 +191,7 @@ class SeasonRepository(BaseRepository[Season]):
         season_id: int,
         payment_type: str,
         position_rank: int | None,
-        amount: object,
+        amount: Decimal,
         description: str | None,
     ) -> SeasonPayment:
         # Manual upsert: ON CONFLICT doesn't work with NULL position_rank
