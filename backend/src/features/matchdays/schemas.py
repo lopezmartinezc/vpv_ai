@@ -55,9 +55,16 @@ class ScoreBreakdown(BaseModel):
     pts_result: int
     pts_clean_sheet: int
     pts_goals: int
+    pts_penalty_goals: int
     pts_assists: int
+    pts_penalties_saved: int
+    pts_woodwork: int
+    pts_penalties_won: int
+    pts_penalties_missed: int
+    pts_own_goals: int
     pts_yellow: int
     pts_red: int
+    pts_pen_committed: int
     pts_marca: int
     pts_as: int
     pts_total: int

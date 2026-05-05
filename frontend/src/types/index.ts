@@ -216,9 +216,16 @@ export interface ScoreBreakdown {
   pts_result: number;
   pts_clean_sheet: number;
   pts_goals: number;
+  pts_penalty_goals: number;
   pts_assists: number;
+  pts_penalties_saved: number;
+  pts_woodwork: number;
+  pts_penalties_won: number;
+  pts_penalties_missed: number;
+  pts_own_goals: number;
   pts_yellow: number;
   pts_red: number;
+  pts_pen_committed: number;
   pts_marca: number;
   pts_as: number;
   pts_total: number;

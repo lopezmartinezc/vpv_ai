@@ -44,17 +44,26 @@ function ChevronIcon({ open }: { open: boolean }) {
   );
 }
 
-const STAT_LABELS = [
-  { key: "play", label: "Juega", get: (b: NonNullable<LineupPlayerEntry["score_breakdown"]>) => b.pts_play },
-  { key: "starter", label: "Titular", get: (b: NonNullable<LineupPlayerEntry["score_breakdown"]>) => b.pts_starter },
-  { key: "result", label: "Resultado", get: (b: NonNullable<LineupPlayerEntry["score_breakdown"]>) => b.pts_result },
-  { key: "clean_sheet", label: "Imbatido", get: (b: NonNullable<LineupPlayerEntry["score_breakdown"]>) => b.pts_clean_sheet },
-  { key: "goals", label: "Goles", get: (b: NonNullable<LineupPlayerEntry["score_breakdown"]>) => b.pts_goals },
-  { key: "assists", label: "Asistencias", get: (b: NonNullable<LineupPlayerEntry["score_breakdown"]>) => b.pts_assists },
-  { key: "yellow", label: "Amarilla", get: (b: NonNullable<LineupPlayerEntry["score_breakdown"]>) => b.pts_yellow },
-  { key: "red", label: "Roja", get: (b: NonNullable<LineupPlayerEntry["score_breakdown"]>) => b.pts_red },
-  { key: "marca", label: "Marca", get: (b: NonNullable<LineupPlayerEntry["score_breakdown"]>) => b.pts_marca },
-  { key: "as", label: "As", get: (b: NonNullable<LineupPlayerEntry["score_breakdown"]>) => b.pts_as },
+type Breakdown = NonNullable<LineupPlayerEntry["score_breakdown"]>;
+
+const STAT_LABELS: { key: string; label: string; get: (b: Breakdown) => number }[] = [
+  { key: "play", label: "Juega", get: (b) => b.pts_play },
+  { key: "starter", label: "Titular", get: (b) => b.pts_starter },
+  { key: "result", label: "Resultado", get: (b) => b.pts_result },
+  { key: "clean_sheet", label: "Imbatido", get: (b) => b.pts_clean_sheet },
+  { key: "goals", label: "Goles", get: (b) => b.pts_goals },
+  { key: "penalty_goals", label: "Gol penalti", get: (b) => b.pts_penalty_goals },
+  { key: "assists", label: "Asistencias", get: (b) => b.pts_assists },
+  { key: "penalties_saved", label: "Penalti parado", get: (b) => b.pts_penalties_saved },
+  { key: "woodwork", label: "Tiro al palo", get: (b) => b.pts_woodwork },
+  { key: "penalties_won", label: "Penalti forzado", get: (b) => b.pts_penalties_won },
+  { key: "penalties_missed", label: "Penalti fallado", get: (b) => b.pts_penalties_missed },
+  { key: "own_goals", label: "Gol propia", get: (b) => b.pts_own_goals },
+  { key: "yellow", label: "Amarilla", get: (b) => b.pts_yellow },
+  { key: "red", label: "Roja", get: (b) => b.pts_red },
+  { key: "pen_committed", label: "Penalti cometido", get: (b) => b.pts_pen_committed },
+  { key: "marca", label: "Marca", get: (b) => b.pts_marca },
+  { key: "as", label: "As", get: (b) => b.pts_as },
 ];
 
 function PlayerRow({ player }: { player: LineupPlayerEntry }) {

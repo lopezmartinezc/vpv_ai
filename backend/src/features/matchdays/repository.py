@@ -63,9 +63,16 @@ class LineupPlayerRow:
     pts_result: int | None
     pts_clean_sheet: int | None
     pts_goals: int | None
+    pts_penalty_goals: int | None
     pts_assists: int | None
+    pts_penalties_saved: int | None
+    pts_woodwork: int | None
+    pts_penalties_won: int | None
+    pts_penalties_missed: int | None
+    pts_own_goals: int | None
     pts_yellow: int | None
     pts_red: int | None
+    pts_pen_committed: int | None
     pts_marca: int | None
     pts_as: int | None
     pts_total: int | None
@@ -84,9 +91,16 @@ class BenchPlayerRow:
     pts_result: int | None
     pts_clean_sheet: int | None
     pts_goals: int | None
+    pts_penalty_goals: int | None
     pts_assists: int | None
+    pts_penalties_saved: int | None
+    pts_woodwork: int | None
+    pts_penalties_won: int | None
+    pts_penalties_missed: int | None
+    pts_own_goals: int | None
     pts_yellow: int | None
     pts_red: int | None
+    pts_pen_committed: int | None
     pts_marca: int | None
     pts_as: int | None
     pts_total: int | None
@@ -343,9 +357,16 @@ class MatchdayRepository:
                 PlayerStat.pts_result,
                 PlayerStat.pts_clean_sheet,
                 PlayerStat.pts_goals,
+                PlayerStat.pts_penalty_goals,
                 PlayerStat.pts_assists,
+                PlayerStat.pts_penalties_saved,
+                PlayerStat.pts_woodwork,
+                PlayerStat.pts_penalties_won,
+                PlayerStat.pts_penalties_missed,
+                PlayerStat.pts_own_goals,
                 PlayerStat.pts_yellow,
                 PlayerStat.pts_red,
+                PlayerStat.pts_pen_committed,
                 PlayerStat.pts_marca,
                 PlayerStat.pts_as,
                 PlayerStat.pts_total,
@@ -386,9 +407,16 @@ class MatchdayRepository:
                 pts_result=row.pts_result,
                 pts_clean_sheet=row.pts_clean_sheet,
                 pts_goals=row.pts_goals,
+                pts_penalty_goals=row.pts_penalty_goals,
                 pts_assists=row.pts_assists,
+                pts_penalties_saved=row.pts_penalties_saved,
+                pts_woodwork=row.pts_woodwork,
+                pts_penalties_won=row.pts_penalties_won,
+                pts_penalties_missed=row.pts_penalties_missed,
+                pts_own_goals=row.pts_own_goals,
                 pts_yellow=row.pts_yellow,
                 pts_red=row.pts_red,
+                pts_pen_committed=row.pts_pen_committed,
                 pts_marca=row.pts_marca,
                 pts_as=row.pts_as,
                 pts_total=row.pts_total,
@@ -422,9 +450,16 @@ class MatchdayRepository:
                 PlayerStat.pts_result,
                 PlayerStat.pts_clean_sheet,
                 PlayerStat.pts_goals,
+                PlayerStat.pts_penalty_goals,
                 PlayerStat.pts_assists,
+                PlayerStat.pts_penalties_saved,
+                PlayerStat.pts_woodwork,
+                PlayerStat.pts_penalties_won,
+                PlayerStat.pts_penalties_missed,
+                PlayerStat.pts_own_goals,
                 PlayerStat.pts_yellow,
                 PlayerStat.pts_red,
+                PlayerStat.pts_pen_committed,
                 PlayerStat.pts_marca,
                 PlayerStat.pts_as,
                 PlayerStat.pts_total,
@@ -502,9 +537,16 @@ class MatchdayRepository:
                 pts_result=row.pts_result,
                 pts_clean_sheet=row.pts_clean_sheet,
                 pts_goals=row.pts_goals,
+                pts_penalty_goals=row.pts_penalty_goals,
                 pts_assists=row.pts_assists,
+                pts_penalties_saved=row.pts_penalties_saved,
+                pts_woodwork=row.pts_woodwork,
+                pts_penalties_won=row.pts_penalties_won,
+                pts_penalties_missed=row.pts_penalties_missed,
+                pts_own_goals=row.pts_own_goals,
                 pts_yellow=row.pts_yellow,
                 pts_red=row.pts_red,
+                pts_pen_committed=row.pts_pen_committed,
                 pts_marca=row.pts_marca,
                 pts_as=row.pts_as,
                 pts_total=row.pts_total,
