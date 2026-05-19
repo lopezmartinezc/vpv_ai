@@ -19,6 +19,7 @@ from src.core.exceptions import (
     AuthorizationError,
     BusinessRuleError,
     NotFoundError,
+    SeasonLockedError,
     VPVError,
 )
 from src.core.logging import setup_logging
@@ -77,6 +78,7 @@ def create_app() -> FastAPI:
             AuthenticationError: 401,
             NotFoundError: 404,
             AuthorizationError: 403,
+            SeasonLockedError: 403,
             BusinessRuleError: 422,
         }
         status_code = status_map.get(type(exc), 500)

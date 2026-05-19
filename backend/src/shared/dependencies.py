@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from fastapi import Depends
@@ -7,8 +8,15 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db
-from src.core.exceptions import AuthenticationError, AuthorizationError
+from src.core.exceptions import (
+    AuthenticationError,
+    AuthorizationError,
+    NotFoundError,
+    SeasonLockedError,
+)
 from src.shared.permissions import Perm
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -65,9 +73,48 @@ def require_perm(*perms: Perm) -> Callable:
     return checker
 
 
+async def require_season_writable(
+    season_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Block mutations on finished seasons unless admin has unlocked edits.
+
+    Rules:
+    - status != "finished" → allow
+    - status == "finished" + edit_unlocked == True + is_admin → allow (logs WARNING)
+    - otherwise → SeasonLockedError (HTTP 403, code SEASON_LOCKED)
+
+    The frontend should detect code=SEASON_LOCKED and prompt the admin to
+    enable edit_unlocked from /admin/temporadas before retrying.
+    """
+    from src.shared.models.season import Season
+
+    season = await db.get(Season, season_id)
+    if season is None:
+        raise NotFoundError("Season", season_id)
+
+    if season.status != "finished":
+        return user
+
+    if not user.get("is_admin"):
+        raise SeasonLockedError()
+
+    if not season.edit_unlocked:
+        raise SeasonLockedError()
+
+    logger.warning(
+        "season_writable: ADMIN OVERRIDE on finished season %d by user %s",
+        season_id,
+        user.get("sub"),
+    )
+    return user
+
+
 __all__ = [
     "get_current_admin",
     "get_current_user",
     "get_db",
     "require_perm",
+    "require_season_writable",
 ]
