@@ -50,6 +50,8 @@ async def update_player(
     player_id: int,
     body: PlayerUpdateRequest,
     service: PlayerService = Depends(_get_service),
-    _admin: dict = Depends(require_perm(Perm.PLAYERS)),
+    user: dict = Depends(require_perm(Perm.PLAYERS)),
 ) -> PlayerUpdateResponse:
-    return await service.update_player(player_id, body.team_id, body.position)
+    return await service.update_player(
+        player_id, body.team_id, body.position, is_admin=bool(user.get("is_admin"))
+    )

@@ -14,7 +14,7 @@ from src.features.matchdays.schemas import (
     MatchUpdateRequest,
 )
 from src.features.matchdays.service import MatchdayService
-from src.shared.dependencies import get_db, require_perm
+from src.shared.dependencies import get_db, require_perm, require_season_writable
 from src.shared.permissions import Perm
 
 router = APIRouter(prefix="/matchdays", tags=["matchdays"])
@@ -85,6 +85,7 @@ async def update_matchday(
     body: MatchdayUpdateRequest,
     service: MatchdayService = Depends(_get_service),
     _admin: dict = Depends(require_perm(Perm.MATCHDAYS)),
+    _writable: dict = Depends(require_season_writable),
 ) -> AdminMatchdayResponse:
     return await service.update_matchday(
         season_id,
@@ -104,6 +105,7 @@ async def update_match(
     body: MatchUpdateRequest,
     service: MatchdayService = Depends(_get_service),
     _admin: dict = Depends(require_perm(Perm.MATCHDAYS)),
+    _writable: dict = Depends(require_season_writable),
 ) -> AdminMatchResponse:
     return await service.update_match(
         match_id,
