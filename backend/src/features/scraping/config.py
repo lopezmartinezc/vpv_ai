@@ -28,3 +28,22 @@ class ScrapingSettings(BaseSettings):
 
 
 scraping_settings = ScrapingSettings()
+
+
+def competition_url_prefix(kind: str, tournament_type: str | None = None) -> str:
+    """Return the futbolfantasy.com URL path segment for a competition.
+
+    Examples:
+        ('league', None)        -> 'laliga'
+        ('tournament', 'mundial')  -> 'mundial'
+        ('tournament', 'eurocopa') -> 'eurocopa'
+
+    The URL prefix is the path segment after the host, e.g. for La Liga the
+    calendar URL is https://www.futbolfantasy.com/laliga/calendario/2026.
+    """
+    if kind == "league":
+        return "laliga"
+    if kind == "tournament" and tournament_type:
+        return tournament_type
+    # Sensible default for unknown tournaments
+    return tournament_type or "laliga"

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.features.economy.service import EconomyService
 from src.features.scraping.aggregation import ScoreAggregator
 from src.features.scraping.client import ScrapingClient, ScrapingError
-from src.features.scraping.config import scraping_settings
+from src.features.scraping.config import competition_url_prefix, scraping_settings
 from src.features.scraping.log_buffer import scraping_log
 from src.features.scraping.log_repository import ScrapingLogRepository
 from src.features.scraping.parsers import (
@@ -576,7 +576,8 @@ class ScrapingService:
         season_year = int(year)
 
         base_url = self._settings.scraping_base_url
-        url = f"{base_url}/laliga/calendario/{year}"
+        prefix = competition_url_prefix(season.kind, season.tournament_type)
+        url = f"{base_url}/{prefix}/calendario/{year}"
         logger.info("scrape_calendar: fetching %s", url)
 
         async with ScrapingClient() as client:
@@ -811,7 +812,8 @@ class ScrapingService:
             year = parts[-1] if len(parts) >= 2 else parts[0]
             season_year = int(year)
 
-            calendar_url = f"{base_url}/laliga/calendario/{year}"
+            prefix = competition_url_prefix(season.kind, season.tournament_type)
+            calendar_url = f"{base_url}/{prefix}/calendario/{year}"
             try:
                 calendar_html = await client.fetch(calendar_url)
             except ScrapingError as exc:
