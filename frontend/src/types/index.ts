@@ -954,3 +954,57 @@ export interface DraftValueResponse {
   model_info: Record<string, string>;
   players: DraftValuePlayer[];
 }
+
+// --- Tournaments (Mundial, Eurocopa, ...) ---
+
+export interface TournamentTeamStanding {
+  team_id: number;
+  team_name: string;
+  short_name: string | null;
+  logo_path: string | null;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  goals_for: number;
+  goals_against: number;
+  goal_diff: number;
+  points: number;
+}
+
+export interface TournamentGroup {
+  name: string;
+  teams: TournamentTeamStanding[];
+}
+
+export interface TournamentGroupsResponse {
+  season_id: number;
+  season_name: string;
+  tournament_type: string | null;
+  groups: TournamentGroup[];
+}
+
+export interface BracketMatch {
+  match_id: number | null;
+  home_team_id: number | null;
+  home_team_name: string | null;
+  home_logo: string | null;
+  home_score: number | null;
+  away_team_id: number | null;
+  away_team_name: string | null;
+  away_logo: string | null;
+  away_score: number | null;
+  played: boolean;
+}
+
+export interface BracketRound {
+  name: string;
+  matchday: number;
+  matches: BracketMatch[];
+}
+
+export interface BracketResponse {
+  season_id: number;
+  season_name: string;
+  rounds: BracketRound[];
+}
