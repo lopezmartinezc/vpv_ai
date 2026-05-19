@@ -61,32 +61,35 @@ const ROUTE_PERM: Record<string, number | null> = {
   "/admin/backup": null,
 };
 
-const ADMIN_SECTIONS = [
+/**
+ * Items that operate on a specific season. Rendered once per active
+ * competition (Liga + Tournament). Clicking switches the season context.
+ */
+const PER_SEASON_ADMIN_ITEMS: { href: string; label: string; appliesTo?: "league" | "tournament" }[] = [
+  { href: "/admin/jornadas", label: "Jornadas" },
+  { href: "/admin/alineaciones", label: "Alineaciones" },
+  { href: "/admin/jugadores", label: "Jugadores" },
+  { href: "/admin/estadisticas", label: "Estadisticas" },
+  { href: "/admin/economia", label: "Economia" },
+  { href: "/admin/participantes", label: "Participantes" },
+  { href: "/admin/logros", label: "Logros", appliesTo: "league" },
+  { href: "/admin/predicciones", label: "Predicciones" },
+];
+
+/** Items global (no scoped por temporada). */
+const GLOBAL_ADMIN_SECTIONS = [
   {
-    group: "Liga",
+    group: "Sistema",
     items: [
       { href: "/admin/temporadas", label: "Temporadas" },
-      { href: "/admin/jornadas", label: "Jornadas" },
-      { href: "/admin/alineaciones", label: "Alineaciones" },
-      { href: "/admin/jugadores", label: "Jugadores" },
-      { href: "/admin/estadisticas", label: "Estadisticas" },
-    ],
-  },
-  {
-    group: "Usuarios",
-    items: [
       { href: "/admin/usuarios", label: "Usuarios" },
       { href: "/admin/invitaciones", label: "Invitaciones" },
-      { href: "/admin/economia", label: "Economia" },
-      { href: "/admin/participantes", label: "Participantes" },
     ],
   },
   {
     group: "Operaciones",
     items: [
       { href: "/admin/scraping", label: "Scraping" },
-      { href: "/admin/logros", label: "Logros" },
-      { href: "/admin/predicciones", label: "Predicciones" },
       { href: "/admin/telegram", label: "Telegram" },
       { href: "/admin/backup", label: "Backup" },
     ],
@@ -311,6 +314,25 @@ export function Sidebar({
   );
 }
 
+/**
+ * Filter per-season items by user permissions and the season's kind.
+ */
+function filterSeasonItems(
+  items: typeof PER_SEASON_ADMIN_ITEMS,
+  kind: "league" | "tournament",
+  isAdmin: boolean,
+  permissions: number,
+) {
+  return items.filter((item) => {
+    // Filter by kind
+    if (item.appliesTo && item.appliesTo !== kind) return false;
+    if (isAdmin) return true;
+    const perm = ROUTE_PERM[item.href];
+    if (perm === null) return false;
+    return userHasPerm(isAdmin, permissions, perm);
+  });
+}
+
 function AdminSubmenu({
   pathname,
   isAdmin,
@@ -320,12 +342,21 @@ function AdminSubmenu({
   isAdmin: boolean;
   permissions: number;
 }) {
+  const { activeLeague, activeTournament, selectSeason } = useSeason();
   const isInAdmin = pathname.startsWith("/admin");
   const [expanded, setExpanded] = useState(isInAdmin);
 
-  const filteredSections = isAdmin
-    ? ADMIN_SECTIONS
-    : ADMIN_SECTIONS.map((section) => ({
+  // Build sections: one per active competition + global
+  const ligaItems = activeLeague
+    ? filterSeasonItems(PER_SEASON_ADMIN_ITEMS, "league", isAdmin, permissions)
+    : [];
+  const tournamentItems = activeTournament
+    ? filterSeasonItems(PER_SEASON_ADMIN_ITEMS, "tournament", isAdmin, permissions)
+    : [];
+
+  const globalSections = isAdmin
+    ? GLOBAL_ADMIN_SECTIONS
+    : GLOBAL_ADMIN_SECTIONS.map((section) => ({
         ...section,
         items: section.items.filter((item) => {
           const perm = ROUTE_PERM[item.href];
@@ -334,7 +365,12 @@ function AdminSubmenu({
         }),
       })).filter((section) => section.items.length > 0);
 
-  if (filteredSections.length === 0) return null;
+  const hasAnyItems =
+    ligaItems.length > 0 ||
+    tournamentItems.length > 0 ||
+    globalSections.length > 0;
+
+  if (!hasAnyItems) return null;
 
   return (
     <li>
@@ -363,7 +399,27 @@ function AdminSubmenu({
       </button>
       {expanded && (
         <div className="ml-4 mt-1 space-y-3 border-l border-vpv-border pl-3">
-          {filteredSections.map((section) => (
+          {activeLeague && ligaItems.length > 0 && (
+            <CompetitionAdminSection
+              icon="⚽"
+              title={activeLeague.name}
+              seasonId={activeLeague.id}
+              items={ligaItems}
+              pathname={pathname}
+              onSelectSeason={selectSeason}
+            />
+          )}
+          {activeTournament && tournamentItems.length > 0 && (
+            <CompetitionAdminSection
+              icon="🏆"
+              title={activeTournament.name}
+              seasonId={activeTournament.id}
+              items={tournamentItems}
+              pathname={pathname}
+              onSelectSeason={selectSeason}
+            />
+          )}
+          {globalSections.map((section) => (
             <div key={section.group}>
               <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-vpv-text-muted/50">
                 {section.group}
@@ -393,5 +449,50 @@ function AdminSubmenu({
         </div>
       )}
     </li>
+  );
+}
+
+function CompetitionAdminSection({
+  icon,
+  title,
+  seasonId,
+  items,
+  pathname,
+  onSelectSeason,
+}: {
+  icon: string;
+  title: string;
+  seasonId: number;
+  items: { href: string; label: string }[];
+  pathname: string;
+  onSelectSeason: (id: number) => void;
+}) {
+  return (
+    <div>
+      <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-vpv-text-muted/50">
+        {icon} {title}
+      </p>
+      <ul className="space-y-0.5">
+        {items.map(({ href, label }) => {
+          const active =
+            pathname === href || pathname.startsWith(href + "/");
+          return (
+            <li key={href}>
+              <Link
+                href={href}
+                onClick={() => onSelectSeason(seasonId)}
+                className={`block rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
+                  active
+                    ? "text-vpv-accent"
+                    : "text-vpv-text-muted hover:text-vpv-text"
+                }`}
+              >
+                {label}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
