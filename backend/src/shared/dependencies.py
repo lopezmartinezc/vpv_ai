@@ -73,36 +73,19 @@ def require_perm(*perms: Perm) -> Callable:
     return checker
 
 
-async def require_season_writable(
-    season_id: int,
-    user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    """Block mutations on finished seasons unless admin has unlocked edits.
-
-    Rules:
-    - status != "finished" → allow
-    - status == "finished" + edit_unlocked == True + is_admin → allow (logs WARNING)
-    - otherwise → SeasonLockedError (HTTP 403, code SEASON_LOCKED)
-
-    The frontend should detect code=SEASON_LOCKED and prompt the admin to
-    enable edit_unlocked from /admin/temporadas before retrying.
-    """
+async def _check_season_writable(season_id: int, user: dict, db: AsyncSession) -> dict:
+    """Shared logic: raise SeasonLockedError if season is finished + locked."""
     from src.shared.models.season import Season
 
     season = await db.get(Season, season_id)
     if season is None:
         raise NotFoundError("Season", season_id)
-
     if season.status != "finished":
         return user
-
     if not user.get("is_admin"):
         raise SeasonLockedError()
-
     if not season.edit_unlocked:
         raise SeasonLockedError()
-
     logger.warning(
         "season_writable: ADMIN OVERRIDE on finished season %d by user %s",
         season_id,
@@ -111,10 +94,37 @@ async def require_season_writable(
     return user
 
 
+async def require_season_writable(
+    season_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Block mutations on finished seasons unless admin has unlocked edits.
+
+    Reads ``season_id`` from path. See ``_check_season_writable`` for rules.
+    """
+    return await _check_season_writable(season_id, user, db)
+
+
+async def require_draft_writable(
+    draft_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Same as ``require_season_writable`` but resolves season via draft_id."""
+    from src.shared.models.draft import Draft
+
+    draft = await db.get(Draft, draft_id)
+    if draft is None:
+        raise NotFoundError("Draft", draft_id)
+    return await _check_season_writable(draft.season_id, user, db)
+
+
 __all__ = [
     "get_current_admin",
     "get_current_user",
     "get_db",
+    "require_draft_writable",
     "require_perm",
     "require_season_writable",
 ]

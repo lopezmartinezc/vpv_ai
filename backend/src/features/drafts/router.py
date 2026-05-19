@@ -21,7 +21,13 @@ from src.features.drafts.schemas import (
 )
 from src.features.drafts.service import DraftService
 from src.features.drafts.websocket import draft_ws_manager
-from src.shared.dependencies import get_current_admin, get_db, require_perm
+from src.shared.dependencies import (
+    get_current_admin,
+    get_db,
+    require_draft_writable,
+    require_perm,
+    require_season_writable,
+)
 from src.shared.permissions import Perm
 
 router = APIRouter(prefix="/drafts", tags=["drafts"])
@@ -64,6 +70,7 @@ async def update_draft_order(
     body: UpdateDraftOrderRequest,
     service: DraftService = Depends(_get_service),
     _user: dict = Depends(require_perm(Perm.DRAFT)),
+    _writable: dict = Depends(require_season_writable),
 ) -> dict:
     await service.update_draft_order(
         season_id, [(o.participant_id, o.draft_order) for o in body.orders]
@@ -77,6 +84,7 @@ async def create_draft(
     body: CreateDraftRequest,
     service: DraftService = Depends(_get_service),
     _user: dict = Depends(require_perm(Perm.DRAFT)),
+    _writable: dict = Depends(require_season_writable),
 ) -> CreateDraftResponse:
     return await service.create_draft(season_id, body.phase, body.draft_type)
 
@@ -87,6 +95,7 @@ async def add_pick(
     body: AddPickRequest,
     service: DraftService = Depends(_get_service),
     _user: dict = Depends(require_perm(Perm.DRAFT)),
+    _writable: dict = Depends(require_draft_writable),
 ) -> AddPickResponse:
     return await service.add_pick(draft_id, body.player_id, body.participant_id)
 
@@ -97,6 +106,7 @@ async def reorder_picks(
     body: ReorderPicksRequest,
     service: DraftService = Depends(_get_service),
     _user: dict = Depends(require_perm(Perm.DRAFT)),
+    _writable: dict = Depends(require_draft_writable),
 ) -> ReorderPicksResponse:
     return await service.reorder_picks(draft_id, body.pick_ids)
 
@@ -107,6 +117,7 @@ async def delete_pick(
     pick_number: int,
     service: DraftService = Depends(_get_service),
     _user: dict = Depends(require_perm(Perm.DRAFT)),
+    _writable: dict = Depends(require_draft_writable),
 ) -> DeletePickResponse:
     return await service.delete_pick(draft_id, pick_number)
 
