@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -13,6 +14,8 @@ class SeasonSummary(BaseModel):
     matchday_current: int
     total_participants: int
     lineup_deadline_min: int
+    kind: str = "league"
+    tournament_type: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -31,6 +34,10 @@ class SeasonDetail(BaseModel):
     total_participants: int
     scraping_slug: str | None = None
     edit_unlocked: bool = False
+    kind: str = "league"
+    tournament_type: str | None = None
+    tournament_config: dict[str, Any] | None = None
+    telegram_chat_id: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -81,6 +88,8 @@ class SeasonUpdateRequest(BaseModel):
     matchday_winter: int | None = None
     lineup_deadline_min: int | None = None
     draft_pool_size: int | None = None
+    tournament_config: dict[str, Any] | None = None
+    telegram_chat_id: str | None = None
 
 
 class ScoringRuleUpdateRequest(BaseModel):
@@ -135,6 +144,10 @@ class SeasonInitializeRequest(BaseModel):
     lineup_deadline_min: int = 30
     copy_from_season_id: int | None = None
     participant_user_ids: list[int] | None = None
+    kind: str = "league"
+    tournament_type: str | None = None
+    tournament_config: dict[str, Any] | None = None
+    telegram_chat_id: str | None = None
 
 
 class SeasonInitializeResponse(BaseModel):

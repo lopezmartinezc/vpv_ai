@@ -244,6 +244,10 @@ class SeasonRepository(BaseRepository[Season]):
         matchday_end: int = 38,
         draft_pool_size: int = 26,
         lineup_deadline_min: int = 30,
+        kind: str = "league",
+        tournament_type: str | None = None,
+        tournament_config: dict[str, Any] | None = None,
+        telegram_chat_id: str | None = None,
     ) -> Season:
         season = Season(
             name=name,
@@ -254,6 +258,10 @@ class SeasonRepository(BaseRepository[Season]):
             matchday_current=1,  # Start scraping from J1 (pre-draft stats)
             draft_pool_size=draft_pool_size,
             lineup_deadline_min=lineup_deadline_min,
+            kind=kind,
+            tournament_type=tournament_type,
+            tournament_config=tournament_config,
+            telegram_chat_id=telegram_chat_id,
         )
         self.session.add(season)
         await self.session.flush()

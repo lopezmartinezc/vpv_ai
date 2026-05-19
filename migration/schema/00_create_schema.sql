@@ -79,8 +79,15 @@ CREATE TABLE seasons (
     total_participants  SMALLINT     NOT NULL DEFAULT 0,
     scraping_slug       VARCHAR(50),                    -- e.g. 'laliga-25-26'
     edit_unlocked       BOOLEAN      NOT NULL DEFAULT FALSE,  -- Admin override para temporadas finished
-    created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    kind                VARCHAR(20)  NOT NULL DEFAULT 'league',  -- 'league' | 'tournament'
+    tournament_type     VARCHAR(30),                            -- 'mundial' | 'eurocopa' | 'copa_america' | ...
+    tournament_config   JSONB,                                  -- {groups: {count, teams_per_group, matchdays}, knockout: {...}, ...}
+    telegram_chat_id    VARCHAR(50),                            -- Chat Telegram especifico de la temporada (override del global)
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CHECK (kind IN ('league', 'tournament'))
 );
+
+CREATE INDEX idx_seasons_kind ON seasons(kind);
 
 -- ----------------------------------------------------------------------------
 -- 3. valid_formations -- Formaciones permitidas

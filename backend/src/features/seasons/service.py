@@ -206,6 +206,10 @@ class SeasonService:
             matchday_end=request.matchday_end,
             draft_pool_size=request.draft_pool_size,
             lineup_deadline_min=request.lineup_deadline_min,
+            kind=request.kind,
+            tournament_type=request.tournament_type,
+            tournament_config=request.tournament_config,
+            telegram_chat_id=request.telegram_chat_id,
         )
 
         # 2. Copy scoring rules and payments from source
