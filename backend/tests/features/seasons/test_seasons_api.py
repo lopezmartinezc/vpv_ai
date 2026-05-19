@@ -102,7 +102,9 @@ class TestListSeasons:
     ) -> None:
         resp = await client.get("/api/seasons")
         season = resp.json()[0]
-        assert set(season.keys()) == {"id", "name", "status", "total_participants"}
+        required = {"id", "name", "status", "total_participants", "kind"}
+        assert required.issubset(season.keys())
+        assert season["kind"] == "league"
 
 
 class TestGetCurrentSeason:

@@ -81,7 +81,10 @@ class PalmaresRepository:
                 Matchday,
                 ParticipantMatchdayScore.matchday_id == Matchday.id,
             )
-            .where(Season.status.in_(["finished", "active"]))
+            .where(
+                Season.status.in_(["finished", "active"]),
+                Season.kind == "league",
+            )
             .group_by(Season.id, Season.name, User.id, User.display_name)
             .subquery()
         )
@@ -191,6 +194,7 @@ class PalmaresRepository:
             .outerjoin(Matchday, ParticipantMatchdayScore.matchday_id == Matchday.id)
             .where(
                 Season.status.in_(["finished", "active"]),
+                Season.kind == "league",
                 SeasonParticipant.group_name.isnot(None),
             )
             .group_by(Season.id, Season.name, SeasonParticipant.group_name)

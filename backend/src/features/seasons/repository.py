@@ -29,11 +29,23 @@ class SeasonRepository(BaseRepository[Season]):
         super().__init__(Season, session)
 
     async def get_current(self) -> Season | None:
-        stmt = select(Season).where(Season.status == "active").order_by(Season.id.desc()).limit(1)
+        """Default active season — returns the active Liga (kind='league').
+
+        Fallback to latest league if none active. For tournament-specific
+        contexts, callers must pass an explicit season_id.
+        """
+        stmt = (
+            select(Season)
+            .where(Season.status == "active", Season.kind == "league")
+            .order_by(Season.id.desc())
+            .limit(1)
+        )
         result = await self.session.execute(stmt)
         season = result.scalar_one_or_none()
         if season is None:
-            stmt = select(Season).order_by(Season.id.desc()).limit(1)
+            stmt = (
+                select(Season).where(Season.kind == "league").order_by(Season.id.desc()).limit(1)
+            )
             result = await self.session.execute(stmt)
             season = result.scalar_one_or_none()
         return season
