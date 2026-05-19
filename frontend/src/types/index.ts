@@ -82,6 +82,8 @@ export interface SeasonSummary {
   matchday_current: number;
   total_participants: number;
   lineup_deadline_min: number;
+  kind?: "league" | "tournament";
+  tournament_type?: string | null;
 }
 
 export interface SeasonDetail {
