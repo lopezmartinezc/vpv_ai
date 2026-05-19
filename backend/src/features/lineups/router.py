@@ -16,7 +16,12 @@ from src.features.lineups.schemas import (
     MyLineupResponse,
 )
 from src.features.lineups.service import LineupService
-from src.shared.dependencies import get_current_user, get_db, require_perm
+from src.shared.dependencies import (
+    get_current_user,
+    get_db,
+    require_perm,
+    require_season_writable,
+)
 from src.shared.permissions import Perm
 
 router = APIRouter(prefix="/lineups", tags=["lineups"])
@@ -54,6 +59,7 @@ async def submit_lineup(
     data: LineupSubmitRequest,
     user: dict = Depends(get_current_user),
     service: LineupService = Depends(_get_service),
+    _writable: dict = Depends(require_season_writable),
 ) -> LineupSubmitResponse:
     """Submit or update lineup for the current matchday."""
     return await service.submit_lineup(
@@ -132,6 +138,7 @@ async def apply_deadline_lineups(
     season_id: int,
     matchday_number: int,
     _admin: dict = Depends(require_perm(Perm.LINEUPS_ADMIN)),
+    _writable: dict = Depends(require_season_writable),
     service: LineupService = Depends(_get_service),
 ) -> dict:
     """Copy previous lineup for participants who missed the deadline."""
@@ -177,6 +184,7 @@ async def admin_edit_lineup(
     participant_id: int,
     data: LineupSubmitRequest,
     _admin: dict = Depends(require_perm(Perm.LINEUPS_ADMIN)),
+    _writable: dict = Depends(require_season_writable),
     service: LineupService = Depends(_get_service),
 ) -> AdminLineupEditResponse:
     """Admin: edit a participant's lineup and recalculate scores."""
