@@ -157,6 +157,26 @@ CREATE TABLE teams (
 CREATE INDEX idx_teams_tournament_group ON teams(season_id, tournament_group);
 
 -- ----------------------------------------------------------------------------
+-- tournament_predictions -- Predicciones de torneo por participante
+-- ----------------------------------------------------------------------------
+CREATE TABLE tournament_predictions (
+    id                   SERIAL PRIMARY KEY,
+    season_id            INT          NOT NULL REFERENCES seasons(id),
+    user_id              INT          NOT NULL REFERENCES users(id),
+    winner_team_id       INT          REFERENCES teams(id),
+    top_scorer_player_id INT          REFERENCES players(id),
+    best_player_id       INT          REFERENCES players(id),
+    dark_horse_team_id   INT          REFERENCES teams(id),
+    notes                VARCHAR(500),
+    bonus_points         SMALLINT     NOT NULL DEFAULT 0,
+    submitted_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    UNIQUE(season_id, user_id)
+);
+
+CREATE INDEX idx_tournament_predictions_season ON tournament_predictions(season_id);
+
+-- ----------------------------------------------------------------------------
 -- 8. competitions -- Preparada para futuro (playoffs, copa)
 -- ----------------------------------------------------------------------------
 CREATE TABLE competitions (

@@ -14,11 +14,19 @@ from src.features.tournaments.schemas import (
     BracketRound,
     GroupResponse,
     GroupsResponse,
+    PlayerOption,
+    PredictionRequest,
+    PredictionResponse,
+    PredictionsListResponse,
     TeamGroupStanding,
+    TeamOption,
 )
 from src.shared.models.matchday import Match, Matchday
+from src.shared.models.player import Player
 from src.shared.models.season import Season
 from src.shared.models.team import Team
+from src.shared.models.tournament_prediction import TournamentPrediction
+from src.shared.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -206,3 +214,159 @@ class TournamentService:
             season_name=season.name,
             rounds=bracket_rounds,
         )
+
+    # ------------------------------------------------------------------
+    # Predictions
+    # ------------------------------------------------------------------
+
+    async def _decorate_prediction(
+        self, pred: TournamentPrediction, include_user_name: bool = True
+    ) -> PredictionResponse:
+        """Build a PredictionResponse with denormalized names."""
+        winner_name = None
+        if pred.winner_team_id is not None:
+            t = await self.session.get(Team, pred.winner_team_id)
+            winner_name = t.name if t else None
+        top_scorer_name = None
+        if pred.top_scorer_player_id is not None:
+            p = await self.session.get(Player, pred.top_scorer_player_id)
+            top_scorer_name = p.display_name if p else None
+        best_player_name = None
+        if pred.best_player_id is not None:
+            p = await self.session.get(Player, pred.best_player_id)
+            best_player_name = p.display_name if p else None
+        dark_horse_name = None
+        if pred.dark_horse_team_id is not None:
+            t = await self.session.get(Team, pred.dark_horse_team_id)
+            dark_horse_name = t.name if t else None
+        display_name = None
+        if include_user_name:
+            u = await self.session.get(User, pred.user_id)
+            display_name = u.display_name if u else None
+
+        return PredictionResponse(
+            id=pred.id,
+            season_id=pred.season_id,
+            user_id=pred.user_id,
+            display_name=display_name,
+            winner_team_id=pred.winner_team_id,
+            winner_team_name=winner_name,
+            top_scorer_player_id=pred.top_scorer_player_id,
+            top_scorer_player_name=top_scorer_name,
+            best_player_id=pred.best_player_id,
+            best_player_name=best_player_name,
+            dark_horse_team_id=pred.dark_horse_team_id,
+            dark_horse_team_name=dark_horse_name,
+            notes=pred.notes,
+            bonus_points=pred.bonus_points,
+        )
+
+    async def get_my_prediction(self, season_id: int, user_id: int) -> PredictionResponse | None:
+        await self._get_tournament_season(season_id)
+        stmt = select(TournamentPrediction).where(
+            TournamentPrediction.season_id == season_id,
+            TournamentPrediction.user_id == user_id,
+        )
+        result = await self.session.execute(stmt)
+        pred = result.scalar_one_or_none()
+        if pred is None:
+            return None
+        return await self._decorate_prediction(pred, include_user_name=False)
+
+    async def upsert_my_prediction(
+        self, season_id: int, user_id: int, body: PredictionRequest
+    ) -> PredictionResponse:
+        await self._get_tournament_season(season_id)
+        from datetime import UTC, datetime
+
+        stmt = select(TournamentPrediction).where(
+            TournamentPrediction.season_id == season_id,
+            TournamentPrediction.user_id == user_id,
+        )
+        result = await self.session.execute(stmt)
+        pred = result.scalar_one_or_none()
+
+        if pred is None:
+            pred = TournamentPrediction(
+                season_id=season_id,
+                user_id=user_id,
+                winner_team_id=body.winner_team_id,
+                top_scorer_player_id=body.top_scorer_player_id,
+                best_player_id=body.best_player_id,
+                dark_horse_team_id=body.dark_horse_team_id,
+                notes=body.notes,
+            )
+            self.session.add(pred)
+        else:
+            pred.winner_team_id = body.winner_team_id
+            pred.top_scorer_player_id = body.top_scorer_player_id
+            pred.best_player_id = body.best_player_id
+            pred.dark_horse_team_id = body.dark_horse_team_id
+            pred.notes = body.notes
+            pred.updated_at = datetime.now(UTC)
+
+        await self.session.commit()
+        await self.session.refresh(pred)
+        return await self._decorate_prediction(pred, include_user_name=False)
+
+    async def list_predictions(self, season_id: int) -> PredictionsListResponse:
+        """Return all participants' predictions (visible after submission)."""
+        season = await self._get_tournament_season(season_id)
+        stmt = select(TournamentPrediction).where(TournamentPrediction.season_id == season_id)
+        result = await self.session.execute(stmt)
+        preds = list(result.scalars().all())
+
+        decorated = [await self._decorate_prediction(p) for p in preds]
+        decorated.sort(key=lambda p: (-p.bonus_points, (p.display_name or "").lower()))
+        return PredictionsListResponse(
+            season_id=season_id,
+            season_name=season.name,
+            predictions=decorated,
+        )
+
+    # ------------------------------------------------------------------
+    # Helper endpoints for predictions UI
+    # ------------------------------------------------------------------
+
+    async def list_teams(self, season_id: int) -> list[TeamOption]:
+        await self._get_tournament_season(season_id)
+        stmt = (
+            select(Team)
+            .where(Team.season_id == season_id)
+            .order_by(Team.tournament_group, Team.name)
+        )
+        result = await self.session.execute(stmt)
+        return [
+            TeamOption(
+                id=t.id,
+                name=t.name,
+                short_name=t.short_name,
+                logo_path=t.logo_path,
+                tournament_group=t.tournament_group,
+            )
+            for t in result.scalars().all()
+        ]
+
+    async def list_players(self, season_id: int) -> list[PlayerOption]:
+        await self._get_tournament_season(season_id)
+        stmt = (
+            select(
+                Player.id,
+                Player.display_name,
+                Team.id.label("team_id"),
+                Team.name.label("team_name"),
+            )
+            .join(Team, Player.team_id == Team.id)
+            .where(Player.season_id == season_id)
+            .order_by(Team.name, Player.display_name)
+        )
+        result = await self.session.execute(stmt)
+        return [
+            PlayerOption(
+                id=row.id,
+                name=row.display_name,
+                team_id=row.team_id,
+                team_name=row.team_name,
+            )
+            for row in result.all()
+        ]

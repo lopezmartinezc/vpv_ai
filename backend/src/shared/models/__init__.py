@@ -13,6 +13,7 @@ from src.shared.models.score import ParticipantMatchdayScore
 from src.shared.models.scraping_log import ScrapingLog
 from src.shared.models.season import ScoringRule, Season, SeasonPayment, ValidFormation
 from src.shared.models.team import Team
+from src.shared.models.tournament_prediction import TournamentPrediction
 from src.shared.models.transaction import Transaction
 from src.shared.models.user import User
 
@@ -37,6 +38,7 @@ __all__ = [
     "SeasonParticipant",
     "SeasonPayment",
     "Team",
+    "TournamentPrediction",
     "Transaction",
     "User",
     "ValidFormation",

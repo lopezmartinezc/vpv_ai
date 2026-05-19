@@ -1008,3 +1008,34 @@ export interface BracketResponse {
   season_name: string;
   rounds: BracketRound[];
 }
+
+export interface TournamentPrediction {
+  id: number;
+  season_id: number;
+  user_id: number;
+  display_name: string | null;
+  winner_team_id: number | null;
+  winner_team_name: string | null;
+  top_scorer_player_id: number | null;
+  top_scorer_player_name: string | null;
+  best_player_id: number | null;
+  best_player_name: string | null;
+  dark_horse_team_id: number | null;
+  dark_horse_team_name: string | null;
+  notes: string | null;
+  bonus_points: number;
+}
+
+export interface PredictionsListResponse {
+  season_id: number;
+  season_name: string;
+  predictions: TournamentPrediction[];
+}
+
+export interface PredictionRequest {
+  winner_team_id: number | null;
+  top_scorer_player_id: number | null;
+  best_player_id: number | null;
+  dark_horse_team_id: number | null;
+  notes: string | null;
+}

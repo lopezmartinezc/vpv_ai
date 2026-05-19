@@ -55,3 +55,52 @@ class BracketResponse(BaseModel):
     season_id: int
     season_name: str
     rounds: list[BracketRound]
+
+
+# --- Predictions ---
+
+
+class PredictionRequest(BaseModel):
+    winner_team_id: int | None = None
+    top_scorer_player_id: int | None = None
+    best_player_id: int | None = None
+    dark_horse_team_id: int | None = None
+    notes: str | None = None
+
+
+class PredictionResponse(BaseModel):
+    id: int
+    season_id: int
+    user_id: int
+    display_name: str | None = None
+    winner_team_id: int | None
+    winner_team_name: str | None = None
+    top_scorer_player_id: int | None
+    top_scorer_player_name: str | None = None
+    best_player_id: int | None
+    best_player_name: str | None = None
+    dark_horse_team_id: int | None
+    dark_horse_team_name: str | None = None
+    notes: str | None
+    bonus_points: int
+
+
+class PredictionsListResponse(BaseModel):
+    season_id: int
+    season_name: str
+    predictions: list[PredictionResponse]
+
+
+class TeamOption(BaseModel):
+    id: int
+    name: str
+    short_name: str | None
+    logo_path: str | None
+    tournament_group: str | None
+
+
+class PlayerOption(BaseModel):
+    id: int
+    name: str
+    team_name: str
+    team_id: int
