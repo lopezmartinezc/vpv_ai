@@ -73,7 +73,8 @@ async def _run_tick() -> None:
             repo = ScrapingRepository(session)
             service = ScrapingService(session)
 
-            # 1. Active season
+            # 1. Active season (get_active_season filters by status='active', so
+            # finished seasons are naturally skipped by all scheduler jobs)
             season = await repo.get_active_season()
             if season is None:
                 _log("scraping_tick", "Sin temporada activa, omitiendo")
