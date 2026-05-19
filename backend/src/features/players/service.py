@@ -50,10 +50,24 @@ class PlayerService:
         player_id: int,
         team_id: int | None,
         position: str | None,
+        is_admin: bool = False,
     ) -> PlayerUpdateResponse:
         player = await self.repo.get_player_detail(player_id)
         if player is None:
             raise NotFoundError("Player", player_id)
+
+        # Block writes on finished + locked seasons (admin override checked here
+        # since we don't have season_id in the path)
+        from src.core.exceptions import SeasonLockedError
+        from src.shared.models.season import Season
+
+        season = await self.repo.session.get(Season, player.season_id)
+        if (
+            season is not None
+            and season.status == "finished"
+            and (not is_admin or not season.edit_unlocked)
+        ):
+            raise SeasonLockedError()
 
         if team_id is not None:
             belongs = await self.repo.team_belongs_to_season(team_id, player.season_id)

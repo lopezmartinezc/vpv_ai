@@ -78,6 +78,7 @@ CREATE TABLE seasons (
     lineup_deadline_min SMALLINT     NOT NULL DEFAULT 30,  -- Minutos antes del 1er partido
     total_participants  SMALLINT     NOT NULL DEFAULT 0,
     scraping_slug       VARCHAR(50),                    -- e.g. 'laliga-25-26'
+    edit_unlocked       BOOLEAN      NOT NULL DEFAULT FALSE,  -- Admin override para temporadas finished
     created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 

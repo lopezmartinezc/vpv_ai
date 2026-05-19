@@ -16,7 +16,7 @@ from src.features.scraping.scheduler import (
     trigger_tick,
 )
 from src.features.scraping.service import ScrapingService
-from src.shared.dependencies import get_db, require_perm
+from src.shared.dependencies import get_db, require_perm, require_season_writable
 from src.shared.permissions import Perm
 
 router = APIRouter(prefix="/scraping", tags=["scraping"])
@@ -35,6 +35,7 @@ async def scrape_matchday_endpoint(
     season_id: int,
     number: int,
     _admin: dict = Depends(require_perm(Perm.SCRAPING)),
+    _writable: dict = Depends(require_season_writable),
     service: ScrapingService = Depends(_get_service),
 ) -> dict:
     """Trigger a full scrape of player stats for the given matchday.
@@ -55,6 +56,7 @@ async def scrape_match_endpoint(
     number: int,
     match_id: int,
     _admin: dict = Depends(require_perm(Perm.SCRAPING)),
+    _writable: dict = Depends(require_season_writable),
     service: ScrapingService = Depends(_get_service),
 ) -> dict:
     """Trigger a scrape of player stats for a single match.
@@ -79,6 +81,7 @@ async def scrape_match_endpoint(
 async def scrape_calendar_endpoint(
     season_id: int,
     _admin: dict = Depends(require_perm(Perm.SCRAPING)),
+    _writable: dict = Depends(require_season_writable),
     service: ScrapingService = Depends(_get_service),
 ) -> dict[str, int]:
     """Fetch the La Liga calendar page and update DB match scores and dates.

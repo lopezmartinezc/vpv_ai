@@ -29,3 +29,13 @@ class AuthenticationError(VPVError):
 class AuthorizationError(VPVError):
     def __init__(self, message: str = "No autorizado") -> None:
         super().__init__(message=message, code="UNAUTHORIZED")
+
+
+class SeasonLockedError(VPVError):
+    """Raised when trying to modify data in a finished + locked season."""
+
+    def __init__(
+        self,
+        message: str = "Temporada finalizada y bloqueada para edicion",
+    ) -> None:
+        super().__init__(message=message, code="SEASON_LOCKED")

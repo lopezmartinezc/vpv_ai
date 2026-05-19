@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from fastapi import Depends
@@ -7,8 +8,15 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db
-from src.core.exceptions import AuthenticationError, AuthorizationError
+from src.core.exceptions import (
+    AuthenticationError,
+    AuthorizationError,
+    NotFoundError,
+    SeasonLockedError,
+)
 from src.shared.permissions import Perm
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -65,9 +73,58 @@ def require_perm(*perms: Perm) -> Callable:
     return checker
 
 
+async def _check_season_writable(season_id: int, user: dict, db: AsyncSession) -> dict:
+    """Shared logic: raise SeasonLockedError if season is finished + locked."""
+    from src.shared.models.season import Season
+
+    season = await db.get(Season, season_id)
+    if season is None:
+        raise NotFoundError("Season", season_id)
+    if season.status != "finished":
+        return user
+    if not user.get("is_admin"):
+        raise SeasonLockedError()
+    if not season.edit_unlocked:
+        raise SeasonLockedError()
+    logger.warning(
+        "season_writable: ADMIN OVERRIDE on finished season %d by user %s",
+        season_id,
+        user.get("sub"),
+    )
+    return user
+
+
+async def require_season_writable(
+    season_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Block mutations on finished seasons unless admin has unlocked edits.
+
+    Reads ``season_id`` from path. See ``_check_season_writable`` for rules.
+    """
+    return await _check_season_writable(season_id, user, db)
+
+
+async def require_draft_writable(
+    draft_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Same as ``require_season_writable`` but resolves season via draft_id."""
+    from src.shared.models.draft import Draft
+
+    draft = await db.get(Draft, draft_id)
+    if draft is None:
+        raise NotFoundError("Draft", draft_id)
+    return await _check_season_writable(draft.season_id, user, db)
+
+
 __all__ = [
     "get_current_admin",
     "get_current_user",
     "get_db",
+    "require_draft_writable",
     "require_perm",
+    "require_season_writable",
 ]

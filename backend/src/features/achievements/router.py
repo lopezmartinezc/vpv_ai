@@ -9,7 +9,7 @@ from src.features.achievements.schemas import (
     SeasonAchievementsResponse,
 )
 from src.features.achievements.service import AchievementService
-from src.shared.dependencies import get_db, require_perm
+from src.shared.dependencies import get_db, require_perm, require_season_writable
 from src.shared.permissions import Perm
 
 router = APIRouter(prefix="/achievements", tags=["achievements"])
@@ -68,6 +68,7 @@ async def evaluate_matchday(
     number: int,
     service: AchievementService = Depends(_get_service),
     _admin: dict = Depends(require_perm(Perm.ACHIEVEMENTS)),
+    _writable: dict = Depends(require_season_writable),
 ) -> EvaluationResult:
     return await service.evaluate_matchday(season_id, number)
 
@@ -80,5 +81,6 @@ async def evaluate_all_matchdays(
     season_id: int,
     service: AchievementService = Depends(_get_service),
     _admin: dict = Depends(require_perm(Perm.ACHIEVEMENTS)),
+    _writable: dict = Depends(require_season_writable),
 ) -> list[EvaluationResult]:
     return await service.evaluate_all_matchdays(season_id)

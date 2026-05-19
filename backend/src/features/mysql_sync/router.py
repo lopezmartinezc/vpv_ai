@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.mysql_sync.service import MysqlSyncService
-from src.shared.dependencies import get_current_admin, get_db
+from src.shared.dependencies import get_current_admin, get_db, require_season_writable
 
 router = APIRouter(prefix="/mysql-sync", tags=["mysql-sync"])
 
@@ -28,6 +28,7 @@ async def reverse_sync_matchday(
     season_id: int,
     matchday_number: int,
     _admin: dict = Depends(get_current_admin),
+    _writable: dict = Depends(require_season_writable),
     db: AsyncSession = Depends(get_db),
 ) -> SyncResponse:
     """Push matchday data (stats + lineups) from PostgreSQL to legacy MySQL."""

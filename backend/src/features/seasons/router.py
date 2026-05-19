@@ -6,6 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.seasons.schemas import (
+    EditUnlockRequest,
     GroupAssignRequest,
     PaymentsBatchUpdate,
     PaymentUpsertRequest,
@@ -23,7 +24,12 @@ from src.features.seasons.schemas import (
     ValidFormationResponse,
 )
 from src.features.seasons.service import SeasonService
-from src.shared.dependencies import get_current_admin, get_db, require_perm
+from src.shared.dependencies import (
+    get_current_admin,
+    get_db,
+    require_perm,
+    require_season_writable,
+)
 from src.shared.permissions import Perm
 
 logger = logging.getLogger(__name__)
@@ -136,6 +142,7 @@ async def update_season(
     body: SeasonUpdateRequest,
     service: SeasonService = Depends(_get_service),
     _admin: dict = Depends(get_current_admin),
+    _writable: dict = Depends(require_season_writable),
 ) -> SeasonDetail:
     return await service.update_season(season_id, **body.model_dump(exclude_none=True))
 
@@ -149,6 +156,7 @@ async def update_scoring_rules(
     body: ScoringRulesBatchUpdate,
     service: SeasonService = Depends(_get_service),
     _admin: dict = Depends(get_current_admin),
+    _writable: dict = Depends(require_season_writable),
 ) -> list[ScoringRuleResponse]:
     updates = [(r.id, r.value) for r in body.rules]
     return await service.update_scoring_rules(season_id, updates)
@@ -163,6 +171,7 @@ async def update_payments(
     body: PaymentsBatchUpdate,
     service: SeasonService = Depends(_get_service),
     _admin: dict = Depends(get_current_admin),
+    _writable: dict = Depends(require_season_writable),
 ) -> list[SeasonPaymentResponse]:
     updates = [(p.id, p.amount) for p in body.payments]
     return await service.update_payments(season_id, updates)
@@ -177,6 +186,7 @@ async def upsert_payment(
     body: PaymentUpsertRequest,
     service: SeasonService = Depends(_get_service),
     _admin: dict = Depends(get_current_admin),
+    _writable: dict = Depends(require_season_writable),
 ) -> SeasonPaymentResponse:
     return await service.upsert_payment(
         season_id,
@@ -196,6 +206,7 @@ async def toggle_participant_active(
     participant_id: int,
     service: SeasonService = Depends(_get_service),
     _user: dict = Depends(require_perm(Perm.PARTICIPANTS)),
+    _writable: dict = Depends(require_season_writable),
 ) -> SeasonParticipantResponse:
     participant = await service.toggle_participant_active(season_id, participant_id)
     return SeasonParticipantResponse.model_validate(participant)
@@ -211,6 +222,7 @@ async def assign_participant_group(
     body: GroupAssignRequest,
     service: SeasonService = Depends(_get_service),
     _user: dict = Depends(require_perm(Perm.PARTICIPANTS)),
+    _writable: dict = Depends(require_season_writable),
 ) -> SeasonParticipantResponse:
     participant = await service.assign_participant_group(
         season_id, participant_id, body.group_name
@@ -223,6 +235,7 @@ async def download_photos(
     season_id: int,
     service: SeasonService = Depends(_get_service),
     _admin: dict = Depends(get_current_admin),
+    _writable: dict = Depends(require_season_writable),
 ) -> PhotoDownloadResponse:
     """Download player photos for a season (may take several minutes)."""
     result = await service.download_photos(season_id)
@@ -238,6 +251,17 @@ async def finalize_season(
     """Mark season as finished after validating all matchday stats are complete."""
     season_detail = await service.finalize_season(season_id)
     return SeasonFinalizeResponse(season=season_detail)
+
+
+@router.put("/admin/{season_id}/edit-unlock", response_model=SeasonDetail)
+async def set_edit_unlock(
+    season_id: int,
+    body: EditUnlockRequest,
+    service: SeasonService = Depends(_get_service),
+    _admin: dict = Depends(get_current_admin),
+) -> SeasonDetail:
+    """Toggle edit_unlocked flag for a finished season (admin override)."""
+    return await service.set_edit_unlocked(season_id, body.unlocked)
 
 
 # ---------------------------------------------------------------------------
