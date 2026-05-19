@@ -196,6 +196,7 @@ class LineupRepository:
                 Lineup.id,
                 Lineup.formation,
                 Matchday.number.label("matchday_number"),
+                Matchday.season_id.label("season_id"),
                 User.display_name.label("user_display_name"),
             )
             .join(Matchday, Lineup.matchday_id == Matchday.id)
@@ -227,6 +228,7 @@ class LineupRepository:
             "lineup_id": row.id,
             "formation": row.formation,
             "matchday_number": row.matchday_number,
+            "season_id": row.season_id,
             "user_display_name": row.user_display_name,
             "players": players,
         }

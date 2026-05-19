@@ -27,6 +27,10 @@ class SeasonService:
     async def list_seasons(self) -> list[Season]:
         return await self.repo.list_all(order_by=Season.id.desc())
 
+    async def list_active_seasons(self) -> list[Season]:
+        """List all seasons with status='active' (both league and tournament)."""
+        return await self.repo.list_active()
+
     async def get_season(self, season_id: int) -> Season:
         season = await self.repo.get_by_id(season_id)
         if season is None:

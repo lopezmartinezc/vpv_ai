@@ -28,6 +28,12 @@ class SeasonRepository(BaseRepository[Season]):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(Season, session)
 
+    async def list_active(self) -> list[Season]:
+        """All active seasons (any kind), most recent first."""
+        stmt = select(Season).where(Season.status == "active").order_by(Season.id.desc())
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def get_current(self) -> Season | None:
         """Default active season — returns the active Liga (kind='league').
 
