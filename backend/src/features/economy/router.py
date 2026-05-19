@@ -10,7 +10,7 @@ from src.features.economy.schemas import (
     TransactionEntry,
 )
 from src.features.economy.service import EconomyService
-from src.shared.dependencies import get_db, require_perm
+from src.shared.dependencies import get_db, require_perm, require_season_writable
 from src.shared.permissions import Perm
 
 router = APIRouter(prefix="/economy", tags=["economy"])
@@ -51,6 +51,7 @@ async def create_transaction(
     body: TransactionCreateRequest,
     service: EconomyService = Depends(_get_service),
     _admin: dict = Depends(require_perm(Perm.ECONOMY)),
+    _writable: dict = Depends(require_season_writable),
 ) -> TransactionEntry:
     return await service.create_transaction(
         season_id=season_id,
@@ -67,6 +68,7 @@ async def regenerate_all_weekly(
     season_id: int,
     service: EconomyService = Depends(_get_service),
     _admin: dict = Depends(require_perm(Perm.ECONOMY)),
+    _writable: dict = Depends(require_season_writable),
 ) -> dict:
     """Delete and regenerate weekly payments for all counting matchdays."""
     return await service.regenerate_all_weekly_payments(season_id)
@@ -80,6 +82,7 @@ async def delete_transaction(
     tx_id: int,
     service: EconomyService = Depends(_get_service),
     _admin: dict = Depends(require_perm(Perm.ECONOMY)),
+    _writable: dict = Depends(require_season_writable),
 ) -> dict:
     await service.delete_transaction(season_id, tx_id)
     return {"deleted": True}
