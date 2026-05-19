@@ -40,8 +40,18 @@ class ScrapingRepository:
     # ------------------------------------------------------------------
 
     async def get_active_season(self) -> Season | None:
-        """Return the season whose status is ``'active'``, or ``None``."""
-        stmt = select(Season).where(Season.status == "active").order_by(Season.id.desc()).limit(1)
+        """Return the active Liga season (kind='league'), or ``None``.
+
+        Used by the scheduler. Tournaments (kind='tournament') don't run
+        through this auto-scrape pipeline; they're triggered manually or
+        via a separate scheduler config.
+        """
+        stmt = (
+            select(Season)
+            .where(Season.status == "active", Season.kind == "league")
+            .order_by(Season.id.desc())
+            .limit(1)
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 

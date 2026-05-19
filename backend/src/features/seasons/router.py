@@ -57,6 +57,19 @@ async def get_current_season(
     return SeasonDetail.model_validate(season)
 
 
+@router.get("/active", response_model=list[SeasonSummary])
+async def list_active_seasons(
+    service: SeasonService = Depends(_get_service),
+) -> list[SeasonSummary]:
+    """Return ALL active seasons (Liga + Tournament).
+
+    Used by the frontend competition switcher to know which competitions
+    are currently playable.
+    """
+    seasons = await service.list_active_seasons()
+    return [SeasonSummary.model_validate(s) for s in seasons]
+
+
 @router.get("/formations", response_model=list[ValidFormationResponse])
 async def get_valid_formations(
     service: SeasonService = Depends(_get_service),

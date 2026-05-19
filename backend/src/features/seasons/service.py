@@ -27,6 +27,10 @@ class SeasonService:
     async def list_seasons(self) -> list[Season]:
         return await self.repo.list_all(order_by=Season.id.desc())
 
+    async def list_active_seasons(self) -> list[Season]:
+        """List all seasons with status='active' (both league and tournament)."""
+        return await self.repo.list_active()
+
     async def get_season(self, season_id: int) -> Season:
         season = await self.repo.get_by_id(season_id)
         if season is None:
@@ -206,6 +210,10 @@ class SeasonService:
             matchday_end=request.matchday_end,
             draft_pool_size=request.draft_pool_size,
             lineup_deadline_min=request.lineup_deadline_min,
+            kind=request.kind,
+            tournament_type=request.tournament_type,
+            tournament_config=request.tournament_config,
+            telegram_chat_id=request.telegram_chat_id,
         )
 
         # 2. Copy scoring rules and payments from source

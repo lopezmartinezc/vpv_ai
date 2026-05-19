@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Boolean, ForeignKey, Numeric, SmallInteger, String, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.shared.models.base import Base
@@ -34,6 +35,10 @@ class Season(Base):
     total_participants: Mapped[int] = mapped_column(SmallInteger, default=0, nullable=False)
     scraping_slug: Mapped[str | None] = mapped_column(String(50))
     edit_unlocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    kind: Mapped[str] = mapped_column(String(20), default="league", nullable=False)
+    tournament_type: Mapped[str | None] = mapped_column(String(30))
+    tournament_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    telegram_chat_id: Mapped[str | None] = mapped_column(String(50))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
 
     scoring_rules: Mapped[list[ScoringRule]] = relationship(back_populates="season", lazy="raise")

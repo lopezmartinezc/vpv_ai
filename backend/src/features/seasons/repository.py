@@ -28,12 +28,30 @@ class SeasonRepository(BaseRepository[Season]):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(Season, session)
 
+    async def list_active(self) -> list[Season]:
+        """All active seasons (any kind), most recent first."""
+        stmt = select(Season).where(Season.status == "active").order_by(Season.id.desc())
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def get_current(self) -> Season | None:
-        stmt = select(Season).where(Season.status == "active").order_by(Season.id.desc()).limit(1)
+        """Default active season — returns the active Liga (kind='league').
+
+        Fallback to latest league if none active. For tournament-specific
+        contexts, callers must pass an explicit season_id.
+        """
+        stmt = (
+            select(Season)
+            .where(Season.status == "active", Season.kind == "league")
+            .order_by(Season.id.desc())
+            .limit(1)
+        )
         result = await self.session.execute(stmt)
         season = result.scalar_one_or_none()
         if season is None:
-            stmt = select(Season).order_by(Season.id.desc()).limit(1)
+            stmt = (
+                select(Season).where(Season.kind == "league").order_by(Season.id.desc()).limit(1)
+            )
             result = await self.session.execute(stmt)
             season = result.scalar_one_or_none()
         return season
@@ -244,6 +262,10 @@ class SeasonRepository(BaseRepository[Season]):
         matchday_end: int = 38,
         draft_pool_size: int = 26,
         lineup_deadline_min: int = 30,
+        kind: str = "league",
+        tournament_type: str | None = None,
+        tournament_config: dict[str, Any] | None = None,
+        telegram_chat_id: str | None = None,
     ) -> Season:
         season = Season(
             name=name,
@@ -254,6 +276,10 @@ class SeasonRepository(BaseRepository[Season]):
             matchday_current=1,  # Start scraping from J1 (pre-draft stats)
             draft_pool_size=draft_pool_size,
             lineup_deadline_min=lineup_deadline_min,
+            kind=kind,
+            tournament_type=tournament_type,
+            tournament_config=tournament_config,
+            telegram_chat_id=telegram_chat_id,
         )
         self.session.add(season)
         await self.session.flush()

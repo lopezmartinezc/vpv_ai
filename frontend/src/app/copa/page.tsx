@@ -5,9 +5,18 @@ import { useFetch } from "@/hooks/use-fetch";
 import type { CopaFullResponse } from "@/types";
 import { CopaStandings } from "@/components/copa/copa-standings";
 import { CopaMatchdays } from "@/components/copa/copa-matchday-detail";
+import { LeagueOnlyGuard } from "@/components/layout/league-only-guard";
 import { SkeletonCards } from "@/components/ui/skeleton";
 
 export default function CopaPage() {
+  return (
+    <LeagueOnlyGuard pageName="La Copa VPV">
+      <CopaPageContent />
+    </LeagueOnlyGuard>
+  );
+}
+
+function CopaPageContent() {
   const { selectedSeason, loading: seasonLoading } = useSeason();
   const { data, loading, error } = useFetch<CopaFullResponse>(
     selectedSeason ? `/copa/${selectedSeason.id}` : null,
