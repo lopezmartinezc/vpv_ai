@@ -16,6 +16,7 @@ interface Season {
   lineup_deadline_min: number;
   total_participants: number;
   scraping_slug: string | null;
+  edit_unlocked: boolean;
 }
 
 interface ScoringRule {
@@ -102,6 +103,7 @@ export default function AdminTemporadasPage() {
   // Action states
   const [downloadingPhotos, setDownloadingPhotos] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
+  const [togglingUnlock, setTogglingUnlock] = useState(false);
 
   const fetchSeasons = useCallback(async () => {
     try {
@@ -389,6 +391,36 @@ export default function AdminTemporadasPage() {
     }
   }
 
+  async function handleToggleEditUnlock() {
+    if (!selectedId || !season) return;
+    const next = !season.edit_unlocked;
+    if (next) {
+      if (
+        !confirm(
+          `DESBLOQUEAR edicion de la temporada FINALIZADA ${season.name}?\n\n` +
+            "Los cambios afectaran datos historicos. Usa solo si es estrictamente necesario.",
+        )
+      )
+        return;
+    }
+    setTogglingUnlock(true);
+    setMessage(null);
+    try {
+      const updated = await apiClient.put<Season>(
+        `/seasons/admin/${selectedId}/edit-unlock`,
+        { unlocked: next },
+      );
+      setSeason(updated);
+      setMessage(next ? "Edicion DESBLOQUEADA" : "Edicion bloqueada");
+      setTimeout(() => setMessage(null), 4000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Error al cambiar estado";
+      setMessage(msg);
+    } finally {
+      setTogglingUnlock(false);
+    }
+  }
+
   async function handleFinalizeSeason() {
     if (!selectedId || !season) return;
     if (!confirm(`Finalizar la temporada ${season.name}? Esta accion no se puede deshacer facilmente.`)) return;
@@ -649,7 +681,39 @@ export default function AdminTemporadasPage() {
                     {finalizing ? "Finalizando..." : "Finalizar temporada"}
                   </button>
                 )}
+                {season.status === "finished" && (
+                  <button
+                    onClick={handleToggleEditUnlock}
+                    disabled={togglingUnlock}
+                    className={`rounded px-3 py-1.5 text-xs font-medium text-white transition-colors disabled:opacity-50 ${
+                      season.edit_unlocked
+                        ? "bg-amber-600 hover:bg-amber-700"
+                        : "bg-zinc-700 hover:bg-zinc-600"
+                    }`}
+                  >
+                    {togglingUnlock
+                      ? "Cambiando..."
+                      : season.edit_unlocked
+                        ? "Bloquear edicion"
+                        : "Desbloquear edicion"}
+                  </button>
+                )}
               </div>
+
+              {season.status === "finished" && season.edit_unlocked && (
+                <div className="rounded border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+                  <strong>WARNING:</strong> Temporada DESBLOQUEADA para edicion.
+                  Los cambios afectaran datos historicos. Bloquea de nuevo
+                  cuando termines.
+                </div>
+              )}
+              {season.status === "finished" && !season.edit_unlocked && (
+                <div className="rounded border border-vpv-border bg-vpv-bg px-3 py-2 text-xs text-vpv-text-muted">
+                  Temporada finalizada y bloqueada. Las modificaciones estan
+                  deshabilitadas. Usa el boton para desbloquear si necesitas
+                  corregir algo historico.
+                </div>
+              )}
             </div>
           </div>
 
