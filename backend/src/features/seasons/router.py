@@ -6,6 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.seasons.schemas import (
+    EditUnlockRequest,
     GroupAssignRequest,
     PaymentsBatchUpdate,
     PaymentUpsertRequest,
@@ -23,7 +24,11 @@ from src.features.seasons.schemas import (
     ValidFormationResponse,
 )
 from src.features.seasons.service import SeasonService
-from src.shared.dependencies import get_current_admin, get_db, require_perm
+from src.shared.dependencies import (
+    get_current_admin,
+    get_db,
+    require_perm,
+)
 from src.shared.permissions import Perm
 
 logger = logging.getLogger(__name__)
@@ -238,6 +243,17 @@ async def finalize_season(
     """Mark season as finished after validating all matchday stats are complete."""
     season_detail = await service.finalize_season(season_id)
     return SeasonFinalizeResponse(season=season_detail)
+
+
+@router.put("/admin/{season_id}/edit-unlock", response_model=SeasonDetail)
+async def set_edit_unlock(
+    season_id: int,
+    body: EditUnlockRequest,
+    service: SeasonService = Depends(_get_service),
+    _admin: dict = Depends(get_current_admin),
+) -> SeasonDetail:
+    """Toggle edit_unlocked flag for a finished season (admin override)."""
+    return await service.set_edit_unlocked(season_id, body.unlocked)
 
 
 # ---------------------------------------------------------------------------

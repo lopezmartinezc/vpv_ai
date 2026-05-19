@@ -270,6 +270,24 @@ class SeasonService:
         if incomplete:
             raise BusinessRuleError(f"No se puede finalizar: jornadas sin stats_ok: {incomplete}")
 
-        updated = await self.repo.update_season(season_id, status="finished")
+        # Always re-lock when finalizing
+        updated = await self.repo.update_season(season_id, status="finished", edit_unlocked=False)
         await self.repo.session.commit()
+        return SeasonDetail.model_validate(updated)
+
+    async def set_edit_unlocked(self, season_id: int, unlocked: bool) -> SeasonDetail:
+        """Toggle the edit_unlocked flag for a finished season.
+
+        Only meaningful when status='finished'. For active/setup seasons
+        the flag is irrelevant (writes are always allowed).
+        """
+        season = await self.get_season(season_id)
+        updated = await self.repo.update_season(season_id, edit_unlocked=unlocked)
+        await self.repo.session.commit()
+        logger.warning(
+            "set_edit_unlocked: season_id=%d status=%s edit_unlocked=%s",
+            season_id,
+            season.status,
+            unlocked,
+        )
         return SeasonDetail.model_validate(updated)

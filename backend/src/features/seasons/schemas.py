@@ -30,9 +30,14 @@ class SeasonDetail(BaseModel):
     lineup_deadline_min: int
     total_participants: int
     scraping_slug: str | None = None
+    edit_unlocked: bool = False
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class EditUnlockRequest(BaseModel):
+    unlocked: bool
 
 
 class ScoringRuleResponse(BaseModel):
