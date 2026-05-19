@@ -108,11 +108,17 @@ function formatRelative(iso: string | null): string {
 }
 
 function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString("es-ES", {
+  const d = new Date(iso);
+  const date = d.toLocaleDateString("es-ES", {
+    day: "2-digit",
+    month: "2-digit",
+  });
+  const time = d.toLocaleTimeString("es-ES", {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
   });
+  return `${date} ${time}`;
 }
 
 function formatMatchDate(iso: string | null): string {
@@ -794,6 +800,11 @@ export default function AdminScrapingPage() {
                                 log.status === "error" ? "bg-red-500/10" : ""
                               }`}
                             >
+                              {log.created_at && (
+                                <span className="mt-px shrink-0 font-mono text-vpv-text-muted/50">
+                                  {formatTime(log.created_at)}
+                                </span>
+                              )}
                               <span
                                 className={`mt-px shrink-0 rounded px-1 text-[8px] font-bold uppercase ${
                                   STATUS_BADGE[log.status] ?? ""
@@ -948,6 +959,11 @@ export default function AdminScrapingPage() {
                               log.status === "error" ? "text-red-400" : "text-vpv-text-muted"
                             }`}
                           >
+                            {log.created_at && (
+                              <span className="mt-px shrink-0 font-mono text-vpv-text-muted/50">
+                                {formatTime(log.created_at)}
+                              </span>
+                            )}
                             <span
                               className={`mt-px shrink-0 rounded px-1 text-[8px] font-bold uppercase ${
                                 STATUS_BADGE[log.status] ?? ""
