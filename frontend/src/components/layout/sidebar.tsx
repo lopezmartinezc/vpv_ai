@@ -17,16 +17,31 @@ interface DeadlineCheck {
   matchday_number: number;
 }
 
-const NAV_ITEMS = [
+type IconName = "home" | "trophy" | "calendar" | "users" | "shuffle" | "coins" | "shield" | "clipboard" | "medal";
+
+type NavItem = {
+  href: string;
+  label: string;
+  icon: IconName;
+  appliesTo?: "all" | "league" | "tournament";
+};
+
+const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Inicio", icon: "home" },
-  { href: "/clasificacion", label: "Liga", icon: "trophy" },
+  { href: "/clasificacion", label: "Clasificacion", icon: "trophy" },
   { href: "/acierto", label: "Acierto", icon: "clipboard" },
-  { href: "/palmares", label: "Palmares", icon: "medal" },
-  { href: "/copa", label: "Copa", icon: "shield" },
+  // Liga-only
+  { href: "/palmares", label: "Palmares", icon: "medal", appliesTo: "league" },
+  { href: "/copa", label: "Copa", icon: "shield", appliesTo: "league" },
+  // Tournament-only (paginas creadas en Fase 6)
+  { href: "/grupos", label: "Grupos", icon: "trophy", appliesTo: "tournament" },
+  { href: "/bracket", label: "Bracket", icon: "shuffle", appliesTo: "tournament" },
+  { href: "/predicciones", label: "Predicciones", icon: "clipboard", appliesTo: "tournament" },
+  // Common
   { href: "/jornadas", label: "Jornadas", icon: "calendar" },
   { href: "/economia", label: "Economia", icon: "coins" },
   { href: "/drafts", label: "Drafts", icon: "shuffle" },
-] as const;
+];
 
 /** Permission required for each admin route. null = admin-only. */
 const ROUTE_PERM: Record<string, number | null> = {
@@ -87,8 +102,15 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
   const { user } = useAuth();
-  const { selectedSeason } = useSeason();
+  const { selectedSeason, isTournamentContext } = useSeason();
   const prevPathname = useRef(pathname);
+
+  const visibleNavItems = NAV_ITEMS.filter((item) => {
+    if (!item.appliesTo || item.appliesTo === "all") return true;
+    if (item.appliesTo === "league") return !isTournamentContext;
+    if (item.appliesTo === "tournament") return isTournamentContext;
+    return true;
+  });
 
   // Determine which matchday to link "Introducir equipo" to
   const { data: deadlineCheck } = useFetch<DeadlineCheck>(
@@ -198,7 +220,7 @@ export function Sidebar({
         {/* Nav items */}
         <nav className="flex-1 overflow-y-auto px-3 py-3">
           <ul className="space-y-1">
-            {NAV_ITEMS.map(({ href, label, icon }) => {
+            {visibleNavItems.map(({ href, label, icon }) => {
               const active =
                 href === "/"
                   ? pathname === "/"
