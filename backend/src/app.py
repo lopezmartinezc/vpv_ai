@@ -107,6 +107,7 @@ def create_app() -> FastAPI:
     from src.features.standings.router import router as standings_router
     from src.features.stats.router import router as stats_router
     from src.features.telegram.router import router as telegram_router
+    from src.features.tournaments.router import router as tournaments_router
 
     app.include_router(achievements_router, prefix="/api")
     app.include_router(backup_router, prefix="/api")
@@ -128,6 +129,7 @@ def create_app() -> FastAPI:
     app.include_router(stats_router, prefix="/api")
     app.include_router(mysql_sync_router, prefix="/api")
     app.include_router(telegram_router, prefix="/api")
+    app.include_router(tournaments_router, prefix="/api")
 
     # Serve player photos and other static assets.
     static_dir = Path(__file__).resolve().parent.parent / "static"

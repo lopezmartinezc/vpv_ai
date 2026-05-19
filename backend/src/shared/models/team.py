@@ -23,6 +23,7 @@ class Team(Base):
     short_name: Mapped[str | None] = mapped_column(String(10))
     slug: Mapped[str] = mapped_column(String(100), nullable=False)
     logo_path: Mapped[str | None] = mapped_column(String(255))
+    tournament_group: Mapped[str | None] = mapped_column(String(2))
 
     season: Mapped[Season] = relationship(back_populates="teams")
     players: Mapped[list[Player]] = relationship(back_populates="team", lazy="raise")

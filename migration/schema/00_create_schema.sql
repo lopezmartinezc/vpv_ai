@@ -150,8 +150,11 @@ CREATE TABLE teams (
     short_name      VARCHAR(10),
     slug            VARCHAR(100) NOT NULL,  -- nom_url del scraping
     logo_path       VARCHAR(255),
+    tournament_group VARCHAR(2),            -- Grupo en fase de grupos (A, B, ...) para torneos
     UNIQUE(season_id, slug)
 );
+
+CREATE INDEX idx_teams_tournament_group ON teams(season_id, tournament_group);
 
 -- ----------------------------------------------------------------------------
 -- 8. competitions -- Preparada para futuro (playoffs, copa)
