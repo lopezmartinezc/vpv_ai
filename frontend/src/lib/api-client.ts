@@ -51,6 +51,18 @@ class ApiClient {
         throw new ApiClientError(response.status, error);
       }
 
+      // Season finished + locked — surface a clear UX hint
+      if (
+        response.status === 403 &&
+        error.code === "SEASON_LOCKED" &&
+        typeof window !== "undefined"
+      ) {
+        window.alert(
+          "Temporada finalizada y bloqueada.\n\n" +
+            "Para modificar datos historicos, ve a /admin/temporadas y activa 'Desbloquear edicion' para esta temporada.",
+        );
+      }
+
       throw new ApiClientError(response.status, error);
     }
 
