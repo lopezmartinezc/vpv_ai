@@ -3,6 +3,7 @@
 import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
 import { SkeletonCards } from "@/components/ui/skeleton";
+import { TournamentHero } from "@/components/tournament/tournament-hero";
 import type { BracketResponse, BracketMatch } from "@/types";
 
 export default function BracketPage() {
@@ -46,11 +47,12 @@ function BracketContent() {
 
   if (data.rounds.length === 0) {
     return (
-      <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-bold text-vpv-text">Cuadro de eliminatorias</h1>
-          <p className="mt-1 text-vpv-text-muted">{data.season_name}</p>
-        </div>
+      <div className="space-y-6">
+        <TournamentHero
+          title="Cuadro de eliminatorias"
+          subtitle="Octavos hasta la final"
+          mascot="zayu"
+        />
         <div className="rounded-lg border border-vpv-card-border bg-vpv-card p-8 text-center">
           <p className="text-vpv-text-muted">
             El cuadro se rellena conforme avanza el torneo. Aun no hay rondas configuradas.
@@ -62,10 +64,11 @@ function BracketContent() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-vpv-text">Cuadro de eliminatorias</h1>
-        <p className="mt-1 text-vpv-text-muted">{data.season_name}</p>
-      </div>
+      <TournamentHero
+        title="Cuadro de eliminatorias"
+        subtitle="Octavos hasta la final"
+        mascot="zayu"
+      />
 
       <div className="flex gap-4 overflow-x-auto pb-2">
         {data.rounds.map((round) => (

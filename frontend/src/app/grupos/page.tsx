@@ -3,6 +3,7 @@
 import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
 import { SkeletonCards } from "@/components/ui/skeleton";
+import { TournamentHero } from "@/components/tournament/tournament-hero";
 import type { TournamentGroupsResponse } from "@/types";
 
 export default function GruposPage() {
@@ -47,11 +48,12 @@ function GruposContent() {
 
   if (data.groups.length === 0) {
     return (
-      <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-bold text-vpv-text">Fase de grupos</h1>
-          <p className="mt-1 text-vpv-text-muted">{data.season_name}</p>
-        </div>
+      <div className="space-y-6">
+        <TournamentHero
+          title="Fase de grupos"
+          subtitle="Clasificacion de los 8 grupos"
+          mascot="maple"
+        />
         <div className="rounded-lg border border-vpv-card-border bg-vpv-card p-8 text-center">
           <p className="text-vpv-text-muted">
             Aun no hay equipos asignados a grupos. Configura los grupos
@@ -64,10 +66,11 @@ function GruposContent() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-vpv-text">Fase de grupos</h1>
-        <p className="mt-1 text-vpv-text-muted">{data.season_name}</p>
-      </div>
+      <TournamentHero
+        title="Fase de grupos"
+        subtitle="Clasificacion de los 8 grupos"
+        mascot="maple"
+      />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {data.groups.map((group) => (

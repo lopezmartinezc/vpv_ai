@@ -5,6 +5,7 @@ import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
 import { apiClient } from "@/lib/api-client";
 import { SkeletonCards } from "@/components/ui/skeleton";
+import { TournamentHero } from "@/components/tournament/tournament-hero";
 import type {
   PredictionsListResponse,
   PredictionRequest,
@@ -99,12 +100,11 @@ function PrediccionesContent() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-vpv-text">Predicciones</h1>
-        <p className="mt-1 text-vpv-text-muted">
-          Acierta el campeon, maximo goleador, mejor jugador y la sorpresa del torneo.
-        </p>
-      </div>
+      <TournamentHero
+        title="Predicciones"
+        subtitle="Acierta el campeon, goleador, mejor jugador y la sorpresa"
+        mascot="clutch"
+      />
 
       {/* My prediction form */}
       <div className="rounded-lg border border-vpv-card-border bg-vpv-card">

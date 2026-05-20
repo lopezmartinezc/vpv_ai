@@ -102,6 +102,27 @@ export function SeasonProvider({ children }: { children: React.ReactNode }) {
     return { activeSeasons, activeLeague, activeTournament, isTournamentContext };
   }, [seasons, selectedSeason]);
 
+  // Apply tournament theme class on body when in tournament context.
+  // Class drives CSS variables override + background pattern.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const body = document.body;
+    const TOURNAMENT_CLASSES = [
+      "tournament-active",
+      "tournament-mundial",
+      "tournament-eurocopa",
+      "tournament-copa_america",
+    ];
+    body.classList.remove(...TOURNAMENT_CLASSES);
+    if (derived.isTournamentContext && selectedSeason?.tournament_type) {
+      body.classList.add("tournament-active");
+      body.classList.add(`tournament-${selectedSeason.tournament_type}`);
+    }
+    return () => {
+      body.classList.remove(...TOURNAMENT_CLASSES);
+    };
+  }, [derived.isTournamentContext, selectedSeason?.tournament_type]);
+
   return (
     <SeasonContext
       value={{

@@ -67,3 +67,88 @@ body,
 .border-vpv-card-border {
   transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
+
+/* ============================================
+   Tournament themes (Mundial, Eurocopa, ...)
+   Applied to <body> via SeasonContext when
+   the current season is a tournament.
+   ============================================ */
+
+/* Mundial 2026 — Mexico/USA/Canada palette
+   Primary: ocean blue (USA), Accent: warm red, Highlight: amber gold */
+body.tournament-mundial {
+  --color-accent: #1E40AF;       /* Deep blue */
+  --color-accent-hover: #1E3A8A;
+  --color-gold: #F59E0B;         /* Warm gold */
+}
+
+body.tournament-mundial.dark {
+  --color-accent: #60A5FA;       /* Lighter blue for dark mode */
+  --color-accent-hover: #3B82F6;
+  --color-gold: #FBBF24;
+}
+
+/* Eurocopa — UEFA palette */
+body.tournament-eurocopa {
+  --color-accent: #1E3A8A;
+  --color-accent-hover: #1E40AF;
+  --color-gold: #FDE047;
+}
+
+body.tournament-eurocopa.dark {
+  --color-accent: #93C5FD;
+  --color-accent-hover: #60A5FA;
+  --color-gold: #FACC15;
+}
+
+/* Subtle background pattern for tournament context
+   Hexagons of accent color at low opacity. */
+body.tournament-active {
+  background-image:
+    radial-gradient(
+      circle at 0% 0%,
+      color-mix(in srgb, var(--color-accent) 6%, transparent) 0%,
+      transparent 30%
+    ),
+    radial-gradient(
+      circle at 100% 100%,
+      color-mix(in srgb, var(--color-gold) 5%, transparent) 0%,
+      transparent 35%
+    );
+  background-attachment: fixed;
+}
+
+/* Tournament page hero — gradient banner */
+.tournament-hero {
+  background: linear-gradient(
+    135deg,
+    var(--color-accent) 0%,
+    color-mix(in srgb, var(--color-accent) 70%, var(--color-gold)) 60%,
+    var(--color-danger) 100%
+  );
+  color: white;
+}
+
+.tournament-hero h1,
+.tournament-hero p {
+  color: white !important;
+}
+
+/* Decorative pattern overlay inside hero */
+.tournament-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(
+      circle at 20% 50%,
+      rgba(255, 255, 255, 0.1) 0%,
+      transparent 25%
+    ),
+    radial-gradient(
+      circle at 80% 70%,
+      rgba(255, 255, 255, 0.08) 0%,
+      transparent 30%
+    );
+  pointer-events: none;
+}

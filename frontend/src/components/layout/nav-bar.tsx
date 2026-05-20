@@ -1,12 +1,18 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useAuth } from "@/contexts/auth-context";
+import { useSeason } from "@/contexts/season-context";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Logo } from "@/components/ui/logo";
 
 export function NavBar({ onMenuOpen }: { onMenuOpen: () => void }) {
   const { user, logout } = useAuth();
+  const { selectedSeason, isTournamentContext } = useSeason();
+  const tournamentType = isTournamentContext
+    ? selectedSeason?.tournament_type ?? null
+    : null;
 
   return (
     <header className="sticky top-0 z-30 border-b border-vpv-border bg-vpv-card/95 backdrop-blur">
@@ -32,8 +38,19 @@ export function NavBar({ onMenuOpen }: { onMenuOpen: () => void }) {
           </svg>
         </button>
 
-        <Link href="/" className="text-vpv-accent">
+        <Link href="/" className="flex items-center gap-2 text-vpv-accent">
           <Logo className="h-10 w-auto" />
+          {tournamentType === "mundial" && (
+            <span className="relative hidden h-9 w-9 sm:block" aria-label="Mundial 2026">
+              <Image
+                src="/tournaments/mundial/logo.webp"
+                alt="Mundial 2026"
+                fill
+                sizes="36px"
+                className="object-contain"
+              />
+            </span>
+          )}
         </Link>
 
         <div className="ml-auto flex items-center gap-3">
