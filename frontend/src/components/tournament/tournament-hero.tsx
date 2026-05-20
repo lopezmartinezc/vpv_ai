@@ -14,12 +14,17 @@ import { useSeason } from "@/contexts/season-context";
 export function TournamentHero({
   title,
   subtitle,
+  onlyInTournamentContext = false,
 }: {
   title: string;
   subtitle?: string;
+  /** When true, renders nothing if the selected season is not a tournament. */
+  onlyInTournamentContext?: boolean;
 }) {
-  const { selectedSeason } = useSeason();
+  const { selectedSeason, isTournamentContext } = useSeason();
   const tournamentType = selectedSeason?.tournament_type ?? "mundial";
+
+  if (onlyInTournamentContext && !isTournamentContext) return null;
 
   return (
     <div className="tournament-hero relative overflow-hidden rounded-2xl px-6 py-8 shadow-lg sm:px-8 sm:py-10">

@@ -5,10 +5,11 @@ import { useFetch } from "@/hooks/use-fetch";
 import { BalanceList } from "@/components/economy/balance-list";
 import { SkeletonTable } from "@/components/ui/skeleton";
 import { SeasonSelector } from "@/components/layout/season-selector";
+import { TournamentHero } from "@/components/tournament/tournament-hero";
 import type { EconomyResponse } from "@/types";
 
 export default function EconomiaPage() {
-  const { selectedSeason, loading: seasonLoading } = useSeason();
+  const { selectedSeason, loading: seasonLoading, isTournamentContext } = useSeason();
   const { data, loading } = useFetch<EconomyResponse>(
     selectedSeason ? `/economy/${selectedSeason.id}` : null,
   );
@@ -32,10 +33,17 @@ export default function EconomiaPage() {
 
   return (
     <div className="space-y-4">
+      <TournamentHero
+        title="Economia"
+        subtitle={selectedSeason?.name}
+        onlyInTournamentContext
+      />
       <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold text-vpv-text">
-          Economia {selectedSeason?.name}
-        </h1>
+        {!isTournamentContext && (
+          <h1 className="text-2xl font-bold text-vpv-text">
+            Economia {selectedSeason?.name}
+          </h1>
+        )}
         <SeasonSelector />
       </div>
       <BalanceList balances={data.balances} />

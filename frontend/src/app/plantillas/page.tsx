@@ -6,6 +6,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
 import { SeasonSelector } from "@/components/layout/season-selector";
+import { TournamentHero } from "@/components/tournament/tournament-hero";
 import type { SquadListResponse } from "@/types";
 
 const POSITION_LABELS = ["POR", "DEF", "MED", "DEL"] as const;
@@ -33,7 +34,7 @@ export default function PlantillasPage() {
 }
 
 function PlantillasContent() {
-  const { selectedSeason, loading: seasonLoading } = useSeason();
+  const { selectedSeason, loading: seasonLoading, isTournamentContext } = useSeason();
   const searchParams = useSearchParams();
   const router = useRouter();
   const jornada = searchParams.get("jornada");
@@ -80,10 +81,17 @@ function PlantillasContent() {
 
   return (
     <div className="space-y-4">
+      <TournamentHero
+        title="Plantillas"
+        subtitle={selectedSeason?.name}
+        onlyInTournamentContext
+      />
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold text-vpv-text">
-          Plantillas {selectedSeason?.name}
-        </h1>
+        {!isTournamentContext && (
+          <h1 className="text-2xl font-bold text-vpv-text">
+            Plantillas {selectedSeason?.name}
+          </h1>
+        )}
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-2 text-sm text-vpv-text-muted">
             Jornada

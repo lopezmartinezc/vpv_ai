@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
+import { TournamentHero } from "@/components/tournament/tournament-hero";
 import { SkeletonTable } from "@/components/ui/skeleton";
 import type {
   AccuracyMatchdayRankingEntry,
@@ -150,7 +151,7 @@ function MatchdayDetail({ entry }: { entry: AccuracyMatchdayRankingEntry }) {
 }
 
 export default function AciertoPage() {
-  const { selectedSeason, loading: seasonLoading } = useSeason();
+  const { selectedSeason, loading: seasonLoading, isTournamentContext } = useSeason();
   const [matchday, setMatchday] = useState<number | "">();
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
@@ -179,14 +180,23 @@ export default function AciertoPage() {
 
   return (
     <div className="space-y-4">
+      <TournamentHero
+        title="Acierto de Mister"
+        subtitle={`Quien elige mejor su XI — ${data?.season_name ?? ""}`}
+        onlyInTournamentContext
+      />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-vpv-text">
-            Acierto de Mister
-          </h1>
-          <p className="text-sm text-vpv-text-muted">
-            Quien elige mejor su XI — {data?.season_name}
-          </p>
+          {!isTournamentContext && (
+            <>
+              <h1 className="text-2xl font-bold text-vpv-text">
+                Acierto de Mister
+              </h1>
+              <p className="text-sm text-vpv-text-muted">
+                Quien elige mejor su XI — {data?.season_name}
+              </p>
+            </>
+          )}
         </div>
 
         {/* Matchday dropdown */}

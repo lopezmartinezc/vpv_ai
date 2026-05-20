@@ -7,6 +7,7 @@ import { LigaMatchdayDetail } from "@/components/standings/liga-matchday-detail"
 import { EvolutionChart } from "@/components/standings/evolution-chart";
 import { SkeletonTable } from "@/components/ui/skeleton";
 import { Logo } from "@/components/ui/logo";
+import { TournamentHero } from "@/components/tournament/tournament-hero";
 import type {
   GroupStandingsResponse,
   MatchdayListResponse,
@@ -27,7 +28,7 @@ interface EvolutionResponse {
 }
 
 export default function ClasificacionPage() {
-  const { selectedSeason, loading: seasonLoading } = useSeason();
+  const { selectedSeason, loading: seasonLoading, isTournamentContext } = useSeason();
   const { data: standings, loading: standingsLoading } =
     useFetch<StandingsResponse>(
       selectedSeason ? `/standings/${selectedSeason.id}` : null,
@@ -62,12 +63,19 @@ export default function ClasificacionPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Logo className="h-16 w-auto text-vpv-accent" />
-        <p className="text-sm text-vpv-text-muted">
-          Temporada {standings.season_name}
-        </p>
-      </div>
+      <TournamentHero
+        title="Clasificacion"
+        subtitle={standings.season_name}
+        onlyInTournamentContext
+      />
+      {!isTournamentContext && (
+        <div className="flex items-center gap-4">
+          <Logo className="h-16 w-auto text-vpv-accent" />
+          <p className="text-sm text-vpv-text-muted">
+            Temporada {standings.season_name}
+          </p>
+        </div>
+      )}
 
       <StandingsList entries={standings.entries} />
 

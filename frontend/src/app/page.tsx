@@ -12,6 +12,7 @@ import { CopaMatchdayWidget } from "@/components/dashboard/copa-matchday-widget"
 import { PagometroJornadaWidget } from "@/components/dashboard/pagometro-jornada-widget";
 import { PagometroWidget } from "@/components/dashboard/pagometro-widget";
 import { DeadlineWidget } from "@/components/dashboard/deadline-widget";
+import { TournamentHero } from "@/components/tournament/tournament-hero";
 import { SkeletonCards } from "@/components/ui/skeleton";
 import type { GroupStandingsResponse } from "@/types";
 import { Logo } from "@/components/ui/logo";
@@ -26,7 +27,7 @@ interface SeasonPaymentEntry {
 }
 
 export default function Home() {
-  const { selectedSeason, loading: seasonLoading } = useSeason();
+  const { selectedSeason, loading: seasonLoading, isTournamentContext } = useSeason();
   const mdCurrent = selectedSeason?.matchday_current ?? null;
   const {
     standings,
@@ -144,14 +145,21 @@ export default function Home() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Logo className="h-16 w-auto text-vpv-accent" />
-        {selectedSeason && (
-          <p className="text-sm text-vpv-text-muted">
-            Temporada {selectedSeason.name}
-          </p>
-        )}
-      </div>
+      <TournamentHero
+        title="Inicio"
+        subtitle="Bienvenido al fantasy del Mundial"
+        onlyInTournamentContext
+      />
+      {!isTournamentContext && (
+        <div className="flex items-center gap-4">
+          <Logo className="h-16 w-auto text-vpv-accent" />
+          {selectedSeason && (
+            <p className="text-sm text-vpv-text-muted">
+              Temporada {selectedSeason.name}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Deadline countdown — always for current matchday */}
       {currentMatchdayDetail && selectedSeason && (

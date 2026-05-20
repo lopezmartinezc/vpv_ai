@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
 import { SeasonSelector } from "@/components/layout/season-selector";
+import { TournamentHero } from "@/components/tournament/tournament-hero";
 import type { MatchdayListResponse } from "@/types";
 
 export default function JornadasPage() {
-  const { selectedSeason, loading: seasonLoading } = useSeason();
+  const { selectedSeason, loading: seasonLoading, isTournamentContext } = useSeason();
   const { data, loading } = useFetch<MatchdayListResponse>(
     selectedSeason ? `/matchdays/${selectedSeason.id}` : null,
   );
@@ -38,10 +39,17 @@ export default function JornadasPage() {
 
   return (
     <div className="space-y-4">
+      <TournamentHero
+        title="Jornadas"
+        subtitle={selectedSeason?.name}
+        onlyInTournamentContext
+      />
       <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold text-vpv-text">
-          Jornadas {selectedSeason?.name}
-        </h1>
+        {!isTournamentContext && (
+          <h1 className="text-2xl font-bold text-vpv-text">
+            Jornadas {selectedSeason?.name}
+          </h1>
+        )}
         <SeasonSelector />
       </div>
 

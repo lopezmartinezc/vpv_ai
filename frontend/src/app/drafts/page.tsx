@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
 import { SeasonSelector } from "@/components/layout/season-selector";
+import { TournamentHero } from "@/components/tournament/tournament-hero";
 import type { DraftListResponse } from "@/types";
 
 const PHASE_LABELS: Record<string, string> = {
@@ -17,7 +18,7 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 export default function DraftsPage() {
-  const { selectedSeason, loading: seasonLoading } = useSeason();
+  const { selectedSeason, loading: seasonLoading, isTournamentContext } = useSeason();
   const { data, loading } = useFetch<DraftListResponse>(
     selectedSeason ? `/drafts/${selectedSeason.id}` : null,
   );
@@ -49,10 +50,17 @@ export default function DraftsPage() {
   if (data.drafts.length === 0) {
     return (
       <div className="space-y-4">
+        <TournamentHero
+          title="Drafts"
+          subtitle={selectedSeason?.name}
+          onlyInTournamentContext
+        />
         <div className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-bold text-vpv-text">
-            Drafts {selectedSeason?.name}
-          </h1>
+          {!isTournamentContext && (
+            <h1 className="text-2xl font-bold text-vpv-text">
+              Drafts {selectedSeason?.name}
+            </h1>
+          )}
           <SeasonSelector />
         </div>
         <p className="text-vpv-text-muted">
@@ -64,10 +72,17 @@ export default function DraftsPage() {
 
   return (
     <div className="space-y-4">
+      <TournamentHero
+        title="Drafts"
+        subtitle={selectedSeason?.name}
+        onlyInTournamentContext
+      />
       <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold text-vpv-text">
-          Drafts {selectedSeason?.name}
-        </h1>
+        {!isTournamentContext && (
+          <h1 className="text-2xl font-bold text-vpv-text">
+            Drafts {selectedSeason?.name}
+          </h1>
+        )}
         <SeasonSelector />
       </div>
 
