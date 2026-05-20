@@ -8,7 +8,7 @@ from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
-from src.core.exceptions import AuthenticationError, BusinessRuleError
+from src.core.exceptions import AuthenticationError, BusinessRuleError, NotFoundError
 from src.features.auth.repository import AuthRepository, InviteRepository
 from src.features.auth.schemas import (
     AdminUserResponse,
@@ -184,6 +184,37 @@ class AuthService:
     async def list_users(self) -> list[AdminUserResponse]:
         users = await self.auth_repo.get_all_users()
         return [self._admin_response(u) for u in users]
+
+    async def admin_update_user(
+        self,
+        user_id: int,
+        username: str | None = None,
+        display_name: str | None = None,
+        email: str | None = None,
+        telegram_chat_id: str | None = None,
+        password: str | None = None,
+    ) -> AdminUserResponse:
+        """Update editable user fields (admin-only)."""
+        user = await self.auth_repo.get_user_by_id(user_id)
+        if user is None:
+            raise NotFoundError("User", user_id)
+
+        if username is not None and username != user.username:
+            existing = await self.auth_repo.get_user_by_username(username)
+            if existing is not None and existing.id != user_id:
+                raise BusinessRuleError(f"Ya existe un usuario con username '{username}'")
+            user.username = username
+        if display_name is not None:
+            user.display_name = display_name
+        if email is not None:
+            user.email = email or None  # empty string -> NULL
+        if telegram_chat_id is not None:
+            user.telegram_chat_id = telegram_chat_id or None
+        if password:
+            user.password_hash = _hash_password(password)
+
+        await self.session.commit()
+        return self._admin_response(user)
 
     async def admin_create_user(
         self,

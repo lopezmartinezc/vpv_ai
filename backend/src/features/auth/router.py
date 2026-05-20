@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.rate_limit import limiter
 from src.features.auth.schemas import (
     AdminCreateUserRequest,
+    AdminUpdateUserRequest,
     AdminUserResponse,
     ChangePasswordRequest,
     InviteCreateRequest,
@@ -131,6 +132,24 @@ async def create_user(
         display_name=body.display_name,
         password=body.password,
         is_admin=body.is_admin,
+    )
+
+
+@router.patch("/admin/users/{user_id}", response_model=AdminUserResponse)
+async def update_user(
+    user_id: int,
+    body: AdminUpdateUserRequest,
+    _admin: dict = Depends(get_current_admin),
+    service: AuthService = Depends(_get_service),
+) -> AdminUserResponse:
+    """Update editable user fields (username, display_name, email, telegram_chat_id, password)."""
+    return await service.admin_update_user(
+        user_id=user_id,
+        username=body.username,
+        display_name=body.display_name,
+        email=body.email,
+        telegram_chat_id=body.telegram_chat_id,
+        password=body.password,
     )
 
 

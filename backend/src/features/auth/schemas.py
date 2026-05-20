@@ -85,3 +85,11 @@ class AdminCreateUserRequest(BaseModel):
     display_name: str = Field(min_length=1, max_length=100)
     password: str = Field(min_length=8)
     is_admin: bool = False
+
+
+class AdminUpdateUserRequest(BaseModel):
+    username: str | None = Field(default=None, min_length=2, max_length=50)
+    display_name: str | None = Field(default=None, min_length=1, max_length=100)
+    email: str | None = Field(default=None, max_length=200)
+    telegram_chat_id: str | None = Field(default=None, max_length=50)
+    password: str | None = Field(default=None, min_length=8)

@@ -35,6 +35,63 @@ export default function AdminUsuariosPage() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
+  // Edit-user modal
+  const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
+  const [editForm, setEditForm] = useState({
+    username: "",
+    display_name: "",
+    email: "",
+    telegram_chat_id: "",
+    password: "",
+  });
+  const [editing, setEditing] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  function openEdit(user: AdminUser) {
+    setEditingUser(user);
+    setEditForm({
+      username: user.username,
+      display_name: user.display_name,
+      email: user.email ?? "",
+      telegram_chat_id: user.telegram_chat_id ?? "",
+      password: "",
+    });
+    setEditError(null);
+  }
+
+  async function handleEditUser() {
+    if (!editingUser) return;
+    setEditing(true);
+    setEditError(null);
+    try {
+      // Only send fields that actually changed
+      const body: Record<string, string | undefined> = {};
+      if (editForm.username !== editingUser.username) body.username = editForm.username;
+      if (editForm.display_name !== editingUser.display_name)
+        body.display_name = editForm.display_name;
+      if (editForm.email !== (editingUser.email ?? "")) body.email = editForm.email;
+      if (editForm.telegram_chat_id !== (editingUser.telegram_chat_id ?? ""))
+        body.telegram_chat_id = editForm.telegram_chat_id;
+      if (editForm.password) body.password = editForm.password;
+
+      if (Object.keys(body).length === 0) {
+        setEditingUser(null);
+        return;
+      }
+
+      const updated = await apiClient.patch<AdminUser>(
+        `/auth/admin/users/${editingUser.id}`,
+        body,
+      );
+      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+      setEditingUser(null);
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : "Error al guardar");
+    } finally {
+      setEditing(false);
+    }
+  }
+
   async function handleCreateUser() {
     setCreating(true);
     setCreateError(null);
@@ -247,6 +304,96 @@ export default function AdminUsuariosPage() {
       </div>
     )}
 
+    {/* Edit user modal */}
+    {editingUser && (
+      <div className="rounded-lg border border-blue-500/40 bg-vpv-card">
+        <div className="border-b border-vpv-border px-4 py-3">
+          <h2 className="font-semibold text-vpv-text">
+            Editar usuario: {editingUser.display_name}
+          </h2>
+        </div>
+        <div className="space-y-3 px-4 py-3">
+          {editError && (
+            <p className="rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+              {editError}
+            </p>
+          )}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs text-vpv-text-muted">Username</label>
+              <input
+                type="text"
+                value={editForm.username}
+                onChange={(e) => setEditForm({ ...editForm, username: e.target.value })}
+                className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-vpv-text-muted">Nombre a mostrar</label>
+              <input
+                type="text"
+                value={editForm.display_name}
+                onChange={(e) => setEditForm({ ...editForm, display_name: e.target.value })}
+                className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-vpv-text-muted">Email</label>
+              <input
+                type="email"
+                value={editForm.email}
+                onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                placeholder="(opcional)"
+                className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-vpv-text-muted">Telegram chat ID</label>
+              <input
+                type="text"
+                value={editForm.telegram_chat_id}
+                onChange={(e) => setEditForm({ ...editForm, telegram_chat_id: e.target.value })}
+                placeholder="(opcional)"
+                className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-xs text-vpv-text-muted">
+                Nueva password (deja en blanco para no cambiar)
+              </label>
+              <input
+                type="text"
+                value={editForm.password}
+                onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                placeholder="min 8 caracteres"
+                className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleEditUser}
+              disabled={
+                editing ||
+                editForm.username.trim().length < 2 ||
+                editForm.display_name.trim().length === 0 ||
+                (editForm.password.length > 0 && editForm.password.length < 8)
+              }
+              className="rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+            >
+              {editing ? "Guardando..." : "Guardar"}
+            </button>
+            <button
+              onClick={() => setEditingUser(null)}
+              className="rounded border border-vpv-border px-3 py-1.5 text-xs text-vpv-text-muted transition-colors hover:bg-vpv-bg"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
     <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
       <div className="flex items-center justify-between border-b border-vpv-border px-4 py-3">
         <h2 className="font-semibold text-vpv-text">
@@ -295,6 +442,12 @@ export default function AdminUsuariosPage() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => openEdit(user)}
+                className="rounded border border-blue-500/30 px-2 py-1 text-xs text-blue-400 transition-colors hover:bg-blue-500/10"
+              >
+                Editar
+              </button>
               <button
                 onClick={() => handleToggleAdmin(user.id)}
                 disabled={actionLoading === user.id}
@@ -374,6 +527,12 @@ export default function AdminUsuariosPage() {
                 </td>
                 <td className="px-4 py-2 text-right">
                   <div className="flex items-center justify-end gap-2">
+                    <button
+                      onClick={() => openEdit(user)}
+                      className="rounded border border-blue-500/30 px-2 py-1 text-xs text-blue-400 transition-colors hover:bg-blue-500/10"
+                    >
+                      Editar
+                    </button>
                     <button
                       onClick={() => handleToggleAdmin(user.id)}
                       disabled={actionLoading === user.id}
