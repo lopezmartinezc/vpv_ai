@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -71,6 +73,7 @@ class PredictionRequest(BaseModel):
     best_player_id: int | None = None
     dark_horse_team_id: int | None = None
     notes: str | None = None
+    bracket_predictions: dict[str, Any] | None = None
 
 
 class PredictionResponse(BaseModel):
@@ -88,6 +91,7 @@ class PredictionResponse(BaseModel):
     dark_horse_team_name: str | None = None
     notes: str | None
     bonus_points: int
+    bracket_predictions: dict[str, Any] | None = None
 
 
 class PredictionsListResponse(BaseModel):

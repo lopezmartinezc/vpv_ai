@@ -291,6 +291,7 @@ class TournamentService:
             dark_horse_team_name=dark_horse_name,
             notes=pred.notes,
             bonus_points=pred.bonus_points,
+            bracket_predictions=pred.bracket_predictions,
         )
 
     async def get_my_prediction(self, season_id: int, user_id: int) -> PredictionResponse | None:
@@ -327,6 +328,7 @@ class TournamentService:
                 best_player_id=body.best_player_id,
                 dark_horse_team_id=body.dark_horse_team_id,
                 notes=body.notes,
+                bracket_predictions=body.bracket_predictions,
             )
             self.session.add(pred)
         else:
@@ -335,6 +337,8 @@ class TournamentService:
             pred.best_player_id = body.best_player_id
             pred.dark_horse_team_id = body.dark_horse_team_id
             pred.notes = body.notes
+            if body.bracket_predictions is not None:
+                pred.bracket_predictions = body.bracket_predictions
             pred.updated_at = datetime.now(UTC)
 
         await self.session.commit()
