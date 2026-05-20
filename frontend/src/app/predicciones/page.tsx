@@ -103,7 +103,6 @@ function PrediccionesContent() {
       <TournamentHero
         title="Predicciones"
         subtitle="Acierta el campeon, goleador, mejor jugador y la sorpresa"
-        mascot="clutch"
       />
 
       {/* My prediction form */}

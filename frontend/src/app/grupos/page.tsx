@@ -52,7 +52,6 @@ function GruposContent() {
         <TournamentHero
           title="Fase de grupos"
           subtitle="Clasificacion de los 8 grupos"
-          mascot="maple"
         />
         <div className="rounded-lg border border-vpv-card-border bg-vpv-card p-8 text-center">
           <p className="text-vpv-text-muted">
@@ -69,7 +68,6 @@ function GruposContent() {
       <TournamentHero
         title="Fase de grupos"
         subtitle="Clasificacion de los 8 grupos"
-        mascot="maple"
       />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

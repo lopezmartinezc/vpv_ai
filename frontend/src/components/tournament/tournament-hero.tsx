@@ -5,28 +5,24 @@ import { useSeason } from "@/contexts/season-context";
 
 /**
  * Big themed banner shown at the top of tournament pages.
- * For Mundial 2026 uses the official emblem + rotating host mascots
- * (Maple, Zayu, Clutch).
+ * For Mundial 2026 uses the official emblem with a decorative globe
+ * pattern. Pure CSS/SVG, no external image dependencies beyond the
+ * tournament logo.
  *
  * Static assets live in public/tournaments/{type}/.
  */
 export function TournamentHero({
   title,
   subtitle,
-  mascot,
 }: {
   title: string;
   subtitle?: string;
-  /** Force a specific mascot. Default rotates per page. */
-  mascot?: "maple" | "zayu" | "clutch" | "auto";
 }) {
   const { selectedSeason } = useSeason();
   const tournamentType = selectedSeason?.tournament_type ?? "mundial";
-  const resolvedMascot = mascot ?? pickMascot(title);
 
   return (
     <div className="tournament-hero relative overflow-hidden rounded-2xl px-6 py-8 shadow-lg sm:px-8 sm:py-10">
-      {/* Decorative pattern */}
       <DecorativePattern type={tournamentType} />
 
       <div className="relative z-10 flex items-center gap-4 sm:gap-6">
@@ -60,29 +56,9 @@ export function TournamentHero({
             <p className="mt-2 text-sm text-white/90 sm:text-base">{subtitle}</p>
           )}
         </div>
-
-        {/* Mascot (desktop only, hidden on small screens) */}
-        {tournamentType === "mundial" && resolvedMascot !== "auto" && (
-          <div className="relative hidden h-32 w-32 shrink-0 md:block">
-            <Image
-              src={`/tournaments/mundial/mascot-${resolvedMascot}.avif`}
-              alt={`Mascota ${resolvedMascot}`}
-              fill
-              sizes="128px"
-              className="object-contain drop-shadow-xl"
-            />
-          </div>
-        )}
       </div>
     </div>
   );
-}
-
-/** Pick a stable mascot per page title so each section looks different. */
-function pickMascot(title: string): "maple" | "zayu" | "clutch" {
-  const mascots: Array<"maple" | "zayu" | "clutch"> = ["maple", "zayu", "clutch"];
-  const hash = title.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
-  return mascots[hash % mascots.length];
 }
 
 function DecorativePattern({ type }: { type: string }) {

@@ -51,7 +51,6 @@ function BracketContent() {
         <TournamentHero
           title="Cuadro de eliminatorias"
           subtitle="Octavos hasta la final"
-          mascot="zayu"
         />
         <div className="rounded-lg border border-vpv-card-border bg-vpv-card p-8 text-center">
           <p className="text-vpv-text-muted">
@@ -67,7 +66,6 @@ function BracketContent() {
       <TournamentHero
         title="Cuadro de eliminatorias"
         subtitle="Octavos hasta la final"
-        mascot="zayu"
       />
 
       <div className="flex gap-4 overflow-x-auto pb-2">
