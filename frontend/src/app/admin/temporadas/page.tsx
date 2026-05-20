@@ -398,16 +398,85 @@ export default function AdminTemporadasPage() {
       if (newKind === "tournament") {
         body.tournament_type = newTournamentType;
         if (newTournamentType === "mundial") {
-          // Mundial 2026: 48 teams, 12 groups of 4, then R32 → R16 → QF → SF → F
+          // Mundial 2026 (FIFA Regulations Article 12): 48 teams, 12 groups
+          // of 4. Knockout: R32 -> R16 -> QF -> SF -> 3rd + Final.
+          // Pairing codes:
+          //   "1A"  = winner of Group A
+          //   "2A"  = runner-up of Group A
+          //   "3:ABCDF" = Best 3rd from combination ABCDF (resolved via Annexe C)
+          //   "W74" = winner of match M74
+          //   "L101" = loser of match M101
           body.tournament_config = {
             groups: { count: 12, teams_per_group: 4, matchdays: [1, 2, 3] },
             knockout: {
               rounds: [
-                { name: "16avos", matchday: 4, matches: 16 },
-                { name: "octavos", matchday: 5, matches: 8 },
-                { name: "cuartos", matchday: 6, matches: 4 },
-                { name: "semis", matchday: 7, matches: 2 },
-                { name: "final", matchday: 8, matches: 2 },
+                {
+                  name: "16avos",
+                  matchday: 4,
+                  matches: 16,
+                  pairings: [
+                    { code: "M73", home: "2A", away: "2B" },
+                    { code: "M74", home: "1E", away: "3:ABCDF" },
+                    { code: "M75", home: "1F", away: "2C" },
+                    { code: "M76", home: "1C", away: "2F" },
+                    { code: "M77", home: "1I", away: "3:CDFGH" },
+                    { code: "M78", home: "2E", away: "2I" },
+                    { code: "M79", home: "1A", away: "3:CEFHI" },
+                    { code: "M80", home: "1L", away: "3:EHIJK" },
+                    { code: "M81", home: "1D", away: "3:BEFIJ" },
+                    { code: "M82", home: "1G", away: "3:AEHIJ" },
+                    { code: "M83", home: "2K", away: "2L" },
+                    { code: "M84", home: "1H", away: "2J" },
+                    { code: "M85", home: "1B", away: "3:EFGIJ" },
+                    { code: "M86", home: "1J", away: "2H" },
+                    { code: "M87", home: "1K", away: "3:DEIJL" },
+                    { code: "M88", home: "2D", away: "2G" },
+                  ],
+                },
+                {
+                  name: "octavos",
+                  matchday: 5,
+                  matches: 8,
+                  pairings: [
+                    { code: "M89", home: "W74", away: "W77" },
+                    { code: "M90", home: "W73", away: "W75" },
+                    { code: "M91", home: "W76", away: "W78" },
+                    { code: "M92", home: "W79", away: "W80" },
+                    { code: "M93", home: "W83", away: "W84" },
+                    { code: "M94", home: "W81", away: "W82" },
+                    { code: "M95", home: "W86", away: "W88" },
+                    { code: "M96", home: "W85", away: "W87" },
+                  ],
+                },
+                {
+                  name: "cuartos",
+                  matchday: 6,
+                  matches: 4,
+                  pairings: [
+                    { code: "M97", home: "W89", away: "W90" },
+                    { code: "M98", home: "W93", away: "W94" },
+                    { code: "M99", home: "W91", away: "W92" },
+                    { code: "M100", home: "W95", away: "W96" },
+                  ],
+                },
+                {
+                  name: "semis",
+                  matchday: 7,
+                  matches: 2,
+                  pairings: [
+                    { code: "M101", home: "W97", away: "W98" },
+                    { code: "M102", home: "W99", away: "W100" },
+                  ],
+                },
+                {
+                  name: "final",
+                  matchday: 8,
+                  matches: 2,
+                  pairings: [
+                    { code: "M103", home: "L101", away: "L102", label: "3er puesto" },
+                    { code: "M104", home: "W101", away: "W102", label: "Final" },
+                  ],
+                },
               ],
             },
             third_place_match: true,

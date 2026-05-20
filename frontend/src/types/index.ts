@@ -995,6 +995,10 @@ export interface BracketMatch {
   away_logo: string | null;
   away_score: number | null;
   played: boolean;
+  match_code?: string | null;
+  home_placeholder?: string | null;
+  away_placeholder?: string | null;
+  label?: string | null;
 }
 
 export interface BracketRound {

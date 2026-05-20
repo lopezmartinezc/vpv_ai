@@ -174,6 +174,7 @@ class TournamentService:
         for round_cfg in rounds_cfg:
             md_number = int(round_cfg.get("matchday", 0))
             round_name = str(round_cfg.get("name", f"Ronda J{md_number}"))
+            pairings: list[dict[str, Any]] = round_cfg.get("pairings", []) or []
 
             matches_stmt = (
                 select(Match)
@@ -188,24 +189,54 @@ class TournamentService:
             matches = list(matches_result.scalars().all())
 
             bm_list: list[BracketMatch] = []
-            for m in matches:
-                home = teams_by_id.get(m.home_team_id)
-                away = teams_by_id.get(m.away_team_id)
-                played = m.home_score is not None and m.away_score is not None
-                bm_list.append(
-                    BracketMatch(
-                        match_id=m.id,
-                        home_team_id=m.home_team_id,
-                        home_team_name=home.name if home else None,
-                        home_logo=home.logo_path if home else None,
-                        home_score=m.home_score,
-                        away_team_id=m.away_team_id,
-                        away_team_name=away.name if away else None,
-                        away_logo=away.logo_path if away else None,
-                        away_score=m.away_score,
-                        played=played,
+
+            if matches:
+                # Real matches exist: render them in order
+                for idx, m in enumerate(matches):
+                    home = teams_by_id.get(m.home_team_id)
+                    away = teams_by_id.get(m.away_team_id)
+                    played = m.home_score is not None and m.away_score is not None
+                    # Best-effort pairing match by index
+                    pairing = pairings[idx] if idx < len(pairings) else {}
+                    bm_list.append(
+                        BracketMatch(
+                            match_id=m.id,
+                            home_team_id=m.home_team_id,
+                            home_team_name=home.name if home else None,
+                            home_logo=home.logo_path if home else None,
+                            home_score=m.home_score,
+                            away_team_id=m.away_team_id,
+                            away_team_name=away.name if away else None,
+                            away_logo=away.logo_path if away else None,
+                            away_score=m.away_score,
+                            played=played,
+                            match_code=pairing.get("code"),
+                            home_placeholder=pairing.get("home"),
+                            away_placeholder=pairing.get("away"),
+                            label=pairing.get("label"),
+                        )
                     )
-                )
+            else:
+                # No matches yet: render placeholders from tournament_config pairings
+                for pairing in pairings:
+                    bm_list.append(
+                        BracketMatch(
+                            match_id=None,
+                            home_team_id=None,
+                            home_team_name=None,
+                            home_logo=None,
+                            home_score=None,
+                            away_team_id=None,
+                            away_team_name=None,
+                            away_logo=None,
+                            away_score=None,
+                            played=False,
+                            match_code=pairing.get("code"),
+                            home_placeholder=pairing.get("home"),
+                            away_placeholder=pairing.get("away"),
+                            label=pairing.get("label"),
+                        )
+                    )
             bracket_rounds.append(
                 BracketRound(name=round_name, matchday=md_number, matches=bm_list)
             )

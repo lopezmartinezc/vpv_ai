@@ -101,11 +101,17 @@ function MatchCard({ match }: { match: BracketMatch }) {
         match.played ? "border-vpv-card-border" : "border-dashed border-vpv-border"
       }`}
     >
+      {(match.label || match.match_code) && (
+        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted">
+          {match.label ?? match.match_code}
+        </p>
+      )}
       <TeamRow
         name={match.home_team_name}
         logo={match.home_logo}
         score={match.home_score}
         played={match.played}
+        placeholder={match.home_placeholder}
       />
       <div className="my-1 border-t border-vpv-border/30" />
       <TeamRow
@@ -113,9 +119,25 @@ function MatchCard({ match }: { match: BracketMatch }) {
         logo={match.away_logo}
         score={match.away_score}
         played={match.played}
+        placeholder={match.away_placeholder}
       />
     </div>
   );
+}
+
+function placeholderLabel(p: string | null | undefined): string {
+  if (!p) return "Por determinar";
+  // "1A" -> "Ganador Grupo A"
+  // "2A" -> "2o Grupo A"
+  // "3:ABCDF" -> "Mejor 3o (ABCDF)"
+  // "W74" -> "Ganador M74"
+  // "L101" -> "Perdedor M101"
+  if (p.startsWith("1") && p.length === 2) return `Ganador ${p[1]}`;
+  if (p.startsWith("2") && p.length === 2) return `2º Grupo ${p[1]}`;
+  if (p.startsWith("3:")) return `Mejor 3º (${p.slice(2)})`;
+  if (p.startsWith("W")) return `Ganador ${p}`;
+  if (p.startsWith("L")) return `Perdedor ${p.slice(1)}`;
+  return p;
 }
 
 function TeamRow({
@@ -123,21 +145,23 @@ function TeamRow({
   logo,
   score,
   played,
+  placeholder,
 }: {
   name: string | null;
   logo: string | null;
   score: number | null;
   played: boolean;
+  placeholder?: string | null;
 }) {
   return (
     <div className="flex items-center gap-2 text-sm">
       {logo && <img src={logo} alt="" className="h-5 w-5 shrink-0" />}
       <span
         className={`flex-1 truncate ${
-          name ? "text-vpv-text" : "text-vpv-text-muted italic"
+          name ? "text-vpv-text" : "italic text-vpv-text-muted"
         }`}
       >
-        {name ?? "Por determinar"}
+        {name ?? placeholderLabel(placeholder)}
       </span>
       {played && (
         <span className="font-bold tabular-nums text-vpv-text">{score ?? 0}</span>

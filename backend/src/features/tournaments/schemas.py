@@ -43,6 +43,11 @@ class BracketMatch(BaseModel):
     away_logo: str | None
     away_score: int | None
     played: bool
+    # Pairing placeholders (from tournament_config) when team not yet known
+    match_code: str | None = None
+    home_placeholder: str | None = None
+    away_placeholder: str | None = None
+    label: str | None = None
 
 
 class BracketRound(BaseModel):
