@@ -20,6 +20,7 @@ interface Season {
   kind?: "league" | "tournament";
   tournament_type?: string | null;
   telegram_chat_id?: string | null;
+  tournament_config?: Record<string, unknown> | null;
 }
 
 interface ScoringRule {
@@ -93,6 +94,8 @@ export default function AdminTemporadasPage() {
   const [editMatchdayStart, setEditMatchdayStart] = useState("");
   const [editLineupDeadline, setEditLineupDeadline] = useState("");
   const [editDraftPool, setEditDraftPool] = useState("");
+  const [editTournamentConfig, setEditTournamentConfig] = useState("");
+  const [tournamentConfigError, setTournamentConfigError] = useState<string | null>(null);
 
   // New season modal
   const [showNewSeason, setShowNewSeason] = useState(false);
@@ -153,6 +156,12 @@ export default function AdminTemporadasPage() {
       setEditName(detail.name);
       setEditSlug(detail.scraping_slug ?? "");
       setEditTelegramChatId(detail.telegram_chat_id ?? "");
+      setEditTournamentConfig(
+        detail.tournament_config
+          ? JSON.stringify(detail.tournament_config, null, 2)
+          : "",
+      );
+      setTournamentConfigError(null);
       setEditMatchdayStart(String(detail.matchday_start));
       setEditMatchdayCurrent(String(detail.matchday_current));
       setEditMatchdayEnd(detail.matchday_end !== null ? String(detail.matchday_end) : "");
@@ -186,6 +195,27 @@ export default function AdminTemporadasPage() {
         body.scraping_slug = editSlug || null;
       if (editTelegramChatId !== (season.telegram_chat_id ?? ""))
         body.telegram_chat_id = editTelegramChatId || null;
+
+      // tournament_config is a JSON textarea
+      const currentConfigJson = season.tournament_config
+        ? JSON.stringify(season.tournament_config, null, 2)
+        : "";
+      if (editTournamentConfig !== currentConfigJson) {
+        if (editTournamentConfig.trim() === "") {
+          body.tournament_config = null;
+        } else {
+          try {
+            body.tournament_config = JSON.parse(editTournamentConfig);
+            setTournamentConfigError(null);
+          } catch (e) {
+            setTournamentConfigError(
+              `JSON invalido: ${e instanceof Error ? e.message : String(e)}`,
+            );
+            setSaving(false);
+            return;
+          }
+        }
+      }
       if (editMatchdayStart !== String(season.matchday_start))
         body.matchday_start = Number(editMatchdayStart);
       if (editMatchdayCurrent !== String(season.matchday_current))
@@ -809,7 +839,35 @@ export default function AdminTemporadasPage() {
                 <span>Scanned: J{season.matchday_scanned}</span>
                 <span>Participantes: {season.total_participants}</span>
                 {season.scraping_slug && <span>Slug: {season.scraping_slug}</span>}
+                {season.kind === "tournament" && season.tournament_type && (
+                  <span>Tipo: {season.tournament_type}</span>
+                )}
               </div>
+
+              {season.kind === "tournament" && (
+                <div>
+                  <label className="mb-1 block text-xs text-vpv-text-muted">
+                    Configuracion del torneo (JSON)
+                  </label>
+                  <textarea
+                    value={editTournamentConfig}
+                    onChange={(e) => {
+                      setEditTournamentConfig(e.target.value);
+                      setTournamentConfigError(null);
+                    }}
+                    rows={12}
+                    spellCheck={false}
+                    placeholder='{"groups": {"count": 12, ...}, "knockout": {...}}'
+                    className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 font-mono text-xs text-vpv-text"
+                  />
+                  {tournamentConfigError && (
+                    <p className="mt-1 text-xs text-red-400">{tournamentConfigError}</p>
+                  )}
+                  <p className="mt-1 text-xs text-vpv-text-muted">
+                    Estructura: groups.count, groups.teams_per_group, groups.matchdays[], knockout.rounds[]
+                  </p>
+                </div>
+              )}
 
               <div className="flex flex-wrap items-center gap-2">
                 <button
