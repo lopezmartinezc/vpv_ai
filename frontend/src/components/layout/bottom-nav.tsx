@@ -33,7 +33,7 @@ const LEAGUE_TABS: Tab[] = [
 const TOURNAMENT_TABS: Tab[] = [
   { href: "/clasificacion", label: "Clasif", icon: "trophy" },
   { href: "/grupos", label: "Grupos", icon: "shield", appliesTo: "tournament" },
-  { href: "/bracket", label: "Bracket", icon: "shuffle", appliesTo: "tournament" },
+  { href: "/bracket", label: "Cuadro", icon: "shuffle", appliesTo: "tournament" },
   { href: "/jornadas", label: "Jornadas", icon: "calendar" },
 ];
 

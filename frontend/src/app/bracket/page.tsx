@@ -127,16 +127,17 @@ function MatchCard({ match }: { match: BracketMatch }) {
 
 function placeholderLabel(p: string | null | undefined): string {
   if (!p) return "Por determinar";
-  // "1A" -> "Ganador Grupo A"
-  // "2A" -> "2o Grupo A"
-  // "3:ABCDF" -> "Mejor 3o (ABCDF)"
-  // "W74" -> "Ganador M74"
-  // "L101" -> "Perdedor M101"
-  if (p.startsWith("1") && p.length === 2) return `Ganador ${p[1]}`;
+  // FIFA notation -> human-friendly Spanish labels:
+  //   "1A"       -> "1º Grupo A"   (winner of Group A)
+  //   "2A"       -> "2º Grupo A"   (runner-up of Group A)
+  //   "3:ABCDF"  -> "Mejor 3º (ABCDF)" (best 3rd-placed among those groups)
+  //   "W74"      -> "Ganador M74"  (winner of Match 74)
+  //   "L101"     -> "Perdedor M101"  (loser of Match 101)
+  if (p.startsWith("1") && p.length === 2) return `1º Grupo ${p[1]}`;
   if (p.startsWith("2") && p.length === 2) return `2º Grupo ${p[1]}`;
   if (p.startsWith("3:")) return `Mejor 3º (${p.slice(2)})`;
-  if (p.startsWith("W")) return `Ganador ${p}`;
-  if (p.startsWith("L")) return `Perdedor ${p.slice(1)}`;
+  if (p.startsWith("W")) return `Ganador M${p.slice(1)}`;
+  if (p.startsWith("L")) return `Perdedor M${p.slice(1)}`;
   return p;
 }
 

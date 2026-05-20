@@ -35,7 +35,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/copa", label: "Copa", icon: "shield", appliesTo: "league" },
   // Tournament-only (paginas creadas en Fase 6)
   { href: "/grupos", label: "Grupos", icon: "trophy", appliesTo: "tournament" },
-  { href: "/bracket", label: "Bracket", icon: "shuffle", appliesTo: "tournament" },
+  { href: "/bracket", label: "Cuadro de eliminatorias", icon: "shuffle", appliesTo: "tournament" },
   { href: "/predicciones", label: "Predicciones", icon: "clipboard", appliesTo: "tournament" },
   // Common
   { href: "/jornadas", label: "Jornadas", icon: "calendar" },
