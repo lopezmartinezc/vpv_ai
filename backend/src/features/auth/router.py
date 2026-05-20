@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.rate_limit import limiter
 from src.features.auth.schemas import (
+    AdminCreateUserRequest,
     AdminUserResponse,
     ChangePasswordRequest,
     InviteCreateRequest,
@@ -116,6 +117,21 @@ async def list_users(
     service: AuthService = Depends(_get_service),
 ) -> list[AdminUserResponse]:
     return await service.list_users()
+
+
+@router.post("/admin/users", response_model=AdminUserResponse)
+async def create_user(
+    body: AdminCreateUserRequest,
+    _admin: dict = Depends(get_current_admin),
+    service: AuthService = Depends(_get_service),
+) -> AdminUserResponse:
+    """Create a user directly with username + password (skips invite flow)."""
+    return await service.admin_create_user(
+        username=body.username,
+        display_name=body.display_name,
+        password=body.password,
+        is_admin=body.is_admin,
+    )
 
 
 @router.put("/admin/users/{user_id}/toggle-admin", response_model=AdminUserResponse)

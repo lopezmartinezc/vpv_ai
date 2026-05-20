@@ -185,6 +185,28 @@ class AuthService:
         users = await self.auth_repo.get_all_users()
         return [self._admin_response(u) for u in users]
 
+    async def admin_create_user(
+        self,
+        username: str,
+        display_name: str,
+        password: str,
+        is_admin: bool = False,
+    ) -> AdminUserResponse:
+        """Create a user directly (admin-only, bypasses invite flow)."""
+        existing = await self.auth_repo.get_user_by_username(username)
+        if existing is not None:
+            raise BusinessRuleError(f"Ya existe un usuario con username '{username}'")
+
+        user = await self.auth_repo.create_user(
+            username=username,
+            password_hash=_hash_password(password),
+            display_name=display_name,
+        )
+        if is_admin:
+            user.is_admin = True
+        await self.session.commit()
+        return self._admin_response(user)
+
     async def toggle_admin(self, user_id: int, admin_id: int) -> AdminUserResponse:
         if user_id == admin_id:
             raise BusinessRuleError("No puedes quitarte admin a ti mismo")

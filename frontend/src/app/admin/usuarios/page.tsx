@@ -24,6 +24,32 @@ export default function AdminUsuariosPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [copiedToken, setCopiedToken] = useState<number | null>(null);
 
+  // Create-user modal
+  const [showCreate, setShowCreate] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    username: "",
+    display_name: "",
+    password: "",
+    is_admin: false,
+  });
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  async function handleCreateUser() {
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const created = await apiClient.post<AdminUser>("/auth/admin/users", createForm);
+      setUsers((prev) => [...prev, created]);
+      setShowCreate(false);
+      setCreateForm({ username: "", display_name: "", password: "", is_admin: false });
+    } catch (e) {
+      setCreateError(e instanceof Error ? e.message : "Error al crear usuario");
+    } finally {
+      setCreating(false);
+    }
+  }
+
   const fetchUsers = useCallback(async () => {
     try {
       const userData = await apiClient.get<AdminUser[]>("/auth/admin/users");
@@ -137,11 +163,101 @@ export default function AdminUsuariosPage() {
         {actionError}
       </div>
     )}
+    {/* Create user modal */}
+    {showCreate && (
+      <div className="rounded-lg border border-green-600/30 bg-vpv-card">
+        <div className="border-b border-vpv-border px-4 py-3">
+          <h2 className="font-semibold text-vpv-text">Crear usuario</h2>
+        </div>
+        <div className="space-y-3 px-4 py-3">
+          {createError && (
+            <p className="rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+              {createError}
+            </p>
+          )}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs text-vpv-text-muted">Username *</label>
+              <input
+                type="text"
+                value={createForm.username}
+                onChange={(e) => setCreateForm({ ...createForm, username: e.target.value })}
+                placeholder="pepe"
+                className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-vpv-text-muted">Nombre a mostrar *</label>
+              <input
+                type="text"
+                value={createForm.display_name}
+                onChange={(e) => setCreateForm({ ...createForm, display_name: e.target.value })}
+                placeholder="Pepe Garcia"
+                className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-vpv-text-muted">Password inicial * (min 8)</label>
+              <input
+                type="text"
+                value={createForm.password}
+                onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })}
+                placeholder="al menos 8 caracteres"
+                className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+              />
+            </div>
+            <div className="flex items-end">
+              <label className="flex items-center gap-2 text-sm text-vpv-text">
+                <input
+                  type="checkbox"
+                  checked={createForm.is_admin}
+                  onChange={(e) => setCreateForm({ ...createForm, is_admin: e.target.checked })}
+                />
+                Es admin
+              </label>
+            </div>
+          </div>
+          <p className="text-xs text-vpv-text-muted">
+            Comparte la password con el usuario. Podra cambiarla desde /perfil.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleCreateUser}
+              disabled={
+                creating ||
+                createForm.username.trim().length < 2 ||
+                createForm.display_name.trim().length === 0 ||
+                createForm.password.length < 8
+              }
+              className="rounded bg-green-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50"
+            >
+              {creating ? "Creando..." : "Crear"}
+            </button>
+            <button
+              onClick={() => {
+                setShowCreate(false);
+                setCreateError(null);
+              }}
+              className="rounded border border-vpv-border px-3 py-1.5 text-xs text-vpv-text-muted transition-colors hover:bg-vpv-bg"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
     <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
-      <div className="border-b border-vpv-border px-4 py-3">
+      <div className="flex items-center justify-between border-b border-vpv-border px-4 py-3">
         <h2 className="font-semibold text-vpv-text">
           Usuarios ({users.length})
         </h2>
+        <button
+          onClick={() => setShowCreate((p) => !p)}
+          className="rounded bg-green-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-green-700"
+        >
+          + Crear usuario
+        </button>
       </div>
 
       {/* Mobile: Cards */}

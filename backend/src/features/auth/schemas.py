@@ -78,3 +78,10 @@ class AdminUserResponse(BaseModel):
     has_password: bool
     has_session: bool
     telegram_chat_id: str | None
+
+
+class AdminCreateUserRequest(BaseModel):
+    username: str = Field(min_length=2, max_length=50)
+    display_name: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=8)
+    is_admin: bool = False
