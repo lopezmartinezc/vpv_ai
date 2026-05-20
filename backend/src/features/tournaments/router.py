@@ -10,10 +10,17 @@ from src.features.tournaments.schemas import (
     PredictionRequest,
     PredictionResponse,
     PredictionsListResponse,
+    TeamGroupBatchUpdate,
     TeamOption,
 )
 from src.features.tournaments.service import TournamentService
-from src.shared.dependencies import get_current_user, get_db
+from src.shared.dependencies import (
+    get_current_user,
+    get_db,
+    require_perm,
+    require_season_writable,
+)
+from src.shared.permissions import Perm
 
 router = APIRouter(prefix="/tournaments", tags=["tournaments"])
 
@@ -82,3 +89,18 @@ async def list_players(
 ) -> list[PlayerOption]:
     """Player options for predictions dropdowns."""
     return await service.list_players(season_id)
+
+
+@router.put(
+    "/admin/{season_id}/teams/groups",
+    response_model=list[TeamOption],
+)
+async def assign_team_groups(
+    season_id: int,
+    body: TeamGroupBatchUpdate,
+    service: TournamentService = Depends(_get_service),
+    _user: dict = Depends(require_perm(Perm.PLAYERS, Perm.PARTICIPANTS)),
+    _writable: dict = Depends(require_season_writable),
+) -> list[TeamOption]:
+    """Batch-update teams' tournament group assignments."""
+    return await service.assign_team_groups(season_id, body)

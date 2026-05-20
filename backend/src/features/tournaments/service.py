@@ -18,6 +18,7 @@ from src.features.tournaments.schemas import (
     PredictionRequest,
     PredictionResponse,
     PredictionsListResponse,
+    TeamGroupBatchUpdate,
     TeamGroupStanding,
     TeamOption,
 )
@@ -346,6 +347,35 @@ class TournamentService:
             )
             for t in result.scalars().all()
         ]
+
+    async def assign_team_groups(
+        self,
+        season_id: int,
+        body: TeamGroupBatchUpdate,
+    ) -> list[TeamOption]:
+        """Batch-assign teams to tournament groups (admin)."""
+        await self._get_tournament_season(season_id)
+
+        # Build a map team_id -> group_name from the request
+        wanted: dict[int, str | None] = {a.team_id: a.group_name for a in body.assignments}
+        if not wanted:
+            return await self.list_teams(season_id)
+
+        # Load all referenced teams in one query and check they belong to the season
+        stmt = select(Team).where(Team.id.in_(list(wanted.keys())))
+        result = await self.session.execute(stmt)
+        teams = list(result.scalars().all())
+        for t in teams:
+            if t.season_id != season_id:
+                raise BusinessRuleError(
+                    f"El equipo {t.id} no pertenece a la temporada {season_id}"
+                )
+            new_group = wanted[t.id]
+            # Normalize empty string to None
+            t.tournament_group = (new_group or "").strip().upper() or None
+
+        await self.session.commit()
+        return await self.list_teams(season_id)
 
     async def list_players(self, season_id: int) -> list[PlayerOption]:
         await self._get_tournament_season(season_id)

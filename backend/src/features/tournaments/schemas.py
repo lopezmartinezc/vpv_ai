@@ -104,3 +104,12 @@ class PlayerOption(BaseModel):
     name: str
     team_name: str
     team_id: int
+
+
+class TeamGroupAssignment(BaseModel):
+    team_id: int
+    group_name: str | None  # 'A', 'B', ..., or null to unassign
+
+
+class TeamGroupBatchUpdate(BaseModel):
+    assignments: list[TeamGroupAssignment]
