@@ -28,6 +28,38 @@ logger = logging.getLogger(__name__)
 _MANUAL = "manual_scrape"
 
 
+def _resolve_season_year(season: object) -> int:
+    """Extract the calendar year used in scraping URLs from a Season.
+
+    Priority:
+    1. ``season.tournament_config["year"]`` if set explicitly
+    2. Last 4-digit group found in ``season.name``
+    3. Last 2-digit group expanded to 20YY
+    4. Falls back to the current UTC year.
+    """
+    import re
+    from datetime import UTC, datetime
+
+    config = getattr(season, "tournament_config", None)
+    if isinstance(config, dict):
+        cfg_year = config.get("year")
+        if isinstance(cfg_year, int):
+            return cfg_year
+        if isinstance(cfg_year, str) and cfg_year.isdigit():
+            return int(cfg_year)
+
+    name = getattr(season, "name", "") or ""
+    # Try a 4-digit year first
+    m4 = re.findall(r"(\d{4})", name)
+    if m4:
+        return int(m4[-1])
+    # Then a 2-digit year (e.g. "Mundial 26" -> 2026)
+    m2 = re.findall(r"(\d{2})", name)
+    if m2:
+        return 2000 + int(m2[-1])
+    return datetime.now(UTC).year
+
+
 class ScrapingService:
     """Orchestrates all scraping workflows: matchday stats, calendar, CRC checks.
 
@@ -570,14 +602,10 @@ class ScrapingService:
             logger.error("scrape_calendar: season_id=%d not found", season_id)
             return {"scores_updated": 0, "dates_updated": 0}
 
-        # Season name is like "2024-2025"; we need the second year for the URL.
-        parts = season.name.split("-")
-        year = parts[-1] if len(parts) >= 2 else parts[0]
-        season_year = int(year)
-
+        season_year = _resolve_season_year(season)
         base_url = self._settings.scraping_base_url
         prefix = competition_url_prefix(season.kind, season.tournament_type)
-        url = f"{base_url}/{prefix}/calendario/{year}"
+        url = f"{base_url}/{prefix}/calendario/{season_year}"
         logger.info("scrape_calendar: fetching %s", url)
 
         async with ScrapingClient() as client:
@@ -748,10 +776,24 @@ class ScrapingService:
         players_created = 0
         matches_created = 0
 
+        # Determine the homepage URL — Liga is the root, tournaments live
+        # under their own section (e.g. /world-cup/home).
+        season_for_url = await self.repo.get_season(season_id)
+        if season_for_url is None:
+            logger.error("import_teams_and_players: season_id=%d not found", season_id)
+            return {"teams": 0, "players": 0, "matches": 0}
+        if season_for_url.kind == "tournament":
+            prefix_for_home = competition_url_prefix(
+                season_for_url.kind, season_for_url.tournament_type
+            )
+            homepage_url = f"{base_url}/{prefix_for_home}/home"
+        else:
+            homepage_url = base_url
+
         async with ScrapingClient() as client:
             # 1. Fetch teams from homepage
             try:
-                homepage_html = await client.fetch(base_url)
+                homepage_html = await client.fetch(homepage_url)
             except ScrapingError as exc:
                 logger.error("import_teams_and_players: homepage fetch failed: %s", exc)
                 return {"teams": 0, "players": 0, "matches": 0}
@@ -771,9 +813,19 @@ class ScrapingService:
             await self.session.flush()
 
             # 3. Fetch each team's roster and create Player rows
+            # URL patterns differ:
+            #   Liga:       {base}/{team_slug}/{season_slug}
+            #   Tournament: {base}/{prefix}/equipos/{team_slug}
+            is_tournament = season_for_url.kind == "tournament"
             for td in team_data_list:
                 team_id = team_slug_to_id[td.slug]
-                roster_url = f"{base_url}/{td.slug}/{season_slug}"
+                if is_tournament:
+                    prefix_for_roster = competition_url_prefix(
+                        season_for_url.kind, season_for_url.tournament_type
+                    )
+                    roster_url = f"{base_url}/{prefix_for_roster}/equipos/{td.slug}"
+                else:
+                    roster_url = f"{base_url}/{td.slug}/{season_slug}"
                 try:
                     roster_html = await client.fetch(roster_url)
                 except ScrapingError as exc:
@@ -785,6 +837,12 @@ class ScrapingService:
                     continue
 
                 roster = parse_roster(roster_html)
+                if not roster:
+                    logger.info(
+                        "import_teams_and_players: %s — no players found (squad probably not published yet)",
+                        td.name,
+                    )
+                    continue
                 for player_data in roster:
                     position = self._POSITION_MAP.get(player_data.position, player_data.position)
                     display_name = player_data.slug.replace("-", " ").title()
@@ -808,12 +866,9 @@ class ScrapingService:
                 logger.error("import_teams_and_players: season_id=%d not found", season_id)
                 return {"teams": teams_created, "players": players_created, "matches": 0}
 
-            parts = season.name.split("-")
-            year = parts[-1] if len(parts) >= 2 else parts[0]
-            season_year = int(year)
-
+            season_year = _resolve_season_year(season)
             prefix = competition_url_prefix(season.kind, season.tournament_type)
-            calendar_url = f"{base_url}/{prefix}/calendario/{year}"
+            calendar_url = f"{base_url}/{prefix}/calendario/{season_year}"
             try:
                 calendar_html = await client.fetch(calendar_url)
             except ScrapingError as exc:

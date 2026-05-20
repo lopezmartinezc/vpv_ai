@@ -134,10 +134,17 @@ def parse_teams(html: str) -> list[TeamData]:
         for anchor in cabecera.find_all("a", class_="team"):
             if not isinstance(anchor, Tag):
                 continue
-            name = str(anchor.get("alt", "")).strip()
+            # Display name: prefer alt (Liga), fall back to title (tournaments)
+            name = str(anchor.get("alt", "")).strip() or str(anchor.get("title", "")).strip()
             href = str(anchor.get("href", "")).strip()
-            # href is like "/atletico-de-madrid" — strip leading slash for slug
-            slug = href.lstrip("/")
+            # href is either relative ("/atletico-de-madrid") or absolute
+            # ("https://.../world-cup/equipos/corea-del-sur"). Take the last
+            # non-empty path segment as the slug.
+            if href:
+                segments = [s for s in href.rstrip("/").split("/") if s]
+                slug = segments[-1] if segments else ""
+            else:
+                slug = ""
             if name and slug:
                 teams.append(TeamData(name=name, slug=slug))
 
