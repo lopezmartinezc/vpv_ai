@@ -367,16 +367,17 @@ export default function AdminTemporadasPage() {
       }
       if (newKind === "tournament") {
         body.tournament_type = newTournamentType;
-        // Sensible default config for World Cup-like format with 8 groups
         if (newTournamentType === "mundial") {
+          // Mundial 2026: 48 teams, 12 groups of 4, then R32 → R16 → QF → SF → F
           body.tournament_config = {
-            groups: { count: 8, teams_per_group: 4, matchdays: [1, 2, 3] },
+            groups: { count: 12, teams_per_group: 4, matchdays: [1, 2, 3] },
             knockout: {
               rounds: [
-                { name: "octavos", matchday: 4, matches: 8 },
-                { name: "cuartos", matchday: 5, matches: 4 },
-                { name: "semis", matchday: 6, matches: 2 },
-                { name: "final", matchday: 7, matches: 2 },
+                { name: "16avos", matchday: 4, matches: 16 },
+                { name: "octavos", matchday: 5, matches: 8 },
+                { name: "cuartos", matchday: 6, matches: 4 },
+                { name: "semis", matchday: 7, matches: 2 },
+                { name: "final", matchday: 8, matches: 2 },
               ],
             },
             third_place_match: true,
@@ -559,7 +560,7 @@ export default function AdminTemporadasPage() {
                   type="button"
                   onClick={() => {
                     setNewKind("tournament");
-                    setNewMatchdayEnd("7");
+                    setNewMatchdayEnd("8");
                   }}
                   className={`flex-1 rounded border px-3 py-1.5 text-xs font-medium transition-colors ${
                     newKind === "tournament"
