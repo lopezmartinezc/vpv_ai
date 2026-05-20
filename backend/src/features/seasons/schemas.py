@@ -82,12 +82,14 @@ class ValidFormationResponse(BaseModel):
 
 class SeasonUpdateRequest(BaseModel):
     status: str | None = None
+    name: str | None = None
     matchday_start: int | None = None
     matchday_current: int | None = None
     matchday_end: int | None = None
     matchday_winter: int | None = None
     lineup_deadline_min: int | None = None
     draft_pool_size: int | None = None
+    scraping_slug: str | None = None
     tournament_config: dict[str, Any] | None = None
     telegram_chat_id: str | None = None
 

@@ -17,6 +17,9 @@ interface Season {
   total_participants: number;
   scraping_slug: string | null;
   edit_unlocked: boolean;
+  kind?: "league" | "tournament";
+  tournament_type?: string | null;
+  telegram_chat_id?: string | null;
 }
 
 interface ScoringRule {
@@ -81,6 +84,9 @@ export default function AdminTemporadasPage() {
 
   // Editable season fields
   const [editStatus, setEditStatus] = useState("");
+  const [editName, setEditName] = useState("");
+  const [editSlug, setEditSlug] = useState("");
+  const [editTelegramChatId, setEditTelegramChatId] = useState("");
   const [editMatchdayCurrent, setEditMatchdayCurrent] = useState("");
   const [editMatchdayEnd, setEditMatchdayEnd] = useState("");
   const [editMatchdayWinter, setEditMatchdayWinter] = useState("");
@@ -144,6 +150,9 @@ export default function AdminTemporadasPage() {
       setEditWinterDraft(winter ? String(winter.amount) : "");
       // Populate edit fields
       setEditStatus(detail.status);
+      setEditName(detail.name);
+      setEditSlug(detail.scraping_slug ?? "");
+      setEditTelegramChatId(detail.telegram_chat_id ?? "");
       setEditMatchdayStart(String(detail.matchday_start));
       setEditMatchdayCurrent(String(detail.matchday_current));
       setEditMatchdayEnd(detail.matchday_end !== null ? String(detail.matchday_end) : "");
@@ -172,6 +181,11 @@ export default function AdminTemporadasPage() {
     try {
       const body: Record<string, unknown> = {};
       if (editStatus !== season.status) body.status = editStatus;
+      if (editName.trim() !== season.name) body.name = editName.trim();
+      if (editSlug !== (season.scraping_slug ?? ""))
+        body.scraping_slug = editSlug || null;
+      if (editTelegramChatId !== (season.telegram_chat_id ?? ""))
+        body.telegram_chat_id = editTelegramChatId || null;
       if (editMatchdayStart !== String(season.matchday_start))
         body.matchday_start = Number(editMatchdayStart);
       if (editMatchdayCurrent !== String(season.matchday_current))
@@ -670,6 +684,42 @@ export default function AdminTemporadasPage() {
             </div>
             <div className="space-y-3 px-4 py-3">
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <div>
+                  <label className="mb-1 block text-xs text-vpv-text-muted">
+                    Nombre (max 15)
+                  </label>
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    maxLength={15}
+                    className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-vpv-text-muted">
+                    Slug scraping
+                  </label>
+                  <input
+                    type="text"
+                    value={editSlug}
+                    onChange={(e) => setEditSlug(e.target.value)}
+                    placeholder="world-cup, laliga-25-26, ..."
+                    className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-vpv-text-muted">
+                    Telegram chat ID
+                  </label>
+                  <input
+                    type="text"
+                    value={editTelegramChatId}
+                    onChange={(e) => setEditTelegramChatId(e.target.value)}
+                    placeholder="(usa el global)"
+                    className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+                  />
+                </div>
                 <div>
                   <label className="mb-1 block text-xs text-vpv-text-muted">
                     Estado
