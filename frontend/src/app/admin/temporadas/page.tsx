@@ -93,6 +93,9 @@ export default function AdminTemporadasPage() {
   const [newName, setNewName] = useState("");
   const [newSlug, setNewSlug] = useState("");
   const [newCopyFrom, setNewCopyFrom] = useState<number | "">("");
+  const [newKind, setNewKind] = useState<"league" | "tournament">("league");
+  const [newTournamentType, setNewTournamentType] = useState("mundial");
+  const [newMatchdayEnd, setNewMatchdayEnd] = useState("38");
   const [creatingSeason, setCreatingSeason] = useState(false);
 
   // Fee fields
@@ -342,9 +345,44 @@ export default function AdminTemporadasPage() {
       const body: Record<string, unknown> = {
         name: newName.trim(),
         scraping_slug: newSlug.trim(),
+        kind: newKind,
+        matchday_end: Number(newMatchdayEnd),
       };
       if (newCopyFrom) {
         body.copy_from_season_id = Number(newCopyFrom);
+      }
+      if (newKind === "tournament") {
+        body.tournament_type = newTournamentType;
+        // Sensible default config for World Cup-like format with 8 groups
+        if (newTournamentType === "mundial") {
+          body.tournament_config = {
+            groups: { count: 8, teams_per_group: 4, matchdays: [1, 2, 3] },
+            knockout: {
+              rounds: [
+                { name: "octavos", matchday: 4, matches: 8 },
+                { name: "cuartos", matchday: 5, matches: 4 },
+                { name: "semis", matchday: 6, matches: 2 },
+                { name: "final", matchday: 7, matches: 2 },
+              ],
+            },
+            third_place_match: true,
+            predictions_enabled: true,
+          };
+        } else if (newTournamentType === "eurocopa") {
+          body.tournament_config = {
+            groups: { count: 6, teams_per_group: 4, matchdays: [1, 2, 3] },
+            knockout: {
+              rounds: [
+                { name: "octavos", matchday: 4, matches: 8 },
+                { name: "cuartos", matchday: 5, matches: 4 },
+                { name: "semis", matchday: 6, matches: 2 },
+                { name: "final", matchday: 7, matches: 1 },
+              ],
+            },
+            best_third_place_count: 4,
+            predictions_enabled: true,
+          };
+        }
       }
       const result = await apiClient.post<InitializeResponse>(
         "/seasons/admin/initialize",
@@ -483,6 +521,43 @@ export default function AdminTemporadasPage() {
             <h2 className="font-semibold text-vpv-text">Crear nueva temporada</h2>
           </div>
           <div className="space-y-3 px-4 py-3">
+            {/* Tipo */}
+            <div>
+              <label className="mb-1 block text-xs text-vpv-text-muted">
+                Tipo de competicion
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewKind("league");
+                    setNewMatchdayEnd("38");
+                  }}
+                  className={`flex-1 rounded border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    newKind === "league"
+                      ? "border-vpv-accent bg-vpv-accent/10 text-vpv-accent"
+                      : "border-vpv-border text-vpv-text-muted hover:bg-vpv-bg"
+                  }`}
+                >
+                  ⚽ Liga (38 jornadas)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewKind("tournament");
+                    setNewMatchdayEnd("7");
+                  }}
+                  className={`flex-1 rounded border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    newKind === "tournament"
+                      ? "border-vpv-accent bg-vpv-accent/10 text-vpv-accent"
+                      : "border-vpv-border text-vpv-text-muted hover:bg-vpv-bg"
+                  }`}
+                >
+                  🏆 Torneo
+                </button>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <div>
                 <label className="mb-1 block text-xs text-vpv-text-muted">
@@ -492,7 +567,7 @@ export default function AdminTemporadasPage() {
                   type="text"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
-                  placeholder="2026-2027"
+                  placeholder={newKind === "league" ? "2026-2027" : "Mundial 26"}
                   className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
                 />
               </div>
@@ -504,7 +579,34 @@ export default function AdminTemporadasPage() {
                   type="text"
                   value={newSlug}
                   onChange={(e) => setNewSlug(e.target.value)}
-                  placeholder="laliga-26-27"
+                  placeholder={newKind === "league" ? "laliga-26-27" : "mundial-2026"}
+                  className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+                />
+              </div>
+              {newKind === "tournament" && (
+                <div>
+                  <label className="mb-1 block text-xs text-vpv-text-muted">
+                    Tipo de torneo
+                  </label>
+                  <select
+                    value={newTournamentType}
+                    onChange={(e) => setNewTournamentType(e.target.value)}
+                    className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+                  >
+                    <option value="mundial">Mundial</option>
+                    <option value="eurocopa">Eurocopa</option>
+                    <option value="copa_america">Copa America</option>
+                  </select>
+                </div>
+              )}
+              <div>
+                <label className="mb-1 block text-xs text-vpv-text-muted">
+                  Jornadas (total)
+                </label>
+                <input
+                  type="number"
+                  value={newMatchdayEnd}
+                  onChange={(e) => setNewMatchdayEnd(e.target.value)}
                   className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
                 />
               </div>
@@ -527,8 +629,9 @@ export default function AdminTemporadasPage() {
               </div>
             </div>
             <p className="text-xs text-vpv-text-muted">
-              Se crearan 38 jornadas vacias. Si copias de otra temporada se copian reglas, pagos y participantes.
-              Los equipos y jugadores se importan automaticamente en segundo plano (~2-3 min).
+              {newKind === "league"
+                ? `Se crearan ${newMatchdayEnd} jornadas vacias. Si copias de otra temporada se copian reglas, pagos y participantes. Los equipos y jugadores se importan automaticamente en segundo plano (~2-3 min).`
+                : `Se crearan ${newMatchdayEnd} jornadas (grupos + eliminatorias). El tournament_config se configura automaticamente. Si copias de otra temporada se copian reglas, pagos y participantes.`}
             </p>
             <div className="flex items-center gap-2">
               <button

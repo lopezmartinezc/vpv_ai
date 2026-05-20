@@ -132,6 +132,10 @@ class GroupAssignRequest(BaseModel):
     group_name: str | None = None
 
 
+class AddParticipantRequest(BaseModel):
+    user_id: int
+
+
 # --- Season lifecycle schemas ---
 
 

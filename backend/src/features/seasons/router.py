@@ -6,6 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.seasons.schemas import (
+    AddParticipantRequest,
     EditUnlockRequest,
     GroupAssignRequest,
     PaymentsBatchUpdate,
@@ -208,6 +209,21 @@ async def upsert_payment(
         body.amount,
         body.description,
     )
+
+
+@router.post(
+    "/admin/{season_id}/participants",
+    response_model=SeasonParticipantResponse,
+)
+async def add_participant(
+    season_id: int,
+    body: AddParticipantRequest,
+    service: SeasonService = Depends(_get_service),
+    _user: dict = Depends(require_perm(Perm.PARTICIPANTS)),
+    _writable: dict = Depends(require_season_writable),
+) -> SeasonParticipantResponse:
+    participant = await service.add_participant(season_id, body.user_id)
+    return SeasonParticipantResponse.model_validate(participant)
 
 
 @router.put(

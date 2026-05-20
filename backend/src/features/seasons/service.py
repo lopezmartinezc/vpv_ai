@@ -73,6 +73,53 @@ class SeasonService:
         await self.repo.session.commit()
         return result
 
+    async def add_participant(
+        self,
+        season_id: int,
+        user_id: int,
+    ) -> ParticipantRow:
+        """Add an existing user as a participant of a season.
+
+        Idempotent-friendly: raises if the user is already participating.
+        """
+        from sqlalchemy import select
+
+        from src.shared.models.participant import SeasonParticipant
+        from src.shared.models.user import User
+
+        await self.get_season(season_id)
+
+        # Verify user exists
+        user = await self.repo.session.get(User, user_id)
+        if user is None:
+            raise NotFoundError("User", user_id)
+
+        # Reject duplicates
+        stmt = select(SeasonParticipant).where(
+            SeasonParticipant.season_id == season_id,
+            SeasonParticipant.user_id == user_id,
+        )
+        existing = await self.repo.session.execute(stmt)
+        if existing.scalar_one_or_none() is not None:
+            raise BusinessRuleError(
+                f"El usuario {user_id} ya es participante de la temporada {season_id}"
+            )
+
+        participant = SeasonParticipant(season_id=season_id, user_id=user_id, is_active=True)
+        self.repo.session.add(participant)
+        await self.repo.session.flush()
+        await self.repo.update_total_participants(season_id)
+        await self.repo.session.commit()
+
+        return ParticipantRow(
+            id=participant.id,
+            user_id=user_id,
+            display_name=user.display_name,
+            draft_order=participant.draft_order,
+            is_active=participant.is_active,
+            group_name=participant.group_name,
+        )
+
     async def toggle_participant_active(
         self,
         season_id: int,

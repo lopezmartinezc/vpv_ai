@@ -20,6 +20,12 @@ interface SeasonParticipant {
   group_name: string | null;
 }
 
+interface AdminUser {
+  id: number;
+  username: string;
+  display_name: string;
+}
+
 const GROUPS = [
   "Virtuales",
   "Petit Comite",
@@ -34,6 +40,11 @@ export default function AdminParticipantesPage() {
   const [loading, setLoading] = useState(true);
   const [participantsLoading, setParticipantsLoading] = useState(false);
   const [togglingId, setTogglingId] = useState<number | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [allUsers, setAllUsers] = useState<AdminUser[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchSeasons() {
@@ -91,6 +102,46 @@ export default function AdminParticipantesPage() {
     }
   }
 
+  async function openAddModal() {
+    setShowAddModal(true);
+    setSelectedUserId(null);
+    setMessage(null);
+    if (allUsers.length === 0) {
+      try {
+        const users = await apiClient.get<AdminUser[]>("/auth/admin/users");
+        setAllUsers(users);
+      } catch {
+        setMessage("Error cargando usuarios");
+      }
+    }
+  }
+
+  async function handleAddParticipant() {
+    if (!selectedSeasonId || !selectedUserId) return;
+    setAdding(true);
+    setMessage(null);
+    try {
+      await apiClient.post(
+        `/seasons/admin/${selectedSeasonId}/participants`,
+        { user_id: selectedUserId },
+      );
+      setShowAddModal(false);
+      await fetchParticipants(selectedSeasonId);
+      setMessage("Participante anadido");
+      setTimeout(() => setMessage(null), 3000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Error";
+      setMessage(msg);
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  // Users not yet participants in this season
+  const availableUsers = allUsers.filter(
+    (u) => !participants.some((p) => p.user_id === u.id),
+  );
+
   async function handleGroupChange(
     participantId: number,
     groupName: string | null
@@ -123,22 +174,86 @@ export default function AdminParticipantesPage() {
   }
 
   return (
-    <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
+    <div className="space-y-3">
+      {message && (
+        <div className="rounded border border-vpv-border bg-vpv-bg px-4 py-2 text-sm text-vpv-text">
+          {message}
+        </div>
+      )}
+
+      {showAddModal && (
+        <div className="rounded-lg border border-green-600/30 bg-vpv-card">
+          <div className="border-b border-vpv-border px-4 py-3">
+            <h2 className="font-semibold text-vpv-text">Anadir participante</h2>
+          </div>
+          <div className="space-y-3 px-4 py-3">
+            <div>
+              <label className="mb-1 block text-xs text-vpv-text-muted">
+                Usuario
+              </label>
+              <select
+                value={selectedUserId ?? ""}
+                onChange={(e) =>
+                  setSelectedUserId(e.target.value ? Number(e.target.value) : null)
+                }
+                className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+              >
+                <option value="">— Selecciona un usuario —</option>
+                {availableUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.display_name} ({u.username})
+                  </option>
+                ))}
+              </select>
+              {availableUsers.length === 0 && allUsers.length > 0 && (
+                <p className="mt-1 text-xs text-vpv-text-muted">
+                  Todos los usuarios ya son participantes.
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleAddParticipant}
+                disabled={adding || !selectedUserId}
+                className="rounded bg-green-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50"
+              >
+                {adding ? "Anadiendo..." : "Anadir"}
+              </button>
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="rounded border border-vpv-border px-3 py-1.5 text-xs text-vpv-text-muted transition-colors hover:bg-vpv-bg"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
       <div className="flex items-center justify-between border-b border-vpv-border px-4 py-3">
         <h2 className="font-semibold text-vpv-text">
           Participantes por temporada
         </h2>
-        <select
-          value={selectedSeasonId ?? ""}
-          onChange={(e) => setSelectedSeasonId(Number(e.target.value))}
-          className="rounded border border-vpv-border bg-vpv-bg px-3 py-1.5 text-sm text-vpv-text"
-        >
-          {seasons.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2">
+          <select
+            value={selectedSeasonId ?? ""}
+            onChange={(e) => setSelectedSeasonId(Number(e.target.value))}
+            className="rounded border border-vpv-border bg-vpv-bg px-3 py-1.5 text-sm text-vpv-text"
+          >
+            {seasons.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={openAddModal}
+            className="rounded bg-green-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-green-700"
+          >
+            + Anadir
+          </button>
+        </div>
       </div>
 
       {participantsLoading ? (
@@ -291,6 +406,7 @@ export default function AdminParticipantesPage() {
           )}
         </>
       )}
+      </div>
     </div>
   );
 }
