@@ -14,6 +14,7 @@ import {
   closestCenter,
   KeyboardSensor,
   PointerSensor,
+  useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -489,13 +490,6 @@ function StepEliminatoria({
   const matchWinners = form.bracket_predictions?.match_winners ?? {};
   const groupLetters = Object.keys(teamsByGroup).sort();
 
-  function toggleThird(letter: string) {
-    const next = new Set(bestThirds);
-    if (next.has(letter)) next.delete(letter);
-    else if (next.size < 8) next.add(letter);
-    updateBracket({ best_thirds: Array.from(next).sort() });
-  }
-
   function pickMatchWinner(code: string, teamId: number | null) {
     updateBracket({ match_winners: { ...matchWinners, [code]: teamId } });
   }
@@ -556,53 +550,13 @@ function StepEliminatoria({
   return (
     <div className="space-y-5">
       {/* Best thirds */}
-      <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
-        <div className="border-b border-vpv-border px-4 py-3">
-          <h2 className="font-semibold text-vpv-text">Mejores 3os clasificados</h2>
-          <p className="text-xs text-vpv-text-muted">
-            Marca los 8 grupos cuyo 3er clasificado pasara a 16avos.{" "}
-            <span className={bestThirds.size === 8 ? "text-green-500" : "text-amber-500"}>
-              {bestThirds.size} / 8
-            </span>
-          </p>
-        </div>
-        <div className="grid grid-cols-3 gap-2 p-3 sm:grid-cols-4 md:grid-cols-6">
-          {groupLetters.map((letter) => {
-            const team = groupOrders[letter]?.[2]
-              ? teamsById[groupOrders[letter]![2]!]
-              : null;
-            const checked = bestThirds.has(letter);
-            const disabled = !checked && bestThirds.size >= 8;
-            return (
-              <button
-                key={letter}
-                type="button"
-                onClick={() => toggleThird(letter)}
-                disabled={disabled}
-                className={`flex items-center gap-2 rounded border px-2 py-1.5 text-xs transition-colors ${
-                  checked
-                    ? "border-green-500/50 bg-green-500/10 text-green-400"
-                    : disabled
-                      ? "border-vpv-border bg-vpv-bg opacity-40"
-                      : "border-vpv-border bg-vpv-bg text-vpv-text-muted hover:border-vpv-accent"
-                }`}
-              >
-                <span className="font-bold">{letter}</span>
-                {team && (
-                  <CountryFlag
-                    teamName={team.name}
-                    fallbackLogo={team.logo_path}
-                    size={18}
-                  />
-                )}
-                <span className="min-w-0 flex-1 truncate text-left">
-                  {team ? team.short_name ?? team.name : "(sin 3º)"}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <BestThirdsPicker
+        groupLetters={groupLetters}
+        bestThirds={bestThirds}
+        teamsById={teamsById}
+        groupOrders={groupOrders}
+        onChange={(letters) => updateBracket({ best_thirds: letters })}
+      />
 
       {/* Bracket: rounds */}
       <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
@@ -895,5 +849,144 @@ function FormSelect({
         </select>
       </div>
     </div>
+  );
+}
+
+// =============================================================================
+// Best Thirds drag & drop picker
+// =============================================================================
+
+function BestThirdsPicker({
+  groupLetters,
+  bestThirds,
+  teamsById,
+  groupOrders,
+  onChange,
+}: {
+  groupLetters: string[];
+  bestThirds: Set<string>;
+  teamsById: Record<number, TeamOption>;
+  groupOrders: Record<string, (number | null)[]>;
+  onChange: (letters: string[]) => void;
+}) {
+  const chosen = [...bestThirds].sort();
+  const available = groupLetters.filter((l) => !bestThirds.has(l));
+  const max = 8;
+  const full = chosen.length >= max;
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over) return;
+    const letter = String(active.id).replace(/^(chosen|available)-/, "");
+    const overId = String(over.id);
+    const overContainer = overId.startsWith("chosen") ? "chosen" : "available";
+    const fromContainer = bestThirds.has(letter) ? "chosen" : "available";
+
+    if (fromContainer === overContainer) return; // no-op (reorder inside same column)
+
+    const next = new Set(bestThirds);
+    if (overContainer === "chosen") {
+      if (next.size < max) next.add(letter);
+    } else {
+      next.delete(letter);
+    }
+    onChange([...next].sort());
+  }
+
+  function ThirdCard({ letter }: { letter: string }) {
+    const team = groupOrders[letter]?.[2] ? teamsById[groupOrders[letter]![2]!] : null;
+    return (
+      <SortableTeamCard
+        id={`${bestThirds.has(letter) ? "chosen" : "available"}-${letter}`}
+        teamName={team?.name ?? `Grupo ${letter}`}
+        shortName={team?.short_name}
+        logoPath={team?.logo_path}
+        ordinal={letter}
+        size="sm"
+      />
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
+      <div className="border-b border-vpv-border px-4 py-3">
+        <h2 className="font-semibold text-vpv-text">Mejores 3os clasificados</h2>
+        <p className="text-xs text-vpv-text-muted">
+          Arrastra los grupos cuyo 3º clasificado pasara a 16avos.{" "}
+          <span className={chosen.length === max ? "text-green-500" : "text-amber-500"}>
+            {chosen.length} / {max}
+          </span>
+        </p>
+      </div>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <div className="grid grid-cols-1 gap-3 p-3 md:grid-cols-2">
+          <DroppableColumn
+            id="chosen-zone"
+            title={`Clasifican (${chosen.length}/${max})`}
+            highlight={!full}
+            items={chosen.map((l) => `chosen-${l}`)}
+          >
+            {chosen.length === 0 ? (
+              <p className="py-4 text-center text-xs text-vpv-text-muted/60">
+                Arrastra aquí los 8 grupos
+              </p>
+            ) : (
+              chosen.map((letter) => <ThirdCard key={letter} letter={letter} />)
+            )}
+          </DroppableColumn>
+          <DroppableColumn
+            id="available-zone"
+            title="Disponibles"
+            items={available.map((l) => `available-${l}`)}
+          >
+            {available.length === 0 ? (
+              <p className="py-4 text-center text-xs text-vpv-text-muted/60">
+                Todos los grupos asignados
+              </p>
+            ) : (
+              available.map((letter) => <ThirdCard key={letter} letter={letter} />)
+            )}
+          </DroppableColumn>
+        </div>
+      </DndContext>
+    </div>
+  );
+}
+
+function DroppableColumn({
+  id,
+  title,
+  items,
+  highlight,
+  children,
+}: {
+  id: string;
+  title: string;
+  items: string[];
+  highlight?: boolean;
+  children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <SortableContext items={items} strategy={verticalListSortingStrategy}>
+      <div
+        ref={setNodeRef}
+        className={`rounded-md border-2 p-2 transition-colors ${
+          isOver && highlight !== false
+            ? "border-vpv-accent/60 bg-vpv-accent/5"
+            : "border-dashed border-vpv-border bg-vpv-bg/40"
+        }`}
+      >
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-vpv-text-muted">
+          {title}
+        </p>
+        <div className="space-y-1.5">{children}</div>
+      </div>
+    </SortableContext>
   );
 }
