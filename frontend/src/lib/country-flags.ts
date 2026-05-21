@@ -58,6 +58,9 @@ const COUNTRY_FLAG_MAP: Record<string, string> = {
   "islandia": "is",
   "republica checa": "cz",
   "república checa": "cz",
+  "rep checa": "cz",
+  "chequia": "cz",
+  "czechia": "cz",
   "eslovaquia": "sk",
   "eslovenia": "si",
   "hungria": "hu",
@@ -74,6 +77,10 @@ const COUNTRY_FLAG_MAP: Record<string, string> = {
   "irlanda": "ie",
   "bosnia": "ba",
   "bosnia y herzegovina": "ba",
+  "bosnia y hercegovina": "ba",
+  "bosnia herzegovina": "ba",
+  "bosnia hercegovina": "ba",
+  "bosnia i herzegovina": "ba",
   "albania": "al",
   "macedonia del norte": "mk",
   "georgia": "ge",
@@ -101,6 +108,7 @@ const COUNTRY_FLAG_MAP: Record<string, string> = {
   "uzbekistán": "uz",
   "jordania": "jo",
   "qatar": "qa",
+  "catar": "qa",
   "emiratos arabes unidos": "ae",
   "emiratos árabes unidos": "ae",
   "kuwait": "kw",
@@ -148,6 +156,19 @@ const COUNTRY_FLAG_MAP: Record<string, string> = {
   "mali": "ml",
   "malí": "ml",
   "burkina faso": "bf",
+  "rd congo": "cd",
+  "r d congo": "cd",
+  "rdc": "cd",
+  "republica democratica del congo": "cd",
+  "rep democratica del congo": "cd",
+  "rep dem del congo": "cd",
+  "rep dem congo": "cd",
+  "congo rd": "cd",
+  "congo kinshasa": "cd",
+  "rep del congo": "cg",
+  "republica del congo": "cg",
+  "congo brazzaville": "cg",
+  "congo": "cg",
   "zambia": "zm",
   "angola": "ao",
   "kenya": "ke",
@@ -167,21 +188,33 @@ const SLUG_FLAG_MAP: Record<string, string> = {
   "cabo-verde": "cv",
   "costa-de-marfil": "ci",
   "republica-checa": "cz",
+  "rep-checa": "cz",
   "paises-bajos": "nl",
   "macedonia-del-norte": "mk",
   "irlanda-del-norte": "gb-nir",
   "bosnia-y-herzegovina": "ba",
+  "bosnia-y-hercegovina": "ba",
+  "bosnia-herzegovina": "ba",
   "emiratos-arabes-unidos": "ae",
   "trinidad-y-tobago": "tt",
   "el-salvador": "sv",
   "costa-rica": "cr",
+  "rd-congo": "cd",
+  "rdc": "cd",
+  "republica-democratica-del-congo": "cd",
+  "congo-kinshasa": "cd",
+  "rep-del-congo": "cg",
+  "congo-brazzaville": "cg",
 };
 
 function normalize(value: string): string {
   return value
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[̀-ͯ]/g, "") // strip combining accents
     .toLowerCase()
+    .replace(/\./g, "") // "Rep." -> "Rep"
+    .replace(/[-_]/g, " ") // "Bosnia-Herzegovina" -> "Bosnia Herzegovina"
+    .replace(/\s+/g, " ")
     .trim();
 }
 
