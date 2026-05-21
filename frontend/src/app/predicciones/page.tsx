@@ -127,6 +127,55 @@ function PrediccionesContent() {
     }
   }, [myPred]);
 
+  // Pre-fill group orderings with their default order (as teams are loaded)
+  // so that the Eliminatoria step can resolve "1A", "2B" placeholders even
+  // before the user touches anything. Existing user picks are preserved.
+  useEffect(() => {
+    if (!teams || teams.length === 0) return;
+    const groupsByLetter: Record<string, TeamOption[]> = {};
+    for (const t of teams) {
+      if (t.tournament_group) (groupsByLetter[t.tournament_group] ??= []).push(t);
+    }
+    setForm((f) => {
+      const currentGroups = (f.bracket_predictions?.groups ?? {}) as Record<
+        string,
+        (number | null)[]
+      >;
+      const newGroups: Record<string, (number | null)[]> = { ...currentGroups };
+      let changed = false;
+      for (const [letter, teamsInGroup] of Object.entries(groupsByLetter)) {
+        const existing = currentGroups[letter] ?? [];
+        const seen = new Set<number>();
+        const merged: number[] = [];
+        for (const id of existing) {
+          if (id != null && teamsInGroup.some((t) => t.id === id) && !seen.has(id)) {
+            seen.add(id);
+            merged.push(id);
+          }
+        }
+        for (const t of teamsInGroup) {
+          if (!seen.has(t.id)) {
+            seen.add(t.id);
+            merged.push(t.id);
+          }
+        }
+        const filled = merged.slice(0, 4);
+        if (
+          existing.length !== filled.length ||
+          existing.some((id, i) => id !== filled[i])
+        ) {
+          newGroups[letter] = filled;
+          changed = true;
+        }
+      }
+      if (!changed) return f;
+      return {
+        ...f,
+        bracket_predictions: { ...f.bracket_predictions, groups: newGroups },
+      };
+    });
+  }, [teams, myPred]);
+
   async function handleSave() {
     if (!seasonId) return;
     setSaving(true);
