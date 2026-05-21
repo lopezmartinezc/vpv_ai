@@ -10,6 +10,7 @@ from src.features.tournaments.schemas import (
     PredictionRequest,
     PredictionResponse,
     PredictionsListResponse,
+    RecalculateResponse,
     TeamGroupBatchUpdate,
     TeamOption,
 )
@@ -104,3 +105,17 @@ async def assign_team_groups(
 ) -> list[TeamOption]:
     """Batch-update teams' tournament group assignments."""
     return await service.assign_team_groups(season_id, body)
+
+
+@router.post(
+    "/admin/{season_id}/predictions/recalculate",
+    response_model=RecalculateResponse,
+)
+async def recalculate_predictions(
+    season_id: int,
+    service: TournamentService = Depends(_get_service),
+    _user: dict = Depends(require_perm(Perm.PARTICIPANTS, Perm.STATS)),
+    _writable: dict = Depends(require_season_writable),
+) -> RecalculateResponse:
+    """Recalculate bonus_points for all predictions against current results."""
+    return await service.recalculate_predictions(season_id)

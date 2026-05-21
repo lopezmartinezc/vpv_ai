@@ -122,3 +122,20 @@ class TeamGroupAssignment(BaseModel):
 
 class TeamGroupBatchUpdate(BaseModel):
     assignments: list[TeamGroupAssignment]
+
+
+# --- Auto-scoring ---
+
+
+class PredictionScoreBreakdown(BaseModel):
+    user_id: int
+    display_name: str | None
+    total: int
+    detail: dict[str, int]
+
+
+class RecalculateResponse(BaseModel):
+    season_id: int
+    scoring_rules: dict[str, int]
+    actuals: dict[str, Any]
+    results: list[PredictionScoreBreakdown]

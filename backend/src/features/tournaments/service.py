@@ -4,7 +4,7 @@ import logging
 from collections import defaultdict
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import BusinessRuleError, NotFoundError
@@ -17,17 +17,57 @@ from src.features.tournaments.schemas import (
     PlayerOption,
     PredictionRequest,
     PredictionResponse,
+    PredictionScoreBreakdown,
     PredictionsListResponse,
+    RecalculateResponse,
     TeamGroupBatchUpdate,
     TeamGroupStanding,
     TeamOption,
 )
 from src.shared.models.matchday import Match, Matchday
 from src.shared.models.player import Player
+from src.shared.models.player_stat import PlayerStat
 from src.shared.models.season import Season
 from src.shared.models.team import Team
 from src.shared.models.tournament_prediction import TournamentPrediction
 from src.shared.models.user import User
+
+DEFAULT_PREDICTIONS_SCORING: dict[str, int] = {
+    "winner": 50,
+    "dark_horse": 20,
+    "top_scorer": 30,
+    "best_player": 30,
+    "group_first": 5,
+    "group_second": 3,
+    "group_third": 2,
+    "group_fourth": 2,
+    "group_perfect_bonus": 5,
+    "best_third": 5,
+    "ko_r32": 5,
+    "ko_r16": 10,
+    "ko_qf": 15,
+    "ko_sf": 25,
+    "ko_third_place": 10,
+    "ko_final": 40,
+}
+
+def _ko_rule_key(pairings: list[dict[str, Any]]) -> str:
+    """Infer scoring-rule key for a knockout round by its pairing count."""
+    n = len(pairings)
+    if n >= 16:
+        return "ko_r32"
+    if n == 8:
+        return "ko_r16"
+    if n == 4:
+        return "ko_qf"
+    if n == 2:
+        return "ko_sf"
+    if n == 1:
+        code = (pairings[0].get("code") or "").upper()
+        if "3" in code or "TP" in code:
+            return "ko_third_place"
+        return "ko_final"
+    return "ko_r32"
 
 logger = logging.getLogger(__name__)
 
@@ -411,6 +451,291 @@ class TournamentService:
 
         await self.session.commit()
         return await self.list_teams(season_id)
+
+    # ------------------------------------------------------------------
+    # Auto-scoring
+    # ------------------------------------------------------------------
+
+    def _scoring_rules(self, season: Season) -> dict[str, int]:
+        cfg = season.tournament_config or {}
+        raw = cfg.get("predictions_scoring") if isinstance(cfg, dict) else None
+        merged = dict(DEFAULT_PREDICTIONS_SCORING)
+        if isinstance(raw, dict):
+            for k, v in raw.items():
+                if isinstance(v, int):
+                    merged[k] = v
+        return merged
+
+    async def _actual_group_order(self, season_id: int) -> dict[str, list[int]]:
+        """Real ranking 1º-4º per group, derived from played matches."""
+        groups = await self.get_groups(season_id)
+        return {g.name: [t.team_id for t in g.teams] for g in groups.groups}
+
+    async def _actual_best_thirds(self, season_id: int) -> list[str]:
+        """Letters of groups whose 3rd-placed team qualified as a best third.
+
+        Picks the top-8 thirds across all groups, ranked by points → goal diff →
+        goals_for. Returns an empty list when not enough thirds are available.
+        """
+        groups = await self.get_groups(season_id)
+        thirds: list[tuple[int, int, int, str]] = []  # (-pts, -gd, -gf, group)
+        for g in groups.groups:
+            if len(g.teams) >= 3:
+                t = g.teams[2]
+                thirds.append((-t.points, -t.goal_diff, -t.goals_for, g.name))
+        if len(thirds) < 8:
+            return []
+        thirds.sort()
+        return sorted(grp for _, _, _, grp in thirds[:8])
+
+    async def _actual_match_winners(
+        self, season: Season
+    ) -> tuple[dict[str, int], dict[str, str]]:
+        """For each knockout match_code, compute the winner team_id.
+
+        Returns (winners_by_code, rule_key_by_code).
+        """
+        cfg = season.tournament_config or {}
+        knockout = cfg.get("knockout", {}) if isinstance(cfg, dict) else {}
+        rounds_cfg: list[dict[str, Any]] = knockout.get("rounds", []) or []
+
+        winners: dict[str, int] = {}
+        rule_keys: dict[str, str] = {}
+
+        for round_cfg in rounds_cfg:
+            md_number = int(round_cfg.get("matchday", 0))
+            pairings: list[dict[str, Any]] = round_cfg.get("pairings", []) or []
+            rule_key = _ko_rule_key(pairings)
+
+            matches_stmt = (
+                select(Match)
+                .join(Matchday, Match.matchday_id == Matchday.id)
+                .where(
+                    Matchday.season_id == season.id,
+                    Matchday.number == md_number,
+                )
+                .order_by(Match.played_at.asc().nulls_last(), Match.id)
+            )
+            result = await self.session.execute(matches_stmt)
+            matches = list(result.scalars().all())
+            for idx, m in enumerate(matches):
+                if m.home_score is None or m.away_score is None:
+                    continue
+                pairing = pairings[idx] if idx < len(pairings) else {}
+                code = pairing.get("code")
+                if not code:
+                    continue
+                if m.home_score > m.away_score:
+                    winners[code] = m.home_team_id
+                elif m.away_score > m.home_score:
+                    winners[code] = m.away_team_id
+                # Draws (penalty shootouts) are not tracked here; require manual override
+                rule_keys[code] = rule_key
+        return winners, rule_keys
+
+    async def _actual_top_scorer(self, season_id: int) -> int | None:
+        stmt = (
+            select(PlayerStat.player_id, func.sum(PlayerStat.goals).label("g"))
+            .join(Matchday, PlayerStat.matchday_id == Matchday.id)
+            .where(Matchday.season_id == season_id)
+            .group_by(PlayerStat.player_id)
+            .order_by(func.sum(PlayerStat.goals).desc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        row = result.first()
+        if row is None or not row.g:
+            return None
+        return int(row.player_id)
+
+    async def _actual_best_player(self, season_id: int) -> int | None:
+        stmt = (
+            select(PlayerStat.player_id, func.sum(PlayerStat.pts_total).label("p"))
+            .join(Matchday, PlayerStat.matchday_id == Matchday.id)
+            .where(Matchday.season_id == season_id)
+            .group_by(PlayerStat.player_id)
+            .order_by(func.sum(PlayerStat.pts_total).desc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        row = result.first()
+        if row is None or not row.p:
+            return None
+        return int(row.player_id)
+
+    async def _actual_winner_team(self, season: Season) -> int | None:
+        """Winner of the tournament: winner of the round with a single non-third-place match."""
+        cfg = season.tournament_config or {}
+        knockout = cfg.get("knockout", {}) if isinstance(cfg, dict) else {}
+        rounds_cfg: list[dict[str, Any]] = knockout.get("rounds", []) or []
+        for round_cfg in rounds_cfg:
+            pairings = round_cfg.get("pairings", []) or []
+            if _ko_rule_key(pairings) != "ko_final":
+                continue
+            md_number = int(round_cfg.get("matchday", 0))
+            stmt = (
+                select(Match)
+                .join(Matchday, Match.matchday_id == Matchday.id)
+                .where(Matchday.season_id == season.id, Matchday.number == md_number)
+            )
+            result = await self.session.execute(stmt)
+            matches = list(result.scalars().all())
+            for m in matches:
+                if m.home_score is None or m.away_score is None:
+                    continue
+                if m.home_score > m.away_score:
+                    return m.home_team_id
+                if m.away_score > m.home_score:
+                    return m.away_team_id
+        return None
+
+    async def _compute_actuals(self, season: Season) -> dict[str, Any]:
+        winners_by_code, rule_keys_by_code = await self._actual_match_winners(season)
+        # Semifinalists = winners of QF matches (those who reached SF)
+        semifinalists = {
+            tid
+            for code, tid in winners_by_code.items()
+            if rule_keys_by_code.get(code) == "ko_qf"
+        }
+        return {
+            "winner_team_id": await self._actual_winner_team(season),
+            "top_scorer_player_id": await self._actual_top_scorer(season.id),
+            "best_player_id": await self._actual_best_player(season.id),
+            "groups_order": await self._actual_group_order(season.id),
+            "best_thirds": await self._actual_best_thirds(season.id),
+            "match_winners": winners_by_code,
+            "match_rule_keys": rule_keys_by_code,
+            "semifinalists": list(semifinalists),
+        }
+
+    def _score_one(
+        self,
+        pred: TournamentPrediction,
+        actuals: dict[str, Any],
+        rules: dict[str, int],
+    ) -> tuple[int, dict[str, int]]:
+        detail: dict[str, int] = {}
+        total = 0
+
+        if (
+            actuals["winner_team_id"]
+            and pred.winner_team_id == actuals["winner_team_id"]
+        ):
+            detail["winner"] = rules["winner"]
+            total += rules["winner"]
+
+        # Dark horse: acierto si el equipo sorpresa llegó a semifinales
+        # (ganó su cuartos de final) y no es el campeón.
+        semifinalists = set(actuals.get("semifinalists") or [])
+        if (
+            pred.dark_horse_team_id
+            and pred.dark_horse_team_id in semifinalists
+            and pred.dark_horse_team_id != actuals.get("winner_team_id")
+        ):
+            detail["dark_horse"] = rules["dark_horse"]
+            total += rules["dark_horse"]
+
+        if (
+            actuals["top_scorer_player_id"]
+            and pred.top_scorer_player_id == actuals["top_scorer_player_id"]
+        ):
+            detail["top_scorer"] = rules["top_scorer"]
+            total += rules["top_scorer"]
+
+        if (
+            actuals["best_player_id"]
+            and pred.best_player_id == actuals["best_player_id"]
+        ):
+            detail["best_player"] = rules["best_player"]
+            total += rules["best_player"]
+
+        bracket = pred.bracket_predictions or {}
+        pred_groups: dict[str, list[int]] = bracket.get("groups") or {}
+        actual_groups: dict[str, list[int]] = actuals.get("groups_order") or {}
+
+        group_keys = ("group_first", "group_second", "group_third", "group_fourth")
+        for group_name, predicted_order in pred_groups.items():
+            actual_order = actual_groups.get(group_name) or []
+            if not actual_order:
+                continue
+            position_hits = 0
+            for idx in range(min(len(predicted_order), len(actual_order), 4)):
+                if predicted_order[idx] and predicted_order[idx] == actual_order[idx]:
+                    detail[group_keys[idx]] = detail.get(group_keys[idx], 0) + rules[group_keys[idx]]
+                    total += rules[group_keys[idx]]
+                    position_hits += 1
+            if position_hits == 4 and rules["group_perfect_bonus"]:
+                detail["group_perfect_bonus"] = (
+                    detail.get("group_perfect_bonus", 0) + rules["group_perfect_bonus"]
+                )
+                total += rules["group_perfect_bonus"]
+
+        pred_thirds = set(bracket.get("best_thirds") or [])
+        actual_thirds = set(actuals.get("best_thirds") or [])
+        if pred_thirds and actual_thirds:
+            hits = len(pred_thirds & actual_thirds)
+            if hits:
+                detail["best_third"] = hits * rules["best_third"]
+                total += hits * rules["best_third"]
+
+        pred_winners: dict[str, int] = bracket.get("match_winners") or {}
+        actual_winners: dict[str, int] = actuals.get("match_winners") or {}
+        rule_keys_by_code: dict[str, str] = actuals.get("match_rule_keys") or {}
+        for code, team_id in pred_winners.items():
+            if not team_id:
+                continue
+            if actual_winners.get(code) == team_id:
+                key = rule_keys_by_code.get(code, "ko_r32")
+                detail[key] = detail.get(key, 0) + rules[key]
+                total += rules[key]
+
+        return total, detail
+
+    async def recalculate_predictions(self, season_id: int) -> RecalculateResponse:
+        season = await self._get_tournament_season(season_id)
+        rules = self._scoring_rules(season)
+        actuals = await self._compute_actuals(season)
+
+        stmt = select(TournamentPrediction).where(
+            TournamentPrediction.season_id == season_id
+        )
+        result = await self.session.execute(stmt)
+        preds = list(result.scalars().all())
+
+        breakdowns: list[PredictionScoreBreakdown] = []
+        for p in preds:
+            total, detail = self._score_one(p, actuals, rules)
+            p.bonus_points = total
+            user = await self.session.get(User, p.user_id)
+            breakdowns.append(
+                PredictionScoreBreakdown(
+                    user_id=p.user_id,
+                    display_name=user.display_name if user else None,
+                    total=total,
+                    detail=detail,
+                )
+            )
+
+        await self.session.commit()
+        breakdowns.sort(key=lambda b: (-b.total, (b.display_name or "").lower()))
+
+        actuals_summary: dict[str, Any] = {
+            k: v
+            for k, v in actuals.items()
+            if k
+            not in (
+                "groups_order",
+                "match_winners",
+                "match_rule_keys",
+                "semifinalists",
+            )
+        }
+        return RecalculateResponse(
+            season_id=season_id,
+            scoring_rules=rules,
+            actuals=actuals_summary,
+            results=breakdowns,
+        )
 
     async def list_players(self, season_id: int) -> list[PlayerOption]:
         await self._get_tournament_season(season_id)

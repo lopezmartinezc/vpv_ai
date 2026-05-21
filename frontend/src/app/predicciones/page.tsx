@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSeason } from "@/contexts/season-context";
+import { useAuth } from "@/contexts/auth-context";
 import { useFetch } from "@/hooks/use-fetch";
 import { apiClient } from "@/lib/api-client";
 import { SkeletonCards } from "@/components/ui/skeleton";
@@ -55,6 +56,8 @@ export default function PrediccionesPage() {
 
 function PrediccionesContent() {
   const { selectedSeason } = useSeason();
+  const { user } = useAuth();
+  const isAdmin = user?.isAdmin === true;
   const seasonId = selectedSeason?.id ?? null;
 
   const { data: teams } = useFetch<TeamOption[]>(
@@ -193,7 +196,12 @@ function PrediccionesContent() {
       )}
 
       {/* Resumen ranking de predicciones */}
-      <AllPredictionsTable data={allPreds} />
+      <AllPredictionsTable
+        data={allPreds}
+        isAdmin={isAdmin}
+        seasonId={seasonId}
+        onRecalculated={refetchAll}
+      />
     </div>
   );
 }
@@ -644,9 +652,34 @@ function CandidatePicker({
 
 function AllPredictionsTable({
   data,
+  isAdmin,
+  seasonId,
+  onRecalculated,
 }: {
   data: PredictionsListResponse | null | undefined;
+  isAdmin?: boolean;
+  seasonId?: number | null;
+  onRecalculated?: () => void | Promise<unknown>;
 }) {
+  const [recalcing, setRecalcing] = useState(false);
+  const [recalcMsg, setRecalcMsg] = useState<string | null>(null);
+
+  async function handleRecalc() {
+    if (!seasonId) return;
+    setRecalcing(true);
+    setRecalcMsg(null);
+    try {
+      await apiClient.post(`/tournaments/admin/${seasonId}/predictions/recalculate`, {});
+      setRecalcMsg("Puntos recalculados");
+      await onRecalculated?.();
+      setTimeout(() => setRecalcMsg(null), 3000);
+    } catch {
+      setRecalcMsg("Error al recalcular");
+    } finally {
+      setRecalcing(false);
+    }
+  }
+
   if (!data) {
     return (
       <div className="rounded-lg border border-vpv-card-border bg-vpv-card p-4">
@@ -663,8 +696,22 @@ function AllPredictionsTable({
   }
   return (
     <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
-      <div className="border-b border-vpv-border px-4 py-3">
+      <div className="flex items-center justify-between border-b border-vpv-border px-4 py-3">
         <h2 className="font-semibold text-vpv-text">Ranking de predicciones</h2>
+        {isAdmin && (
+          <div className="flex items-center gap-2">
+            {recalcMsg && (
+              <span className="text-xs text-vpv-text-muted">{recalcMsg}</span>
+            )}
+            <button
+              onClick={handleRecalc}
+              disabled={recalcing}
+              className="rounded-md bg-vpv-accent px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+            >
+              {recalcing ? "Recalculando..." : "Recalcular puntos"}
+            </button>
+          </div>
+        )}
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
