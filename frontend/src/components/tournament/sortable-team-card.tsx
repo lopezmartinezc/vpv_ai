@@ -36,6 +36,7 @@ export function SortableTeamCard({
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.4 : 1,
+    touchAction: "none",
   };
 
   const isSmall = size === "sm";
