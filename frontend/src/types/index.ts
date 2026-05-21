@@ -1013,6 +1013,15 @@ export interface BracketResponse {
   rounds: BracketRound[];
 }
 
+export interface BracketPredictions {
+  /** group letter -> [team_id_1st, team_id_2nd, team_id_3rd, team_id_4th] */
+  groups?: Record<string, (number | null)[]>;
+  /** Set of 8 group letters whose 3rd-placed team advances. */
+  best_thirds?: string[];
+  /** match_code -> winning team_id. Used for R32 through Final + 3rd. */
+  match_winners?: Record<string, number | null>;
+}
+
 export interface TournamentPrediction {
   id: number;
   season_id: number;
@@ -1028,6 +1037,7 @@ export interface TournamentPrediction {
   dark_horse_team_name: string | null;
   notes: string | null;
   bonus_points: number;
+  bracket_predictions?: BracketPredictions | null;
 }
 
 export interface PredictionsListResponse {
@@ -1042,4 +1052,5 @@ export interface PredictionRequest {
   best_player_id: number | null;
   dark_horse_team_id: number | null;
   notes: string | null;
+  bracket_predictions?: BracketPredictions | null;
 }
