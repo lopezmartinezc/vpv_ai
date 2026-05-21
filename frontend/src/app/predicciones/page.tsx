@@ -70,7 +70,12 @@ function PrediccionesContent() {
   const { data: myPred, refetch: refetchMine } = useFetch<TournamentPrediction | null>(
     seasonId ? `/tournaments/${seasonId}/predictions/me` : null,
   );
-  const { data: allPreds, refetch: refetchAll } = useFetch<PredictionsListResponse>(
+  const {
+    data: allPreds,
+    loading: allPredsLoading,
+    error: allPredsError,
+    refetch: refetchAll,
+  } = useFetch<PredictionsListResponse>(
     seasonId ? `/tournaments/${seasonId}/predictions` : null,
   );
   const { data: bracket } = useFetch<BracketResponse>(
@@ -199,6 +204,8 @@ function PrediccionesContent() {
       {/* Resumen ranking de predicciones */}
       <AllPredictionsTable
         data={allPreds}
+        loading={allPredsLoading}
+        error={allPredsError}
         isAdmin={isAdmin}
         seasonId={seasonId}
         onRecalculated={refetchAll}
@@ -222,6 +229,24 @@ function StepGenerales({
   teams: TeamOption[];
   players: PlayerOption[];
 }) {
+  const teamsById = useMemo(() => {
+    const m: Record<number, TeamOption> = {};
+    for (const t of teams) m[t.id] = t;
+    return m;
+  }, [teams]);
+  const playersById = useMemo(() => {
+    const m: Record<number, PlayerOption> = {};
+    for (const p of players) m[p.id] = p;
+    return m;
+  }, [players]);
+
+  const winnerTeam = form.winner_team_id ? teamsById[form.winner_team_id] : null;
+  const darkHorseTeam = form.dark_horse_team_id ? teamsById[form.dark_horse_team_id] : null;
+  const topScorer = form.top_scorer_player_id ? playersById[form.top_scorer_player_id] : null;
+  const topScorerTeam = topScorer ? teamsById[topScorer.team_id] : null;
+  const bestPlayer = form.best_player_id ? playersById[form.best_player_id] : null;
+  const bestPlayerTeam = bestPlayer ? teamsById[bestPlayer.team_id] : null;
+
   return (
     <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
       <div className="border-b border-vpv-border px-4 py-3">
@@ -236,24 +261,44 @@ function StepGenerales({
           value={form.winner_team_id}
           options={teams.map((t) => ({ id: t.id, label: t.name }))}
           onChange={(v) => setForm((f) => ({ ...f, winner_team_id: v }))}
+          preview={
+            winnerTeam ? (
+              <CountryFlag teamName={winnerTeam.name} fallbackLogo={winnerTeam.logo_path} size={22} />
+            ) : null
+          }
         />
         <FormSelect
           label="Sorpresa del torneo"
           value={form.dark_horse_team_id}
           options={teams.map((t) => ({ id: t.id, label: t.name }))}
           onChange={(v) => setForm((f) => ({ ...f, dark_horse_team_id: v }))}
+          preview={
+            darkHorseTeam ? (
+              <CountryFlag teamName={darkHorseTeam.name} fallbackLogo={darkHorseTeam.logo_path} size={22} />
+            ) : null
+          }
         />
         <FormSelect
           label="Maximo goleador"
           value={form.top_scorer_player_id}
           options={players.map((p) => ({ id: p.id, label: `${p.name} (${p.team_name})` }))}
           onChange={(v) => setForm((f) => ({ ...f, top_scorer_player_id: v }))}
+          preview={
+            topScorerTeam ? (
+              <CountryFlag teamName={topScorerTeam.name} fallbackLogo={topScorerTeam.logo_path} size={22} />
+            ) : null
+          }
         />
         <FormSelect
           label="Mejor jugador"
           value={form.best_player_id}
           options={players.map((p) => ({ id: p.id, label: `${p.name} (${p.team_name})` }))}
           onChange={(v) => setForm((f) => ({ ...f, best_player_id: v }))}
+          preview={
+            bestPlayerTeam ? (
+              <CountryFlag teamName={bestPlayerTeam.name} fallbackLogo={bestPlayerTeam.logo_path} size={22} />
+            ) : null
+          }
         />
         <div>
           <label className="mb-1 block text-xs text-vpv-text-muted">Notas (opcional)</label>
@@ -353,9 +398,19 @@ function GroupOrderCard({
         {[0, 1, 2, 3].map((idx) => {
           const ordinal = ["1º", "2º", "3º", "4º"][idx];
           const value = order[idx] ?? "";
+          const selected = order[idx] ? teams.find((t) => t.id === order[idx]) : null;
           return (
             <div key={idx} className="flex items-center gap-2">
               <span className="w-6 shrink-0 font-semibold text-vpv-text-muted">{ordinal}</span>
+              {selected ? (
+                <CountryFlag
+                  teamName={selected.name}
+                  fallbackLogo={selected.logo_path}
+                  size={18}
+                />
+              ) : (
+                <span className="h-[14px] w-[18px] shrink-0 rounded-sm border border-dashed border-vpv-border/40" />
+              )}
               <select
                 value={value}
                 onChange={(e) => {
@@ -659,11 +714,15 @@ function CandidatePicker({
 
 function AllPredictionsTable({
   data,
+  loading,
+  error,
   isAdmin,
   seasonId,
   onRecalculated,
 }: {
   data: PredictionsListResponse | null | undefined;
+  loading?: boolean;
+  error?: boolean;
   isAdmin?: boolean;
   seasonId?: number | null;
   onRecalculated?: () => void | Promise<unknown>;
@@ -687,12 +746,15 @@ function AllPredictionsTable({
     }
   }
 
-  if (!data) {
+  if (loading) {
     return (
       <div className="rounded-lg border border-vpv-card-border bg-vpv-card p-4">
         <SkeletonCards count={2} />
       </div>
     );
+  }
+  if (error || !data) {
+    return null;
   }
   if (data.predictions.length === 0) {
     return (
@@ -738,8 +800,22 @@ function AllPredictionsTable({
                 className="border-b border-vpv-border last:border-0 hover:bg-vpv-bg/30"
               >
                 <td className="px-3 py-2 font-medium text-vpv-text">{p.display_name ?? "—"}</td>
-                <td className="px-3 py-2 text-vpv-text-muted">{p.winner_team_name ?? "—"}</td>
-                <td className="px-3 py-2 text-vpv-text-muted">{p.dark_horse_team_name ?? "—"}</td>
+                <td className="px-3 py-2 text-vpv-text-muted">
+                  <div className="flex items-center gap-1.5">
+                    {p.winner_team_name && (
+                      <CountryFlag teamName={p.winner_team_name} size={16} />
+                    )}
+                    {p.winner_team_name ?? "—"}
+                  </div>
+                </td>
+                <td className="px-3 py-2 text-vpv-text-muted">
+                  <div className="flex items-center gap-1.5">
+                    {p.dark_horse_team_name && (
+                      <CountryFlag teamName={p.dark_horse_team_name} size={16} />
+                    )}
+                    {p.dark_horse_team_name ?? "—"}
+                  </div>
+                </td>
                 <td className="px-3 py-2 text-vpv-text-muted">{p.top_scorer_player_name ?? "—"}</td>
                 <td className="px-3 py-2 text-right font-bold tabular-nums text-vpv-text">{p.bonus_points}</td>
               </tr>
@@ -760,27 +836,32 @@ function FormSelect({
   value,
   options,
   onChange,
+  preview,
 }: {
   label: string;
   value: number | null;
   options: { id: number; label: string }[];
   onChange: (v: number | null) => void;
+  preview?: React.ReactNode;
 }) {
   return (
     <div>
       <label className="mb-1 block text-xs text-vpv-text-muted">{label}</label>
-      <select
-        value={value ?? ""}
-        onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
-        className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
-      >
-        <option value="">— Seleccionar —</option>
-        {options.map((o) => (
-          <option key={o.id} value={o.id}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+      <div className="flex items-center gap-2">
+        {preview && <span className="shrink-0">{preview}</span>}
+        <select
+          value={value ?? ""}
+          onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
+          className="w-full flex-1 rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+        >
+          <option value="">— Seleccionar —</option>
+          {options.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </div>
     </div>
   );
 }
