@@ -8,6 +8,22 @@ import { apiClient } from "@/lib/api-client";
 import { SkeletonCards } from "@/components/ui/skeleton";
 import { TournamentHero } from "@/components/tournament/tournament-hero";
 import { CountryFlag } from "@/components/ui/country-flag";
+import { SortableTeamCard } from "@/components/tournament/sortable-team-card";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import type {
   BracketPredictions,
   BracketResponse,
@@ -381,12 +397,41 @@ function GroupOrderCard({
   order: (number | null)[];
   onChange: (order: (number | null)[]) => void;
 }) {
-  // Build candidates: teams in this group, minus those already used in another slot
-  function candidatesFor(slotIdx: number): TeamOption[] {
-    const usedElsewhere = new Set(
-      order.filter((_, i) => i !== slotIdx).filter((id): id is number => id !== null),
-    );
-    return teams.filter((t) => !usedElsewhere.has(t.id));
+  // Build the visible 4-team order. If `order` is incomplete, fill remaining
+  // slots with the rest of `teams` in original order so users can drag freely.
+  const orderedTeams = useMemo<TeamOption[]>(() => {
+    const seen = new Set<number>();
+    const result: TeamOption[] = [];
+    for (const id of order) {
+      if (id == null) continue;
+      const t = teams.find((x) => x.id === id);
+      if (t && !seen.has(t.id)) {
+        seen.add(t.id);
+        result.push(t);
+      }
+    }
+    for (const t of teams) {
+      if (!seen.has(t.id)) {
+        seen.add(t.id);
+        result.push(t);
+      }
+    }
+    return result.slice(0, 4);
+  }, [teams, order]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIdx = orderedTeams.findIndex((t) => String(t.id) === String(active.id));
+    const newIdx = orderedTeams.findIndex((t) => String(t.id) === String(over.id));
+    if (oldIdx === -1 || newIdx === -1) return;
+    const next = arrayMove(orderedTeams, oldIdx, newIdx);
+    onChange(next.map((t) => t.id));
   }
 
   return (
@@ -394,43 +439,30 @@ function GroupOrderCard({
       <div className="border-b border-vpv-border bg-vpv-bg/40 px-3 py-2 text-center">
         <h3 className="font-semibold text-vpv-text">Grupo {letter}</h3>
       </div>
-      <div className="space-y-1.5 px-3 py-2 text-xs">
-        {[0, 1, 2, 3].map((idx) => {
-          const ordinal = ["1º", "2º", "3º", "4º"][idx];
-          const value = order[idx] ?? "";
-          const selected = order[idx] ? teams.find((t) => t.id === order[idx]) : null;
-          return (
-            <div key={idx} className="flex items-center gap-2">
-              <span className="w-6 shrink-0 font-semibold text-vpv-text-muted">{ordinal}</span>
-              {selected ? (
-                <CountryFlag
-                  teamName={selected.name}
-                  fallbackLogo={selected.logo_path}
-                  size={18}
-                />
-              ) : (
-                <span className="h-[14px] w-[18px] shrink-0 rounded-sm border border-dashed border-vpv-border/40" />
-              )}
-              <select
-                value={value}
-                onChange={(e) => {
-                  const newOrder = [...order];
-                  newOrder[idx] = e.target.value ? Number(e.target.value) : null;
-                  onChange(newOrder);
-                }}
-                className="flex-1 rounded border border-vpv-border bg-vpv-bg px-1.5 py-1 text-vpv-text"
-              >
-                <option value="">—</option>
-                {candidatesFor(idx).map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          );
-        })}
-      </div>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext
+          items={orderedTeams.map((t) => String(t.id))}
+          strategy={verticalListSortingStrategy}
+        >
+          <div className="space-y-1.5 px-3 py-2">
+            {orderedTeams.map((t, idx) => (
+              <SortableTeamCard
+                key={t.id}
+                id={String(t.id)}
+                teamName={t.name}
+                shortName={t.short_name}
+                logoPath={t.logo_path}
+                ordinal={["1º", "2º", "3º", "4º"][idx]}
+                size="sm"
+              />
+            ))}
+          </div>
+        </SortableContext>
+      </DndContext>
     </div>
   );
 }
