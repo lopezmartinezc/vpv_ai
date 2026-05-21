@@ -14,6 +14,7 @@ import {
   closestCenter,
   KeyboardSensor,
   PointerSensor,
+  useDraggable,
   useDroppable,
   useSensor,
   useSensors,
@@ -25,6 +26,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import type {
   BracketPredictions,
   BracketResponse,
@@ -615,81 +617,135 @@ function PickableMatch({
   onPick: (id: number | null) => void;
 }) {
   const codeNum = code.replace(/^M/, "");
+  // Deduplicate candidates (homes ∪ aways) since they may overlap when the
+  // placeholder resolves the same team for both sides.
+  const allCandidates = [...homes, ...aways].filter(
+    (t, i, arr) => arr.findIndex((x) => x.id === t.id) === i,
+  );
+  const winnerTeam = winner ? allCandidates.find((t) => t.id === winner) ?? null : null;
+  const candidatesForPick = allCandidates.filter((t) => t.id !== winner);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over) return;
+    if (String(over.id) !== `winner-${code}`) return;
+    const teamId = Number(String(active.id).replace(/^cand-\d+-/, ""));
+    if (Number.isFinite(teamId)) onPick(teamId);
+  }
+
   return (
-    <div className="rounded border border-vpv-border bg-vpv-bg/40 text-xs">
-      <div className="border-b border-vpv-border/40 px-2 py-0.5 text-center text-[9px] font-semibold uppercase tracking-wider text-vpv-text-muted">
-        {label ?? `Partido ${codeNum}`}
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <div className="rounded border border-vpv-border bg-vpv-bg/40 text-xs">
+        <div className="border-b border-vpv-border/40 px-2 py-0.5 text-center text-[9px] font-semibold uppercase tracking-wider text-vpv-text-muted">
+          {label ?? `Partido ${codeNum}`}
+        </div>
+
+        {/* Candidates list */}
+        <div className="space-y-1 px-1.5 py-1.5">
+          {allCandidates.length === 0 ? (
+            <div className="py-1 text-center text-[10px] italic text-vpv-text-muted">
+              Por determinar
+            </div>
+          ) : (
+            candidatesForPick.map((t) => (
+              <DraggableCandidate
+                key={t.id}
+                id={`cand-${code}-${t.id}`}
+                team={t}
+                onClick={() => onPick(t.id)}
+              />
+            ))
+          )}
+        </div>
+
+        {/* Winner drop zone */}
+        <WinnerDropZone code={code} team={winnerTeam} onClear={() => onPick(null)} />
       </div>
-      <CandidatePicker
-        side="home"
-        candidates={homes}
-        selected={winner}
-        onPick={onPick}
-      />
-      <div className="border-t border-vpv-border/30 px-2 py-0.5 text-center text-[9px] uppercase text-vpv-text-muted">
-        vs
-      </div>
-      <CandidatePicker
-        side="away"
-        candidates={aways}
-        selected={winner}
-        onPick={onPick}
-      />
-    </div>
+    </DndContext>
   );
 }
 
-function CandidatePicker({
-  side,
-  candidates,
-  selected,
-  onPick,
+function DraggableCandidate({
+  id,
+  team,
+  onClick,
 }: {
-  side: "home" | "away";
-  candidates: TeamOption[];
-  selected: number | null;
-  onPick: (id: number | null) => void;
+  id: string;
+  team: TeamOption;
+  onClick: () => void;
 }) {
-  if (candidates.length === 0) {
-    return (
-      <div className="px-2 py-1 text-[10px] italic text-vpv-text-muted">Por determinar</div>
-    );
-  }
-  if (candidates.length === 1) {
-    const t = candidates[0];
-    const isSelected = selected === t.id;
-    return (
-      <button
-        type="button"
-        onClick={() => onPick(isSelected ? null : t.id)}
-        className={`flex w-full items-center gap-1.5 px-2 py-1 transition-colors ${
-          isSelected
-            ? "bg-green-500/15 font-bold text-green-400"
-            : "text-vpv-text hover:bg-vpv-bg"
-        }`}
-        aria-label={`Pick ${t.name} (${side})`}
-      >
-        <CountryFlag teamName={t.name} fallbackLogo={t.logo_path} size={16} />
-        <span className="min-w-0 flex-1 truncate text-left">{t.short_name ?? t.name}</span>
-        {isSelected && <span className="text-[10px]">✓</span>}
-      </button>
-    );
-  }
-  // Multiple candidates (e.g. best 3rd unresolved): select one
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    opacity: isDragging ? 0.4 : 1,
+  };
   return (
-    <div className="px-2 py-1">
-      <select
-        value={selected ?? ""}
-        onChange={(e) => onPick(e.target.value ? Number(e.target.value) : null)}
-        className="w-full rounded border border-vpv-border bg-vpv-card px-1 py-0.5 text-[10px] text-vpv-text"
-      >
-        <option value="">—</option>
-        {candidates.map((t) => (
-          <option key={t.id} value={t.id}>
-            {t.short_name ?? t.name}
-          </option>
-        ))}
-      </select>
+    <button
+      ref={setNodeRef}
+      type="button"
+      onClick={onClick}
+      style={style}
+      className="flex w-full cursor-grab items-center gap-1.5 rounded border border-vpv-border/40 bg-vpv-bg px-1.5 py-1 text-left text-vpv-text hover:border-vpv-accent/40 active:cursor-grabbing"
+      aria-label={`Arrastra ${team.name} al ganador`}
+      {...attributes}
+      {...listeners}
+    >
+      <span aria-hidden="true" className="text-vpv-text-muted/60">⋮⋮</span>
+      <CountryFlag teamName={team.name} fallbackLogo={team.logo_path} size={14} />
+      <span className="min-w-0 flex-1 truncate text-[11px]">{team.short_name ?? team.name}</span>
+    </button>
+  );
+}
+
+function WinnerDropZone({
+  code,
+  team,
+  onClear,
+}: {
+  code: string;
+  team: TeamOption | null;
+  onClear: () => void;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: `winner-${code}` });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`m-1 flex items-center gap-1.5 rounded border-2 px-1.5 py-1 transition-colors ${
+        team
+          ? "border-green-500/60 bg-green-500/10"
+          : isOver
+            ? "border-vpv-accent/80 bg-vpv-accent/10"
+            : "border-dashed border-vpv-border/60 bg-vpv-bg/30"
+      }`}
+    >
+      {team ? (
+        <>
+          <span className="text-[9px] font-bold uppercase tracking-wider text-green-500">
+            🏆
+          </span>
+          <CountryFlag teamName={team.name} fallbackLogo={team.logo_path} size={14} />
+          <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-green-400">
+            {team.short_name ?? team.name}
+          </span>
+          <button
+            type="button"
+            onClick={onClear}
+            className="text-vpv-text-muted hover:text-red-400"
+            aria-label="Quitar ganador"
+          >
+            ✕
+          </button>
+        </>
+      ) : (
+        <span className="w-full text-center text-[10px] italic text-vpv-text-muted">
+          Suelta el ganador aquí
+        </span>
+      )}
     </div>
   );
 }
