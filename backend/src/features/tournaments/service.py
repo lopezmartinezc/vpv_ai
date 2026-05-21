@@ -437,7 +437,8 @@ class TournamentService:
             pred.notes = body.notes
             if body.bracket_predictions is not None:
                 pred.bracket_predictions = body.bracket_predictions
-            pred.updated_at = datetime.now(UTC)
+            # updated_at column is naive in DB; strip tz from UTC datetime
+            pred.updated_at = datetime.now(UTC).replace(tzinfo=None)
 
         await self.session.commit()
         await self.session.refresh(pred)
