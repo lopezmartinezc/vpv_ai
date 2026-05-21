@@ -5,6 +5,7 @@ import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
 import { SkeletonCards } from "@/components/ui/skeleton";
 import { TournamentHero } from "@/components/tournament/tournament-hero";
+import { CountryFlag } from "@/components/ui/country-flag";
 import type { BracketResponse, BracketMatch } from "@/types";
 
 export default function BracketPage() {
@@ -394,10 +395,15 @@ function CompactTeamRow({
         played && !won ? "opacity-50" : ""
       }`}
     >
-      {logo ? (
-        <img src={logo} alt="" className="h-4 w-4 shrink-0" />
+      {name ? (
+        <CountryFlag
+          teamName={name}
+          fallbackLogo={logo}
+          size={16}
+          className="!rounded-[2px]"
+        />
       ) : (
-        <span className="h-4 w-4 shrink-0" />
+        <span className="h-3 w-4 shrink-0" />
       )}
       <span
         className={`min-w-0 flex-1 truncate ${

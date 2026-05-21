@@ -7,6 +7,7 @@ import { useFetch } from "@/hooks/use-fetch";
 import { apiClient } from "@/lib/api-client";
 import { SkeletonCards } from "@/components/ui/skeleton";
 import { TournamentHero } from "@/components/tournament/tournament-hero";
+import { CountryFlag } from "@/components/ui/country-flag";
 import type {
   BracketPredictions,
   BracketResponse,
@@ -500,7 +501,13 @@ function StepEliminatoria({
                 }`}
               >
                 <span className="font-bold">{letter}</span>
-                {team?.logo_path && <img src={team.logo_path} alt="" className="h-4 w-4" />}
+                {team && (
+                  <CountryFlag
+                    teamName={team.name}
+                    fallbackLogo={team.logo_path}
+                    size={18}
+                  />
+                )}
                 <span className="min-w-0 flex-1 truncate text-left">
                   {team ? team.short_name ?? team.name : "(sin 3º)"}
                 </span>
@@ -621,7 +628,7 @@ function CandidatePicker({
         }`}
         aria-label={`Pick ${t.name} (${side})`}
       >
-        {t.logo_path && <img src={t.logo_path} alt="" className="h-4 w-4" />}
+        <CountryFlag teamName={t.name} fallbackLogo={t.logo_path} size={16} />
         <span className="min-w-0 flex-1 truncate text-left">{t.short_name ?? t.name}</span>
         {isSelected && <span className="text-[10px]">✓</span>}
       </button>

@@ -4,6 +4,7 @@ import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
 import { SkeletonCards } from "@/components/ui/skeleton";
 import { TournamentHero } from "@/components/tournament/tournament-hero";
+import { CountryFlag } from "@/components/ui/country-flag";
 import type { TournamentGroupsResponse } from "@/types";
 
 export default function GruposPage() {
@@ -116,13 +117,11 @@ function GroupCard({
                 >
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2">
-                      {t.logo_path && (
-                        <img
-                          src={t.logo_path}
-                          alt=""
-                          className="h-5 w-5"
-                        />
-                      )}
+                      <CountryFlag
+                        teamName={t.team_name}
+                        fallbackLogo={t.logo_path}
+                        size={22}
+                      />
                       <span className="font-medium text-vpv-text">
                         {t.short_name ?? t.team_name}
                       </span>
