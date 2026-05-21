@@ -109,23 +109,44 @@ CREATE TABLE users (
 ```sql
 CREATE TABLE seasons (
     id                  SERIAL PRIMARY KEY,
-    name                VARCHAR(15)  NOT NULL UNIQUE,  -- '2025-26'
+    name                VARCHAR(15)  NOT NULL UNIQUE,  -- '2025-26' o 'Mundial 26'
     status              VARCHAR(20)  NOT NULL DEFAULT 'setup',
                         -- setup | draft | active | winter_draft | finished
-    matchday_start      SMALLINT     NOT NULL,  -- Jornada inicio
-    matchday_end        SMALLINT,               -- Jornada fin (puede ser NULL al crear)
+    matchday_start      SMALLINT     NOT NULL,
+    matchday_end        SMALLINT,
     matchday_current    SMALLINT     NOT NULL DEFAULT 0,
-    matchday_winter     SMALLINT,               -- Jornada del draft invierno
+    matchday_winter     SMALLINT,
     matchday_scanned    SMALLINT     NOT NULL DEFAULT 0,
-    draft_pool_size     SMALLINT     NOT NULL DEFAULT 26,  -- Jugadores por participante
-    lineup_deadline_min SMALLINT     NOT NULL DEFAULT 30,  -- Minutos antes del 1er partido
+    draft_pool_size     SMALLINT     NOT NULL DEFAULT 26,
+    lineup_deadline_min SMALLINT     NOT NULL DEFAULT 30,
     total_participants  SMALLINT     NOT NULL DEFAULT 0,
-    scraping_slug       VARCHAR(50),                    -- e.g. 'laliga-25-26'
+    scraping_slug       VARCHAR(50),
+    edit_unlocked       BOOLEAN      NOT NULL DEFAULT FALSE,  -- override read-only post-finished
+    kind                VARCHAR(20)  NOT NULL DEFAULT 'league',  -- league | tournament
+    tournament_type     VARCHAR(30),                            -- mundial | eurocopa | copa_america | ...
+    tournament_config   JSONB,                                  -- groups, knockout, predictions_scoring
+    telegram_chat_id    VARCHAR(50),
     created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 ```
 
-**Diferencia con MySQL**: `temporadas` solo tenía jornada_inicial, jornada_actual, jornada_cambios, total_user, jornada_escaneada. Ahora se añade estado de la temporada, deadline configurable, draft_pool_size y scraping_slug (slug de futbolfantasy.com para URLs de jugadores, reemplaza config de .env).
+**Tipos de temporada (`kind`)**:
+- `league` — La Liga clasica (1 grupo, 38 jornadas, alineaciones, drafts).
+- `tournament` — Torneo internacional (Mundial, Eurocopa, Copa America). Equipos agrupados por `teams.tournament_group`. El layout de fase de grupos y knockout vive en `tournament_config`:
+  ```jsonc
+  {
+    "groups": { "matchdays": [1, 2, 3] },
+    "knockout": {
+      "rounds": [
+        { "matchday": 5, "name": "Octavos",
+          "pairings": [ { "code": "M65", "home": "1A", "away": "2B", "label": "Octavos 1" } ] }
+      ]
+    },
+    "predictions_scoring": { "winner": 50, "ko_final": 40, "...": "..." }
+  }
+  ```
+
+**Diferencia con MySQL**: `temporadas` solo tenía jornada_inicial, jornada_actual, jornada_cambios, total_user, jornada_escaneada. Ahora se añade estado, deadline configurable, draft_pool_size, scraping_slug, edit-lock post-finalizada y la discriminacion Liga / Torneo (Fase 5 del roadmap).
 
 ---
 
@@ -233,19 +254,22 @@ CREATE TABLE season_participants (
 
 ---
 
-### 6. `teams` — Equipos de La Liga por temporada
+### 6. `teams` — Equipos de La Liga o seleccion del torneo por temporada
 
 ```sql
 CREATE TABLE teams (
-    id              SERIAL PRIMARY KEY,
-    season_id       INT          NOT NULL REFERENCES seasons(id),
-    name            VARCHAR(100) NOT NULL,
-    short_name      VARCHAR(10),
-    slug            VARCHAR(100) NOT NULL,  -- nom_url del scraping
-    logo_path       VARCHAR(255),
+    id                SERIAL PRIMARY KEY,
+    season_id         INT          NOT NULL REFERENCES seasons(id),
+    name              VARCHAR(100) NOT NULL,
+    short_name        VARCHAR(10),
+    slug              VARCHAR(100) NOT NULL,  -- nom_url del scraping
+    logo_path         VARCHAR(255),
+    tournament_group  VARCHAR(2),             -- 'A','B',... solo en kind='tournament'
     UNIQUE(season_id, slug)
 );
 ```
+
+En torneos, `tournament_group` agrupa los equipos para la fase de grupos. La asignacion se gestiona desde `/admin/grupos` (endpoint `PUT /tournaments/admin/{season_id}/teams/groups`).
 
 **Diferencia con MySQL**: `equipos` no tenía relación con temporada. Ahora soporta ascensos/descensos.
 
@@ -649,6 +673,42 @@ Usado en dos code paths del backend:
 
 ---
 
+### 21. `tournament_predictions` — Predicciones extendidas de torneo
+
+Predicciones por usuario para temporadas con `kind='tournament'`. Una fila por (`season_id`, `user_id`).
+
+```sql
+CREATE TABLE tournament_predictions (
+    id                    SERIAL PRIMARY KEY,
+    season_id             INT          NOT NULL REFERENCES seasons(id),
+    user_id               INT          NOT NULL REFERENCES users(id),
+    winner_team_id        INT          REFERENCES teams(id),
+    top_scorer_player_id  INT          REFERENCES players(id),
+    best_player_id        INT          REFERENCES players(id),
+    dark_horse_team_id    INT          REFERENCES teams(id),
+    notes                 VARCHAR(500),
+    bonus_points          SMALLINT     NOT NULL DEFAULT 0,
+    bracket_predictions   JSONB,
+    submitted_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at            TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_tournament_prediction UNIQUE (season_id, user_id)
+);
+```
+
+Estructura esperada de `bracket_predictions`:
+
+```jsonc
+{
+  "groups": { "A": [team_id_1st, team_id_2nd, team_id_3rd, team_id_4th], "B": [...] },
+  "best_thirds": ["A", "C", "E", "F", "I", "J", "K", "L"],
+  "match_winners": { "M73": team_id, "M74": team_id, ... }
+}
+```
+
+`bonus_points` lo actualiza el motor de auto-scoring (endpoint `POST /tournaments/admin/{season_id}/predictions/recalculate`) comparando la prediccion con `_compute_actuals(season)`. Las reglas viven en `seasons.tournament_config.predictions_scoring` con defaults definidos en `backend/src/features/tournaments/service.py::DEFAULT_PREDICTIONS_SCORING`.
+
+---
+
 ## 🔄 Mapeo MySQL → PostgreSQL
 
 | MySQL actual | PostgreSQL nuevo | Notas |
@@ -731,16 +791,16 @@ ORDER BY dp.pick_number;
 
 ---
 
-## 🔑 Resumen: 20 tablas
+## 🔑 Resumen: tablas
 
 | # | Tabla | Propósito |
 |---|---|---|
-| 1 | `users` | Identidad única |
-| 2 | `seasons` | Configuración temporada |
+| 1 | `users` | Identidad única (incluye `session_id`, `permissions` bitmap) |
+| 2 | `seasons` | Configuracion temporada (Liga `kind=league` o Torneo `kind=tournament` con `tournament_config` JSONB) |
 | 3 | `scoring_rules` | Reglas de puntuación configurables |
 | 4 | `season_payments` | Configuración económica |
 | 5 | `season_participants` | Participantes por temporada |
-| 6 | `teams` | Equipos por temporada |
+| 6 | `teams` | Equipos por temporada (`tournament_group` en torneos) |
 | 7 | `players` | Jugadores por temporada |
 | 8 | `drafts` | Eventos de draft |
 | 9 | `draft_picks` | Elecciones del draft |
@@ -757,3 +817,6 @@ ORDER BY dp.pick_number;
 | 20 | `player_ownership_log` | Historico de propiedad de jugadores |
 | 21 | `push_subscriptions` | Suscripciones Web Push por usuario |
 | 22 | `scraping_logs` | Logs persistentes de scraping por jugador/partido (status, detail JSONB) |
+| 23 | `achievement_definitions` | Definiciones de logros (seed data) |
+| 24 | `achievements` | Logros conseguidos por participante/jornada |
+| 25 | `tournament_predictions` | Predicciones extendidas de torneo (campeon, sorpresa, MVP, goleador, bracket_predictions JSONB) |

@@ -1,15 +1,16 @@
 # Roadmap de Mejoras — Liga VPV Fantasy
 
-**Fecha**: 2026-03-18
+**Fecha**: 2026-05-21
 **Estado**: En progreso
 
 ## Estado actual
 
 La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
-- 30 paginas frontend (Next.js + Tailwind)
-- 16 modulos backend (FastAPI + SQLAlchemy)
-- 22 tablas PostgreSQL (+ achievement_definitions, achievements)
+- Frontend Next.js + Tailwind, backend FastAPI + SQLAlchemy 2.0 async
+- PostgreSQL con `seasons.kind` discriminado: Liga (`league`) + Torneos (`tournament`, Mundial 26 / futuras Eurocopas y Copa America)
+- Tabla `tournament_predictions` con columna `bracket_predictions JSONB` (orden de grupos, mejores terceros, ganadores knockout)
 - Liga, Copa, Drafts, Alineaciones, Economia, Scraping automatico, Admin completo
+- Mundial: pagina `/grupos`, `/bracket` (cuadro FIFA dos lados), wizard de predicciones extendido y motor de auto-scoring (`/api/tournaments/admin/{season_id}/predictions/recalculate`)
 
 ---
 
@@ -192,6 +193,38 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 
 ---
 
+## Prioridad 5 — Torneos (Mundial 2026, Eurocopa, ...)
+
+### 5.1 Infraestructura de torneos
+- **Problema**: Hospedar el Mundial 2026 (y futuros torneos) junto con la Liga sin duplicar BD ni dominio.
+- **Solucion**: Discriminador `seasons.kind` (`league` | `tournament`), `tournament_type` (mundial / eurocopa / ...), `tournament_config` JSONB con `groups.matchdays`, `knockout.rounds[].pairings` (codigo + placeholders FIFA), reglas de scoring, etc.
+- **Frontend**: `SeasonContext` extendido con `isTournamentContext`, `activeLeague`, `activeTournament`; persistencia en `localStorage`. Banner tematizado (`TournamentHero`) con emblema FIFA + patron de globo; clase `body.tournament-mundial` override de variables CSS; menus y sidebars admin se adaptan al contexto.
+- **Scraping**: Helper `competition_url_prefix(kind, tournament_type)` (mundial -> world-cup, eurocopa -> eurocopa, ...). `parse_teams` soporta atributos `alt`/`title` y rutas absolutas. `_resolve_season_year` admite formatos "Mundial 26" / "2025-2026".
+- **Estado**: [x] Completado (2026-05) — Fases 1-6.
+
+### 5.2 Grupos, cuadro y predicciones del torneo
+- **Pagina Grupos**: `/grupos` calcula clasificacion por `tournament_group` reusando los matchdays declarados como fase de grupos.
+- **Pagina Cuadro de Eliminatorias**: `/bracket` con layout FIFA de dos lados (R32 -> Final centrada con tercer puesto). Mobile fallback a vista linear. Placeholders entendidos: `1A`/`2A`/`3:ABCDF` (clasificacion de grupo o mejor tercero), `WXX`/`LXX` (ganador/perdedor de partido `MXX`).
+- **Admin Grupos**: `/admin/grupos` para asignar equipos a grupos `A`-`L`.
+- **Predicciones extendidas**: Wizard de 3 pasos en `/predicciones`:
+  1. **Generales** — campeon, sorpresa, goleador, MVP, notas.
+  2. **Grupos** — para cada uno de los 12 grupos, ranking 1º-4º con deduplicacion.
+  3. **Eliminatoria** — picker de 8 mejores terceros (capado a 8) + bracket interactivo donde el usuario clica para escoger ganador. La cadena se resuelve dinamicamente (`1A` -> `groups.A[0]`, `WXX` -> `match_winners.MXX`, `LXX` -> el otro equipo del partido `MXX`, `3:ABCDF` -> mejor tercero entre los grupos pasados).
+- **Almacenamiento**: tabla `tournament_predictions` con columna `bracket_predictions JSONB` (estructura `{groups, best_thirds, match_winners}`).
+- **Estado**: [x] Completado (2026-05) — Fases A-D.
+
+### 5.3 Motor de auto-scoring de predicciones
+- **Problema**: Calcular `bonus_points` por participante comparando su prediccion con los resultados reales tras cada ronda.
+- **Solucion**:
+  - `DEFAULT_PREDICTIONS_SCORING` (16 reglas, ver `docs/API.md`). Overridable via `tournament_config.predictions_scoring`.
+  - `_compute_actuals(season)` deriva del estado actual: campeon (ganador del round con un solo partido tipo "Final"), top scorer (max goles agregados en jornadas del torneo), best player (max `pts_total` agregado), orden de grupos (mismo calculo que `/groups`), 8 mejores terceros (ranking pts -> gd -> gf), `match_winners` por `match_code` y `semifinalists` (winners de QF).
+  - `_score_one(pred, actuals, rules)` produce `(total, detail)` con desglose por regla. Sorpresa (`dark_horse`) cuenta si llega a SF y no es el campeon. KO se puntua por tamaño de ronda (`ko_r32`/`ko_r16`/`ko_qf`/`ko_sf`/`ko_third_place`/`ko_final`).
+  - Endpoint admin `POST /api/tournaments/admin/{season_id}/predictions/recalculate` recorre todas las predicciones, actualiza `bonus_points` y devuelve el ranking con detalle.
+- **Frontend**: Boton "Recalcular puntos" en cabecera del Ranking de predicciones, visible solo si `user.isAdmin`.
+- **Estado**: [x] Completado (2026-05-21) — Fase E.
+
+---
+
 ## Resumen
 
 | # | Mejora | Impacto | Complejidad | Estado |
@@ -217,6 +250,9 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 | 4.5 | Ciclo vida temporada | Alto (operativo) | Media | Completado |
 | 4.6 | Palmares historico | Medio | Media | Completado |
 | 4.7 | Grupos participantes | Alto | Media | Completado |
+| 5.1 | Infraestructura torneos | Alto | Alta | Completado |
+| 5.2 | Grupos/Cuadro/Predicciones torneo | Alto | Alta | Completado |
+| 5.3 | Auto-scoring predicciones | Alto | Media | Completado |
 
 ## Criterios de validacion
 

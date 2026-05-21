@@ -1207,3 +1207,208 @@ Predicciones de puntos esperados (xPts) para todos los jugadores con partido en 
 Modelo: forma EWMA (40%) + media temporada (20%) + factor rival reciente (25%) + casa/fuera (15%), multiplicado por probabilidad de titular.
 
 **Auth**: Admin
+
+## Tournaments
+
+Endpoints especificos para temporadas con `kind='tournament'` (Mundial, Eurocopa, etc.).
+Se diferencian de la Liga por:
+- Equipos agrupados por `tournament_group` (`A`, `B`, ...).
+- Estructura knockout descrita en `seasons.tournament_config` (JSONB).
+- Predicciones extendidas en tabla `tournament_predictions` (campeon, sorpresa, goleador, MVP, orden de grupos, mejores terceros, ganadores eliminatoria).
+
+### `GET /api/tournaments/{season_id}/groups`
+
+Clasificacion por grupo derivada de los partidos jugados en las jornadas declaradas como fase de grupos (`tournament_config.groups.matchdays`).
+
+**Auth**: Publico
+
+**Response** `200`:
+```json
+{
+  "season_id": 10,
+  "season_name": "Mundial 26",
+  "tournament_type": "mundial",
+  "groups": [
+    {
+      "name": "A",
+      "teams": [
+        {
+          "team_id": 800,
+          "team_name": "Mexico",
+          "short_name": "MEX",
+          "logo_path": "/static/teams/...",
+          "played": 3, "won": 2, "drawn": 1, "lost": 0,
+          "goals_for": 6, "goals_against": 2, "goal_diff": 4, "points": 7
+        }
+      ]
+    }
+  ]
+}
+```
+
+### `GET /api/tournaments/{season_id}/bracket`
+
+Cuadro de eliminatorias derivado de `tournament_config.knockout.rounds` + partidos. Cuando los partidos aun no se han generado, devuelve los pairings como placeholders (`1A`, `W74`, `L101`, `3:ABCDF`).
+
+**Auth**: Publico
+
+**Response** `200`:
+```json
+{
+  "season_id": 10,
+  "season_name": "Mundial 26",
+  "rounds": [
+    {
+      "name": "Octavos",
+      "matchday": 5,
+      "matches": [
+        {
+          "match_id": 1700,
+          "home_team_id": 801, "home_team_name": "Argentina", "home_logo": "...", "home_score": 2,
+          "away_team_id": 803, "away_team_name": "Italia", "away_logo": "...", "away_score": 1,
+          "played": true,
+          "match_code": "M65", "home_placeholder": "1B", "away_placeholder": "2A", "label": "Octavos 1"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### `GET /api/tournaments/{season_id}/teams`
+
+Lista de equipos del torneo con su grupo, util para selects del wizard de predicciones.
+
+**Auth**: Publico
+
+### `GET /api/tournaments/{season_id}/players`
+
+Lista de jugadores con su equipo, util para selects (goleador / MVP).
+
+**Auth**: Publico
+
+### `GET /api/tournaments/{season_id}/predictions/me`
+
+Devuelve la prediccion del usuario actual para el torneo. `null` si todavia no ha enviado nada.
+
+**Auth**: User
+
+**Response** `200`:
+```json
+{
+  "id": 7, "season_id": 10, "user_id": 3, "display_name": "Carlos",
+  "winner_team_id": 801, "winner_team_name": "Argentina",
+  "top_scorer_player_id": 9001, "top_scorer_player_name": "Mbappe",
+  "best_player_id": 9002, "best_player_name": "Bellingham",
+  "dark_horse_team_id": 822, "dark_horse_team_name": "Marruecos",
+  "notes": "...", "bonus_points": 85,
+  "bracket_predictions": {
+    "groups": {"A": [800, 805, 810, 815], "B": [...]},
+    "best_thirds": ["A", "C", "E", "F", "I", "J", "K", "L"],
+    "match_winners": {"M73": 801, "M74": 803, ...}
+  }
+}
+```
+
+### `PUT /api/tournaments/{season_id}/predictions/me`
+
+Crea o actualiza la prediccion del usuario actual (upsert).
+
+**Auth**: User
+
+**Body**:
+```json
+{
+  "winner_team_id": 801,
+  "top_scorer_player_id": 9001,
+  "best_player_id": 9002,
+  "dark_horse_team_id": 822,
+  "notes": "string opcional",
+  "bracket_predictions": {
+    "groups": {"A": [800, 805, 810, 815]},
+    "best_thirds": ["A", "C"],
+    "match_winners": {"M73": 801}
+  }
+}
+```
+
+Si `bracket_predictions` es `null` se mantiene el valor previo (no se sobreescribe a `null`).
+
+### `GET /api/tournaments/{season_id}/predictions`
+
+Listado completo de predicciones de la temporada (visible para participantes una vez enviadas).
+
+**Auth**: User
+
+**Response** `200`: `{ season_id, season_name, predictions: [PredictionResponse, ...] }` ordenado por `bonus_points` descendente.
+
+### `PUT /api/tournaments/admin/{season_id}/teams/groups`
+
+Asignacion batch de equipos a grupos del torneo. Acepta `group_name=null` o cadena vacia para desasignar.
+
+**Auth**: `Perm.PLAYERS | Perm.PARTICIPANTS` (y la temporada debe ser editable)
+
+**Body**:
+```json
+{
+  "assignments": [
+    {"team_id": 800, "group_name": "A"},
+    {"team_id": 801, "group_name": "B"},
+    {"team_id": 810, "group_name": null}
+  ]
+}
+```
+
+### `POST /api/tournaments/admin/{season_id}/predictions/recalculate`
+
+Recalcula `bonus_points` de todas las predicciones comparando contra los resultados reales actuales.
+
+Calcula a partir del estado actual:
+- Campeon: ganador del partido final.
+- Goleador: jugador con mas goles agregados en jornadas del torneo.
+- MVP (`best_player`): jugador con mas `pts_total` agregado.
+- Orden de grupos: la clasificacion calculada por `/groups`.
+- Mejores terceros: los 8 grupos cuyo tercer clasificado puntua mas alto (pts -> goal diff -> goals for).
+- Sorpresa (`dark_horse`): equipo predicho que llega a semifinales y no es el campeon.
+- Ganadores por `match_code`: derivados de los `home_score`/`away_score` de cada partido del knockout.
+
+**Reglas de puntuacion** (defaults overridable en `tournament_config.predictions_scoring`):
+
+| Clave | Default |
+|---|---|
+| `winner` | 50 |
+| `dark_horse` | 20 |
+| `top_scorer` | 30 |
+| `best_player` | 30 |
+| `group_first` | 5 |
+| `group_second` | 3 |
+| `group_third` | 2 |
+| `group_fourth` | 2 |
+| `group_perfect_bonus` | 5 |
+| `best_third` | 5 |
+| `ko_r32` | 5 |
+| `ko_r16` | 10 |
+| `ko_qf` | 15 |
+| `ko_sf` | 25 |
+| `ko_third_place` | 10 |
+| `ko_final` | 40 |
+
+**Auth**: `Perm.PARTICIPANTS | Perm.STATS` (y la temporada debe ser editable)
+
+**Response** `200`:
+```json
+{
+  "season_id": 10,
+  "scoring_rules": { "winner": 50, "...": "..." },
+  "actuals": {
+    "winner_team_id": 801,
+    "top_scorer_player_id": 9001,
+    "best_player_id": 9002,
+    "best_thirds": ["A", "C", "E", "F", "I", "J", "K", "L"]
+  },
+  "results": [
+    { "user_id": 3, "display_name": "Carlos", "total": 85,
+      "detail": { "winner": 50, "group_first": 15, "ko_r16": 20 } }
+  ]
+}
+```

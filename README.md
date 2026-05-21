@@ -78,7 +78,7 @@ vpv_ai/
       shared/
         base/repository.py      # BaseRepository[T] generico
         dependencies.py         # get_db, get_current_user, get_current_admin
-        models/                 # 11 SQLAlchemy models (18 tablas)
+        models/                 # SQLAlchemy models (25 tablas)
         schemas/common.py       # PaginatedResponse[T]
       features/
         auth/                   # Login, registro, invitaciones, gestion usuarios
@@ -129,7 +129,7 @@ vpv_ai/
   migration/
     docker-compose.yml          # MySQL 5.7 (3307) + PG 16 (5432)
     schema/
-      00_create_schema.sql      # DDL completo (18 tablas)
+      00_create_schema.sql      # DDL completo (25 tablas)
       01_seed_data.sql          # Datos de referencia
       02_dev_seed.sql           # Seed desarrollo
     scripts/
@@ -139,7 +139,7 @@ vpv_ai/
 
 ## Modelo de datos
 
-18 tablas PostgreSQL. Referencia completa en [claude_data/modelo_datos_vpv.md](claude_data/modelo_datos_vpv.md).
+25 tablas PostgreSQL. Referencia completa en [claude_data/modelo_datos_vpv.md](claude_data/modelo_datos_vpv.md).
 
 Tablas principales:
 - `users` — Usuarios (15)
@@ -225,7 +225,7 @@ cd migration && python scripts/migrate.py
 
 ## Migracion
 
-Completada. MySQL 5.7 (6 tablas, 52MB) -> PostgreSQL 16 (18 tablas normalizadas).
+Completada. MySQL 5.7 (6 tablas, 52MB) -> PostgreSQL 16 (25 tablas normalizadas).
 
 - 224,609 player_stats
 - 3,039 matches
