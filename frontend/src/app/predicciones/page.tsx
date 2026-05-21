@@ -560,123 +560,446 @@ function StepEliminatoria({
         onChange={(letters) => updateBracket({ best_thirds: letters })}
       />
 
-      {/* Bracket: rounds */}
+      {/* Bracket: FIFA two-sided */}
       <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
         <div className="border-b border-vpv-border px-4 py-3">
           <h2 className="font-semibold text-vpv-text">Cuadro de eliminatorias</h2>
           <p className="text-xs text-vpv-text-muted">
-            Haz click en el equipo que crees que pasara en cada partido.
+            Click en el equipo para fijar el ganador (o mantén pulsado y arrastra).
           </p>
         </div>
-        <div className="space-y-5 p-4">
-          {bracket.rounds.map((round) => (
-            <div key={round.matchday}>
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-vpv-text-muted">
-                {round.name} · J{round.matchday}
-              </h3>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                {round.matches.map((m) => {
-                  if (!m.match_code) return null;
-                  const homes = resolveCandidates(m.home_placeholder);
-                  const aways = resolveCandidates(m.away_placeholder);
-                  const winner = matchWinners[m.match_code] ?? null;
-                  return (
-                    <PickableMatch
-                      key={m.match_code}
-                      code={m.match_code}
-                      label={m.label}
-                      homes={homes}
-                      aways={aways}
-                      winner={winner}
-                      onPick={(id) => pickMatchWinner(m.match_code!, id)}
-                    />
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
+        <InteractiveBracket
+          bracket={bracket}
+          resolveCandidates={resolveCandidates}
+          matchWinners={matchWinners}
+          onPick={pickMatchWinner}
+        />
       </div>
     </div>
   );
 }
 
-function PickableMatch({
-  code,
-  label,
-  homes,
-  aways,
+// =============================================================================
+// FIFA two-sided interactive bracket
+// =============================================================================
+
+type MatchByCode = Record<string, import("@/types").BracketMatch>;
+
+interface InteractiveBracketProps {
+  bracket: BracketResponse;
+  resolveCandidates: (placeholder: string | null | undefined) => TeamOption[];
+  matchWinners: Record<string, number | null>;
+  onPick: (code: string, teamId: number | null) => void;
+}
+
+function InteractiveBracket(props: InteractiveBracketProps) {
+  const { bracket } = props;
+
+  const matchByCode = useMemo<MatchByCode>(() => {
+    const m: MatchByCode = {};
+    for (const round of bracket.rounds) {
+      for (const match of round.matches) {
+        if (match.match_code) m[match.match_code] = match;
+      }
+    }
+    return m;
+  }, [bracket]);
+
+  const layout = useMemo(() => computeBracketLayout(bracket, matchByCode), [bracket, matchByCode]);
+
+  if (!layout) {
+    return <InteractiveLinearBracket {...props} />;
+  }
+
+  return (
+    <>
+      {/* Desktop: two-sided */}
+      <div className="hidden md:block">
+        <InteractiveTwoSidedBracket layout={layout} matchByCode={matchByCode} {...props} />
+      </div>
+      {/* Mobile: linear stack */}
+      <div className="md:hidden">
+        <InteractiveLinearBracket {...props} />
+      </div>
+    </>
+  );
+}
+
+interface BracketLayout {
+  left: { r32: string[]; r16: string[]; qf: string[]; sf: string };
+  right: { r32: string[]; r16: string[]; qf: string[]; sf: string };
+  final: string;
+  third: string | null;
+}
+
+function computeBracketLayout(
+  data: BracketResponse,
+  matchByCode: MatchByCode,
+): BracketLayout | null {
+  if (data.rounds.length < 2) return null;
+  const lastIdx = data.rounds.length - 1;
+  const finalRound = data.rounds[lastIdx];
+  const semisRound = data.rounds[lastIdx - 1];
+  if (!semisRound || semisRound.matches.length !== 2 || finalRound.matches.length === 0) return null;
+
+  const semiL = semisRound.matches[0]?.match_code;
+  const semiR = semisRound.matches[1]?.match_code;
+  if (!semiL || !semiR) return null;
+
+  function parents(code: string): [string, string] | null {
+    const m = matchByCode[code];
+    if (!m) return null;
+    const h = parseParent(m.home_placeholder);
+    const a = parseParent(m.away_placeholder);
+    if (h && a) return [h, a];
+    return null;
+  }
+
+  function trace(rootCode: string) {
+    const qfPair = parents(rootCode);
+    if (!qfPair) return null;
+    const r16Codes: string[] = [];
+    const r32Codes: string[] = [];
+    for (const qf of qfPair) {
+      const r16Pair = parents(qf);
+      if (!r16Pair) return null;
+      for (const r16 of r16Pair) {
+        const r32Pair = parents(r16);
+        if (!r32Pair) return null;
+        for (const r32 of r32Pair) r32Codes.push(r32);
+        r16Codes.push(r16);
+      }
+    }
+    return { qf: qfPair, r16: r16Codes, r32: r32Codes };
+  }
+
+  const leftTrace = trace(semiL);
+  const rightTrace = trace(semiR);
+  if (!leftTrace || !rightTrace) return null;
+
+  const finalCodes = finalRound.matches
+    .map((m) => m.match_code ?? "")
+    .filter(Boolean)
+    .sort((a, b) => matchCodeNum(b) - matchCodeNum(a));
+  const finalCode = finalCodes[0] ?? "";
+  const thirdCode = finalCodes[1] ?? null;
+
+  return {
+    left: { ...leftTrace, sf: semiL },
+    right: { ...rightTrace, sf: semiR },
+    final: finalCode,
+    third: thirdCode,
+  };
+}
+
+function parseParent(p: string | null | undefined): string | null {
+  if (!p) return null;
+  if (p.startsWith("W") || p.startsWith("L")) return `M${p.slice(1)}`;
+  return null;
+}
+
+function matchCodeNum(code: string): number {
+  const m = /\d+/.exec(code);
+  return m ? Number(m[0]) : 0;
+}
+
+function InteractiveTwoSidedBracket({
+  layout,
+  matchByCode,
+  resolveCandidates,
+  matchWinners,
+  onPick,
+}: InteractiveBracketProps & {
+  layout: BracketLayout;
+  matchByCode: MatchByCode;
+}) {
+  const renderColumn = (codes: string[], label: string, mdNum: number) => (
+    <div className="flex min-w-[180px] flex-1 flex-col">
+      <div className="mb-2 text-center text-[10px] font-semibold uppercase tracking-widest text-vpv-text-muted">
+        {label} · J{mdNum}
+      </div>
+      <div className="flex h-full flex-col justify-around gap-3">
+        {codes.map((code) => {
+          const m = matchByCode[code];
+          if (!m) {
+            return (
+              <div
+                key={code}
+                className="rounded border border-dashed border-vpv-border p-2 text-[10px] text-vpv-text-muted"
+              >
+                {code}
+              </div>
+            );
+          }
+          return (
+            <InteractiveMatchCard
+              key={code}
+              match={m}
+              resolveCandidates={resolveCandidates}
+              winner={matchWinners[code] ?? null}
+              onPick={onPick}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  const roundNames = ["16avos", "Octavos", "Cuartos", "Semis", "Final"];
+  const roundMatchdays = [4, 5, 6, 7, 8];
+
+  return (
+    <div className="overflow-x-auto p-3">
+      <div className="flex min-h-[680px] items-stretch gap-2">
+        {renderColumn(layout.left.r32, roundNames[0], roundMatchdays[0])}
+        {renderColumn(layout.left.r16, roundNames[1], roundMatchdays[1])}
+        {renderColumn(layout.left.qf, roundNames[2], roundMatchdays[2])}
+        {renderColumn([layout.left.sf], roundNames[3], roundMatchdays[3])}
+
+        {/* CENTER: Final + 3rd */}
+        <div className="flex min-w-[210px] flex-col items-center justify-center gap-4 px-2">
+          <div className="text-center text-[10px] font-semibold uppercase tracking-widest text-vpv-text-muted">
+            {roundNames[4]} · J{roundMatchdays[4]}
+          </div>
+          {layout.final && matchByCode[layout.final] && (
+            <div className="w-full rounded-lg border-2 border-amber-400/60 bg-gradient-to-br from-amber-500/10 to-amber-700/10 p-2 shadow-lg">
+              <p className="mb-1 text-center text-[10px] font-semibold uppercase tracking-widest text-amber-400">
+                🏆 Final
+              </p>
+              <InteractiveMatchCard
+                match={matchByCode[layout.final]}
+                resolveCandidates={resolveCandidates}
+                winner={matchWinners[layout.final] ?? null}
+                onPick={onPick}
+                noFrame
+              />
+            </div>
+          )}
+          {layout.third && matchByCode[layout.third] && (
+            <div className="w-full rounded-lg border border-zinc-500/30 bg-zinc-500/5 p-2">
+              <p className="mb-1 text-center text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted">
+                🥉 3er puesto
+              </p>
+              <InteractiveMatchCard
+                match={matchByCode[layout.third]}
+                resolveCandidates={resolveCandidates}
+                winner={matchWinners[layout.third] ?? null}
+                onPick={onPick}
+                noFrame
+              />
+            </div>
+          )}
+        </div>
+
+        {renderColumn([layout.right.sf], roundNames[3], roundMatchdays[3])}
+        {renderColumn(layout.right.qf, roundNames[2], roundMatchdays[2])}
+        {renderColumn(layout.right.r16, roundNames[1], roundMatchdays[1])}
+        {renderColumn(layout.right.r32, roundNames[0], roundMatchdays[0])}
+      </div>
+    </div>
+  );
+}
+
+function InteractiveLinearBracket({
+  bracket,
+  resolveCandidates,
+  matchWinners,
+  onPick,
+}: InteractiveBracketProps) {
+  return (
+    <div className="space-y-4 p-3">
+      {bracket.rounds.map((round) => (
+        <div key={round.matchday}>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-vpv-text-muted">
+            {round.name} · J{round.matchday}
+          </h3>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {round.matches.map((m) => {
+              if (!m.match_code) return null;
+              return (
+                <InteractiveMatchCard
+                  key={m.match_code}
+                  match={m}
+                  resolveCandidates={resolveCandidates}
+                  winner={matchWinners[m.match_code] ?? null}
+                  onPick={onPick}
+                />
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function InteractiveMatchCard({
+  match,
+  resolveCandidates,
   winner,
   onPick,
+  noFrame,
 }: {
-  code: string;
-  label?: string | null;
-  homes: TeamOption[];
-  aways: TeamOption[];
+  match: BracketResponse["rounds"][number]["matches"][number];
+  resolveCandidates: (placeholder: string | null | undefined) => TeamOption[];
   winner: number | null;
-  onPick: (id: number | null) => void;
+  onPick: (code: string, teamId: number | null) => void;
+  noFrame?: boolean;
 }) {
+  const code = match.match_code!;
   const codeNum = code.replace(/^M/, "");
-  // Deduplicate candidates (homes ∪ aways) since they may overlap when the
-  // placeholder resolves the same team for both sides.
-  const allCandidates = [...homes, ...aways].filter(
-    (t, i, arr) => arr.findIndex((x) => x.id === t.id) === i,
-  );
-  const winnerTeam = winner ? allCandidates.find((t) => t.id === winner) ?? null : null;
-  const candidatesForPick = allCandidates.filter((t) => t.id !== winner);
+  const homes = resolveCandidates(match.home_placeholder);
+  const aways = resolveCandidates(match.away_placeholder);
+  const homeTeam = homes[0] ?? null;
+  const awayTeam = aways[0] ?? null;
+  const homeMulti = homes.length > 1;
+  const awayMulti = aways.length > 1;
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(PointerSensor, {
+      activationConstraint: { delay: 200, tolerance: 5 },
+    }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over) return;
-    if (String(over.id) !== `winner-${code}`) return;
-    const teamId = Number(String(active.id).replace(/^cand-\d+-/, ""));
-    if (Number.isFinite(teamId)) onPick(teamId);
+    const targetId = String(over.id);
+    if (targetId !== `match-${code}-home` && targetId !== `match-${code}-away`) return;
+    const teamId = Number(String(active.id).replace(/^drag-\d+-\d+-/, ""));
+    if (Number.isFinite(teamId)) onPick(code, teamId);
   }
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <div className="rounded border border-vpv-border bg-vpv-bg/40 text-xs">
-        <div className="border-b border-vpv-border/40 px-2 py-0.5 text-center text-[9px] font-semibold uppercase tracking-wider text-vpv-text-muted">
-          {label ?? `Partido ${codeNum}`}
-        </div>
-
-        {/* Candidates list */}
-        <div className="space-y-1 px-1.5 py-1.5">
-          {allCandidates.length === 0 ? (
-            <div className="py-1 text-center text-[10px] italic text-vpv-text-muted">
-              Por determinar
-            </div>
-          ) : (
-            candidatesForPick.map((t) => (
-              <DraggableCandidate
-                key={t.id}
-                id={`cand-${code}-${t.id}`}
-                team={t}
-                onClick={() => onPick(t.id)}
-              />
-            ))
-          )}
-        </div>
-
-        {/* Winner drop zone */}
-        <WinnerDropZone code={code} team={winnerTeam} onClear={() => onPick(null)} />
+      <div
+        className={
+          noFrame
+            ? "text-xs"
+            : "rounded border border-vpv-border bg-vpv-bg/40 text-xs shadow-sm"
+        }
+      >
+        {!noFrame && (
+          <div className="border-b border-vpv-border/40 px-2 py-0.5 text-center text-[9px] font-semibold uppercase tracking-wider text-vpv-text-muted">
+            {match.label ?? `Partido ${codeNum}`}
+          </div>
+        )}
+        <BracketSlot
+          dropId={`match-${code}-home`}
+          slotCandidates={homes}
+          slotMulti={homeMulti}
+          team={homeTeam}
+          isWinner={winner !== null && winner === homeTeam?.id}
+          placeholder={match.home_placeholder}
+          code={code}
+          side="home"
+          onPick={(id) => onPick(code, id)}
+        />
+        <div className="border-t border-vpv-border/30" />
+        <BracketSlot
+          dropId={`match-${code}-away`}
+          slotCandidates={aways}
+          slotMulti={awayMulti}
+          team={awayTeam}
+          isWinner={winner !== null && winner === awayTeam?.id}
+          placeholder={match.away_placeholder}
+          code={code}
+          side="away"
+          onPick={(id) => onPick(code, id)}
+        />
       </div>
     </DndContext>
   );
 }
 
-function DraggableCandidate({
+function BracketSlot({
+  dropId,
+  slotCandidates,
+  slotMulti,
+  team,
+  isWinner,
+  placeholder,
+  code,
+  side,
+  onPick,
+}: {
+  dropId: string;
+  slotCandidates: TeamOption[];
+  slotMulti: boolean;
+  team: TeamOption | null;
+  isWinner: boolean;
+  placeholder: string | null | undefined;
+  code: string;
+  side: "home" | "away";
+  onPick: (id: number | null) => void;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: dropId });
+  void side;
+
+  // No candidate resolved yet → render placeholder text
+  if (!team) {
+    return (
+      <div
+        ref={setNodeRef}
+        className={`flex items-center gap-1.5 px-2 py-1 transition-colors ${
+          isOver ? "bg-vpv-accent/10" : ""
+        }`}
+      >
+        <span className="text-[10px] italic text-vpv-text-muted">
+          {placeholderLabel(placeholder)}
+        </span>
+      </div>
+    );
+  }
+
+  // Multiple candidates (best 3rd unresolved) → render a select
+  if (slotMulti) {
+    return (
+      <div ref={setNodeRef} className="px-2 py-1">
+        <select
+          value={isWinner ? team.id : ""}
+          onChange={(e) => onPick(e.target.value ? Number(e.target.value) : null)}
+          className="w-full rounded border border-vpv-border bg-vpv-card px-1 py-0.5 text-[10px] text-vpv-text"
+        >
+          <option value="">— elige —</option>
+          {slotCandidates.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.short_name ?? t.name}
+            </option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+
+  // Single candidate → clickable + draggable chip
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex items-center gap-1.5 transition-colors ${
+        isOver ? "bg-vpv-accent/10" : ""
+      }`}
+    >
+      <DraggableTeamChip
+        id={`drag-${code}-${team.id}-${team.id}`}
+        team={team}
+        isWinner={isWinner}
+        onClick={() => onPick(isWinner ? null : team.id)}
+      />
+    </div>
+  );
+}
+
+function DraggableTeamChip({
   id,
   team,
+  isWinner,
   onClick,
 }: {
   id: string;
   team: TeamOption;
+  isWinner: boolean;
   onClick: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id });
@@ -690,64 +1013,30 @@ function DraggableCandidate({
       type="button"
       onClick={onClick}
       style={style}
-      className="flex w-full cursor-grab items-center gap-1.5 rounded border border-vpv-border/40 bg-vpv-bg px-1.5 py-1 text-left text-vpv-text hover:border-vpv-accent/40 active:cursor-grabbing"
-      aria-label={`Arrastra ${team.name} al ganador`}
+      className={`flex w-full items-center gap-1.5 px-2 py-1 text-left transition-colors ${
+        isWinner
+          ? "bg-green-500/15 font-bold text-green-400"
+          : "text-vpv-text hover:bg-vpv-bg"
+      }`}
+      aria-label={`Elegir o arrastrar ${team.name}`}
       {...attributes}
       {...listeners}
     >
-      <span aria-hidden="true" className="text-vpv-text-muted/60">⋮⋮</span>
       <CountryFlag teamName={team.name} fallbackLogo={team.logo_path} size={14} />
       <span className="min-w-0 flex-1 truncate text-[11px]">{team.short_name ?? team.name}</span>
+      {isWinner && <span className="text-[10px]">✓</span>}
     </button>
   );
 }
 
-function WinnerDropZone({
-  code,
-  team,
-  onClear,
-}: {
-  code: string;
-  team: TeamOption | null;
-  onClear: () => void;
-}) {
-  const { setNodeRef, isOver } = useDroppable({ id: `winner-${code}` });
-  return (
-    <div
-      ref={setNodeRef}
-      className={`m-1 flex items-center gap-1.5 rounded border-2 px-1.5 py-1 transition-colors ${
-        team
-          ? "border-green-500/60 bg-green-500/10"
-          : isOver
-            ? "border-vpv-accent/80 bg-vpv-accent/10"
-            : "border-dashed border-vpv-border/60 bg-vpv-bg/30"
-      }`}
-    >
-      {team ? (
-        <>
-          <span className="text-[9px] font-bold uppercase tracking-wider text-green-500">
-            🏆
-          </span>
-          <CountryFlag teamName={team.name} fallbackLogo={team.logo_path} size={14} />
-          <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-green-400">
-            {team.short_name ?? team.name}
-          </span>
-          <button
-            type="button"
-            onClick={onClear}
-            className="text-vpv-text-muted hover:text-red-400"
-            aria-label="Quitar ganador"
-          >
-            ✕
-          </button>
-        </>
-      ) : (
-        <span className="w-full text-center text-[10px] italic text-vpv-text-muted">
-          Suelta el ganador aquí
-        </span>
-      )}
-    </div>
-  );
+function placeholderLabel(p: string | null | undefined): string {
+  if (!p) return "Por determinar";
+  if (p.startsWith("1") && p.length === 2) return `1º Grupo ${p[1]}`;
+  if (p.startsWith("2") && p.length === 2) return `2º Grupo ${p[1]}`;
+  if (p.startsWith("3:")) return `Mejor 3º (${p.slice(2)})`;
+  if (p.startsWith("W")) return `Ganador M${p.slice(1)}`;
+  if (p.startsWith("L")) return `Perdedor M${p.slice(1)}`;
+  return p;
 }
 
 // =============================================================================
