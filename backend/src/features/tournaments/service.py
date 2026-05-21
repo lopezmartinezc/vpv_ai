@@ -51,6 +51,7 @@ DEFAULT_PREDICTIONS_SCORING: dict[str, int] = {
     "ko_final": 40,
 }
 
+
 def _ko_rule_key(pairings: list[dict[str, Any]]) -> str:
     """Infer scoring-rule key for a knockout round by its pairing count."""
     n = len(pairings)
@@ -68,6 +69,7 @@ def _ko_rule_key(pairings: list[dict[str, Any]]) -> str:
             return "ko_third_place"
         return "ko_final"
     return "ko_r32"
+
 
 logger = logging.getLogger(__name__)
 
@@ -488,9 +490,7 @@ class TournamentService:
         thirds.sort()
         return sorted(grp for _, _, _, grp in thirds[:8])
 
-    async def _actual_match_winners(
-        self, season: Season
-    ) -> tuple[dict[str, int], dict[str, str]]:
+    async def _actual_match_winners(self, season: Season) -> tuple[dict[str, int], dict[str, str]]:
         """For each knockout match_code, compute the winner team_id.
 
         Returns (winners_by_code, rule_key_by_code).
@@ -593,9 +593,7 @@ class TournamentService:
         winners_by_code, rule_keys_by_code = await self._actual_match_winners(season)
         # Semifinalists = winners of QF matches (those who reached SF)
         semifinalists = {
-            tid
-            for code, tid in winners_by_code.items()
-            if rule_keys_by_code.get(code) == "ko_qf"
+            tid for code, tid in winners_by_code.items() if rule_keys_by_code.get(code) == "ko_qf"
         }
         return {
             "winner_team_id": await self._actual_winner_team(season),
@@ -617,10 +615,7 @@ class TournamentService:
         detail: dict[str, int] = {}
         total = 0
 
-        if (
-            actuals["winner_team_id"]
-            and pred.winner_team_id == actuals["winner_team_id"]
-        ):
+        if actuals["winner_team_id"] and pred.winner_team_id == actuals["winner_team_id"]:
             detail["winner"] = rules["winner"]
             total += rules["winner"]
 
@@ -642,10 +637,7 @@ class TournamentService:
             detail["top_scorer"] = rules["top_scorer"]
             total += rules["top_scorer"]
 
-        if (
-            actuals["best_player_id"]
-            and pred.best_player_id == actuals["best_player_id"]
-        ):
+        if actuals["best_player_id"] and pred.best_player_id == actuals["best_player_id"]:
             detail["best_player"] = rules["best_player"]
             total += rules["best_player"]
 
@@ -661,7 +653,9 @@ class TournamentService:
             position_hits = 0
             for idx in range(min(len(predicted_order), len(actual_order), 4)):
                 if predicted_order[idx] and predicted_order[idx] == actual_order[idx]:
-                    detail[group_keys[idx]] = detail.get(group_keys[idx], 0) + rules[group_keys[idx]]
+                    detail[group_keys[idx]] = (
+                        detail.get(group_keys[idx], 0) + rules[group_keys[idx]]
+                    )
                     total += rules[group_keys[idx]]
                     position_hits += 1
             if position_hits == 4 and rules["group_perfect_bonus"]:
@@ -696,9 +690,7 @@ class TournamentService:
         rules = self._scoring_rules(season)
         actuals = await self._compute_actuals(season)
 
-        stmt = select(TournamentPrediction).where(
-            TournamentPrediction.season_id == season_id
-        )
+        stmt = select(TournamentPrediction).where(TournamentPrediction.season_id == season_id)
         result = await self.session.execute(stmt)
         preds = list(result.scalars().all())
 
