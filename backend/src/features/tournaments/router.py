@@ -10,6 +10,7 @@ from src.features.tournaments.schemas import (
     PredictionRequest,
     PredictionResponse,
     PredictionsListResponse,
+    PredictionsStatusResponse,
     RecalculateResponse,
     TeamGroupBatchUpdate,
     TeamOption,
@@ -44,6 +45,15 @@ async def get_bracket(
     service: TournamentService = Depends(_get_service),
 ) -> BracketResponse:
     return await service.get_bracket(season_id)
+
+
+@router.get("/{season_id}/predictions/status", response_model=PredictionsStatusResponse)
+async def get_predictions_status(
+    season_id: int,
+    service: TournamentService = Depends(_get_service),
+) -> PredictionsStatusResponse:
+    """Public: whether predictions are still open and the deadline."""
+    return await service.get_predictions_status(season_id)
 
 
 @router.get("/{season_id}/predictions/me", response_model=PredictionResponse | None)

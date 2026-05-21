@@ -101,6 +101,13 @@ function PrediccionesContent() {
   const { data: bracket } = useFetch<BracketResponse>(
     seasonId ? `/tournaments/${seasonId}/bracket` : null,
   );
+  const { data: status } = useFetch<{
+    season_id: number;
+    locked: boolean;
+    deadline_at: string | null;
+    first_match_at: string | null;
+  }>(seasonId ? `/tournaments/${seasonId}/predictions/status` : null);
+  const locked = status?.locked === true;
 
   const [step, setStep] = useState<Step>("generales");
   const [form, setForm] = useState<PredictionRequest>({
@@ -240,34 +247,54 @@ function PrediccionesContent() {
         ))}
         <div className="ml-auto flex items-center gap-2">
           {message && <span className="text-xs text-vpv-text-muted">{message}</span>}
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="rounded bg-vpv-accent px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-vpv-accent/80 disabled:opacity-50"
-          >
-            {saving ? "Guardando..." : "Guardar"}
-          </button>
+          {!locked && (
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="rounded bg-vpv-accent px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-vpv-accent/80 disabled:opacity-50"
+            >
+              {saving ? "Guardando..." : "Guardar"}
+            </button>
+          )}
         </div>
       </div>
 
+      {locked && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
+          <strong>Predicciones cerradas.</strong> El torneo ya empezó
+          {status?.deadline_at
+            ? ` (deadline: ${new Date(status.deadline_at).toLocaleString("es-ES")})`
+            : ""}
+          {" "}— las predicciones se muestran en modo solo lectura.
+        </div>
+      )}
+
       {step === "generales" && (
-        <StepGenerales form={form} setForm={setForm} teams={teams ?? []} players={players ?? []} />
+        <fieldset disabled={locked} className="contents">
+          <StepGenerales form={form} setForm={setForm} teams={teams ?? []} players={players ?? []} />
+        </fieldset>
       )}
       {step === "grupos" && (
-        <StepGrupos
-          form={form}
-          updateBracket={updateBracket}
-          teamsByGroup={teamsByGroup}
-        />
+        <fieldset disabled={locked} className="contents">
+          <StepGrupos
+            form={form}
+            updateBracket={updateBracket}
+            teamsByGroup={teamsByGroup}
+            disabled={locked}
+          />
+        </fieldset>
       )}
       {step === "eliminatoria" && (
-        <StepEliminatoria
-          form={form}
-          updateBracket={updateBracket}
-          teamsById={teamsById}
-          teamsByGroup={teamsByGroup}
-          bracket={bracket}
-        />
+        <fieldset disabled={locked} className="contents">
+          <StepEliminatoria
+            form={form}
+            updateBracket={updateBracket}
+            teamsById={teamsById}
+            teamsByGroup={teamsByGroup}
+            bracket={bracket}
+            disabled={locked}
+          />
+        </fieldset>
       )}
 
       {/* Resumen ranking de predicciones */}
@@ -394,10 +421,12 @@ function StepGrupos({
   form,
   updateBracket,
   teamsByGroup,
+  disabled,
 }: {
   form: PredictionRequest;
   updateBracket: (patch: Partial<BracketPredictions>) => void;
   teamsByGroup: Record<string, TeamOption[]>;
+  disabled?: boolean;
 }) {
   const groupLetters = Object.keys(teamsByGroup).sort();
   const groups = form.bracket_predictions?.groups ?? {};
@@ -432,6 +461,7 @@ function StepGrupos({
             teams={teamsByGroup[letter]}
             order={groups[letter] ?? [null, null, null, null]}
             onChange={(o) => setGroupOrder(letter, o)}
+            disabled={disabled}
           />
         ))}
       </div>
@@ -444,11 +474,13 @@ function GroupOrderCard({
   teams,
   order,
   onChange,
+  disabled,
 }: {
   letter: string;
   teams: TeamOption[];
   order: (number | null)[];
   onChange: (order: (number | null)[]) => void;
+  disabled?: boolean;
 }) {
   // Build the visible 4-team order. If `order` is incomplete, fill remaining
   // slots with the rest of `teams` in original order so users can drag freely.
@@ -512,6 +544,7 @@ function GroupOrderCard({
                 logoPath={t.logo_path}
                 ordinal={["1º", "2º", "3º", "4º"][idx]}
                 size="sm"
+                disabled={disabled}
               />
             ))}
           </div>
@@ -531,12 +564,14 @@ function StepEliminatoria({
   teamsById,
   teamsByGroup,
   bracket,
+  disabled,
 }: {
   form: PredictionRequest;
   updateBracket: (patch: Partial<BracketPredictions>) => void;
   teamsById: Record<number, TeamOption>;
   teamsByGroup: Record<string, TeamOption[]>;
   bracket: BracketResponse | null | undefined;
+  disabled?: boolean;
 }) {
   const groupOrders = form.bracket_predictions?.groups ?? {};
   const bestThirds = new Set(form.bracket_predictions?.best_thirds ?? []);
@@ -609,6 +644,7 @@ function StepEliminatoria({
         teamsById={teamsById}
         groupOrders={groupOrders}
         onChange={(letters) => updateBracket({ best_thirds: letters })}
+        disabled={disabled}
       />
 
       {/* Bracket: FIFA two-sided */}
@@ -624,6 +660,7 @@ function StepEliminatoria({
           resolveCandidates={resolveCandidates}
           matchWinners={matchWinners}
           onPick={pickMatchWinner}
+          disabled={disabled}
         />
       </div>
     </div>
@@ -641,6 +678,7 @@ interface InteractiveBracketProps {
   resolveCandidates: (placeholder: string | null | undefined) => TeamOption[];
   matchWinners: Record<string, number | null>;
   onPick: (code: string, teamId: number | null) => void;
+  disabled?: boolean;
 }
 
 function InteractiveBracket(props: InteractiveBracketProps) {
@@ -760,6 +798,7 @@ function InteractiveTwoSidedBracket({
   resolveCandidates,
   matchWinners,
   onPick,
+  disabled,
 }: InteractiveBracketProps & {
   layout: BracketLayout;
   matchByCode: MatchByCode;
@@ -789,6 +828,7 @@ function InteractiveTwoSidedBracket({
               resolveCandidates={resolveCandidates}
               winner={matchWinners[code] ?? null}
               onPick={onPick}
+              disabled={disabled}
             />
           );
         })}
@@ -822,6 +862,7 @@ function InteractiveTwoSidedBracket({
                 resolveCandidates={resolveCandidates}
                 winner={matchWinners[layout.final] ?? null}
                 onPick={onPick}
+                disabled={disabled}
                 noFrame
               />
             </div>
@@ -836,6 +877,7 @@ function InteractiveTwoSidedBracket({
                 resolveCandidates={resolveCandidates}
                 winner={matchWinners[layout.third] ?? null}
                 onPick={onPick}
+                disabled={disabled}
                 noFrame
               />
             </div>
@@ -856,6 +898,7 @@ function InteractiveLinearBracket({
   resolveCandidates,
   matchWinners,
   onPick,
+  disabled,
 }: InteractiveBracketProps) {
   return (
     <div className="space-y-4 p-3">
@@ -874,6 +917,7 @@ function InteractiveLinearBracket({
                   resolveCandidates={resolveCandidates}
                   winner={matchWinners[m.match_code] ?? null}
                   onPick={onPick}
+                  disabled={disabled}
                 />
               );
             })}
@@ -890,12 +934,14 @@ function InteractiveMatchCard({
   winner,
   onPick,
   noFrame,
+  disabled,
 }: {
   match: BracketResponse["rounds"][number]["matches"][number];
   resolveCandidates: (placeholder: string | null | undefined) => TeamOption[];
   winner: number | null;
   onPick: (code: string, teamId: number | null) => void;
   noFrame?: boolean;
+  disabled?: boolean;
 }) {
   const code = match.match_code!;
   const codeNum = code.replace(/^M/, "");
@@ -913,6 +959,7 @@ function InteractiveMatchCard({
   );
 
   function handleDragEnd(event: DragEndEvent) {
+    if (disabled) return;
     const { active, over } = event;
     if (!over) return;
     const targetId = String(over.id);
@@ -945,6 +992,7 @@ function InteractiveMatchCard({
           code={code}
           side="home"
           onPick={(id) => onPick(code, id)}
+          disabled={disabled}
         />
         <div className="border-t border-vpv-border/30" />
         <BracketSlot
@@ -957,6 +1005,7 @@ function InteractiveMatchCard({
           code={code}
           side="away"
           onPick={(id) => onPick(code, id)}
+          disabled={disabled}
         />
       </div>
     </DndContext>
@@ -973,6 +1022,7 @@ function BracketSlot({
   code,
   side,
   onPick,
+  disabled,
 }: {
   dropId: string;
   slotCandidates: TeamOption[];
@@ -983,6 +1033,7 @@ function BracketSlot({
   code: string;
   side: "home" | "away";
   onPick: (id: number | null) => void;
+  disabled?: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: dropId });
   void side;
@@ -1010,6 +1061,7 @@ function BracketSlot({
         <select
           value={isWinner ? team.id : ""}
           onChange={(e) => onPick(e.target.value ? Number(e.target.value) : null)}
+          disabled={disabled}
           className="w-full rounded border border-vpv-border bg-vpv-card px-1 py-0.5 text-[10px] text-vpv-text"
         >
           <option value="">— elige —</option>
@@ -1036,6 +1088,7 @@ function BracketSlot({
         team={team}
         isWinner={isWinner}
         onClick={() => onPick(isWinner ? null : team.id)}
+        disabled={disabled}
       />
     </div>
   );
@@ -1046,13 +1099,18 @@ function DraggableTeamChip({
   team,
   isWinner,
   onClick,
+  disabled,
 }: {
   id: string;
   team: TeamOption;
   isWinner: boolean;
   onClick: () => void;
+  disabled?: boolean;
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id });
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id,
+    disabled,
+  });
   const style: React.CSSProperties = {
     transform: CSS.Translate.toString(transform),
     opacity: isDragging ? 0.4 : 1,
@@ -1062,16 +1120,17 @@ function DraggableTeamChip({
     <button
       ref={setNodeRef}
       type="button"
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
       style={style}
       className={`flex w-full items-center gap-1.5 px-2 py-1 text-left transition-colors ${
         isWinner
           ? "bg-green-500/15 font-bold text-green-400"
           : "text-vpv-text hover:bg-vpv-bg"
-      }`}
+      } ${disabled ? "cursor-not-allowed" : ""}`}
       aria-label={`Elegir o arrastrar ${team.name}`}
-      {...attributes}
-      {...listeners}
+      {...(disabled ? {} : attributes)}
+      {...(disabled ? {} : listeners)}
     >
       <CountryFlag teamName={team.name} fallbackLogo={team.logo_path} size={14} />
       <span className="min-w-0 flex-1 truncate text-[11px]">{team.short_name ?? team.name}</span>
@@ -1258,12 +1317,14 @@ function BestThirdsPicker({
   teamsById,
   groupOrders,
   onChange,
+  disabled,
 }: {
   groupLetters: string[];
   bestThirds: Set<string>;
   teamsById: Record<number, TeamOption>;
   groupOrders: Record<string, (number | null)[]>;
   onChange: (letters: string[]) => void;
+  disabled?: boolean;
 }) {
   const chosen = [...bestThirds].sort();
   const available = groupLetters.filter((l) => !bestThirds.has(l));
@@ -1277,6 +1338,7 @@ function BestThirdsPicker({
   );
 
   function handleDragEnd(event: DragEndEvent) {
+    if (disabled) return;
     const { active, over } = event;
     if (!over) return;
     const letter = String(active.id).replace(/^(chosen|available)-/, "");
@@ -1305,6 +1367,7 @@ function BestThirdsPicker({
         logoPath={team?.logo_path}
         ordinal={letter}
         size="sm"
+        disabled={disabled}
       />
     );
   }

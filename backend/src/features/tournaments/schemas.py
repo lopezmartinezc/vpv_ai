@@ -139,3 +139,13 @@ class RecalculateResponse(BaseModel):
     scoring_rules: dict[str, int]
     actuals: dict[str, Any]
     results: list[PredictionScoreBreakdown]
+
+
+# --- Predictions status ---
+
+
+class PredictionsStatusResponse(BaseModel):
+    season_id: int
+    locked: bool
+    deadline_at: str | None  # ISO datetime, or null if no first match scheduled
+    first_match_at: str | None

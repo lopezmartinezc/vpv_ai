@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select
@@ -19,6 +20,7 @@ from src.features.tournaments.schemas import (
     PredictionResponse,
     PredictionScoreBreakdown,
     PredictionsListResponse,
+    PredictionsStatusResponse,
     RecalculateResponse,
     TeamGroupBatchUpdate,
     TeamGroupStanding,
@@ -348,11 +350,65 @@ class TournamentService:
             return None
         return await self._decorate_prediction(pred, include_user_name=False)
 
+    async def get_predictions_deadline(self, season_id: int) -> datetime | None:
+        """Compute the deadline for predictions: first_match_at of matchday 1
+        minus `lineup_deadline_min` (reuses the league deadline config).
+        Returns None when no first match is scheduled yet (predictions stay open).
+        """
+        from datetime import timedelta
+
+        season = await self.session.get(Season, season_id)
+        if season is None:
+            return None
+        stmt = (
+            select(Matchday.first_match_at)
+            .where(Matchday.season_id == season_id)
+            .order_by(Matchday.number.asc())
+            .limit(1)
+        )
+        first_match = (await self.session.execute(stmt)).scalar_one_or_none()
+        if first_match is None:
+            return None
+        return first_match - timedelta(minutes=season.lineup_deadline_min or 0)
+
+    async def _are_predictions_locked(self, season_id: int) -> tuple[bool, datetime | None]:
+        from datetime import UTC, datetime
+
+        deadline = await self.get_predictions_deadline(season_id)
+        if deadline is None:
+            return False, None
+        return datetime.now(UTC) >= deadline, deadline
+
+    async def get_predictions_status(self, season_id: int) -> PredictionsStatusResponse:
+        await self._get_tournament_season(season_id)
+        locked, deadline = await self._are_predictions_locked(season_id)
+
+        stmt = (
+            select(Matchday.first_match_at)
+            .where(Matchday.season_id == season_id)
+            .order_by(Matchday.number.asc())
+            .limit(1)
+        )
+        first_match = (await self.session.execute(stmt)).scalar_one_or_none()
+
+        return PredictionsStatusResponse(
+            season_id=season_id,
+            locked=locked,
+            deadline_at=deadline.isoformat() if deadline else None,
+            first_match_at=first_match.isoformat() if first_match else None,
+        )
+
     async def upsert_my_prediction(
         self, season_id: int, user_id: int, body: PredictionRequest
     ) -> PredictionResponse:
         await self._get_tournament_season(season_id)
         from datetime import UTC, datetime
+
+        locked, deadline = await self._are_predictions_locked(season_id)
+        if locked:
+            raise BusinessRuleError(
+                f"Las predicciones se cerraron el {deadline.isoformat() if deadline else 'inicio del torneo'} — ya no se pueden editar."
+            )
 
         stmt = select(TournamentPrediction).where(
             TournamentPrediction.season_id == season_id,
