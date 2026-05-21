@@ -11,6 +11,8 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 - Tabla `tournament_predictions` con columna `bracket_predictions JSONB` (orden de grupos, mejores terceros, ganadores knockout)
 - Liga, Copa, Drafts, Alineaciones, Economia, Scraping automatico, Admin completo
 - Mundial: pagina `/grupos`, `/bracket` (cuadro FIFA dos lados), wizard de predicciones extendido y motor de auto-scoring (`/api/tournaments/admin/{season_id}/predictions/recalculate`)
+- Banderas nacionales (271 SVGs, `flag-icons` CC-BY-4.0) en grupos / bracket / predicciones via `<CountryFlag>` + mapeo nombre->ISO
+- Drag & drop con `@dnd-kit/*` en el wizard de predicciones (orden de grupos, best thirds picker, bracket interactivo)
 
 ---
 
@@ -223,6 +225,21 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 - **Frontend**: Boton "Recalcular puntos" en cabecera del Ranking de predicciones, visible solo si `user.isAdmin`.
 - **Estado**: [x] Completado (2026-05-21) — Fase E.
 
+### 5.4 Banderas nacionales + UX bracket interactivo
+- **Problema**: Los escudos de federacion son poco reconocibles; el wizard de predicciones (selects/checkboxes) era engorroso en mobile y no mostraba el arbol del cuadro.
+- **Banderas**:
+  - 271 SVGs en `frontend/public/flags/` desde `flag-icons` (CC-BY-4.0), ~2.7 MB.
+  - `frontend/src/lib/country-flags.ts`: mapeo `nombre/slug -> ISO 3166-1 alpha-2`; `normalize()` ignora acentos, puntos, guiones (`Rep. Checa` -> `rep checa`, `Bosnia-Herzegovina` -> `bosnia herzegovina`). 120+ variantes en castellano (catar, rd congo, chequia, ...).
+  - `<CountryFlag teamName fallbackLogo>` (en `components/ui/country-flag.tsx`) muestra bandera o cae al logo del club. Usado en `/grupos`, `/bracket`, `/predicciones` (selects, ranking, bracket).
+  - Standalone Next.js no sirve `public/`. Script `postbuild` en `package.json` copia `public/` y `.next/static/` al output: `cp -rT public .next/standalone/public ; cp -rT .next/static .next/standalone/.next/static`.
+- **Drag & drop en `/predicciones`** (`@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities`):
+  - Step 2 Grupos: lista vertical sortable de 4 cards por grupo; ordinal 1º-4º derivado de la posicion.
+  - Step 3 Best Thirds: dos paneles "Clasifican (8)" / "Disponibles" con drag entre columnas.
+  - Step 3 Bracket: layout FIFA dos lados (`InteractiveTwoSidedBracket` calculado con `computeBracketLayout` que reconstruye el arbol desde los placeholders `W*`/`L*`); cada slot acepta click rapido o long-press + drag al lado opuesto. Multi-candidato (`3:ABCDF`) cae a `<select>`. Mobile usa `InteractiveLinearBracket`.
+  - Sensores: `MouseSensor { distance: 5 }` + `TouchSensor { delay: 200-250, tolerance: 5 }`. Chips con `touch-action: none` para que el browser no intercepte el drag.
+- **Auto-relleno de grupos**: `useEffect([teams, myPred])` rellena `bracket_predictions.groups[letter]` con el orden por defecto del scraping en cuanto cargan los equipos. Asi los placeholders `1A`/`2B` del bracket resuelven sin que el user tenga que arrastrar nada.
+- **Estado**: [x] Completado (2026-05-21).
+
 ---
 
 ## Resumen
@@ -253,6 +270,7 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 | 5.1 | Infraestructura torneos | Alto | Alta | Completado |
 | 5.2 | Grupos/Cuadro/Predicciones torneo | Alto | Alta | Completado |
 | 5.3 | Auto-scoring predicciones | Alto | Media | Completado |
+| 5.4 | Banderas + DnD predicciones | Alto | Media | Completado |
 
 ## Criterios de validacion
 

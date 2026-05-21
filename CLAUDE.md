@@ -10,7 +10,8 @@ Aplicacion web (ligavpv.com) para gestionar una liga fantasy de futbol entre ami
 - Names must scream functionality
 
 ## Tech Stack
-- Frontend: Next.js + Tailwind CSS (TypeScript) — frontend puro, consume API REST
+- Frontend: Next.js (App Router, `output: "standalone"`) + Tailwind CSS (TypeScript) — frontend puro, consume API REST
+- Frontend libs: `@dnd-kit/core` + `@dnd-kit/sortable` + `@dnd-kit/utilities` (drag & drop en wizard de predicciones), `recharts`, `clsx`, `tailwind-merge`
 - Backend: Python + FastAPI + SQLAlchemy — API unica para TODA la logica de negocio + scraping
 - Database: PostgreSQL (migracion desde MySQL actual)
 - ORM: SQLAlchemy 2.0+ async (asyncpg)
@@ -19,6 +20,17 @@ Aplicacion web (ligavpv.com) para gestionar una liga fantasy de futbol entre ami
 - Hosting: Servidor dedicado AlmaLinux 10 (Nginx + PM2 + uvicorn)
 - Frontend Testing: Vitest + React Testing Library + Playwright
 - Backend Testing: pytest + httpx + TestContainers
+
+## Banderas nacionales (torneos)
+- 271 SVGs en `frontend/public/flags/{iso2}.svg` (de `flag-icons`, CC-BY-4.0)
+- `frontend/src/lib/country-flags.ts` mapea nombre/slug -> ISO 3166-1 alpha-2 (120+ variantes castellanas)
+- Componente `<CountryFlag teamName fallbackLogo>` en `components/ui/country-flag.tsx`
+- IMPORTANTE: Next.js `standalone` NO copia `public/` ni `.next/static/` automaticamente. El script `postbuild` en `frontend/package.json` lo hace: `cp -rT public .next/standalone/public ; cp -rT .next/static .next/standalone/.next/static`
+
+## Reglas para deploy
+- Cuando cambian dependencies (`package.json`): ejecutar `npm install` en produccion antes de `npm run build`
+- Cuando se anaden assets estaticos en `frontend/public/...`: el `postbuild` los copia al output standalone (no requiere config Nginx adicional)
+- Migraciones SQL idempotentes (`IF NOT EXISTS`): aplicar antes del restart del backend
 
 ## Arquitectura de Despliegue
 ```
