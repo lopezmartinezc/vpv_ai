@@ -119,12 +119,16 @@ vpv_ai/
         standings/              # StandingsList
         drafts/                 # PicksList
         economy/                # BalanceList, TransactionList
-        ui/                     # PlayerAvatar, ThemeToggle, NavIcon, Skeleton
+        tournament/             # TournamentHero, SortableTeamCard
+        ui/                     # PlayerAvatar, CountryFlag, ThemeToggle, NavIcon, Skeleton
       contexts/                 # AuthContext, SeasonContext, ThemeContext
       hooks/                    # useFetch, useDashboardData
       lib/
         api-client.ts           # HTTP client con JWT auto-inject
         auth.ts                 # NextAuth config (scaffolded)
+        country-flags.ts        # Mapeo nombre/slug -> ISO 3166-1 (banderas torneos)
+    public/
+      flags/                    # 271 SVGs ISO 3166-1 (flag-icons CC-BY-4.0)
 
   migration/
     docker-compose.yml          # MySQL 5.7 (3307) + PG 16 (5432)

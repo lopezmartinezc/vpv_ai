@@ -369,11 +369,18 @@ npm run build
 
 ### 6.2. Copiar standalone output
 
+El script `postbuild` (en `frontend/package.json`) ya ha copiado `public/` y `.next/static/` dentro del output standalone. Basta con mover la carpeta:
+
 ```bash
 rm -rf /opt/vpv/frontend
 cp -r .next/standalone /opt/vpv/frontend
-cp -r .next/static /opt/vpv/frontend/.next/static
-cp -r public /opt/vpv/frontend/public 2>/dev/null || true
+```
+
+Verifica que llegaron los assets:
+
+```bash
+ls /opt/vpv/frontend/.next/static | head     # bundles JS/CSS
+ls /opt/vpv/frontend/public/flags | wc -l    # 271 (banderas nacionales)
 ```
 
 ### 6.3. Verificar arranque manual
@@ -561,7 +568,7 @@ cd /opt/vpv/repo
 El script hace:
 1. `git pull --ff-only`
 2. Backend: instala deps + `alembic upgrade head` + restart systemd
-3. Frontend: `npm ci` + `npm run build` + copia standalone + restart PM2
+3. Frontend: `npm ci` + `npm run build` (el `postbuild` ya copia `public/` y `.next/static/` al output standalone) + restart PM2
 4. Health check automatico
 
 ## 13. Rollback

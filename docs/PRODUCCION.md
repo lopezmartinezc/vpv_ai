@@ -871,14 +871,18 @@ chmod 600 .env.production.local
 ```bash
 cd /opt/vpv/frontend
 
-npm run build
+# Si cambio package.json (nuevas dependencias), instalar primero
+npm install
 
-# Copiar static assets al standalone (Next.js no los incluye)
-cp -r .next/static .next/standalone/.next/static
-cp -r public .next/standalone/public 2>/dev/null || true
+npm run build
+# El script `postbuild` en package.json copia automaticamente
+# public/ y .next/static/ al output standalone:
+#   cp -rT public .next/standalone/public
+#   cp -rT .next/static .next/standalone/.next/static
 
 # Verificar
 ls -la .next/standalone/server.js
+ls .next/standalone/public/flags/ | wc -l  # debe imprimir 271 (banderas)
 ```
 
 ### 13.4. Verificar arranque manual
