@@ -52,7 +52,10 @@ class StandingsRepository:
                 Matchday,
                 ParticipantMatchdayScore.matchday_id == Matchday.id,
             )
-            .where(SeasonParticipant.season_id == season_id)
+            .where(
+                SeasonParticipant.season_id == season_id,
+                SeasonParticipant.is_active.is_(True),
+            )
             .group_by(SeasonParticipant.id, User.display_name)
             .order_by(
                 func.sum(
