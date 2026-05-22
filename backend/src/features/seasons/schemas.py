@@ -39,6 +39,7 @@ class SeasonDetail(BaseModel):
     tournament_type: str | None = None
     tournament_config: dict[str, Any] | None = None
     telegram_chat_id: str | None = None
+    draft_telegram_chat_id: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -93,6 +94,7 @@ class SeasonUpdateRequest(BaseModel):
     scraping_slug: str | None = None
     tournament_config: dict[str, Any] | None = None
     telegram_chat_id: str | None = None
+    draft_telegram_chat_id: str | None = None
 
 
 class ScoringRuleUpdateRequest(BaseModel):

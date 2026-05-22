@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import BusinessRuleError, NotFoundError
@@ -44,6 +46,9 @@ def _get_participant_for_pick(
         position_in_round = n - 1 - position_in_round
 
     return ordered_participant_ids[position_in_round]
+
+
+logger = logging.getLogger(__name__)
 
 
 class DraftService:
@@ -265,7 +270,50 @@ class DraftService:
             },
         )
 
+        # Notify Telegram (best-effort, never blocks the pick)
+        try:
+            next_participant_name: str | None = None
+            if next_pid is not None:
+                nxt = next((p for p in participants if p.participant_id == next_pid), None)
+                next_participant_name = nxt.display_name if nxt else None
+            await self._notify_pick_telegram(
+                draft.season_id,
+                pick=response,
+                next_pick_number=next_pick_number,
+                next_participant_name=next_participant_name,
+            )
+        except Exception:
+            logger.exception("Failed to notify draft pick via Telegram")
+
         return response
+
+    async def _notify_pick_telegram(
+        self,
+        season_id: int,
+        pick: AddPickResponse,
+        next_pick_number: int,
+        next_participant_name: str | None,
+    ) -> None:
+        """Best-effort Telegram broadcast of a single draft pick."""
+        from src.features.telegram.client import TelegramClient
+        from src.shared.country_flags import flag_emoji_for
+        from src.shared.models.season import Season
+
+        season = await self.repo.session.get(Season, season_id)
+        if season is None or not season.draft_telegram_chat_id:
+            return
+
+        flag = flag_emoji_for(pick.team_name)
+        text = (
+            f"🟢 <b>Pick #{pick.pick_number}</b> · Ronda {pick.round_number}\n"
+            f"<b>{pick.display_name}</b> eligió: {flag} <b>{pick.player_name}</b> "
+            f"({pick.position}, {pick.team_name})"
+        )
+        if next_participant_name:
+            text += f"\n\n➡️ Siguiente: <b>{next_participant_name}</b> — Pick #{next_pick_number}"
+
+        async with TelegramClient() as client:
+            await client.send_message(season.draft_telegram_chat_id, text)
 
     async def delete_pick(
         self,

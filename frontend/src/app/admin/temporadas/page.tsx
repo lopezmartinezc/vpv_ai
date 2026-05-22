@@ -20,6 +20,7 @@ interface Season {
   kind?: "league" | "tournament";
   tournament_type?: string | null;
   telegram_chat_id?: string | null;
+  draft_telegram_chat_id?: string | null;
   tournament_config?: Record<string, unknown> | null;
 }
 
@@ -88,6 +89,7 @@ export default function AdminTemporadasPage() {
   const [editName, setEditName] = useState("");
   const [editSlug, setEditSlug] = useState("");
   const [editTelegramChatId, setEditTelegramChatId] = useState("");
+  const [editDraftTelegramChatId, setEditDraftTelegramChatId] = useState("");
   const [editMatchdayCurrent, setEditMatchdayCurrent] = useState("");
   const [editMatchdayEnd, setEditMatchdayEnd] = useState("");
   const [editMatchdayWinter, setEditMatchdayWinter] = useState("");
@@ -156,6 +158,7 @@ export default function AdminTemporadasPage() {
       setEditName(detail.name);
       setEditSlug(detail.scraping_slug ?? "");
       setEditTelegramChatId(detail.telegram_chat_id ?? "");
+      setEditDraftTelegramChatId(detail.draft_telegram_chat_id ?? "");
       setEditTournamentConfig(
         detail.tournament_config
           ? JSON.stringify(detail.tournament_config, null, 2)
@@ -195,6 +198,8 @@ export default function AdminTemporadasPage() {
         body.scraping_slug = editSlug || null;
       if (editTelegramChatId !== (season.telegram_chat_id ?? ""))
         body.telegram_chat_id = editTelegramChatId || null;
+      if (editDraftTelegramChatId !== (season.draft_telegram_chat_id ?? ""))
+        body.draft_telegram_chat_id = editDraftTelegramChatId || null;
 
       // tournament_config is a JSON textarea
       const currentConfigJson = season.tournament_config
@@ -817,6 +822,18 @@ export default function AdminTemporadasPage() {
                     value={editTelegramChatId}
                     onChange={(e) => setEditTelegramChatId(e.target.value)}
                     placeholder="(usa el global)"
+                    className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-vpv-text-muted">
+                    Telegram chat ID del Draft
+                  </label>
+                  <input
+                    type="text"
+                    value={editDraftTelegramChatId}
+                    onChange={(e) => setEditDraftTelegramChatId(e.target.value)}
+                    placeholder="Canal específico del draft (opcional)"
                     className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
                   />
                 </div>
