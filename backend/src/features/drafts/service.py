@@ -172,6 +172,10 @@ class DraftService:
             raise BusinessRuleError("La fase debe ser 'preseason' o 'winter'")
         if draft_type not in ("snake", "linear"):
             raise BusinessRuleError("El tipo debe ser 'snake' o 'linear'")
+        if phase == "winter" and season.kind != "league":
+            raise BusinessRuleError(
+                "El draft de invierno solo aplica a temporadas de Liga (los torneos cortos no tienen mercado invernal)"
+            )
 
         existing = await self.repo.get_draft(season_id, phase)
         if existing is not None:

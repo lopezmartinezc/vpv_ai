@@ -75,7 +75,7 @@ function getColorForParticipant(
 export default function GestionarDraftPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const { selectedSeason, loading: seasonLoading } = useSeason();
+  const { selectedSeason, isTournamentContext, loading: seasonLoading } = useSeason();
 
   const [drafts, setDrafts] = useState<DraftListResponse | null>(null);
   const [selectedPhase, setSelectedPhase] = useState<string>("preseason");
@@ -476,22 +476,24 @@ export default function GestionarDraftPage() {
         <div className="text-sm text-vpv-text-muted">Cargando...</div>
       )}
 
-      {/* Phase selector */}
-      <div className="flex gap-2">
-        {["preseason", "winter"].map((phase) => (
-          <button
-            key={phase}
-            onClick={() => setSelectedPhase(phase)}
-            className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-              selectedPhase === phase
-                ? "bg-vpv-accent text-white"
-                : "bg-vpv-card text-vpv-text-muted hover:text-vpv-text"
-            }`}
-          >
-            {PHASE_LABELS[phase]}
-          </button>
-        ))}
-      </div>
+      {/* Phase selector — torneos solo tienen pretemporada (sin mercado invernal) */}
+      {!isTournamentContext && (
+        <div className="flex gap-2">
+          {["preseason", "winter"].map((phase) => (
+            <button
+              key={phase}
+              onClick={() => setSelectedPhase(phase)}
+              className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                selectedPhase === phase
+                  ? "bg-vpv-accent text-white"
+                  : "bg-vpv-card text-vpv-text-muted hover:text-vpv-text"
+              }`}
+            >
+              {PHASE_LABELS[phase]}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Step 1: Participant order */}
       {draftDetail && (
