@@ -80,6 +80,7 @@ export interface SeasonSummary {
   name: string;
   status: string;
   matchday_current: number;
+  matchday_end?: number | null;
   total_participants: number;
   lineup_deadline_min: number;
   kind?: "league" | "tournament";

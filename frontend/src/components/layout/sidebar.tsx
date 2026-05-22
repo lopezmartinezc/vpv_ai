@@ -125,14 +125,15 @@ export function Sidebar({
   );
   const lineupMatchday = (() => {
     const current = selectedSeason?.matchday_current ?? 0;
+    const maxMatchday = selectedSeason?.matchday_end ?? 38;
     if (current === 0) return 1;
     if (!deadlineCheck) return current;
     // If deadline hasn't passed, link to current matchday
     if (deadlineCheck.minutes_remaining !== null && deadlineCheck.minutes_remaining > 0) {
       return current;
     }
-    // Deadline passed — link to next matchday (max 38)
-    return Math.min(current + 1, 38);
+    // Deadline passed — link to next matchday (capped at matchday_end)
+    return Math.min(current + 1, maxMatchday);
   })();
 
   // Close on route change

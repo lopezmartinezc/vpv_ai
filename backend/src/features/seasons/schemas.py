@@ -12,6 +12,7 @@ class SeasonSummary(BaseModel):
     name: str
     status: str
     matchday_current: int
+    matchday_end: int | None = None
     total_participants: int
     lineup_deadline_min: int
     kind: str = "league"

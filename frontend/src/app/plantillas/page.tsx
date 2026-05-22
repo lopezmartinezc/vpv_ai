@@ -98,7 +98,7 @@ function PlantillasContent() {
             <input
               type="number"
               min={1}
-              max={38}
+              max={selectedSeason?.matchday_end ?? 38}
               value={jornada ?? ""}
               placeholder="Actual"
               onChange={(e) => handleJornadaChange(e.target.value)}
