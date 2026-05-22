@@ -113,7 +113,10 @@ class DraftRepository:
                 SeasonParticipant.draft_order,
             )
             .join(User, SeasonParticipant.user_id == User.id)
-            .where(SeasonParticipant.season_id == season_id)
+            .where(
+                SeasonParticipant.season_id == season_id,
+                SeasonParticipant.is_active.is_(True),
+            )
             .order_by(SeasonParticipant.draft_order.asc().nulls_last())
         )
 

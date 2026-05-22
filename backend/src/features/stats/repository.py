@@ -280,6 +280,7 @@ class StatsRepository:
             .outerjoin(Match, PlayerStat.match_id == Match.id)
             .where(
                 SeasonParticipant.season_id == season_id,
+                SeasonParticipant.is_active.is_(True),
                 Matchday.counts.is_(True),
                 func.coalesce(Match.counts, True).is_(True),
             )
@@ -322,6 +323,7 @@ class StatsRepository:
             .where(
                 Matchday.season_id == season_id,
                 Matchday.counts.is_(True),
+                SeasonParticipant.is_active.is_(True),
             )
             .order_by(Matchday.number.asc(), SeasonParticipant.id.asc())
         )

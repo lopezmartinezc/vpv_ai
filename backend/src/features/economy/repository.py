@@ -91,7 +91,10 @@ class EconomyRepository:
                 (Transaction.participant_id == SeasonParticipant.id)
                 & (Transaction.season_id == season_id),
             )
-            .where(SeasonParticipant.season_id == season_id)
+            .where(
+                SeasonParticipant.season_id == season_id,
+                SeasonParticipant.is_active.is_(True),
+            )
             .group_by(SeasonParticipant.id, User.display_name)
             .order_by(net_balance.desc())
         )

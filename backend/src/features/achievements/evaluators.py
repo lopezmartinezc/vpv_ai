@@ -116,7 +116,10 @@ async def _get_cumulative_ranks(
             ParticipantMatchdayScore,
             ParticipantMatchdayScore.participant_id == SeasonParticipant.id,
         )
-        .where(SeasonParticipant.season_id == season_id)
+        .where(
+            SeasonParticipant.season_id == season_id,
+            SeasonParticipant.is_active.is_(True),
+        )
         .group_by(SeasonParticipant.id)
         .order_by(
             func.coalesce(
@@ -524,7 +527,10 @@ async def _get_cumulative_points_per_participant(
             ParticipantMatchdayScore,
             ParticipantMatchdayScore.participant_id == SeasonParticipant.id,
         )
-        .where(SeasonParticipant.season_id == season_id)
+        .where(
+            SeasonParticipant.season_id == season_id,
+            SeasonParticipant.is_active.is_(True),
+        )
         .group_by(SeasonParticipant.id)
     )
     result = await session.execute(stmt)

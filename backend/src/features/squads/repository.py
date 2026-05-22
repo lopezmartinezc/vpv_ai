@@ -155,7 +155,10 @@ class SquadRepository:
                 season_pts,
                 season_pts.c.participant_id == SeasonParticipant.id,
             )
-            .where(SeasonParticipant.season_id == season_id)
+            .where(
+                SeasonParticipant.season_id == season_id,
+                SeasonParticipant.is_active.is_(True),
+            )
             .order_by(func.coalesce(season_pts.c.season_points, 0).desc())
         )
 
