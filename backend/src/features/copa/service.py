@@ -4,7 +4,7 @@ from collections import defaultdict
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.exceptions import NotFoundError
+from src.core.exceptions import BusinessRuleError, NotFoundError
 from src.features.copa.repository import CopaRepository
 from src.features.copa.schemas import (
     CopaFullResponse,
@@ -24,6 +24,10 @@ class CopaService:
         season = await self.season_repo.get_by_id(season_id)
         if season is None:
             raise NotFoundError("Season", season_id)
+        if season.kind != "league":
+            raise BusinessRuleError(
+                f"La Copa solo aplica a temporadas de Liga (kind={season.kind})"
+            )
 
         raw_rows = await self.repo.get_copa_data(season_id)
 
