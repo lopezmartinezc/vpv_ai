@@ -1,6 +1,6 @@
 # Roadmap de Mejoras — Liga VPV Fantasy
 
-**Fecha**: 2026-05-21
+**Fecha**: 2026-05-22
 **Estado**: En progreso
 
 ## Estado actual
@@ -10,9 +10,10 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 - PostgreSQL con `seasons.kind` discriminado: Liga (`league`) + Torneos (`tournament`, Mundial 26 / futuras Eurocopas y Copa America)
 - Tabla `tournament_predictions` con columna `bracket_predictions JSONB` (orden de grupos, mejores terceros, ganadores knockout)
 - Liga, Copa, Drafts, Alineaciones, Economia, Scraping automatico, Admin completo
-- Mundial: pagina `/grupos`, `/bracket` (cuadro FIFA dos lados), wizard de predicciones extendido y motor de auto-scoring (`/api/tournaments/admin/{season_id}/predictions/recalculate`)
+- Mundial: pagina `/grupos`, `/bracket` (cuadro FIFA dos lados), wizard de predicciones extendido (privado `/mis-predicciones`), ranking publico expandible (`/predicciones`) y motor de auto-scoring (`/api/tournaments/admin/{season_id}/predictions/recalculate`)
 - Banderas nacionales (271 SVGs, `flag-icons` CC-BY-4.0) en grupos / bracket / predicciones via `<CountryFlag>` + mapeo nombre->ISO
 - Drag & drop con `@dnd-kit/*` en el wizard de predicciones (orden de grupos, best thirds picker, bracket interactivo)
+- Deadline lock: las predicciones se cierran al primer partido del torneo (`first_match_at - lineup_deadline_min`); endpoint `GET /predictions/status` informa al frontend
 
 ---
 
@@ -240,6 +241,20 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 - **Auto-relleno de grupos**: `useEffect([teams, myPred])` rellena `bracket_predictions.groups[letter]` con el orden por defecto del scraping en cuanto cargan los equipos. Asi los placeholders `1A`/`2B` del bracket resuelven sin que el user tenga que arrastrar nada.
 - **Estado**: [x] Completado (2026-05-21).
 
+### 5.5 Predicciones publica/privada + deadline lock + audit is_active
+- **Split public/private** (commit `dba4b2d`):
+  - `/predicciones` (publica, sin login) — ranking de aciertos del torneo con tabla y filas expandibles. Click en una fila muestra el detalle completo del participante: orden 1º-4º por grupo, badges de best thirds y ganadores de eliminatoria agrupados por ronda. Boton "Mis predicciones" en el header.
+  - `/mis-predicciones` (privada, requiere login) — el wizard de 3 pasos (Generales / Grupos / Eliminatoria) con DnD. Banner si esta cerrado, link "← Ver predicciones de todos" arriba.
+- **Deadline lock** (commit `d5ee6fa`):
+  - `GET /api/tournaments/{season_id}/predictions/status` (publico) devuelve `{locked, deadline_at, first_match_at}`.
+  - Deadline = `first_match_at` de la jornada 1 menos `seasons.lineup_deadline_min` (reusa el campo de Liga, default 30 min antes).
+  - `PUT /predictions/me` valida y responde `400 BusinessRuleError` si esta bloqueado.
+  - Frontend: cuando `locked=true`, banner amber, boton "Guardar" oculto, `<fieldset disabled>` en cascada (selects + drag desactivados via `useDraggable({disabled})`).
+  - Admin NO puede sobreescribir tras el deadline (decision consciente).
+- **TZ-naive fix** (commit `150b41b`): `TournamentPrediction.updated_at` es `timestamp without time zone` en BD; cambiado a `datetime.now(UTC).replace(tzinfo=None)` para evitar `can't subtract offset-naive and offset-aware datetimes` de asyncpg.
+- **Audit `is_active`** (commits `e410482` + `d934346`): el filtro `SeasonParticipant.is_active.is_(True)` ahora se aplica en TODOS los listados publicos: standings general, balances economicos, listado de plantillas, draft participants, evolution chart y rankings para evaluar logros. **No filtran** (intencionalmente): detalles historicos de jornadas (muestran quien jugo entonces aunque ahora este inactivo), listados de admin para activar/desactivar.
+- **Estado**: [x] Completado (2026-05-22).
+
 ---
 
 ## Resumen
@@ -271,6 +286,7 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 | 5.2 | Grupos/Cuadro/Predicciones torneo | Alto | Alta | Completado |
 | 5.3 | Auto-scoring predicciones | Alto | Media | Completado |
 | 5.4 | Banderas + DnD predicciones | Alto | Media | Completado |
+| 5.5 | Predicciones publica/privada + lock + audit is_active | Alto | Media | Completado |
 
 ## Criterios de validacion
 

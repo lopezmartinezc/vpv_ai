@@ -1287,6 +1287,25 @@ Lista de jugadores con su equipo, util para selects (goleador / MVP).
 
 **Auth**: Publico
 
+### `GET /api/tournaments/{season_id}/predictions/status`
+
+Estado del periodo de predicciones (deadline + bloqueo).
+
+**Auth**: Publico
+
+**Response** `200`:
+```json
+{
+  "season_id": 11,
+  "locked": false,
+  "deadline_at": "2026-06-11T18:00:00+00:00",
+  "first_match_at": "2026-06-11T18:30:00+00:00"
+}
+```
+
+- `deadline_at` = `first_match_at` de la jornada 1 menos `seasons.lineup_deadline_min` (default 30 min). `null` si la jornada 1 no tiene `first_match_at` programado todavia.
+- `locked` = `true` cuando `now() >= deadline_at`. Los endpoints de edicion devuelven 400 cuando esta bloqueado.
+
 ### `GET /api/tournaments/{season_id}/predictions/me`
 
 Devuelve la prediccion del usuario actual para el torneo. `null` si todavia no ha enviado nada.
@@ -1333,6 +1352,9 @@ Crea o actualiza la prediccion del usuario actual (upsert).
 ```
 
 Si `bracket_predictions` es `null` se mantiene el valor previo (no se sobreescribe a `null`).
+
+**Errores**:
+- `400 BusinessRuleError`: las predicciones estan cerradas (`now() >= predictions/status.deadline_at`). Mensaje incluye la fecha de cierre.
 
 ### `GET /api/tournaments/{season_id}/predictions`
 
