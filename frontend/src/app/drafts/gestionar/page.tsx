@@ -9,6 +9,24 @@ import { apiClient } from "@/lib/api-client";
 import { SeasonSelector } from "@/components/layout/season-selector";
 import { PERM, userHasPerm } from "@/lib/permissions";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  MouseSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import type {
   CreateDraftResponse,
   DraftDetailResponse,
@@ -478,53 +496,28 @@ export default function GestionarDraftPage() {
       {/* Step 1: Participant order */}
       {draftDetail && (
         <section className="rounded-lg border border-vpv-card-border bg-vpv-card p-5">
-          <h2 className="mb-4 text-lg font-semibold text-vpv-text">
+          <h2 className="mb-1 text-lg font-semibold text-vpv-text">
             1. Orden del Draft
           </h2>
+          <p className="mb-3 text-xs text-vpv-text-muted">
+            Arrastra para reordenar (o usa los botones / teclas como alternativa).
+          </p>
           {editableParticipants.length === 0 ? (
             <p className="text-sm text-vpv-text-muted">
               No hay participantes en esta temporada.
             </p>
           ) : (
             <>
-              <ul className="space-y-1">
-                {editableParticipants.map((p, i) => {
-                  const colors = getColorForParticipant(p.participant_id, participants);
-                  return (
-                    <li
-                      key={p.participant_id}
-                      className={`flex items-center gap-3 rounded-lg border-l-4 bg-vpv-bg px-4 py-2 ${colors.border}`}
-                    >
-                      <span className="w-8 text-center text-sm font-bold text-vpv-accent">
-                        {p.draft_order ?? i + 1}
-                      </span>
-                      <span className="flex-1 text-sm text-vpv-text">
-                        {p.display_name}
-                      </span>
-                      <button
-                        onClick={() => moveParticipant(i, -1)}
-                        disabled={i === 0}
-                        className="rounded p-1 text-vpv-text-muted hover:text-vpv-text disabled:opacity-30"
-                        title="Subir"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-                          <path fillRule="evenodd" d="M14.77 12.79a.75.75 0 01-1.06-.02L10 8.832 6.29 12.77a.75.75 0 11-1.08-1.04l4.25-4.5a.75.75 0 011.08 0l4.25 4.5a.75.75 0 01-.02 1.06z" clipRule="evenodd" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => moveParticipant(i, 1)}
-                        disabled={i === editableParticipants.length - 1}
-                        className="rounded p-1 text-vpv-text-muted hover:text-vpv-text disabled:opacity-30"
-                        title="Bajar"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-                          <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
-                        </svg>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
+              <DraggableParticipantOrder
+                participants={editableParticipants}
+                allParticipants={participants}
+                onReorder={(next) =>
+                  setEditableParticipants(
+                    next.map((p, i) => ({ ...p, draft_order: i + 1 })),
+                  )
+                }
+                onMove={moveParticipant}
+              />
               <button
                 onClick={saveOrder}
                 disabled={loading}
@@ -902,46 +895,26 @@ function ParticipantOrderStandalone({ seasonId }: { seasonId: number }) {
 
   return (
     <section className="rounded-lg border border-vpv-card-border bg-vpv-card p-5">
-      <h2 className="mb-4 text-lg font-semibold text-vpv-text">
+      <h2 className="mb-1 text-lg font-semibold text-vpv-text">
         1. Orden del Draft
       </h2>
+      <p className="mb-3 text-xs text-vpv-text-muted">
+        Arrastra para reordenar (o usa los botones / teclas como alternativa).
+      </p>
       {error && (
         <div className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">{error}</div>
       )}
       {success && (
         <div className="mb-3 rounded-lg border border-green-500/30 bg-green-500/10 px-3 py-2 text-sm text-green-400">{success}</div>
       )}
-      <ul className="space-y-1">
-        {participants.map((p, i) => (
-          <li
-            key={p.participant_id}
-            className="flex items-center gap-3 rounded-lg border-l-4 border-l-vpv-accent/30 bg-vpv-bg px-4 py-2"
-          >
-            <span className="w-8 text-center text-sm font-bold text-vpv-accent">
-              {p.draft_order ?? i + 1}
-            </span>
-            <span className="flex-1 text-sm text-vpv-text">{p.display_name}</span>
-            <button
-              onClick={() => moveParticipant(i, -1)}
-              disabled={i === 0}
-              className="rounded p-1 text-vpv-text-muted hover:text-vpv-text disabled:opacity-30"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-                <path fillRule="evenodd" d="M14.77 12.79a.75.75 0 01-1.06-.02L10 8.832 6.29 12.77a.75.75 0 11-1.08-1.04l4.25-4.5a.75.75 0 011.08 0l4.25 4.5a.75.75 0 01-.02 1.06z" clipRule="evenodd" />
-              </svg>
-            </button>
-            <button
-              onClick={() => moveParticipant(i, 1)}
-              disabled={i === participants.length - 1}
-              className="rounded p-1 text-vpv-text-muted hover:text-vpv-text disabled:opacity-30"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-                <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
-              </svg>
-            </button>
-          </li>
-        ))}
-      </ul>
+      <DraggableParticipantOrder
+        participants={participants}
+        allParticipants={participants}
+        onReorder={(next) =>
+          setParticipants(next.map((p, i) => ({ ...p, draft_order: i + 1 })))
+        }
+        onMove={moveParticipant}
+      />
       <button
         onClick={saveOrder}
         disabled={loading}
@@ -950,5 +923,126 @@ function ParticipantOrderStandalone({ seasonId }: { seasonId: number }) {
         Guardar orden
       </button>
     </section>
+  );
+}
+
+/** Sortable participant list shared by both Step 1 sections.
+ *  Drag to reorder; arrow buttons remain as accessible fallback.
+ */
+function DraggableParticipantOrder({
+  participants,
+  allParticipants,
+  onReorder,
+  onMove,
+}: {
+  participants: DraftParticipant[];
+  allParticipants: DraftParticipant[];
+  onReorder: (next: DraftParticipant[]) => void;
+  onMove: (index: number, direction: -1 | 1) => void;
+}) {
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIdx = participants.findIndex((p) => String(p.participant_id) === String(active.id));
+    const newIdx = participants.findIndex((p) => String(p.participant_id) === String(over.id));
+    if (oldIdx === -1 || newIdx === -1) return;
+    onReorder(arrayMove(participants, oldIdx, newIdx));
+  }
+
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <SortableContext
+        items={participants.map((p) => String(p.participant_id))}
+        strategy={verticalListSortingStrategy}
+      >
+        <ul className="space-y-1">
+          {participants.map((p, i) => (
+            <SortableParticipantItem
+              key={p.participant_id}
+              participant={p}
+              index={i}
+              total={participants.length}
+              colorBorder={getColorForParticipant(p.participant_id, allParticipants).border}
+              onMoveUp={() => onMove(i, -1)}
+              onMoveDown={() => onMove(i, 1)}
+            />
+          ))}
+        </ul>
+      </SortableContext>
+    </DndContext>
+  );
+}
+
+function SortableParticipantItem({
+  participant,
+  index,
+  total,
+  colorBorder,
+  onMoveUp,
+  onMoveDown,
+}: {
+  participant: DraftParticipant;
+  index: number;
+  total: number;
+  colorBorder: string;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: String(participant.participant_id) });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    touchAction: "none",
+  };
+  return (
+    <li
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-3 rounded-lg border-l-4 bg-vpv-bg px-4 py-2 ${colorBorder} ${
+        isDragging ? "" : "hover:bg-vpv-bg/80"
+      }`}
+    >
+      <span
+        {...attributes}
+        {...listeners}
+        className="cursor-grab text-vpv-text-muted/60 active:cursor-grabbing select-none"
+        aria-label="Arrastra para reordenar"
+        title="Arrastra para reordenar"
+      >
+        ⋮⋮
+      </span>
+      <span className="w-8 text-center text-sm font-bold text-vpv-accent">
+        {participant.draft_order ?? index + 1}
+      </span>
+      <span className="flex-1 text-sm text-vpv-text">{participant.display_name}</span>
+      <button
+        onClick={onMoveUp}
+        disabled={index === 0}
+        className="rounded p-1 text-vpv-text-muted hover:text-vpv-text disabled:opacity-30"
+        title="Subir"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+          <path fillRule="evenodd" d="M14.77 12.79a.75.75 0 01-1.06-.02L10 8.832 6.29 12.77a.75.75 0 11-1.08-1.04l4.25-4.5a.75.75 0 011.08 0l4.25 4.5a.75.75 0 01-.02 1.06z" clipRule="evenodd" />
+        </svg>
+      </button>
+      <button
+        onClick={onMoveDown}
+        disabled={index === total - 1}
+        className="rounded p-1 text-vpv-text-muted hover:text-vpv-text disabled:opacity-30"
+        title="Bajar"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+          <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+        </svg>
+      </button>
+    </li>
   );
 }
