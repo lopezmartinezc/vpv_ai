@@ -492,11 +492,13 @@ def _parse_as_picas(row: Tag) -> str | None:
 def parse_player_stats(html: str, matchday_number: int) -> PlayerMatchdayStats | None:
     """Extract a player's stats for *matchday_number* from their stats page.
 
-    The stats table is inside ``div.puntos`` → 2nd ``table.tablestats``
-    (index 1) → all ``tr.plegado``.
+    The per-matchday stats table is inside ``div.puntos`` and is identified by
+    containing ``tr.plegado`` rows with a ``td.jorn-td`` cell. Some players have
+    an extra summary table (e.g. top scorers) preceding it, others don't — so
+    we pick the first ``table.tablestats`` that matches this shape.
 
-    Returns ``None`` when the row for the requested matchday is not found or
-    on any parsing failure.
+    Returns ``None`` when no per-matchday table is found, when the row for the
+    requested matchday is absent, or on any parsing failure.
     """
     try:
         soup = _soup(html)
@@ -506,16 +508,18 @@ def parse_player_stats(html: str, matchday_number: int) -> PlayerMatchdayStats |
             logger.debug("parse_player_stats: div.puntos not found")
             return None
 
-        tablestats = puntos_div.find_all("table", class_="tablestats")
-        if len(tablestats) < 2:
-            logger.debug(
-                "parse_player_stats: expected 2+ tablestats in div.puntos, found %d",
-                len(tablestats),
-            )
-            return None
+        target_table: Tag | None = None
+        for candidate in puntos_div.find_all("table", class_="tablestats"):
+            if not isinstance(candidate, Tag):
+                continue
+            if candidate.find("td", class_="jorn-td") is not None:
+                target_table = candidate
+                break
 
-        target_table = tablestats[1]
-        if not isinstance(target_table, Tag):
+        if target_table is None:
+            logger.debug(
+                "parse_player_stats: no tablestats with jorn-td found in div.puntos",
+            )
             return None
 
         rows = target_table.find_all("tr", class_="plegado")
