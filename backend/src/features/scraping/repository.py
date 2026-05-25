@@ -291,6 +291,12 @@ class ScrapingRepository:
         await self.session.execute(stmt)
         logger.debug("update_match_played_at: match_id=%d played_at=%s", match_id, played_at)
 
+    async def update_match_source_url(self, match_id: int, source_url: str) -> None:
+        """Update the source_url of a match (used when futbolfantasy changes URL format)."""
+        stmt = update(Match).where(Match.id == match_id).values(source_url=source_url)
+        await self.session.execute(stmt)
+        logger.debug("update_match_source_url: match_id=%d source_url=%s", match_id, source_url)
+
     async def sync_matchday_first_match_at(self, season_id: int) -> int:
         """Recalculate ``matchdays.first_match_at`` from match dates for all matchdays."""
         from sqlalchemy import func

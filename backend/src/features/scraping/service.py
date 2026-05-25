@@ -28,6 +28,21 @@ logger = logging.getLogger(__name__)
 _MANUAL = "manual_scrape"
 
 
+def _absolute_match_url(href: str | None, base_url: str) -> str | None:
+    """Normalize a match href from the calendar parser to an absolute URL.
+
+    Futbolfantasy serves anchors as absolute URLs today, but the parser also
+    accepts relative paths. Returns None for empty input.
+    """
+    if not href:
+        return None
+    if href.startswith(("http://", "https://")):
+        return href
+    if href.startswith("/"):
+        return f"{base_url.rstrip('/')}{href}"
+    return f"{base_url.rstrip('/')}/{href}"
+
+
 def _resolve_season_year(season: object) -> int:
     """Extract the calendar year used in scraping URLs from a Season.
 
@@ -586,7 +601,7 @@ class ScrapingService:
 
         Returns
         -------
-        dict with keys ``scores_updated`` and ``dates_updated``.
+        dict with keys ``scores_updated``, ``dates_updated`` and ``urls_updated``.
         """
         from datetime import datetime as _dt
 
@@ -600,7 +615,7 @@ class ScrapingService:
         season = result.scalar_one_or_none()
         if season is None:
             logger.error("scrape_calendar: season_id=%d not found", season_id)
-            return {"scores_updated": 0, "dates_updated": 0}
+            return {"scores_updated": 0, "dates_updated": 0, "urls_updated": 0}
 
         season_year = _resolve_season_year(season)
         base_url = self._settings.scraping_base_url
@@ -613,7 +628,7 @@ class ScrapingService:
                 html = await client.fetch(url)
             except ScrapingError as exc:
                 logger.error("scrape_calendar: fetch failed: %s", exc)
-                return {"scores_updated": 0, "dates_updated": 0}
+                return {"scores_updated": 0, "dates_updated": 0, "urls_updated": 0}
 
         calendar_matches = parse_calendar(html, season_year=season_year)
         logger.info("scrape_calendar: parsed %d matches from calendar", len(calendar_matches))
@@ -621,6 +636,7 @@ class ScrapingService:
         scores_updated = 0
         dates_updated = 0
 
+        urls_updated = 0
         for cal_match in calendar_matches:
             db_match = await self.repo.get_match_by_source_id(cal_match.source_id)
             if db_match is None:
@@ -629,6 +645,14 @@ class ScrapingService:
                     cal_match.source_id,
                 )
                 continue
+
+            # Backfill source_url when futbolfantasy changes the URL format
+            # (e.g. /partidos/{id} -> /partidos/{id}-{home}-{away}).
+            new_source_url = _absolute_match_url(cal_match.source_url, base_url)
+            if new_source_url and db_match.source_url != new_source_url:
+                await self.repo.update_match_source_url(db_match.id, new_source_url)
+                db_match.source_url = new_source_url
+                urls_updated += 1
 
             # Update played_at if the calendar provides a date
             if cal_match.played_at:
@@ -707,11 +731,16 @@ class ScrapingService:
                     )
 
         logger.info(
-            "scrape_calendar: scores_updated=%d dates_updated=%d",
+            "scrape_calendar: scores_updated=%d dates_updated=%d urls_updated=%d",
             scores_updated,
             dates_updated,
+            urls_updated,
         )
-        return {"scores_updated": scores_updated, "dates_updated": dates_updated}
+        return {
+            "scores_updated": scores_updated,
+            "dates_updated": dates_updated,
+            "urls_updated": urls_updated,
+        }
 
     async def check_for_updates(self) -> list[int]:
         """Check the homepage for CRC changes indicating new stats are available.
@@ -906,9 +935,7 @@ class ScrapingService:
 
             played_at = _dt.fromisoformat(cal_match.played_at) if cal_match.played_at else None
 
-            source_url = (
-                f"{base_url}/partidos/{cal_match.source_id}" if cal_match.source_id else None
-            )
+            source_url = _absolute_match_url(cal_match.source_url, base_url)
 
             await self.repo.create_match(
                 matchday_id=matchday_id,
