@@ -186,7 +186,6 @@ class ScrapingService:
         error_details: list[str] = []
 
         base_url = self._settings.scraping_base_url
-        season_slug = await self._resolve_season_slug(season_id)
 
         async with ScrapingClient() as client:
             for match in counting_matches:
@@ -212,7 +211,7 @@ class ScrapingService:
                         match.id,
                     )
 
-                    url = f"{base_url}/jugadores/{player.slug}/{season_slug}"
+                    url = f"{base_url}/jugadores/{player.slug}"
                     try:
                         html = await client.fetch(url)
                     except ScrapingError as exc:
@@ -436,7 +435,6 @@ class ScrapingService:
         error_details: list[str] = []
 
         base_url = self._settings.scraping_base_url
-        season_slug = await self._resolve_season_slug(season_id)
 
         async def _wlog(
             pid: int | None, status: str, msg: str, detail: dict | None = None
@@ -450,7 +448,7 @@ class ScrapingService:
             async with ScrapingClient() as client:
                 for player in match_players:
                     team = team_names.get(player.team_id, "?")
-                    url = f"{base_url}/jugadores/{player.slug}/{season_slug}"
+                    url = f"{base_url}/jugadores/{player.slug}"
                     try:
                         html = await client.fetch(url)
                     except ScrapingError as exc:
