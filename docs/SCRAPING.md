@@ -219,6 +219,10 @@ python -m src.features.scraping.cli scrape-matchday 8 25
 # Scrapear un partido individual
 python -m src.features.scraping.cli scrape-match 8 25 301
 
+# Re-scrapear una temporada entera por jugador (1 fetch por jugador,
+# en vez de N por jornada). Pensado para auditoria de fin de temporada.
+python -m src.features.scraping.cli scrape-season-full 8 --start 6 --end 38
+
 # Actualizar calendario (resultados + fechas)
 python -m src.features.scraping.cli update-calendar 8
 
@@ -228,6 +232,27 @@ python -m src.features.scraping.cli check-updates
 # Descargar fotos de jugadores
 python -m src.features.scraping.cli download-photos 8
 ```
+
+#### scrape-season-full (auditoria de temporada)
+
+La pagina de un jugador en futbolfantasy contiene TODAS las jornadas en una sola
+tabla. `scrape-season-full` aprovecha esto: 1 fetch por jugador (~770 fetches)
+en vez de N fetches por jornada (~13.000+ para una temporada completa).
+~30 min vs ~10h.
+
+Flujo:
+1. Lista todos los `players` de la temporada.
+2. Por cada jugador: `GET /jugadores/{slug}`, parsea TODAS las filas
+   `tr.plegado` de la tabla de stats.
+3. Para cada (jugador, jornada): upsert en `player_stats`.
+   - Si la fila ya existe: **preserva** `position` y `match_id` historicos.
+   - Si es nueva: usa `player.position` actual y resuelve `match_id` via
+     `find_match_for_team(matchday_id, player.team_id)`.
+4. Llama `aggregate_matchday` una vez por cada jornada afectada para
+   recalcular `lineup_players.points` -> `lineups.total_points` ->
+   `participant_matchday_scores`.
+
+**Backup obligatorio antes de usar** (ver "Auditoria de fin de temporada" abajo).
 
 ## Flujo de datos completo
 
@@ -291,9 +316,15 @@ El admin puede:
 |-----|-------|--------|
 | `futbolfantasy.com` | Homepage — jornada actual, CRC | `parse_homepage_matchday` |
 | `futbolfantasy.com/laliga/calendario/{year}` | Calendario completo La Liga | `parse_calendar` |
-| `futbolfantasy.com/jugadores/{slug}/{season_slug}` | Stats jugador por jornada | `parse_player_stats` |
-| `futbolfantasy.com/partidos/{id}-{slug}` | Pagina partido — CRC ratings | `parse_match_crc` |
-| `futbolfantasy.com/{team-slug}` | Plantilla equipo | `parse_roster` |
+| `futbolfantasy.com/jugadores/{slug}` | Stats jugador (todas las jornadas) | `parse_player_stats`, `parse_player_all_matchdays` |
+| `futbolfantasy.com/partidos/{id}-{home}-{away}` | Pagina partido — score, CRC ratings | `parse_match_score`, `parse_match_crc` |
+| `futbolfantasy.com/laliga/equipos/{team-slug}` | Plantilla equipo | `parse_roster` (legacy, ver bugs 2026-05) |
+
+**Nota sobre URLs (cambios mayo 2026)**: futbolfantasy migro los formatos de
+URL. El partido ahora exige slug `{home}-{away}` despues del id; la pagina de
+jugador ya no acepta el sufijo `/{season_slug}`. Las URLs de la BD se
+autocorrigen en el siguiente tick del scheduler (campo `urls_updated` en el
+log de `scrape_calendar`).
 
 ## Deteccion de cambios (CRC)
 
@@ -307,7 +338,14 @@ Dos niveles de CRC:
 
 - **Rate limiting**: Delay aleatorio 1-4s entre requests. El sistema scrapea ~40-50 jugadores por partido (2 equipos x ~25 jugadores). Una jornada completa (10 partidos) puede tardar 30-60 minutos.
 - **Idempotencia**: `upsert_player_stat` usa `ON CONFLICT (player_id, matchday_id)` — re-scrapear es seguro.
-- **Posicion**: `player_stats.position` es la fuente de verdad para puntos, no `players.position` (un jugador puede cambiar de posicion entre jornadas).
+- **Posicion historica preservada**: `player_stats.position` es la fuente de
+  verdad para puntos (un jugador puede cambiar de posicion en el draft de
+  invierno, lo que altera la formula de goles e imbatibilidad). Los 3 flujos
+  de scraping (`scrape_matchday`, `scrape_match_players`,
+  `scrape_season_by_player`) preservan `position` y `match_id` cuando la fila
+  `(player_id, matchday_id)` ya existe; solo asignan valores nuevos en filas
+  inexistentes. Asi, re-scrapear despues de un cambio de posicion o de equipo
+  NO altera la verdad historica de jornadas pasadas.
 - **Counts a 2 niveles**: `matchdays.counts` Y `matches.counts` determinan si un partido/jornada computa para la clasificacion. El scraping procesa todos los matches con `counts=True`.
 - **Fechas del calendario**: Solo los partidos pendientes tienen fecha en el HTML. Los ya jugados no muestran fecha, solo resultado. Las fechas ya almacenadas en BD para partidos jugados son las originales de la migracion.
 
@@ -318,3 +356,88 @@ Dos niveles de CRC:
 3. **CRC diferido**: CRC se guardaba antes de confirmar que el scraping tuvo exito. Ahora solo se persiste si se procesaron stats.
 4. **404 = skip**: Un jugador con 404 en futbolfantasy bloqueaba todo el partido. Ahora se trata como skip.
 5. **No retry 4xx**: El client reintentaba 404/403 tres veces. Ahora solo reintenta errores 5xx.
+
+## Bugs corregidos (2026-05-25/26)
+
+1. **URL partido nuevo formato** (`c6691e5`): `/partidos/{id}` empezo a devolver
+   404. futbolfantasy ahora exige slug: `/partidos/{id}-{home}-{away}`. Fix:
+   `import_teams_and_players` usa `cal_match.source_url` (que el parser ya
+   extrae con slug del calendario); `scrape_calendar` hace backfill de
+   `matches.source_url` cuando difiere (nuevo contador `urls_updated`).
+2. **URL jugador sin season slug** (`302331f`): `/jugadores/{slug}/{season-slug}`
+   sigue devolviendo 200 pero sirve una pagina SIN la 2a `tablestats` de stats
+   por jornada → `parse_player_stats` daba "sin stats" para todo. Fix: URL
+   actualizada a `/jugadores/{slug}` en `scrape_matchday` y
+   `scrape_match_players`.
+3. **Tabla de stats por indice vs por contenido** (`97514b9`):
+   `parse_player_stats` hardcodeaba `tablestats[1]` (la 2a tabla). Algunos
+   jugadores no tienen tabla de resumen previa (e.g. Mikautadze) y solo
+   tienen 1 `tablestats` → daba None aunque tenian J38 jugada. Fix: buscar
+   la primera `table.tablestats` que contenga `td.jorn-td`.
+4. **Posicion / match_id historicos sobrescritos** (`3554599`): los 3 flujos
+   de scraping sobrescribian `player_stats.position` con `player.position`
+   actual y `match_id` con el match del equipo actual del jugador. Eso
+   contradice CLAUDE.md regla 9: la position debe ser la de ESA jornada.
+   Fix: si la fila ya existe, preservar `position` y `match_id`; solo
+   asignar valores nuevos para filas inexistentes.
+
+## Auditoria de fin de temporada (recipe)
+
+Cuando termina una temporada, se puede re-scrapear todo para verificar
+puntos. Procedimiento:
+
+```bash
+SID=8
+TS=$(date +%Y%m%d_%H%M%S)
+BACKUP_DIR=/var/backups/vpv
+sudo mkdir -p "$BACKUP_DIR"
+sudo chown postgres:postgres "$BACKUP_DIR"
+
+# 1) Snapshots in-DB (las 4 tablas que el scraping reescribe)
+sudo -u postgres psql -d ligavpv <<EOF
+CREATE TABLE player_stats_snap_${TS} AS SELECT * FROM player_stats;
+CREATE TABLE participant_matchday_scores_snap_${TS} AS SELECT * FROM participant_matchday_scores;
+CREATE TABLE lineup_players_snap_${TS} AS SELECT * FROM lineup_players;
+CREATE TABLE lineups_snap_${TS} AS SELECT * FROM lineups;
+EOF
+
+# 2) Dumps a disco (full + tablas afectadas)
+sudo -u postgres pg_dump -Fc -d ligavpv -f "${BACKUP_DIR}/ligavpv_full_${TS}.dump"
+sudo -u postgres pg_dump -d ligavpv \
+  -t player_stats -t participant_matchday_scores \
+  -t lineup_players -t lineups \
+  --data-only --column-inserts \
+  -f "${BACKUP_DIR}/ligavpv_scoring_${TS}.sql"
+
+# 3) Re-scrape (en background, ~30 min para una temporada completa)
+cd /opt/vpv/backend
+sudo -u vpv nohup .venv/bin/python -m src.features.scraping.cli scrape-season-full ${SID} \
+  --start 6 --end 38 > /tmp/rescrape_full.log 2>&1 &
+
+# 4) Tras terminar, query de deltas
+sudo -u postgres psql -d ligavpv <<EOF
+SELECT 'pts deltas' AS what, count(*)
+FROM player_stats ps
+JOIN matchdays md ON md.id = ps.matchday_id
+LEFT JOIN player_stats_snap_${TS} o USING (player_id, matchday_id)
+WHERE md.season_id = ${SID}
+  AND COALESCE(o.pts_total, -9999) <> COALESCE(ps.pts_total, -9999);
+EOF
+```
+
+Si los deltas son extranos, restore quirurgico (sin TRUNCATE) desde snapshot:
+```sql
+UPDATE player_stats ps SET position = o.position
+FROM player_stats_snap_${TS} o
+WHERE ps.player_id = o.player_id AND ps.matchday_id = o.matchday_id
+  AND ps.position <> o.position;
+-- Idem para match_id.
+```
+
+Limpieza de snapshots cuando ya no se necesiten:
+```sql
+DROP TABLE player_stats_snap_${TS};
+DROP TABLE participant_matchday_scores_snap_${TS};
+DROP TABLE lineup_players_snap_${TS};
+DROP TABLE lineups_snap_${TS};
+```
