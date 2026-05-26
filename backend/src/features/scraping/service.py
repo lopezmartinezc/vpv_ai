@@ -266,17 +266,23 @@ class ScrapingService:
                         total_skipped += 1
                         continue
 
-                    # Use the player's registered position as a starting point;
-                    # the scraper doesn't provide a per-matchday position override,
-                    # so we fall back to the player's canonical position.
-                    position = player.position
+                    # Preserve historical position/match_id when the row already
+                    # exists: a player may have changed position (winter draft)
+                    # or team (real-life transfer) since the original scrape.
+                    existing = await self.repo.get_player_stat(player.id, matchday_id)
+                    if existing is not None:
+                        position = existing.position
+                        persisted_match_id = existing.match_id or match.id
+                    else:
+                        position = player.position
+                        persisted_match_id = match.id
 
                     breakdown = engine.calculate(stats, position)
 
                     await self.repo.upsert_player_stat(
                         player_id=player.id,
                         matchday_id=matchday_id,
-                        match_id=match.id,
+                        match_id=persisted_match_id,
                         position=position,
                         stats=stats,
                         breakdown=breakdown,
@@ -486,13 +492,21 @@ class ScrapingService:
                         await _wlog(player.id, "skip", f"{player.name} ({team}): sin stats")
                         continue
 
-                    position = player.position
+                    # Preserve historical position/match_id when re-scraping.
+                    existing = await self.repo.get_player_stat(player.id, matchday_id)
+                    if existing is not None:
+                        position = existing.position
+                        persisted_match_id = existing.match_id or match_id
+                    else:
+                        position = player.position
+                        persisted_match_id = match_id
+
                     breakdown = engine.calculate(stats, position)
 
                     await self.repo.upsert_player_stat(
                         player_id=player.id,
                         matchday_id=matchday_id,
-                        match_id=match_id,
+                        match_id=persisted_match_id,
                         position=position,
                         stats=stats,
                         breakdown=breakdown,
@@ -692,15 +706,24 @@ class ScrapingService:
                     if md is None:
                         continue
 
-                    match = await self.repo.find_match_for_team(md.id, player.team_id)
-                    match_id: int | None = match.id if match else None
+                    # Preserve historical position + match_id when re-scraping.
+                    # A player who changed position (winter draft) or team
+                    # (real transfer) must keep his old data for past matchdays.
+                    existing = await self.repo.get_player_stat(player.id, md.id)
+                    if existing is not None:
+                        position = existing.position
+                        match_id: int | None = existing.match_id
+                    else:
+                        position = player.position
+                        match = await self.repo.find_match_for_team(md.id, player.team_id)
+                        match_id = match.id if match else None
 
-                    breakdown = engine.calculate(stats, player.position)
+                    breakdown = engine.calculate(stats, position)
                     await self.repo.upsert_player_stat(
                         player_id=player.id,
                         matchday_id=md.id,
                         match_id=match_id,
-                        position=player.position,
+                        position=position,
                         stats=stats,
                         breakdown=breakdown,
                     )

@@ -192,6 +192,23 @@ class ScrapingRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars())
 
+    async def get_player_stat(self, player_id: int, matchday_id: int) -> PlayerStat | None:
+        """Return the existing player_stats row for (player, matchday), or None.
+
+        Used to preserve historical position/match_id when re-scraping: a
+        player may have changed position (winter draft) or team (real-life
+        transfer) between the original scrape and now. The fantasy points
+        for past matchdays must reflect the position the player had ON THAT
+        matchday, and the match_id must refer to the match where his team
+        AT THAT TIME played.
+        """
+        stmt = select(PlayerStat).where(
+            PlayerStat.player_id == player_id,
+            PlayerStat.matchday_id == matchday_id,
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def get_pending_score_matches(self, season_id: int, before: object) -> list[Match]:
         """Return matches with no score that should have ended (played_at < before)."""
         from src.shared.models.matchday import Matchday
