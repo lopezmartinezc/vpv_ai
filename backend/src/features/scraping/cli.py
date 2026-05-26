@@ -112,6 +112,22 @@ async def cmd_download_photos(season_id: int) -> None:
     await _run_with_session(_run)
 
 
+async def cmd_scrape_season_full(
+    season_id: int, start: int | None, end: int | None
+) -> None:
+    """Re-scrape *season_id* by iterating players (1 HTTP fetch per player).
+
+    Use for season-wide audits: ~N times fewer requests than looping
+    ``scrape-matchday`` over every matchday.
+    """
+
+    async def _run(session: AsyncSession) -> dict:
+        service = ScrapingService(session)
+        return await service.scrape_season_by_player(season_id, start=start, end=end)
+
+    await _run_with_session(_run)
+
+
 async def cmd_scrape_current() -> None:
     """Scrape the current matchday for the active season.
 
@@ -175,6 +191,19 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Scrape current matchday for the active season",
     )
 
+    # scrape-season-full
+    p_full = sub.add_parser(
+        "scrape-season-full",
+        help="Re-scrape a whole season by iterating players (1 fetch each)",
+    )
+    p_full.add_argument("season_id", type=int, help="Season primary-key ID")
+    p_full.add_argument(
+        "--start", type=int, default=None, help="First matchday number (inclusive)"
+    )
+    p_full.add_argument(
+        "--end", type=int, default=None, help="Last matchday number (inclusive)"
+    )
+
     # download-photos
     p_photos = sub.add_parser("download-photos", help="Download player photos as WebP")
     p_photos.add_argument("season_id", type=int, help="Season primary-key ID")
@@ -215,6 +244,9 @@ def main() -> None:
 
     elif command == "scrape-current":
         asyncio.run(cmd_scrape_current())
+
+    elif command == "scrape-season-full":
+        asyncio.run(cmd_scrape_season_full(args.season_id, args.start, args.end))
 
     elif command == "download-photos":
         asyncio.run(cmd_download_photos(args.season_id))

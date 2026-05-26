@@ -489,92 +489,86 @@ def _parse_as_picas(row: Tag) -> str | None:
     return text if text else None
 
 
+def _find_stats_table(html: str) -> Tag | None:
+    """Locate the per-matchday stats table inside ``div.puntos``.
+
+    Identified by containing ``tr.plegado`` rows with a ``td.jorn-td`` cell.
+    Some player pages prepend a summary table (e.g. top scorers) and others
+    don't — so we pick the first ``table.tablestats`` matching this shape.
+    """
+    soup = _soup(html)
+    puntos_div = soup.find("div", class_="puntos")
+    if not isinstance(puntos_div, Tag):
+        return None
+    for candidate in puntos_div.find_all("table", class_="tablestats"):
+        if isinstance(candidate, Tag) and candidate.find("td", class_="jorn-td") is not None:
+            return candidate
+    return None
+
+
+def _build_stats_from_row(row: Tag, matchday_number: int) -> PlayerMatchdayStats:
+    """Build a ``PlayerMatchdayStats`` from a ``tr.plegado`` row."""
+    played = row.find("span", class_="no-played-label") is None
+    home_score, away_score, result, goals_for, goals_against = _parse_score_and_result(row)
+    event, event_minute, minutes_played = _parse_substitution(row)
+    events = _parse_events(row)
+    marca_rating = _parse_marca(row)
+    as_picas = _parse_as_picas(row)
+
+    return PlayerMatchdayStats(
+        matchday_number=matchday_number,
+        played=played,
+        home_score=home_score,
+        away_score=away_score,
+        result=result,
+        goals_for=goals_for,
+        goals_against=goals_against,
+        event=event,
+        event_minute=event_minute,
+        minutes_played=minutes_played if played else 0,
+        goals=int(events.get("goals", 0)),
+        penalty_goals=int(events.get("penalty_goals", 0)),
+        penalties_missed=int(events.get("penalties_missed", 0)),
+        own_goals=int(events.get("own_goals", 0)),
+        assists=int(events.get("assists", 0)),
+        penalties_saved=int(events.get("penalties_saved", 0)),
+        yellow_card=bool(events.get("yellow_card", False)),
+        yellow_removed=bool(events.get("yellow_removed", False)),
+        double_yellow=bool(events.get("double_yellow", False)),
+        red_card=bool(events.get("red_card", False)),
+        woodwork=int(events.get("woodwork", 0)),
+        penalties_won=int(events.get("penalties_won", 0)),
+        penalties_committed=int(events.get("penalties_committed", 0)),
+        marca_rating=marca_rating,
+        as_picas=as_picas,
+    )
+
+
 def parse_player_stats(html: str, matchday_number: int) -> PlayerMatchdayStats | None:
     """Extract a player's stats for *matchday_number* from their stats page.
-
-    The per-matchday stats table is inside ``div.puntos`` and is identified by
-    containing ``tr.plegado`` rows with a ``td.jorn-td`` cell. Some players have
-    an extra summary table (e.g. top scorers) preceding it, others don't — so
-    we pick the first ``table.tablestats`` that matches this shape.
 
     Returns ``None`` when no per-matchday table is found, when the row for the
     requested matchday is absent, or on any parsing failure.
     """
     try:
-        soup = _soup(html)
-
-        puntos_div = soup.find("div", class_="puntos")
-        if not isinstance(puntos_div, Tag):
-            logger.debug("parse_player_stats: div.puntos not found")
-            return None
-
-        target_table: Tag | None = None
-        for candidate in puntos_div.find_all("table", class_="tablestats"):
-            if not isinstance(candidate, Tag):
-                continue
-            if candidate.find("td", class_="jorn-td") is not None:
-                target_table = candidate
-                break
-
+        target_table = _find_stats_table(html)
         if target_table is None:
-            logger.debug(
-                "parse_player_stats: no tablestats with jorn-td found in div.puntos",
-            )
+            logger.debug("parse_player_stats: no tablestats with jorn-td found")
             return None
 
-        rows = target_table.find_all("tr", class_="plegado")
-
-        for row in rows:
+        for row in target_table.find_all("tr", class_="plegado"):
             if not isinstance(row, Tag):
                 continue
-
             jorn_td = row.find("td", class_="jorn-td")
             if not isinstance(jorn_td, Tag):
                 continue
-
             try:
                 row_matchday = int(_tag_text(jorn_td))
             except ValueError:
                 continue
-
             if row_matchday != matchday_number:
                 continue
-
-            # Found the matchday row — parse all fields
-            played = row.find("span", class_="no-played-label") is None
-            home_score, away_score, result, goals_for, goals_against = _parse_score_and_result(row)
-            event, event_minute, minutes_played = _parse_substitution(row)
-            events = _parse_events(row)
-            marca_rating = _parse_marca(row)
-            as_picas = _parse_as_picas(row)
-
-            return PlayerMatchdayStats(
-                matchday_number=matchday_number,
-                played=played,
-                home_score=home_score,
-                away_score=away_score,
-                result=result,
-                goals_for=goals_for,
-                goals_against=goals_against,
-                event=event,
-                event_minute=event_minute,
-                minutes_played=minutes_played if played else 0,
-                goals=int(events.get("goals", 0)),
-                penalty_goals=int(events.get("penalty_goals", 0)),
-                penalties_missed=int(events.get("penalties_missed", 0)),
-                own_goals=int(events.get("own_goals", 0)),
-                assists=int(events.get("assists", 0)),
-                penalties_saved=int(events.get("penalties_saved", 0)),
-                yellow_card=bool(events.get("yellow_card", False)),
-                yellow_removed=bool(events.get("yellow_removed", False)),
-                double_yellow=bool(events.get("double_yellow", False)),
-                red_card=bool(events.get("red_card", False)),
-                woodwork=int(events.get("woodwork", 0)),
-                penalties_won=int(events.get("penalties_won", 0)),
-                penalties_committed=int(events.get("penalties_committed", 0)),
-                marca_rating=marca_rating,
-                as_picas=as_picas,
-            )
+            return _build_stats_from_row(row, matchday_number)
 
         logger.debug("parse_player_stats: matchday %d not found in table", matchday_number)
         return None
@@ -582,6 +576,40 @@ def parse_player_stats(html: str, matchday_number: int) -> PlayerMatchdayStats |
     except Exception:
         logger.exception("parse_player_stats: unexpected error for matchday=%d", matchday_number)
         return None
+
+
+def parse_player_all_matchdays(html: str) -> list[PlayerMatchdayStats]:
+    """Extract a player's stats for ALL matchdays present in the table.
+
+    Useful for season-wide audits: a single HTTP fetch yields every matchday
+    row instead of N fetches (one per matchday).
+
+    Returns an empty list when no per-matchday table is found or on parsing
+    failure.
+    """
+    try:
+        target_table = _find_stats_table(html)
+        if target_table is None:
+            logger.debug("parse_player_all_matchdays: no tablestats with jorn-td found")
+            return []
+
+        out: list[PlayerMatchdayStats] = []
+        for row in target_table.find_all("tr", class_="plegado"):
+            if not isinstance(row, Tag):
+                continue
+            jorn_td = row.find("td", class_="jorn-td")
+            if not isinstance(jorn_td, Tag):
+                continue
+            try:
+                row_matchday = int(_tag_text(jorn_td))
+            except ValueError:
+                continue
+            out.append(_build_stats_from_row(row, row_matchday))
+        return out
+
+    except Exception:
+        logger.exception("parse_player_all_matchdays: unexpected error")
+        return []
 
 
 # ---------------------------------------------------------------------------

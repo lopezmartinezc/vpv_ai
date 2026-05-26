@@ -15,6 +15,7 @@ from src.features.scraping.log_repository import ScrapingLogRepository
 from src.features.scraping.parsers import (
     parse_calendar,
     parse_homepage_matchday,
+    parse_player_all_matchdays,
     parse_player_stats,
     parse_roster,
     parse_teams,
@@ -589,6 +590,152 @@ class ScrapingService:
             "error_details": error_details,
         }
         logger.info("scrape_match_players: done — match_id=%d summary=%s", match_id, summary)
+        return summary
+
+    async def scrape_season_by_player(
+        self,
+        season_id: int,
+        start: int | None = None,
+        end: int | None = None,
+    ) -> dict[str, object]:
+        """Re-scrape a whole season by iterating players (one fetch per player).
+
+        Compared to ``scrape_matchday`` looped N times, this performs N times
+        fewer HTTP requests because each player's stats page contains all the
+        matchdays in a single response.
+
+        For each player:
+        1. Fetch ``/jugadores/{slug}`` once.
+        2. Parse every per-matchday row from the stats table.
+        3. For each row in the [start, end] range that maps to a matchday in
+           this season, upsert the player_stats row (match_id resolved via
+           ``find_match_for_team(matchday_id, player.team_id)``).
+        4. Rows for matchdays where the player's current team didn't play (or
+           the player wasn't in that team yet) are skipped.
+
+        After all players are processed, ``aggregate_matchday`` is called once
+        per affected matchday so participant_matchday_scores stays consistent.
+        """
+        rules = await self.repo.get_scoring_rules(season_id)
+        engine = ScoringEngine(rules)
+
+        matchdays = await self.repo.get_matchdays_by_season(season_id, start=start, end=end)
+        md_by_number = {md.number: md for md in matchdays}
+        if not md_by_number:
+            logger.warning(
+                "scrape_season_by_player: no matchdays in range for season_id=%d", season_id
+            )
+            return {
+                "players_processed": 0,
+                "players_skipped": 0,
+                "players_errors": 0,
+                "rows_upserted": 0,
+                "matchdays_aggregated": 0,
+            }
+
+        players = await self.repo.get_players_for_season(season_id)
+        logger.info(
+            "scrape_season_by_player: season_id=%d players=%d matchdays=%d (J%d-J%d)",
+            season_id,
+            len(players),
+            len(md_by_number),
+            min(md_by_number),
+            max(md_by_number),
+        )
+
+        base_url = self._settings.scraping_base_url
+        players_processed = 0
+        players_skipped = 0
+        players_errors = 0
+        rows_upserted = 0
+        affected_md_ids: set[int] = set()
+
+        async with ScrapingClient() as client:
+            for idx, player in enumerate(players, start=1):
+                if not player.slug:
+                    players_skipped += 1
+                    continue
+
+                url = f"{base_url}/jugadores/{player.slug}"
+                try:
+                    html = await client.fetch(url)
+                except ScrapingError as exc:
+                    cause = exc.cause
+                    is_not_found = (
+                        isinstance(cause, httpx.HTTPStatusError)
+                        and cause.response.status_code == 404
+                    )
+                    if is_not_found:
+                        players_skipped += 1
+                        logger.debug(
+                            "scrape_season_by_player: 404 for %s (slug=%s)",
+                            player.name,
+                            player.slug,
+                        )
+                        continue
+                    players_errors += 1
+                    logger.warning(
+                        "scrape_season_by_player: fetch error for %s: %s",
+                        player.name,
+                        cause,
+                    )
+                    continue
+
+                stats_list = parse_player_all_matchdays(html)
+                if not stats_list:
+                    players_skipped += 1
+                    continue
+
+                player_rows = 0
+                for stats in stats_list:
+                    md = md_by_number.get(stats.matchday_number)
+                    if md is None:
+                        continue
+
+                    match = await self.repo.find_match_for_team(md.id, player.team_id)
+                    match_id: int | None = match.id if match else None
+
+                    breakdown = engine.calculate(stats, player.position)
+                    await self.repo.upsert_player_stat(
+                        player_id=player.id,
+                        matchday_id=md.id,
+                        match_id=match_id,
+                        position=player.position,
+                        stats=stats,
+                        breakdown=breakdown,
+                    )
+                    player_rows += 1
+                    affected_md_ids.add(md.id)
+
+                rows_upserted += player_rows
+                players_processed += 1
+
+                if idx % 25 == 0:
+                    logger.info(
+                        "scrape_season_by_player: progress %d/%d players "
+                        "(processed=%d skipped=%d errors=%d rows=%d)",
+                        idx,
+                        len(players),
+                        players_processed,
+                        players_skipped,
+                        players_errors,
+                        rows_upserted,
+                    )
+
+        # Flush upserts so aggregator queries see the new rows.
+        await self.session.flush()
+
+        for md_id in sorted(affected_md_ids):
+            await self._aggregator.aggregate_matchday(md_id)
+
+        summary: dict[str, object] = {
+            "players_processed": players_processed,
+            "players_skipped": players_skipped,
+            "players_errors": players_errors,
+            "rows_upserted": rows_upserted,
+            "matchdays_aggregated": len(affected_md_ids),
+        }
+        logger.info("scrape_season_by_player: done — %s", summary)
         return summary
 
     async def scrape_calendar(self, season_id: int) -> dict[str, int]:

@@ -159,6 +159,39 @@ class ScrapingRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def find_match_for_team(self, matchday_id: int, team_id: int) -> Match | None:
+        """Return the match in *matchday_id* where *team_id* participates."""
+        from sqlalchemy import or_
+
+        stmt = select(Match).where(
+            Match.matchday_id == matchday_id,
+            or_(Match.home_team_id == team_id, Match.away_team_id == team_id),
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_matchdays_by_season(
+        self, season_id: int, start: int | None = None, end: int | None = None
+    ) -> list[Matchday]:
+        """Return all matchdays for *season_id*, optionally filtered by number range.
+
+        Ordered by ``number`` ascending.
+        """
+        stmt = select(Matchday).where(Matchday.season_id == season_id)
+        if start is not None:
+            stmt = stmt.where(Matchday.number >= start)
+        if end is not None:
+            stmt = stmt.where(Matchday.number <= end)
+        stmt = stmt.order_by(Matchday.number)
+        result = await self.session.execute(stmt)
+        return list(result.scalars())
+
+    async def get_players_for_season(self, season_id: int) -> list[Player]:
+        """Return all players for *season_id*, ordered by id (stable)."""
+        stmt = select(Player).where(Player.season_id == season_id).order_by(Player.id)
+        result = await self.session.execute(stmt)
+        return list(result.scalars())
+
     async def get_pending_score_matches(self, season_id: int, before: object) -> list[Match]:
         """Return matches with no score that should have ended (played_at < before)."""
         from src.shared.models.matchday import Matchday
