@@ -112,9 +112,7 @@ async def cmd_download_photos(season_id: int) -> None:
     await _run_with_session(_run)
 
 
-async def cmd_scrape_season_full(
-    season_id: int, start: int | None, end: int | None
-) -> None:
+async def cmd_scrape_season_full(season_id: int, start: int | None, end: int | None) -> None:
     """Re-scrape *season_id* by iterating players (1 HTTP fetch per player).
 
     Use for season-wide audits: ~N times fewer requests than looping
@@ -200,9 +198,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_full.add_argument(
         "--start", type=int, default=None, help="First matchday number (inclusive)"
     )
-    p_full.add_argument(
-        "--end", type=int, default=None, help="Last matchday number (inclusive)"
-    )
+    p_full.add_argument("--end", type=int, default=None, help="Last matchday number (inclusive)")
 
     # download-photos
     p_photos = sub.add_parser("download-photos", help="Download player photos as WebP")
