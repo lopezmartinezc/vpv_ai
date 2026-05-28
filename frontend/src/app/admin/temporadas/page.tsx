@@ -1004,18 +1004,20 @@ export default function AdminTemporadasPage() {
                     className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
                   />
                 </div>
-                <div>
-                  <label className="mb-1 block text-xs text-vpv-text-muted">
-                    Jornada invierno
-                  </label>
-                  <input
-                    type="number"
-                    value={editMatchdayWinter}
-                    onChange={(e) => setEditMatchdayWinter(e.target.value)}
-                    placeholder="—"
-                    className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
-                  />
-                </div>
+                {season.kind !== "tournament" && (
+                  <div>
+                    <label className="mb-1 block text-xs text-vpv-text-muted">
+                      Jornada invierno
+                    </label>
+                    <input
+                      type="number"
+                      value={editMatchdayWinter}
+                      onChange={(e) => setEditMatchdayWinter(e.target.value)}
+                      placeholder="—"
+                      className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+                    />
+                  </div>
+                )}
                 <div>
                   <label className="mb-1 block text-xs text-vpv-text-muted">
                     Deadline (min)
@@ -1223,22 +1225,24 @@ export default function AdminTemporadasPage() {
                     <span className="text-xs text-vpv-text-muted">EUR</span>
                   </div>
                 </div>
-                <div>
-                  <label className="mb-1 block text-xs text-vpv-text-muted">
-                    Coste cambio draft invierno
-                  </label>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={editWinterDraft}
-                      onChange={(e) => setEditWinterDraft(e.target.value)}
-                      placeholder="0.00"
-                      className="w-24 rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
-                    />
-                    <span className="text-xs text-vpv-text-muted">EUR</span>
+                {season.kind !== "tournament" && (
+                  <div>
+                    <label className="mb-1 block text-xs text-vpv-text-muted">
+                      Coste cambio draft invierno
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={editWinterDraft}
+                        onChange={(e) => setEditWinterDraft(e.target.value)}
+                        placeholder="0.00"
+                        className="w-24 rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+                      />
+                      <span className="text-xs text-vpv-text-muted">EUR</span>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
               <button
                 onClick={handleSaveFees}

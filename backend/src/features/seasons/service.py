@@ -142,6 +142,16 @@ class SeasonService:
         if status and status not in valid_statuses:
             raise BusinessRuleError(f"Estado invalido: {status}")
 
+        # Block matchday_winter writes for tournament seasons — they have no
+        # winter draft. The frontend hides the input but a stray API call
+        # could still set a non-null value, which would mislead future code.
+        if kwargs.get("matchday_winter") is not None:
+            current = await self.get_season(season_id)
+            if current.kind == "tournament":
+                raise BusinessRuleError(
+                    "matchday_winter no aplica a torneos (sin draft de invierno)"
+                )
+
         season = await self.repo.update_season(season_id, **kwargs)
         if season is None:
             raise NotFoundError("Season", season_id)
@@ -185,10 +195,17 @@ class SeasonService:
         amount: Decimal,
         description: str | None,
     ) -> SeasonPaymentResponse:
-        await self.get_season(season_id)
+        season = await self.get_season(season_id)
         valid_types = {"initial_fee", "weekly_position", "winter_draft_change", "prize"}
         if payment_type not in valid_types:
             raise BusinessRuleError(f"Tipo de pago invalido: {payment_type}")
+        # Tournament seasons don't have a winter draft, so the change fee
+        # doesn't apply. Block writes from the API as a safety net for the
+        # frontend (which already hides the input for tournaments).
+        if payment_type == "winter_draft_change" and season.kind == "tournament":
+            raise BusinessRuleError(
+                "El draft de invierno no aplica a torneos cortos (Mundial, Eurocopa, ...)"
+            )
         payment = await self.repo.upsert_payment(
             season_id,
             payment_type,
