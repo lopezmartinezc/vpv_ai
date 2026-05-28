@@ -8,15 +8,28 @@ from __future__ import annotations
 
 import unicodedata
 
+# Black flag + tag sequences for UK subdivisions (England, Scotland, Wales).
+# Built with U+1F3F4 (waving black flag) + tag chars for the ISO 3166-2 code,
+# terminated by U+E007F. Telegram and modern OSes render them as the proper
+# regional flag.
+_UK_SUBDIVISION_EMOJI: dict[str, str] = {
+    "gb-eng": "\U0001f3f4\U000e0067\U000e0062\U000e0065\U000e006e\U000e0067\U000e007f",
+    "gb-sct": "\U0001f3f4\U000e0067\U000e0062\U000e0073\U000e0063\U000e0074\U000e007f",
+    "gb-wls": "\U0001f3f4\U000e0067\U000e0062\U000e0077\U000e006c\U000e0073\U000e007f",
+}
+
 
 def _to_emoji(code: str) -> str:
     """Convert an ISO 3166-1 alpha-2 code to a regional indicator flag emoji.
 
-    Example: 'ar' -> '🇦🇷'. For special codes with hyphen (gb-eng, etc.) we
-    cannot represent them as emoji; return the white flag fallback.
+    Example: 'ar' -> '🇦🇷'. Subdivisions of GB (England/Scotland/Wales) use
+    the black-flag + tag-sequence emoji. Returns empty string for unknown
+    codes; callers decide whether to render a fallback.
     """
+    if code in _UK_SUBDIVISION_EMOJI:
+        return _UK_SUBDIVISION_EMOJI[code]
     if "-" in code or len(code) != 2:
-        return "🏳️"
+        return ""
     return "".join(chr(0x1F1E6 + (ord(c) - ord("a"))) for c in code.lower())
 
 
@@ -48,6 +61,12 @@ _COUNTRY_MAP: dict[str, str] = {
     "belgica": "be",
     "italia": "it",
     "inglaterra": "gb-eng",
+    "escocia": "gb-sct",
+    "gales": "gb-wls",
+    "reino unido": "gb",
+    "uk": "gb",
+    "gran bretana": "gb",
+    "irlanda del norte": "gb",
     "suiza": "ch",
     "croacia": "hr",
     "polonia": "pl",
@@ -158,10 +177,14 @@ def _normalize(value: str) -> str:
 
 
 def flag_emoji_for(team_name: str | None) -> str:
-    """Return the emoji flag for a country team name, or the white flag fallback."""
+    """Return the emoji flag for a country team name, or "" if unmapped.
+
+    Returns empty string for clubs (league teams like "Atlético") or unknown
+    names. Callers decide whether to render a fallback character.
+    """
     if not team_name:
-        return "🏳️"
+        return ""
     iso = _COUNTRY_MAP.get(_normalize(team_name))
     if not iso:
-        return "🏳️"
+        return ""
     return _to_emoji(iso)

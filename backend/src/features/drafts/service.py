@@ -253,9 +253,11 @@ class DraftService:
             round_number=pk.round_number,
             participant_id=pk.participant_id,
             display_name=pk.display_name,
+            player_id=pk.player_id,
             player_name=pk.player_name,
             position=pk.position,
             team_name=pk.team_name,
+            photo_path=pk.photo_path,
         )
 
         # Broadcast to all connected WebSocket clients for this draft
@@ -294,7 +296,13 @@ class DraftService:
         next_pick_number: int,
         next_participant_name: str | None,
     ) -> None:
-        """Best-effort Telegram broadcast of a single draft pick."""
+        """Best-effort Telegram broadcast of a single draft pick.
+
+        Sends a photo with HTML caption when the player has a stored photo;
+        otherwise falls back to a plain text message with the same content.
+        """
+        from pathlib import Path
+
         from src.features.telegram.client import TelegramClient
         from src.shared.country_flags import flag_emoji_for
         from src.shared.models.season import Season
@@ -304,20 +312,41 @@ class DraftService:
             return
 
         flag = flag_emoji_for(pick.team_name)
+        player_line = f"{flag} <b>{pick.player_name}</b>" if flag else f"<b>{pick.player_name}</b>"
         text = (
             f"🟢 <b>Pick #{pick.pick_number}</b> · Ronda {pick.round_number}\n"
-            f"<b>{pick.display_name}</b> eligió: {flag} <b>{pick.player_name}</b> "
+            f"<b>{pick.display_name}</b> eligió: {player_line} "
             f"({pick.position}, {pick.team_name})"
         )
         if next_participant_name:
             text += f"\n\n➡️ Siguiente: <b>{next_participant_name}</b> — Pick #{next_pick_number}"
 
+        # Try to attach the player photo when available on disk.
+        photo_bytes: bytes | None = None
+        if pick.photo_path:
+            backend_root = Path(__file__).resolve().parents[3]
+            photo_file = backend_root / "static" / pick.photo_path
+            if photo_file.exists():
+                try:
+                    photo_bytes = photo_file.read_bytes()
+                except OSError as exc:
+                    logger.warning("Could not read player photo %s: %s", photo_file, exc)
+
         async with TelegramClient() as client:
-            await client.send_message(
-                season.draft_telegram_chat_id,
-                text,
-                message_thread_id=season.draft_telegram_thread_id,
-            )
+            if photo_bytes:
+                await client.send_photo(
+                    season.draft_telegram_chat_id,
+                    photo_bytes,
+                    caption=text,
+                    filename=f"player_{pick.player_id}.webp",
+                    message_thread_id=season.draft_telegram_thread_id,
+                )
+            else:
+                await client.send_message(
+                    season.draft_telegram_chat_id,
+                    text,
+                    message_thread_id=season.draft_telegram_thread_id,
+                )
 
     async def delete_pick(
         self,

@@ -90,9 +90,11 @@ class AddPickResponse(BaseModel):
     round_number: int
     participant_id: int
     display_name: str
+    player_id: int
     player_name: str
     position: str
     team_name: str
+    photo_path: str | None = None
 
 
 class DeletePickResponse(BaseModel):
