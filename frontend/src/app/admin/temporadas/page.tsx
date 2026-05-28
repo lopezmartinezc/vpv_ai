@@ -18,6 +18,7 @@ interface Season {
   scraping_slug: string | null;
   edit_unlocked: boolean;
   kind?: "league" | "tournament";
+  weekly_payments_enabled?: boolean;
   tournament_type?: string | null;
   telegram_chat_id?: string | null;
   telegram_thread_id?: number | null;
@@ -92,6 +93,8 @@ export default function AdminTemporadasPage() {
   // Editable season fields
   const [editStatus, setEditStatus] = useState("");
   const [editName, setEditName] = useState("");
+  const [editWeeklyPaymentsEnabled, setEditWeeklyPaymentsEnabled] =
+    useState(false);
   const [editSlug, setEditSlug] = useState("");
   const [editTelegramChatId, setEditTelegramChatId] = useState("");
   const [editTelegramThreadId, setEditTelegramThreadId] = useState("");
@@ -163,6 +166,9 @@ export default function AdminTemporadasPage() {
       // Populate edit fields
       setEditStatus(detail.status);
       setEditName(detail.name);
+      setEditWeeklyPaymentsEnabled(
+        detail.weekly_payments_enabled ?? detail.kind !== "tournament",
+      );
       setEditSlug(detail.scraping_slug ?? "");
       setEditTelegramChatId(detail.telegram_chat_id ?? "");
       setEditTelegramThreadId(
@@ -209,6 +215,11 @@ export default function AdminTemporadasPage() {
       if (editName.trim() !== season.name) body.name = editName.trim();
       if (editSlug !== (season.scraping_slug ?? ""))
         body.scraping_slug = editSlug || null;
+      const currentWeekly =
+        season.weekly_payments_enabled ?? season.kind !== "tournament";
+      if (editWeeklyPaymentsEnabled !== currentWeekly) {
+        body.weekly_payments_enabled = editWeeklyPaymentsEnabled;
+      }
       if (editTelegramChatId !== (season.telegram_chat_id ?? ""))
         body.telegram_chat_id = editTelegramChatId || null;
       const currentGeneralThreadId =
@@ -942,6 +953,25 @@ export default function AdminTemporadasPage() {
                 </div>
                 <div>
                   <label className="mb-1 block text-xs text-vpv-text-muted">
+                    Pagos semanales por posicion
+                  </label>
+                  <label className="flex items-center gap-2 rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text">
+                    <input
+                      type="checkbox"
+                      checked={editWeeklyPaymentsEnabled}
+                      onChange={(e) =>
+                        setEditWeeklyPaymentsEnabled(e.target.checked)
+                      }
+                    />
+                    <span>
+                      {editWeeklyPaymentsEnabled
+                        ? "Activados"
+                        : "Desactivados"}
+                    </span>
+                  </label>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-vpv-text-muted">
                     Jornada inicial
                   </label>
                   <input
@@ -1220,22 +1250,21 @@ export default function AdminTemporadasPage() {
             </div>
           </div>
 
-          {/* Weekly position payments — N/A para torneos cortos */}
-          {season && season.kind === "tournament" && (
+          {/* Weekly position payments — controlado por season.weekly_payments_enabled */}
+          {season && !season.weekly_payments_enabled && (
             <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
               <div className="border-b border-vpv-border px-4 py-3">
                 <h2 className="font-semibold text-vpv-text">
                   Pagos semanales por posicion
                 </h2>
                 <p className="mt-1 text-xs text-vpv-text-muted">
-                  No aplica a torneos ({season.tournament_type ?? "tournament"}). Los pagos semanales
-                  por puesto se generan jornada a jornada; los torneos cortos usan otros
-                  mecanismos (premios finales).
+                  Desactivados para esta temporada. Activa el toggle de arriba
+                  para configurar pagos por puesto en cada jornada.
                 </p>
               </div>
             </div>
           )}
-          {season && season.kind !== "tournament" && season.total_participants > 0 && (
+          {season && season.weekly_payments_enabled && season.total_participants > 0 && (
             <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
               <div className="border-b border-vpv-border px-4 py-3">
                 <h2 className="font-semibold text-vpv-text">

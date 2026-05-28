@@ -47,6 +47,7 @@ class Season(Base):
     kind: Mapped[str] = mapped_column(String(20), default="league", nullable=False)
     tournament_type: Mapped[str | None] = mapped_column(String(30))
     tournament_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    weekly_payments_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     telegram_chat_id: Mapped[str | None] = mapped_column(String(50))
     telegram_thread_id: Mapped[int | None] = mapped_column(Integer)
     draft_telegram_chat_id: Mapped[str | None] = mapped_column(String(50))

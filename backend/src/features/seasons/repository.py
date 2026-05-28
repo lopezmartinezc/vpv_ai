@@ -265,9 +265,15 @@ class SeasonRepository(BaseRepository[Season]):
         kind: str = "league",
         tournament_type: str | None = None,
         tournament_config: dict[str, Any] | None = None,
+        weekly_payments_enabled: bool | None = None,
         telegram_chat_id: str | None = None,
         telegram_thread_id: int | None = None,
     ) -> Season:
+        # Default per kind: league seasons use the weekly payments mechanic;
+        # tournaments don't unless the caller asks for it.
+        if weekly_payments_enabled is None:
+            weekly_payments_enabled = kind == "league"
+
         season = Season(
             name=name,
             status="setup",
@@ -280,6 +286,7 @@ class SeasonRepository(BaseRepository[Season]):
             kind=kind,
             tournament_type=tournament_type,
             tournament_config=tournament_config,
+            weekly_payments_enabled=weekly_payments_enabled,
             telegram_chat_id=telegram_chat_id,
             telegram_thread_id=telegram_thread_id,
         )

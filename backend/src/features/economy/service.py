@@ -195,9 +195,9 @@ class EconomyService:
         Returns the number of transactions created.
         """
         season = await self.season_repo.get_by_id(season_id)
-        if season is not None and season.kind == "tournament":
+        if season is not None and not season.weekly_payments_enabled:
             logger.debug(
-                "generate_weekly_payments: season_id=%d is a tournament, skip",
+                "generate_weekly_payments: season_id=%d has weekly payments disabled, skip",
                 season_id,
             )
             return 0

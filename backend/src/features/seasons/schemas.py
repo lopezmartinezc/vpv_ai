@@ -38,6 +38,7 @@ class SeasonDetail(BaseModel):
     kind: str = "league"
     tournament_type: str | None = None
     tournament_config: dict[str, Any] | None = None
+    weekly_payments_enabled: bool = False
     telegram_chat_id: str | None = None
     telegram_thread_id: int | None = None
     draft_telegram_chat_id: str | None = None
@@ -95,6 +96,7 @@ class SeasonUpdateRequest(BaseModel):
     draft_pool_size: int | None = None
     scraping_slug: str | None = None
     tournament_config: dict[str, Any] | None = None
+    weekly_payments_enabled: bool | None = None
     telegram_chat_id: str | None = None
     telegram_thread_id: int | None = None
     draft_telegram_chat_id: str | None = None
