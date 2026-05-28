@@ -266,6 +266,7 @@ class SeasonRepository(BaseRepository[Season]):
         tournament_type: str | None = None,
         tournament_config: dict[str, Any] | None = None,
         telegram_chat_id: str | None = None,
+        telegram_thread_id: int | None = None,
     ) -> Season:
         season = Season(
             name=name,
@@ -280,6 +281,7 @@ class SeasonRepository(BaseRepository[Season]):
             tournament_type=tournament_type,
             tournament_config=tournament_config,
             telegram_chat_id=telegram_chat_id,
+            telegram_thread_id=telegram_thread_id,
         )
         self.session.add(season)
         await self.session.flush()

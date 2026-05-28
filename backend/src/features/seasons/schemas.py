@@ -39,6 +39,7 @@ class SeasonDetail(BaseModel):
     tournament_type: str | None = None
     tournament_config: dict[str, Any] | None = None
     telegram_chat_id: str | None = None
+    telegram_thread_id: int | None = None
     draft_telegram_chat_id: str | None = None
     draft_telegram_thread_id: int | None = None
     created_at: datetime
@@ -95,6 +96,7 @@ class SeasonUpdateRequest(BaseModel):
     scraping_slug: str | None = None
     tournament_config: dict[str, Any] | None = None
     telegram_chat_id: str | None = None
+    telegram_thread_id: int | None = None
     draft_telegram_chat_id: str | None = None
     draft_telegram_thread_id: int | None = None
 
@@ -159,6 +161,7 @@ class SeasonInitializeRequest(BaseModel):
     tournament_type: str | None = None
     tournament_config: dict[str, Any] | None = None
     telegram_chat_id: str | None = None
+    telegram_thread_id: int | None = None
 
 
 class SeasonInitializeResponse(BaseModel):

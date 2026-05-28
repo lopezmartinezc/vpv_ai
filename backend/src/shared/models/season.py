@@ -48,6 +48,7 @@ class Season(Base):
     tournament_type: Mapped[str | None] = mapped_column(String(30))
     tournament_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     telegram_chat_id: Mapped[str | None] = mapped_column(String(50))
+    telegram_thread_id: Mapped[int | None] = mapped_column(Integer)
     draft_telegram_chat_id: Mapped[str | None] = mapped_column(String(50))
     draft_telegram_thread_id: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)

@@ -20,6 +20,7 @@ interface Season {
   kind?: "league" | "tournament";
   tournament_type?: string | null;
   telegram_chat_id?: string | null;
+  telegram_thread_id?: number | null;
   draft_telegram_chat_id?: string | null;
   draft_telegram_thread_id?: number | null;
   tournament_config?: Record<string, unknown> | null;
@@ -90,6 +91,7 @@ export default function AdminTemporadasPage() {
   const [editName, setEditName] = useState("");
   const [editSlug, setEditSlug] = useState("");
   const [editTelegramChatId, setEditTelegramChatId] = useState("");
+  const [editTelegramThreadId, setEditTelegramThreadId] = useState("");
   const [editDraftTelegramChatId, setEditDraftTelegramChatId] = useState("");
   const [editDraftTelegramThreadId, setEditDraftTelegramThreadId] = useState("");
   const [editMatchdayCurrent, setEditMatchdayCurrent] = useState("");
@@ -160,6 +162,9 @@ export default function AdminTemporadasPage() {
       setEditName(detail.name);
       setEditSlug(detail.scraping_slug ?? "");
       setEditTelegramChatId(detail.telegram_chat_id ?? "");
+      setEditTelegramThreadId(
+        detail.telegram_thread_id != null ? String(detail.telegram_thread_id) : "",
+      );
       setEditDraftTelegramChatId(detail.draft_telegram_chat_id ?? "");
       setEditDraftTelegramThreadId(
         detail.draft_telegram_thread_id != null ? String(detail.draft_telegram_thread_id) : "",
@@ -203,6 +208,13 @@ export default function AdminTemporadasPage() {
         body.scraping_slug = editSlug || null;
       if (editTelegramChatId !== (season.telegram_chat_id ?? ""))
         body.telegram_chat_id = editTelegramChatId || null;
+      const currentGeneralThreadId =
+        season.telegram_thread_id != null ? String(season.telegram_thread_id) : "";
+      if (editTelegramThreadId !== currentGeneralThreadId) {
+        body.telegram_thread_id = editTelegramThreadId
+          ? Number(editTelegramThreadId)
+          : null;
+      }
       if (editDraftTelegramChatId !== (season.draft_telegram_chat_id ?? ""))
         body.draft_telegram_chat_id = editDraftTelegramChatId || null;
       const currentThreadId =
@@ -836,6 +848,19 @@ export default function AdminTemporadasPage() {
                     value={editTelegramChatId}
                     onChange={(e) => setEditTelegramChatId(e.target.value)}
                     placeholder="(usa el global)"
+                    className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-vpv-text-muted">
+                    Telegram thread ID (alineaciones)
+                  </label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={editTelegramThreadId}
+                    onChange={(e) => setEditTelegramThreadId(e.target.value)}
+                    placeholder="Topic ID (sólo grupos con topics)"
                     className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
                   />
                 </div>

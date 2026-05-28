@@ -17,15 +17,28 @@ logger = logging.getLogger(__name__)
 async def resolve_chat_id(session: AsyncSession, season_id: int | None = None) -> str:
     """Resolve Telegram chat_id with per-season override.
 
-    If ``season_id`` is given and that season has its own ``telegram_chat_id``
-    set, returns it. Otherwise falls back to the global ``TELEGRAM_CHAT_ID``
-    from settings.
+    Kept for backwards compatibility — new code should prefer
+    :func:`resolve_chat_target` which also returns the thread_id.
+    """
+    chat_id, _ = await resolve_chat_target(session, season_id)
+    return chat_id
+
+
+async def resolve_chat_target(
+    session: AsyncSession, season_id: int | None = None
+) -> tuple[str, int | None]:
+    """Resolve (chat_id, thread_id) with per-season override.
+
+    Returns the season-specific Telegram chat + thread when set, otherwise
+    falls back to the global ``TELEGRAM_CHAT_ID`` (with no thread). The
+    thread is only honoured when the season also overrides the chat — a
+    season's ``telegram_thread_id`` is meaningless against the global chat.
     """
     if season_id is not None:
         season = await session.get(Season, season_id)
         if season is not None and season.telegram_chat_id:
-            return season.telegram_chat_id
-    return telegram_settings.telegram_chat_id
+            return season.telegram_chat_id, season.telegram_thread_id
+    return telegram_settings.telegram_chat_id, None
 
 
 _STATIC_DIR = Path(__file__).resolve().parents[3] / "static"
@@ -69,8 +82,8 @@ class TelegramNotifier:
         image_path = _STATIC_DIR / image_rel
         image_path.write_bytes(png_bytes)
 
-        # Send to Telegram — resolve chat_id with per-season override
-        chat_id = await resolve_chat_id(self.repo.session, data.get("season_id"))
+        # Send to Telegram — resolve chat/thread with per-season override
+        chat_id, thread_id = await resolve_chat_target(self.repo.session, data.get("season_id"))
         caption = (
             f"<b>{data['user_display_name']}</b> — "
             f"Jornada {data['matchday_number']} "
@@ -83,6 +96,7 @@ class TelegramNotifier:
                     chat_id=chat_id,
                     photo_bytes=png_bytes,
                     caption=caption,
+                    message_thread_id=thread_id,
                 )
             sent = result.get("ok", False)
         except Exception:
@@ -104,11 +118,13 @@ class TelegramNotifier:
         if not telegram_settings.telegram_enabled:
             return False
 
-        chat_id = await resolve_chat_id(self.repo.session, season_id)
+        chat_id, thread_id = await resolve_chat_target(self.repo.session, season_id)
 
         try:
             async with TelegramClient() as client:
-                result = await client.send_message(chat_id=chat_id, text=text)
+                result = await client.send_message(
+                    chat_id=chat_id, text=text, message_thread_id=thread_id
+                )
             return result.get("ok", False)
         except Exception:
             logger.exception("Failed to send Telegram message")
@@ -127,11 +143,14 @@ class TelegramNotifier:
 
         from src.core.config import settings
 
-        # Try per-season chat first
+        # Try per-season chat first (with its thread); otherwise alerts chat
+        # (no thread) or global default.
+        thread_id: int | None = None
         if season_id is not None:
             season = await self.repo.session.get(Season, season_id)
             if season is not None and season.telegram_chat_id:
                 chat_id = season.telegram_chat_id
+                thread_id = season.telegram_thread_id
             else:
                 chat_id = settings.telegram_alerts_chat_id or telegram_settings.telegram_chat_id
         else:
@@ -139,7 +158,9 @@ class TelegramNotifier:
 
         try:
             async with TelegramClient() as client:
-                result = await client.send_message(chat_id=chat_id, text=text)
+                result = await client.send_message(
+                    chat_id=chat_id, text=text, message_thread_id=thread_id
+                )
             return result.get("ok", False)
         except Exception:
             logger.exception("Failed to send Telegram alert")
