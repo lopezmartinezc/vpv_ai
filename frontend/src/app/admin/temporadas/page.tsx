@@ -83,7 +83,10 @@ export default function AdminTemporadasPage() {
   const [savingRules, setSavingRules] = useState(false);
   const [savingPayments, setSavingPayments] = useState(false);
   const [editedRules, setEditedRules] = useState<Record<number, string>>({});
-  const [editedPayments, setEditedPayments] = useState<Record<number, string>>({});
+  // Key is "id:N" for existing rows or "new:R" (R = position_rank) for rows
+  // that don't yet exist in season_payments — the save handler dispatches
+  // PUT for updates and POST for new rows.
+  const [editedPayments, setEditedPayments] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
 
   // Editable season fields
@@ -323,14 +326,31 @@ export default function AdminTemporadasPage() {
 
   async function handleSavePayments() {
     if (!selectedId) return;
-    const changed = Object.entries(editedPayments)
-      .filter(([id, val]) => {
-        const payment = payments.find((p) => p.id === Number(id));
-        return payment && String(payment.amount) !== val;
-      })
-      .map(([id, val]) => ({ id: Number(id), amount: Number(val) }));
 
-    if (changed.length === 0) {
+    const updates: { id: number; amount: number }[] = [];
+    const creates: { position_rank: number; amount: number }[] = [];
+
+    for (const [key, val] of Object.entries(editedPayments)) {
+      const trimmed = val.trim();
+      if (key.startsWith("id:")) {
+        const id = Number(key.slice(3));
+        const p = payments.find((x) => x.id === id);
+        if (!p) continue;
+        const newAmount = trimmed === "" ? 0 : Number(trimmed);
+        if (Number.isNaN(newAmount)) continue;
+        if (Number(p.amount) !== newAmount) {
+          updates.push({ id, amount: newAmount });
+        }
+      } else if (key.startsWith("new:")) {
+        const rank = Number(key.slice(4));
+        if (trimmed === "") continue;
+        const amount = Number(trimmed);
+        if (Number.isNaN(amount) || amount === 0) continue;
+        creates.push({ position_rank: rank, amount });
+      }
+    }
+
+    if (updates.length === 0 && creates.length === 0) {
       setMessage("Sin cambios en pagos");
       return;
     }
@@ -338,13 +358,30 @@ export default function AdminTemporadasPage() {
     setSavingPayments(true);
     setMessage(null);
     try {
-      const updated = await apiClient.put<SeasonPayment[]>(
-        `/seasons/admin/${selectedId}/payments`,
-        { payments: changed },
+      if (updates.length > 0) {
+        await apiClient.put<SeasonPayment[]>(
+          `/seasons/admin/${selectedId}/payments`,
+          { payments: updates },
+        );
+      }
+      for (const c of creates) {
+        await apiClient.post<SeasonPayment>(
+          `/seasons/admin/${selectedId}/payments`,
+          {
+            payment_type: "weekly_position",
+            position_rank: c.position_rank,
+            amount: c.amount,
+            description: `Posición ${c.position_rank}`,
+          },
+        );
+      }
+      const reloaded = await apiClient.get<SeasonPayment[]>(
+        `/seasons/${selectedId}/payments`,
       );
-      setPayments(updated);
+      setPayments(reloaded);
       setEditedPayments({});
-      setMessage(`${changed.length} pago(s) actualizado(s)`);
+      const total = updates.length + creates.length;
+      setMessage(`${total} pago(s) guardado(s)`);
       setTimeout(() => setMessage(null), 3000);
     } catch {
       setMessage("Error al guardar pagos");
@@ -1184,12 +1221,16 @@ export default function AdminTemporadasPage() {
           </div>
 
           {/* Weekly position payments */}
-          {weeklyPayments.length > 0 && (
+          {season && season.total_participants > 0 && (
             <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
               <div className="border-b border-vpv-border px-4 py-3">
                 <h2 className="font-semibold text-vpv-text">
                   Pagos semanales por posicion
                 </h2>
+                <p className="mt-1 text-xs text-vpv-text-muted">
+                  {season.total_participants} participantes. Deja en blanco las
+                  posiciones que no cobran.
+                </p>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -1201,44 +1242,56 @@ export default function AdminTemporadasPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {weeklyPayments
-                      .sort(
-                        (a, b) =>
-                          (a.position_rank ?? 0) - (b.position_rank ?? 0),
-                      )
-                      .map((p) => (
-                        <tr
-                          key={p.id}
-                          className="border-b border-vpv-border last:border-0 hover:bg-vpv-bg/50"
-                        >
-                          <td className="px-4 py-2 font-medium text-vpv-text">
-                            {p.position_rank !== null
-                              ? `${p.position_rank}°`
-                              : "—"}
-                          </td>
-                          <td className="px-4 py-2 text-vpv-text-muted">
-                            {p.description ?? "—"}
-                          </td>
-                          <td className="px-4 py-2 text-right">
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={
-                                editedPayments[p.id] !== undefined
-                                  ? editedPayments[p.id]
-                                  : String(p.amount)
-                              }
-                              onChange={(e) =>
-                                setEditedPayments((prev) => ({
-                                  ...prev,
-                                  [p.id]: e.target.value,
-                                }))
-                              }
-                              className="w-20 rounded border border-vpv-border bg-vpv-bg px-2 py-1 text-right text-sm text-vpv-text"
-                            />
-                          </td>
-                        </tr>
-                      ))}
+                    {(() => {
+                      const byRank = new Map(
+                        weeklyPayments
+                          .filter((p) => p.position_rank !== null)
+                          .map((p) => [p.position_rank as number, p]),
+                      );
+                      return Array.from(
+                        { length: season.total_participants },
+                        (_, i) => i + 1,
+                      ).map((rank) => {
+                        const existing = byRank.get(rank) ?? null;
+                        const key = existing
+                          ? `id:${existing.id}`
+                          : `new:${rank}`;
+                        const value =
+                          editedPayments[key] !== undefined
+                            ? editedPayments[key]
+                            : existing
+                              ? String(existing.amount)
+                              : "";
+                        return (
+                          <tr
+                            key={key}
+                            className="border-b border-vpv-border last:border-0 hover:bg-vpv-bg/50"
+                          >
+                            <td className="px-4 py-2 font-medium text-vpv-text">
+                              {rank}°
+                            </td>
+                            <td className="px-4 py-2 text-vpv-text-muted">
+                              {existing?.description ?? "—"}
+                            </td>
+                            <td className="px-4 py-2 text-right">
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={value}
+                                placeholder="0"
+                                onChange={(e) =>
+                                  setEditedPayments((prev) => ({
+                                    ...prev,
+                                    [key]: e.target.value,
+                                  }))
+                                }
+                                className="w-20 rounded border border-vpv-border bg-vpv-bg px-2 py-1 text-right text-sm text-vpv-text"
+                              />
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })()}
                   </tbody>
                 </table>
               </div>
