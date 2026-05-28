@@ -189,8 +189,19 @@ class EconomyService:
         """Generate weekly_payment transactions for a matchday.
 
         Idempotent: skips if payments already exist for this matchday.
+        Tournament seasons (Mundial, Eurocopa, Copa América) don't use
+        weekly position payments — the function short-circuits.
+
         Returns the number of transactions created.
         """
+        season = await self.season_repo.get_by_id(season_id)
+        if season is not None and season.kind == "tournament":
+            logger.debug(
+                "generate_weekly_payments: season_id=%d is a tournament, skip",
+                season_id,
+            )
+            return 0
+
         existing = await self.repo.count_weekly_payments(matchday_id)
         if existing > 0:
             logger.debug(

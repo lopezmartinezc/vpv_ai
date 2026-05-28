@@ -1220,8 +1220,22 @@ export default function AdminTemporadasPage() {
             </div>
           </div>
 
-          {/* Weekly position payments */}
-          {season && season.total_participants > 0 && (
+          {/* Weekly position payments — N/A para torneos cortos */}
+          {season && season.kind === "tournament" && (
+            <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
+              <div className="border-b border-vpv-border px-4 py-3">
+                <h2 className="font-semibold text-vpv-text">
+                  Pagos semanales por posicion
+                </h2>
+                <p className="mt-1 text-xs text-vpv-text-muted">
+                  No aplica a torneos ({season.tournament_type ?? "tournament"}). Los pagos semanales
+                  por puesto se generan jornada a jornada; los torneos cortos usan otros
+                  mecanismos (premios finales).
+                </p>
+              </div>
+            </div>
+          )}
+          {season && season.kind !== "tournament" && season.total_participants > 0 && (
             <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
               <div className="border-b border-vpv-border px-4 py-3">
                 <h2 className="font-semibold text-vpv-text">
