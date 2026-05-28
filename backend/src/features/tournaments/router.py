@@ -14,6 +14,8 @@ from src.features.tournaments.schemas import (
     RecalculateResponse,
     TeamGroupBatchUpdate,
     TeamOption,
+    ThirdPlaceAssignmentsRequest,
+    ThirdPlaceAssignmentsResponse,
 )
 from src.features.tournaments.service import TournamentService
 from src.shared.dependencies import (
@@ -45,6 +47,27 @@ async def get_bracket(
     service: TournamentService = Depends(_get_service),
 ) -> BracketResponse:
     return await service.get_bracket(season_id)
+
+
+@router.post(
+    "/third-place-assignments",
+    response_model=ThirdPlaceAssignmentsResponse,
+)
+async def third_place_assignments(
+    body: ThirdPlaceAssignmentsRequest,
+) -> ThirdPlaceAssignmentsResponse:
+    """Resolve which 3rd-of-group placeholder feeds each R32 placeholder match.
+
+    Stateless — uses the FIFA WC 2026 Annex C lookup table. Returns
+    ``assignments=None`` if the 8 groups don't match any valid row.
+    """
+    from src.features.tournaments.data.third_place_lookup import (
+        resolve_third_place_assignments,
+    )
+
+    groups = [g.upper() for g in body.groups]
+    mapping = resolve_third_place_assignments(set(groups))
+    return ThirdPlaceAssignmentsResponse(groups=groups, assignments=mapping)
 
 
 @router.get("/{season_id}/predictions/status", response_model=PredictionsStatusResponse)

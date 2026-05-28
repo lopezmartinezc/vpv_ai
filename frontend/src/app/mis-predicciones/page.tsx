@@ -587,23 +587,66 @@ function StepEliminatoria({
   const matchWinners = form.bracket_predictions?.match_winners ?? {};
   const groupLetters = Object.keys(teamsByGroup).sort();
 
+  // FIFA WC 2026 Annex C: when the user has chosen the 8 advancing groups,
+  // ask the backend which 3rd-of-group placeholder feeds each R32 match.
+  // While bestThirds.size !== 8 the mapping is null and we fall back to the
+  // "pick any candidate" combo behaviour.
+  const [thirdPlaceMapping, setThirdPlaceMapping] = useState<
+    Record<string, string> | null
+  >(null);
+  const bestThirdsKey = [...bestThirds].sort().join(",");
+
+  useEffect(() => {
+    let cancelled = false;
+    if (bestThirds.size !== 8) {
+      setThirdPlaceMapping(null);
+      return;
+    }
+    (async () => {
+      try {
+        const res = await apiClient.post<{
+          groups: string[];
+          assignments: Record<string, string> | null;
+        }>("/tournaments/third-place-assignments", {
+          groups: [...bestThirds],
+        });
+        if (!cancelled) setThirdPlaceMapping(res.assignments ?? null);
+      } catch {
+        if (!cancelled) setThirdPlaceMapping(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bestThirdsKey]);
+
   function pickMatchWinner(code: string, teamId: number | null) {
     updateBracket({ match_winners: { ...matchWinners, [code]: teamId } });
   }
 
-  // Resolve the candidate teams for a placeholder (1A, 2B, 3:ABCDF, Wxx, Lxx)
-  function resolveCandidates(placeholder: string | null | undefined): TeamOption[] {
+  // Resolve the candidate teams for a placeholder (1A, 2B, 3A, 3:ABCDF, Wxx, Lxx).
+  // When matchCode is passed AND we have a third-place mapping, "3:XYZ" collapses
+  // to a single fixed team according to the FIFA Annex C lookup.
+  function resolveCandidates(
+    placeholder: string | null | undefined,
+    matchCode?: string | null,
+  ): TeamOption[] {
     if (!placeholder) return [];
-    // "1A" -> position 0 of group A; "2A" -> position 1
-    if (/^[12][A-Z]$/.test(placeholder)) {
+    // "1A" -> position 0; "2A" -> 1; "3A" -> 2 (used by the resolved mapping)
+    if (/^[1-3][A-Z]$/.test(placeholder)) {
       const pos = Number(placeholder[0]) - 1;
       const letter = placeholder[1];
       const id = groupOrders[letter]?.[pos];
       if (id) return teamsById[id] ? [teamsById[id]] : [];
       return [];
     }
-    // "3:ABCDF" -> any of the best-third teams from groups that the user picked as advancing
+    // "3:ABCDF" -> any of the best-third teams from advancing groups.
+    // If we already know the FIFA assignment for this match, collapse to one.
     if (placeholder.startsWith("3:")) {
+      if (matchCode && thirdPlaceMapping?.[matchCode]) {
+        return resolveCandidates(thirdPlaceMapping[matchCode]);
+      }
       const candidateLetters = placeholder.slice(2).split("");
       const advancing = candidateLetters.filter((l) => bestThirds.has(l));
       return advancing
@@ -627,8 +670,8 @@ function StepEliminatoria({
         .flatMap((r) => r.matches)
         .find((m) => m.match_code === code);
       if (!otherMatch) return [];
-      const home = resolveCandidates(otherMatch.home_placeholder);
-      const away = resolveCandidates(otherMatch.away_placeholder);
+      const home = resolveCandidates(otherMatch.home_placeholder, code);
+      const away = resolveCandidates(otherMatch.away_placeholder, code);
       const both = [...home, ...away];
       // Loser = the candidate that is NOT the winner
       return both.filter((t) => t.id !== winner);
@@ -684,7 +727,10 @@ type MatchByCode = Record<string, import("@/types").BracketMatch>;
 
 interface InteractiveBracketProps {
   bracket: BracketResponse;
-  resolveCandidates: (placeholder: string | null | undefined) => TeamOption[];
+  resolveCandidates: (
+    placeholder: string | null | undefined,
+    matchCode?: string | null,
+  ) => TeamOption[];
   matchWinners: Record<string, number | null>;
   onPick: (code: string, teamId: number | null) => void;
   disabled?: boolean;
@@ -946,7 +992,10 @@ function InteractiveMatchCard({
   disabled,
 }: {
   match: BracketResponse["rounds"][number]["matches"][number];
-  resolveCandidates: (placeholder: string | null | undefined) => TeamOption[];
+  resolveCandidates: (
+    placeholder: string | null | undefined,
+    matchCode?: string | null,
+  ) => TeamOption[];
   winner: number | null;
   onPick: (code: string, teamId: number | null) => void;
   noFrame?: boolean;
@@ -954,8 +1003,8 @@ function InteractiveMatchCard({
 }) {
   const code = match.match_code!;
   const codeNum = code.replace(/^M/, "");
-  const homes = resolveCandidates(match.home_placeholder);
-  const aways = resolveCandidates(match.away_placeholder);
+  const homes = resolveCandidates(match.home_placeholder, code);
+  const aways = resolveCandidates(match.away_placeholder, code);
   const homeTeam = homes[0] ?? null;
   const awayTeam = aways[0] ?? null;
   const homeMulti = homes.length > 1;

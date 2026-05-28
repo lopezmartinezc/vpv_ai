@@ -149,3 +149,24 @@ class PredictionsStatusResponse(BaseModel):
     locked: bool
     deadline_at: str | None  # ISO datetime, or null if no first match scheduled
     first_match_at: str | None
+
+
+# --- Third-place assignments (FIFA WC 2026 Annex C) ---
+
+
+class ThirdPlaceAssignmentsRequest(BaseModel):
+    """The 8 group letters whose 3rd-placed team qualifies to the R32."""
+
+    groups: list[str]
+
+
+class ThirdPlaceAssignmentsResponse(BaseModel):
+    """Deterministic mapping from R32 match_code to the 3-of-group placeholder.
+
+    Example: ``{"M74": "3A", "M75": "3D", ...}``. When the input groups don't
+    form a valid Annex C row (i.e. not exactly 8 different letters from A..L),
+    ``assignments`` is ``None``.
+    """
+
+    groups: list[str]
+    assignments: dict[str, str] | None
