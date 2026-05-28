@@ -313,7 +313,11 @@ class DraftService:
             text += f"\n\n➡️ Siguiente: <b>{next_participant_name}</b> — Pick #{next_pick_number}"
 
         async with TelegramClient() as client:
-            await client.send_message(season.draft_telegram_chat_id, text)
+            await client.send_message(
+                season.draft_telegram_chat_id,
+                text,
+                message_thread_id=season.draft_telegram_thread_id,
+            )
 
     async def delete_pick(
         self,

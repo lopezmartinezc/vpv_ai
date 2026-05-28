@@ -21,6 +21,7 @@ interface Season {
   tournament_type?: string | null;
   telegram_chat_id?: string | null;
   draft_telegram_chat_id?: string | null;
+  draft_telegram_thread_id?: number | null;
   tournament_config?: Record<string, unknown> | null;
 }
 
@@ -90,6 +91,7 @@ export default function AdminTemporadasPage() {
   const [editSlug, setEditSlug] = useState("");
   const [editTelegramChatId, setEditTelegramChatId] = useState("");
   const [editDraftTelegramChatId, setEditDraftTelegramChatId] = useState("");
+  const [editDraftTelegramThreadId, setEditDraftTelegramThreadId] = useState("");
   const [editMatchdayCurrent, setEditMatchdayCurrent] = useState("");
   const [editMatchdayEnd, setEditMatchdayEnd] = useState("");
   const [editMatchdayWinter, setEditMatchdayWinter] = useState("");
@@ -159,6 +161,9 @@ export default function AdminTemporadasPage() {
       setEditSlug(detail.scraping_slug ?? "");
       setEditTelegramChatId(detail.telegram_chat_id ?? "");
       setEditDraftTelegramChatId(detail.draft_telegram_chat_id ?? "");
+      setEditDraftTelegramThreadId(
+        detail.draft_telegram_thread_id != null ? String(detail.draft_telegram_thread_id) : "",
+      );
       setEditTournamentConfig(
         detail.tournament_config
           ? JSON.stringify(detail.tournament_config, null, 2)
@@ -200,6 +205,15 @@ export default function AdminTemporadasPage() {
         body.telegram_chat_id = editTelegramChatId || null;
       if (editDraftTelegramChatId !== (season.draft_telegram_chat_id ?? ""))
         body.draft_telegram_chat_id = editDraftTelegramChatId || null;
+      const currentThreadId =
+        season.draft_telegram_thread_id != null
+          ? String(season.draft_telegram_thread_id)
+          : "";
+      if (editDraftTelegramThreadId !== currentThreadId) {
+        body.draft_telegram_thread_id = editDraftTelegramThreadId
+          ? Number(editDraftTelegramThreadId)
+          : null;
+      }
 
       // tournament_config is a JSON textarea
       const currentConfigJson = season.tournament_config
@@ -834,6 +848,19 @@ export default function AdminTemporadasPage() {
                     value={editDraftTelegramChatId}
                     onChange={(e) => setEditDraftTelegramChatId(e.target.value)}
                     placeholder="Canal específico del draft (opcional)"
+                    className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-vpv-text-muted">
+                    Telegram thread ID del Draft
+                  </label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={editDraftTelegramThreadId}
+                    onChange={(e) => setEditDraftTelegramThreadId(e.target.value)}
+                    placeholder="Topic ID (sólo grupos con topics)"
                     className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
                   />
                 </div>

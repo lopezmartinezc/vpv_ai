@@ -4,7 +4,16 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Boolean, ForeignKey, Numeric, SmallInteger, String, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    ForeignKey,
+    Integer,
+    Numeric,
+    SmallInteger,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -40,6 +49,7 @@ class Season(Base):
     tournament_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     telegram_chat_id: Mapped[str | None] = mapped_column(String(50))
     draft_telegram_chat_id: Mapped[str | None] = mapped_column(String(50))
+    draft_telegram_thread_id: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
 
     scoring_rules: Mapped[list[ScoringRule]] = relationship(back_populates="season", lazy="raise")
