@@ -43,6 +43,7 @@ class DraftPickEntry(BaseModel):
 
 
 class DraftDetailResponse(BaseModel):
+    id: int
     season_id: int
     phase: str
     draft_type: str

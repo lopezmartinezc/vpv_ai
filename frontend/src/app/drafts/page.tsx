@@ -87,24 +87,36 @@ export default function DraftsPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        {data.drafts.map((draft) => (
-          <Link
-            key={draft.id}
-            href={`/drafts/${draft.phase}`}
-            className="rounded-lg border border-vpv-card-border bg-vpv-card p-5 transition-colors hover:border-vpv-accent"
-          >
-            <h2 className="text-lg font-semibold text-vpv-text">
-              {PHASE_LABELS[draft.phase] ?? draft.phase}
-            </h2>
-            <div className="mt-2 space-y-1 text-sm text-vpv-text-muted">
-              <p>
-                Tipo: {TYPE_LABELS[draft.draft_type] ?? draft.draft_type}
-              </p>
-              <p>Picks: {draft.total_picks}</p>
-              <p className="capitalize">Estado: {draft.status}</p>
+        {data.drafts.map((draft) => {
+          const isLive = draft.status !== "completed";
+          return (
+            <div
+              key={draft.id}
+              className="rounded-lg border border-vpv-card-border bg-vpv-card p-5 transition-colors hover:border-vpv-accent"
+            >
+              <Link href={`/drafts/${draft.phase}`} className="block">
+                <h2 className="text-lg font-semibold text-vpv-text">
+                  {PHASE_LABELS[draft.phase] ?? draft.phase}
+                </h2>
+                <div className="mt-2 space-y-1 text-sm text-vpv-text-muted">
+                  <p>
+                    Tipo: {TYPE_LABELS[draft.draft_type] ?? draft.draft_type}
+                  </p>
+                  <p>Picks: {draft.total_picks}</p>
+                  <p className="capitalize">Estado: {draft.status}</p>
+                </div>
+              </Link>
+              {isLive && (
+                <Link
+                  href={`/drafts/live/${draft.id}`}
+                  className="mt-3 inline-flex items-center gap-2 rounded-lg bg-vpv-accent px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-vpv-accent/80"
+                >
+                  <span aria-hidden>🟢</span> Entrar al draft en vivo
+                </Link>
+              )}
             </div>
-          </Link>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

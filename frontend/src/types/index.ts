@@ -357,6 +357,7 @@ export interface DraftPickEntry {
 }
 
 export interface DraftDetailResponse {
+  id: number;
   season_id: number;
   phase: string;
   draft_type: string;

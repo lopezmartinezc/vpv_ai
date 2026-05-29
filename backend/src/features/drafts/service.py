@@ -107,6 +107,7 @@ class DraftService:
             next_pid = _get_participant_for_pick(next_pick, draft.draft_type, ordered_pids)
 
         return DraftDetailResponse(
+            id=draft.id,
             season_id=season_id,
             phase=draft.phase,
             draft_type=draft.draft_type,

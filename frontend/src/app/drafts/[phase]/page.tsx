@@ -61,6 +61,33 @@ export default function DraftDetailPage() {
         {data.participants.length} participantes
       </p>
 
+      {data.status !== "completed" && (
+        <Link
+          href={`/drafts/live/${data.id}`}
+          className="flex items-center justify-between gap-3 rounded-lg border-2 border-vpv-accent bg-vpv-accent/10 px-4 py-3 transition-colors hover:bg-vpv-accent/20"
+        >
+          <span className="flex items-center gap-2 text-sm font-semibold text-vpv-accent">
+            <span aria-hidden>🟢</span>
+            Draft en vivo
+          </span>
+          <span className="text-xs text-vpv-text-muted">
+            Pick #{data.picks.length + 1}
+            {data.next_participant_id !== null && (
+              <>
+                {" · Turno de "}
+                <span className="font-semibold text-vpv-text">
+                  {
+                    data.participants.find(
+                      (p) => p.participant_id === data.next_participant_id,
+                    )?.display_name
+                  }
+                </span>
+              </>
+            )}
+          </span>
+        </Link>
+      )}
+
       <PicksList picks={data.picks} />
     </div>
   );
