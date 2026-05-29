@@ -52,6 +52,21 @@ async def list_drafts(
     return await service.list_drafts(season_id)
 
 
+@router.get("/{draft_id}/teams", response_model=list[DraftTeamOption])
+async def list_draft_teams(
+    draft_id: int,
+    service: DraftService = Depends(_get_service),
+    _user: dict = Depends(get_current_user),
+) -> list[DraftTeamOption]:
+    """List the teams of the draft's season — used by the search filter.
+
+    Declared before ``/{season_id}/{phase}`` because FastAPI matches by
+    declaration order and that route would otherwise swallow
+    ``/drafts/{id}/teams`` (treating "teams" as the phase).
+    """
+    return await service.list_teams(draft_id)
+
+
 @router.get("/{season_id}/{phase}", response_model=DraftDetailResponse)
 async def get_draft_detail(
     season_id: int,
@@ -149,16 +164,6 @@ async def search_players_for_draft(
     _user: dict = Depends(require_perm(Perm.DRAFT)),
 ) -> PlayerSearchResponse:
     return await service.search_players(draft_id, q, position, team_id)
-
-
-@router.get("/{draft_id}/teams", response_model=list[DraftTeamOption])
-async def list_draft_teams(
-    draft_id: int,
-    service: DraftService = Depends(_get_service),
-    _user: dict = Depends(get_current_user),
-) -> list[DraftTeamOption]:
-    """List the teams of the draft's season — used by the search filter."""
-    return await service.list_teams(draft_id)
 
 
 @router.websocket("/ws/{draft_id}")
