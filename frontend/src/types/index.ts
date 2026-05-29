@@ -396,6 +396,11 @@ export interface PlayerSearchItem {
   is_already_picked: boolean;
 }
 
+export interface DraftTeamOption {
+  id: number;
+  name: string;
+}
+
 export interface PlayerSearchResponse {
   players: PlayerSearchItem[];
 }

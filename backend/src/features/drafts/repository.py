@@ -279,6 +279,12 @@ class DraftRepository:
                 )
             )
 
+    async def list_teams(self, season_id: int) -> list[Team]:
+        """List every team in *season_id*, ordered by name."""
+        stmt = select(Team).where(Team.season_id == season_id).order_by(Team.name)
+        result = await self.session.execute(stmt)
+        return list(result.scalars())
+
     async def get_picked_player_ids(self, draft_id: int) -> set[int]:
         stmt = select(DraftPick.player_id).where(DraftPick.draft_id == draft_id)
         result = await self.session.execute(stmt)

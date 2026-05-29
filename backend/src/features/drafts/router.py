@@ -14,6 +14,7 @@ from src.features.drafts.schemas import (
     DraftDetailResponse,
     DraftListResponse,
     DraftPlayerStatsResponse,
+    DraftTeamOption,
     PlayerSearchResponse,
     ReorderPicksRequest,
     ReorderPicksResponse,
@@ -148,6 +149,16 @@ async def search_players_for_draft(
     _user: dict = Depends(require_perm(Perm.DRAFT)),
 ) -> PlayerSearchResponse:
     return await service.search_players(draft_id, q, position, team_id)
+
+
+@router.get("/{draft_id}/teams", response_model=list[DraftTeamOption])
+async def list_draft_teams(
+    draft_id: int,
+    service: DraftService = Depends(_get_service),
+    _user: dict = Depends(get_current_user),
+) -> list[DraftTeamOption]:
+    """List the teams of the draft's season — used by the search filter."""
+    return await service.list_teams(draft_id)
 
 
 @router.websocket("/ws/{draft_id}")

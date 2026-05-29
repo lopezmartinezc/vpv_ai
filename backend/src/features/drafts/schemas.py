@@ -123,6 +123,13 @@ class PlayerSearchResponse(BaseModel):
     players: list[PlayerSearchItem]
 
 
+class DraftTeamOption(BaseModel):
+    """A team in the draft's season, used by the player-search filter."""
+
+    id: int
+    name: str
+
+
 # ---------------------------------------------------------------------------
 # Admin — live draft player stats
 # ---------------------------------------------------------------------------

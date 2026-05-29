@@ -12,6 +12,7 @@ import type {
   DraftDetailResponse,
   DraftPickEntry,
   DraftPlayerStatsResponse,
+  DraftTeamOption,
 } from "@/types";
 
 interface PlayerSearchItem {
@@ -126,11 +127,15 @@ export default function LiveDraftPage() {
       .catch(() => {});
   }, [isAdmin, draftId]);
 
-  // Build teams list from search results or picks
-  const teams = [...new Set([
-    ...picks.map((p) => p.team_name),
-    ...searchResults.map((p) => p.team_name),
-  ])].sort();
+  // Fetch the season's teams once for the search filter (id + name).
+  const [teamOptions, setTeamOptions] = useState<DraftTeamOption[]>([]);
+  useEffect(() => {
+    if (!draftId) return;
+    apiClient
+      .get<DraftTeamOption[]>(`/drafts/${draftId}/teams`)
+      .then(setTeamOptions)
+      .catch(() => setTeamOptions([]));
+  }, [draftId]);
 
   // WebSocket events
   const handleWsEvent = useCallback(
@@ -410,7 +415,7 @@ export default function LiveDraftPage() {
             setPosFilter={setPosFilter}
             teamFilter={teamFilter}
             setTeamFilter={setTeamFilter}
-            teams={teams}
+            teams={teamOptions}
             autoFocus
           />
           <SearchResults
@@ -446,7 +451,7 @@ export default function LiveDraftPage() {
               setPosFilter={setPosFilter}
               teamFilter={teamFilter}
               setTeamFilter={setTeamFilter}
-              teams={teams}
+              teams={teamOptions}
             />
             <SearchResults
               results={searchResults}
@@ -588,7 +593,7 @@ function SearchFilters({
   setPosFilter: (v: string) => void;
   teamFilter: string;
   setTeamFilter: (v: string) => void;
-  teams: string[];
+  teams: DraftTeamOption[];
   autoFocus?: boolean;
 }) {
   return (
@@ -619,7 +624,7 @@ function SearchFilters({
         >
           <option value="">Equipo</option>
           {teams.map((t) => (
-            <option key={t} value={t}>{t}</option>
+            <option key={t.id} value={String(t.id)}>{t.name}</option>
           ))}
         </select>
       )}

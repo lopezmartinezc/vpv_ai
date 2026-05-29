@@ -33,6 +33,7 @@ import type {
   DraftListResponse,
   DraftParticipant,
   DraftPickEntry,
+  DraftTeamOption,
   PlayerSearchItem,
   PlayerSearchResponse,
 } from "@/types";
@@ -475,13 +476,15 @@ export default function GestionarDraftPage() {
     return () => clearTimeout(handle);
   }, [addSearch, addPosFilter, addTeamFilter, addDraftId]);
 
-  // Derived team list (unique team_names sorted) for the filter dropdown.
-  const addTeamOptions = [
-    ...new Set([
-      ...localPicks.map((p) => p.team_name),
-      ...addResults.map((p) => p.team_name),
-    ]),
-  ].sort();
+  // Team list (id + name) for the filter dropdown. Fetched once per draft.
+  const [addTeamOptions, setAddTeamOptions] = useState<DraftTeamOption[]>([]);
+  useEffect(() => {
+    if (!addDraftId) return;
+    apiClient
+      .get<DraftTeamOption[]>(`/drafts/${addDraftId}/teams`)
+      .then(setAddTeamOptions)
+      .catch(() => setAddTeamOptions([]));
+  }, [addDraftId]);
 
   async function handleAddPick(player: PlayerSearchItem) {
     if (!addDraftId) return;
@@ -820,9 +823,9 @@ export default function GestionarDraftPage() {
                   className="rounded border border-vpv-border bg-vpv-card px-2 py-1.5 text-sm text-vpv-text"
                 >
                   <option value="">Todos equipos</option>
-                  {addTeamOptions.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
+                  {addTeamOptions.map((t) => (
+                    <option key={t.id} value={String(t.id)}>
+                      {t.name}
                     </option>
                   ))}
                 </select>

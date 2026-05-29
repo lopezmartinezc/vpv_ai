@@ -16,6 +16,7 @@ from src.features.drafts.schemas import (
     DraftPickEntry,
     DraftPlayerStatsResponse,
     DraftSummary,
+    DraftTeamOption,
     PlayerDraftStats,
     PlayerSearchItem,
     PlayerSearchResponse,
@@ -431,6 +432,14 @@ class DraftService:
         )
 
         return DeletePickResponse(deleted_pick_number=pick_number)
+
+    async def list_teams(self, draft_id: int) -> list[DraftTeamOption]:
+        """Return the teams of the draft's season for the search filter."""
+        draft = await self.repo.get_draft_by_id(draft_id)
+        if draft is None:
+            raise NotFoundError("Draft", draft_id)
+        teams = await self.repo.list_teams(draft.season_id)
+        return [DraftTeamOption(id=t.id, name=t.name) for t in teams]
 
     async def search_players(
         self,
