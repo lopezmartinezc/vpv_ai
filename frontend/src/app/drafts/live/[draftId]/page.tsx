@@ -197,6 +197,27 @@ export default function LiveDraftPage() {
 
   // Make a pick
   async function handlePick(playerId: number) {
+    // Admins frequently pick on behalf of someone else (when a participant
+    // can't sit at the keyboard, when a typo gets caught mid-search, ...).
+    // A confirm dialog avoids accidental picks in those cases. Regular
+    // participants don't need it — they're picking themselves.
+    if (isAdmin) {
+      const player = searchResults.find((p) => p.id === playerId);
+      const targetParticipant = draft?.participants.find(
+        (p) => p.participant_id === nextParticipantId,
+      );
+      const playerLabel = player
+        ? `${player.display_name} (${player.position}, ${player.team_name})`
+        : `jugador #${playerId}`;
+      const targetLabel = targetParticipant?.display_name ?? "?";
+      if (
+        !window.confirm(
+          `¿Confirmar pick para ${targetLabel}?\n\n${playerLabel}`,
+        )
+      ) {
+        return;
+      }
+    }
     setPicking(true);
     setError(null);
     try {
