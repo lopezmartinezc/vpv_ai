@@ -197,26 +197,24 @@ export default function LiveDraftPage() {
 
   // Make a pick
   async function handlePick(playerId: number) {
-    // Admins frequently pick on behalf of someone else (when a participant
-    // can't sit at the keyboard, when a typo gets caught mid-search, ...).
-    // A confirm dialog avoids accidental picks in those cases. Regular
-    // participants don't need it — they're picking themselves.
-    if (isAdmin) {
-      const player = searchResults.find((p) => p.id === playerId);
-      const targetParticipant = draft?.participants.find(
-        (p) => p.participant_id === nextParticipantId,
-      );
-      const playerLabel = player
-        ? `${player.display_name} (${player.position}, ${player.team_name})`
-        : `jugador #${playerId}`;
-      const targetLabel = targetParticipant?.display_name ?? "?";
-      if (
-        !window.confirm(
-          `¿Confirmar pick para ${targetLabel}?\n\n${playerLabel}`,
-        )
-      ) {
-        return;
-      }
+    // Always confirm before sending the pick: it triggers an irreversible
+    // WS broadcast + Telegram notification. The wording adapts so a
+    // participant picking for themselves sees a shorter message, while an
+    // admin picking on behalf of someone else sees the target name.
+    const player = searchResults.find((p) => p.id === playerId);
+    const targetParticipant = draft?.participants.find(
+      (p) => p.participant_id === nextParticipantId,
+    );
+    const playerLabel = player
+      ? `${player.display_name} (${player.position}, ${player.team_name})`
+      : `jugador #${playerId}`;
+    const pickingForSelf =
+      myParticipantId !== null && nextParticipantId === myParticipantId;
+    const prompt = pickingForSelf
+      ? `¿Confirmar pick?\n\n${playerLabel}`
+      : `¿Confirmar pick para ${targetParticipant?.display_name ?? "?"}?\n\n${playerLabel}`;
+    if (!window.confirm(prompt)) {
+      return;
     }
     setPicking(true);
     setError(null);
