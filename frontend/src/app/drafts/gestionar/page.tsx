@@ -33,6 +33,8 @@ import type {
   DraftListResponse,
   DraftParticipant,
   DraftPickEntry,
+  PlayerSearchItem,
+  PlayerSearchResponse,
 } from "@/types";
 
 const PHASE_LABELS: Record<string, string> = {
@@ -106,6 +108,19 @@ export default function GestionarDraftPage() {
 
   // Participant order (editable copy)
   const [editableParticipants, setEditableParticipants] = useState<DraftParticipant[]>([]);
+
+  // Manual pick add (admin) — search + filters
+  const [addSearch, setAddSearch] = useState("");
+  const [addPosFilter, setAddPosFilter] = useState("");
+  const [addTeamFilter, setAddTeamFilter] = useState("");
+  const [addResults, setAddResults] = useState<PlayerSearchItem[]>([]);
+  const [addSearching, setAddSearching] = useState(false);
+  const [addingPick, setAddingPick] = useState(false);
+  // Target participant for the manual add. When the participant-filter
+  // pill is active, we inherit it; otherwise it's an explicit choice.
+  const [addTargetParticipantId, setAddTargetParticipantId] = useState<
+    number | null
+  >(null);
 
   const isWinter = selectedPhase === "winter";
 
@@ -427,6 +442,81 @@ export default function GestionarDraftPage() {
     setRoundError(null);
   }
 
+  // Effective target for the manual add: if the participant filter is
+  // active, the admin is most likely curating that participant's squad —
+  // pre-select them. Otherwise the admin must pick explicitly.
+  const effectiveAddTarget = filterParticipantId ?? addTargetParticipantId;
+
+  // Debounced search for the manual add panel.
+  const addDraftId = drafts?.drafts.find((d) => d.phase === selectedPhase)?.id;
+  useEffect(() => {
+    if (!addDraftId) return;
+    if (!addSearch.trim() && !addPosFilter && !addTeamFilter) {
+      setAddResults([]);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      setAddSearching(true);
+      try {
+        const params = new URLSearchParams();
+        if (addSearch.trim()) params.set("q", addSearch.trim());
+        if (addPosFilter) params.set("position", addPosFilter);
+        if (addTeamFilter) params.set("team_id", addTeamFilter);
+        const res = await apiClient.get<PlayerSearchResponse>(
+          `/drafts/${addDraftId}/players/search?${params}`,
+        );
+        setAddResults(res.players.filter((p) => !p.is_already_picked));
+      } catch {
+        setAddResults([]);
+      } finally {
+        setAddSearching(false);
+      }
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [addSearch, addPosFilter, addTeamFilter, addDraftId]);
+
+  // Derived team list (unique team_names sorted) for the filter dropdown.
+  const addTeamOptions = [
+    ...new Set([
+      ...localPicks.map((p) => p.team_name),
+      ...addResults.map((p) => p.team_name),
+    ]),
+  ].sort();
+
+  async function handleAddPick(player: PlayerSearchItem) {
+    if (!addDraftId) return;
+    if (!effectiveAddTarget) {
+      setError("Selecciona el participante destino antes de añadir el pick");
+      return;
+    }
+    const target = participants.find(
+      (p) => p.participant_id === effectiveAddTarget,
+    );
+    if (
+      !window.confirm(
+        `¿Añadir ${player.display_name} (${player.position}, ${player.team_name}) a ${target?.display_name ?? "?"}?`,
+      )
+    ) {
+      return;
+    }
+    setAddingPick(true);
+    setError(null);
+    try {
+      await apiClient.post(`/drafts/${addDraftId}/picks`, {
+        player_id: player.id,
+        participant_id: effectiveAddTarget,
+      });
+      await loadDraftDetail();
+      setAddSearch("");
+      setAddResults([]);
+      showSuccess(`Pick añadido: ${player.display_name}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al añadir el pick");
+    } finally {
+      setAddingPick(false);
+    }
+  }
+
   async function handleDeletePick(pick: DraftPickEntry) {
     const draftId = drafts?.drafts.find((d) => d.phase === selectedPhase)?.id;
     if (!draftId) return;
@@ -665,6 +755,140 @@ export default function GestionarDraftPage() {
               );
             })}
           </div>
+
+          {/* Manual add pick — admin only */}
+          <details className="mb-4 rounded-lg border border-vpv-card-border bg-vpv-bg/40 open:bg-vpv-bg">
+            <summary className="cursor-pointer select-none px-4 py-2 text-sm font-semibold text-vpv-text">
+              + Añadir pick
+            </summary>
+            <div className="space-y-3 border-t border-vpv-card-border px-4 py-3">
+              {/* Target participant: inherits the participant pill when active */}
+              {filterParticipantId ? (
+                <p className="text-xs text-vpv-text-muted">
+                  Asignando a{" "}
+                  <span className="font-semibold text-vpv-text">
+                    {participants.find(
+                      (p) => p.participant_id === filterParticipantId,
+                    )?.display_name}
+                  </span>
+                </p>
+              ) : (
+                <label className="flex flex-wrap items-center gap-2 text-xs text-vpv-text-muted">
+                  Para:
+                  <select
+                    value={addTargetParticipantId ?? ""}
+                    onChange={(e) =>
+                      setAddTargetParticipantId(
+                        e.target.value ? Number(e.target.value) : null,
+                      )
+                    }
+                    className="rounded border border-vpv-border bg-vpv-card px-2 py-1.5 text-sm text-vpv-text"
+                  >
+                    <option value="">— elige participante —</option>
+                    {orderedParticipants.map((p) => (
+                      <option key={p.participant_id} value={p.participant_id}>
+                        {p.display_name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {/* Filters: name + position + team */}
+              <div className="flex flex-wrap gap-2">
+                <input
+                  type="text"
+                  value={addSearch}
+                  onChange={(e) => setAddSearch(e.target.value)}
+                  placeholder="Nombre"
+                  className="flex-1 min-w-[160px] rounded border border-vpv-border bg-vpv-card px-2 py-1.5 text-sm text-vpv-text"
+                />
+                <select
+                  value={addPosFilter}
+                  onChange={(e) => setAddPosFilter(e.target.value)}
+                  className="rounded border border-vpv-border bg-vpv-card px-2 py-1.5 text-sm text-vpv-text"
+                >
+                  <option value="">Todas pos.</option>
+                  <option value="POR">POR</option>
+                  <option value="DEF">DEF</option>
+                  <option value="MED">MED</option>
+                  <option value="DEL">DEL</option>
+                </select>
+                <select
+                  value={addTeamFilter}
+                  onChange={(e) => setAddTeamFilter(e.target.value)}
+                  className="rounded border border-vpv-border bg-vpv-card px-2 py-1.5 text-sm text-vpv-text"
+                >
+                  <option value="">Todos equipos</option>
+                  {addTeamOptions.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+                {(addSearch || addPosFilter || addTeamFilter) && (
+                  <button
+                    onClick={() => {
+                      setAddSearch("");
+                      setAddPosFilter("");
+                      setAddTeamFilter("");
+                      setAddResults([]);
+                    }}
+                    className="rounded border border-vpv-border px-2 py-1.5 text-xs text-vpv-text-muted hover:text-vpv-text"
+                  >
+                    Limpiar
+                  </button>
+                )}
+              </div>
+
+              {/* Results */}
+              <div className="space-y-1">
+                {addSearching && (
+                  <p className="py-2 text-center text-xs text-vpv-text-muted">
+                    Buscando…
+                  </p>
+                )}
+                {!addSearching &&
+                  !addSearch &&
+                  !addPosFilter &&
+                  !addTeamFilter && (
+                    <p className="py-2 text-center text-xs text-vpv-text-muted/70">
+                      Escribe un nombre o usa los filtros para buscar
+                    </p>
+                  )}
+                {!addSearching &&
+                  (addSearch || addPosFilter || addTeamFilter) &&
+                  addResults.length === 0 && (
+                    <p className="py-2 text-center text-xs text-vpv-text-muted/70">
+                      Sin resultados disponibles
+                    </p>
+                  )}
+                {addResults.slice(0, 20).map((player) => (
+                  <button
+                    key={player.id}
+                    onClick={() => handleAddPick(player)}
+                    disabled={addingPick || !effectiveAddTarget}
+                    className="flex w-full items-center gap-2 rounded border border-transparent bg-vpv-card px-2 py-1.5 text-left text-sm text-vpv-text transition-colors hover:border-vpv-accent disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <PlayerAvatar
+                      photoPath={player.photo_path}
+                      name={player.display_name}
+                      size={24}
+                    />
+                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${POS_COLORS[player.position] ?? ""}`}>
+                      {player.position}
+                    </span>
+                    <span className="flex-1 truncate font-medium">
+                      {player.display_name}
+                    </span>
+                    <span className="text-xs text-vpv-text-muted">
+                      {player.team_name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </details>
 
           {/* Picks list */}
           {displayPicks.length === 0 ? (
