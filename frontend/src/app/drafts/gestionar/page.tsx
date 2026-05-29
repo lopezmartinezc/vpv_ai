@@ -427,6 +427,28 @@ export default function GestionarDraftPage() {
     setRoundError(null);
   }
 
+  async function handleDeletePick(pick: DraftPickEntry) {
+    const draftId = drafts?.drafts.find((d) => d.phase === selectedPhase)?.id;
+    if (!draftId) return;
+    if (
+      !window.confirm(
+        `¿Eliminar pick #${pick.pick_number} (${pick.player_name} — ${pick.display_name})?`,
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    try {
+      await apiClient.delete(`/drafts/${draftId}/picks/${pick.pick_number}`);
+      // Backend broadcasts pick_deleted over WS to /drafts/live/{id};
+      // here we don't have that subscription, so refetch.
+      await loadDraftDetail();
+      showSuccess(`Pick #${pick.pick_number} eliminado`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al eliminar el pick");
+    }
+  }
+
   function showSuccess(msg: string) {
     setSuccess(msg);
     setTimeout(() => setSuccess(null), 3000);
@@ -763,6 +785,19 @@ export default function GestionarDraftPage() {
                           {pick.display_name}
                         </span>
                       )}
+
+                      {/* Delete pick (admin only — page already gates non-admins) */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeletePick(pick);
+                        }}
+                        title={`Eliminar pick #${pick.pick_number}`}
+                        aria-label={`Eliminar pick #${pick.pick_number}`}
+                        className="ml-1 inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-vpv-text-muted opacity-0 transition-all hover:bg-red-500/15 hover:text-red-500 group-hover:opacity-100"
+                      >
+                        ✕
+                      </button>
 
                       {/* Round: editable in preseason when filtering, read-only otherwise */}
                       {!isWinter && (
