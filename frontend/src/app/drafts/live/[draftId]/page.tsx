@@ -69,12 +69,17 @@ export default function LiveDraftPage() {
   const [adminStats, setAdminStats] = useState<DraftPlayerStatsResponse | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
-  // Find my participant_id by user_id (the display_name fallback was
-  // brittle and broke any time two participants shared a name).
+  // Find my participant_id. Prefer matching by user_id (added in
+  // c1cfd57) — fall back to display_name when the backend/bundle hasn't
+  // shipped the new field yet, so a stale deploy doesn't hide the pick
+  // UI from regular participants.
   const myUserId = user?.id ? Number(user.id) : null;
   const myParticipantId =
     (myUserId !== null &&
       draft?.participants.find((p) => p.user_id === myUserId)?.participant_id) ||
+    (me?.display_name &&
+      draft?.participants.find((p) => p.display_name === me.display_name)
+        ?.participant_id) ||
     null;
 
   const isMyTurn = myParticipantId !== null && nextParticipantId === myParticipantId;
