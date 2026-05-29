@@ -32,6 +32,15 @@ export interface DraftWSEvent {
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
 
 function getWsUrl(draftId: number, token: string): string {
+  // When NEXT_PUBLIC_API_URL is an absolute URL (e.g. on staging where
+  // it's set to "https://new.ligavpv.com/api"), just swap http(s) for
+  // ws(s). Concatenating it to the current origin would duplicate the
+  // host and produce an invalid URL like
+  //   wss://new.ligavpv.comhttps://new.ligavpv.com/api/...
+  if (/^https?:\/\//.test(API_BASE)) {
+    const wsBase = API_BASE.replace(/^http/, "ws");
+    return `${wsBase}/drafts/ws/${draftId}?token=${token}`;
+  }
   const base = typeof window !== "undefined" ? window.location.origin : "";
   const wsProto = base.startsWith("https") ? "wss" : "ws";
   const host = base.replace(/^https?:\/\//, "");
