@@ -113,6 +113,8 @@ class PlayerOption(BaseModel):
     name: str
     team_name: str
     team_id: int
+    position: str | None = None
+    photo_path: str | None = None
 
 
 class TeamGroupAssignment(BaseModel):

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSeason } from "@/contexts/season-context";
 import { useAuth } from "@/contexts/auth-context";
 import { useFetch } from "@/hooks/use-fetch";
@@ -8,6 +8,7 @@ import { apiClient } from "@/lib/api-client";
 import { SkeletonCards } from "@/components/ui/skeleton";
 import { TournamentHero } from "@/components/tournament/tournament-hero";
 import { CountryFlag } from "@/components/ui/country-flag";
+import { PlayerAvatar } from "@/components/ui/player-avatar";
 import { SortableTeamCard } from "@/components/tournament/sortable-team-card";
 import {
   DndContext,
@@ -49,6 +50,8 @@ interface PlayerOption {
   name: string;
   team_name: string;
   team_id: number;
+  position: string | null;
+  photo_path: string | null;
 }
 
 type Step = "generales" | "grupos" | "eliminatoria";
@@ -339,18 +342,13 @@ function StepGenerales({
     for (const t of teams) m[t.id] = t;
     return m;
   }, [teams]);
-  const playersById = useMemo(() => {
-    const m: Record<number, PlayerOption> = {};
-    for (const p of players) m[p.id] = p;
-    return m;
-  }, [players]);
+  // playersById removed — PlayerCombobox iterates the list directly and
+  // exposes the selected entry via its own internal lookup.
 
   const winnerTeam = form.winner_team_id ? teamsById[form.winner_team_id] : null;
   const darkHorseTeam = form.dark_horse_team_id ? teamsById[form.dark_horse_team_id] : null;
-  const topScorer = form.top_scorer_player_id ? playersById[form.top_scorer_player_id] : null;
-  const topScorerTeam = topScorer ? teamsById[topScorer.team_id] : null;
-  const bestPlayer = form.best_player_id ? playersById[form.best_player_id] : null;
-  const bestPlayerTeam = bestPlayer ? teamsById[bestPlayer.team_id] : null;
+  // The two player fields render their team flag/photo inline via PlayerCombobox,
+  // so we no longer need to derive topScorerTeam / bestPlayerTeam here.
 
   return (
     <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
@@ -383,27 +381,22 @@ function StepGenerales({
             ) : null
           }
         />
-        <FormSelect
+        <PlayerCombobox
           label="Maximo goleador"
           value={form.top_scorer_player_id}
-          options={players.map((p) => ({ id: p.id, label: `${p.name} (${p.team_name})` }))}
+          players={players}
+          teamsById={teamsById}
           onChange={(v) => setForm((f) => ({ ...f, top_scorer_player_id: v }))}
-          preview={
-            topScorerTeam ? (
-              <CountryFlag teamName={topScorerTeam.name} fallbackLogo={topScorerTeam.logo_path} size={22} />
-            ) : null
-          }
+          positionsAllowed={["DEL", "MED"]}
+          placeholder="Buscar delantero o medio…"
         />
-        <FormSelect
+        <PlayerCombobox
           label="Mejor jugador"
           value={form.best_player_id}
-          options={players.map((p) => ({ id: p.id, label: `${p.name} (${p.team_name})` }))}
+          players={players}
+          teamsById={teamsById}
           onChange={(v) => setForm((f) => ({ ...f, best_player_id: v }))}
-          preview={
-            bestPlayerTeam ? (
-              <CountryFlag teamName={bestPlayerTeam.name} fallbackLogo={bestPlayerTeam.logo_path} size={22} />
-            ) : null
-          }
+          placeholder="Buscar jugador…"
         />
         <div>
           <label className="mb-1 block text-xs text-vpv-text-muted">Notas (opcional)</label>
@@ -1329,6 +1322,195 @@ function AllPredictionsTable({
 // =============================================================================
 // Small reusable bits
 // =============================================================================
+
+// PlayerCombobox: typeahead search over the prediction's player pool
+// (≈1 200 players for a Mundial). Filters by accent-insensitive name and
+// by VPV position, renders the player's photo + position badge + national
+// flag of the team. Replaces a plain <select> that scrolled forever.
+
+function _norm(value: string): string {
+  return value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+}
+
+const POS_BADGE: Record<string, string> = {
+  POR: "bg-yellow-500/20 text-yellow-300",
+  DEF: "bg-blue-500/20 text-blue-300",
+  MED: "bg-green-500/20 text-green-300",
+  DEL: "bg-red-500/20 text-red-300",
+};
+
+function PlayerCombobox({
+  label,
+  value,
+  players,
+  teamsById,
+  onChange,
+  positionsAllowed,
+  placeholder = "Buscar jugador...",
+}: {
+  label: string;
+  value: number | null;
+  players: PlayerOption[];
+  teamsById: Record<number, TeamOption>;
+  onChange: (v: number | null) => void;
+  // When set, restrict the dropdown to these VPV positions (e.g. ["DEL", "MED"]
+  // for "Máximo goleador"). null/undefined → no restriction.
+  positionsAllowed?: string[] | null;
+  placeholder?: string;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Close the dropdown when clicking outside.
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  const selected = value ? players.find((p) => p.id === value) ?? null : null;
+  const selectedTeam = selected ? teamsById[selected.team_id] ?? null : null;
+
+  const normQuery = _norm(query.trim());
+
+  const filtered = useMemo(() => {
+    const allowed = positionsAllowed?.length
+      ? new Set(positionsAllowed.map((p) => p.toUpperCase()))
+      : null;
+    return players
+      .filter((p) => {
+        if (allowed && (!p.position || !allowed.has(p.position.toUpperCase()))) {
+          return false;
+        }
+        if (!normQuery) return true;
+        return (
+          _norm(p.name).includes(normQuery) ||
+          _norm(p.team_name).includes(normQuery)
+        );
+      })
+      .slice(0, 30);
+  }, [players, normQuery, positionsAllowed]);
+
+  function pick(player: PlayerOption) {
+    onChange(player.id);
+    setQuery("");
+    setOpen(false);
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      <label className="mb-1 block text-xs text-vpv-text-muted">{label}</label>
+      {selected ? (
+        <div className="flex items-center gap-2 rounded border border-vpv-border bg-vpv-bg px-2 py-1.5">
+          <PlayerAvatar
+            photoPath={selected.photo_path}
+            name={selected.name}
+            size={28}
+          />
+          {selected.position && (
+            <span
+              className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${POS_BADGE[selected.position] ?? ""}`}
+            >
+              {selected.position}
+            </span>
+          )}
+          <span className="flex-1 truncate text-sm text-vpv-text">
+            {selected.name}
+          </span>
+          {selectedTeam && (
+            <CountryFlag
+              teamName={selectedTeam.name}
+              fallbackLogo={selectedTeam.logo_path}
+              size={20}
+            />
+          )}
+          <span className="hidden text-xs text-vpv-text-muted sm:inline">
+            {selected.team_name}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              onChange(null);
+              setQuery("");
+            }}
+            className="ml-1 inline-flex h-6 w-6 items-center justify-center rounded text-vpv-text-muted hover:bg-red-500/15 hover:text-red-500"
+            aria-label="Quitar selección"
+          >
+            ✕
+          </button>
+        </div>
+      ) : (
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          placeholder={placeholder}
+          className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+        />
+      )}
+
+      {!selected && open && (
+        <div className="absolute z-30 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-vpv-card-border bg-vpv-card shadow-lg">
+          {filtered.length === 0 ? (
+            <p className="px-3 py-2 text-xs text-vpv-text-muted">
+              Sin resultados
+            </p>
+          ) : (
+            filtered.map((p) => {
+              const team = teamsById[p.team_id];
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => pick(p)}
+                  className="flex w-full items-center gap-2 px-2 py-1.5 text-left transition-colors hover:bg-vpv-bg"
+                >
+                  <PlayerAvatar
+                    photoPath={p.photo_path}
+                    name={p.name}
+                    size={24}
+                  />
+                  {p.position && (
+                    <span
+                      className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${POS_BADGE[p.position] ?? ""}`}
+                    >
+                      {p.position}
+                    </span>
+                  )}
+                  <span className="flex-1 truncate text-sm text-vpv-text">
+                    {p.name}
+                  </span>
+                  {team && (
+                    <CountryFlag
+                      teamName={team.name}
+                      fallbackLogo={team.logo_path}
+                      size={18}
+                    />
+                  )}
+                  <span className="hidden text-xs text-vpv-text-muted md:inline">
+                    {p.team_name}
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function FormSelect({
   label,

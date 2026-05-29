@@ -792,6 +792,8 @@ class TournamentService:
             select(
                 Player.id,
                 Player.display_name,
+                Player.position,
+                Player.photo_path,
                 Team.id.label("team_id"),
                 Team.name.label("team_name"),
             )
@@ -806,6 +808,8 @@ class TournamentService:
                 name=row.display_name,
                 team_id=row.team_id,
                 team_name=row.team_name,
+                position=row.position or None,
+                photo_path=row.photo_path,
             )
             for row in result.all()
         ]
