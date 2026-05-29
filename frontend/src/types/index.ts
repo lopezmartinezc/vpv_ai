@@ -336,6 +336,7 @@ export interface DraftListResponse {
 
 export interface DraftParticipant {
   participant_id: number;
+  user_id: number;
   display_name: string;
   draft_order: number | null;
 }

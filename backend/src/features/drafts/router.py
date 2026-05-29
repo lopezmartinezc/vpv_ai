@@ -23,6 +23,7 @@ from src.features.drafts.service import DraftService
 from src.features.drafts.websocket import draft_ws_manager
 from src.shared.dependencies import (
     get_current_admin,
+    get_current_user,
     get_db,
     require_draft_writable,
     require_perm,
@@ -116,10 +117,16 @@ async def delete_pick(
     draft_id: int,
     pick_number: int,
     service: DraftService = Depends(_get_service),
-    _user: dict = Depends(require_perm(Perm.DRAFT)),
+    user: dict = Depends(get_current_user),
     _writable: dict = Depends(require_draft_writable),
 ) -> DeletePickResponse:
-    return await service.delete_pick(draft_id, pick_number)
+    """Delete a draft pick.
+
+    Authorization is enforced inside the service: admins / DRAFT permission
+    holders can delete any pick; ordinary participants can only delete their
+    own LAST pick (no one else may have picked after them).
+    """
+    return await service.delete_pick(draft_id, pick_number, user)
 
 
 @router.get("/{draft_id}/players/stats", response_model=DraftPlayerStatsResponse)

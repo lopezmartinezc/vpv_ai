@@ -68,13 +68,18 @@ export default function LiveDraftPage() {
   const [adminStats, setAdminStats] = useState<DraftPlayerStatsResponse | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
-  // Find my participant_id
-  const myParticipantId = draft?.participants.find(
-    (p) => me && p.display_name === me.display_name,
-  )?.participant_id ?? null;
+  // Find my participant_id by user_id (the display_name fallback was
+  // brittle and broke any time two participants shared a name).
+  const myUserId = user?.id ? Number(user.id) : null;
+  const myParticipantId =
+    (myUserId !== null &&
+      draft?.participants.find((p) => p.user_id === myUserId)?.participant_id) ||
+    null;
 
   const isMyTurn = myParticipantId !== null && nextParticipantId === myParticipantId;
   const isAdmin = user?.isAdmin ?? false;
+  const hasDraftPerm =
+    isAdmin || (((user?.permissions ?? 0) & 0b1000) !== 0); // bit DRAFT = 8
 
   // Load initial draft state
   useEffect(() => {
@@ -153,6 +158,10 @@ export default function LiveDraftPage() {
         // Clear search results when a pick is made
         setSearchResults([]);
         setSearch("");
+      } else if (event.type === "pick_deleted" && event.pick_number) {
+        const deletedNumber = event.pick_number;
+        setPicks((prev) => prev.filter((p) => p.pick_number !== deletedNumber));
+        setNextParticipantId(event.next_participant_id ?? null);
       }
     },
     [],
@@ -228,6 +237,27 @@ export default function LiveDraftPage() {
       setError(e instanceof Error ? e.message : "Error al hacer pick");
     } finally {
       setPicking(false);
+    }
+  }
+
+  // Delete a pick. Backend validates the rules:
+  //   - admin / DRAFT perm: any pick.
+  //   - regular user: only their own LAST pick.
+  // The UI hides the button when the rules clearly don't allow it.
+  async function handleDeletePick(pick: DraftPickEntry) {
+    if (!draftId) return;
+    if (
+      !window.confirm(
+        `¿Eliminar el pick #${pick.pick_number} (${pick.player_name})?`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await apiClient.delete(`/drafts/${draftId}/picks/${pick.pick_number}`);
+      // WebSocket will broadcast pick_deleted and we'll sync state there.
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al eliminar el pick");
     }
   }
 
@@ -418,7 +448,17 @@ export default function LiveDraftPage() {
           Picks ({picks.length})
         </h2>
         <div className="space-y-1">
-          {[...picks].reverse().map((pick) => (
+          {(() => {
+            const lastPickNumber = picks.length
+              ? Math.max(...picks.map((p) => p.pick_number))
+              : 0;
+            return [...picks].reverse().map((pick) => {
+              const canDelete =
+                hasDraftPerm ||
+                (myParticipantId !== null &&
+                  pick.participant_id === myParticipantId &&
+                  pick.pick_number === lastPickNumber);
+              return (
             <div
               key={pick.id}
               className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-all ${
@@ -452,8 +492,25 @@ export default function LiveDraftPage() {
               <span className="rounded-full bg-vpv-bg px-2 py-0.5 text-[10px] text-vpv-text-muted">
                 {pick.display_name}
               </span>
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={() => handleDeletePick(pick)}
+                  aria-label={`Eliminar pick #${pick.pick_number}`}
+                  title={
+                    hasDraftPerm
+                      ? "Eliminar pick (admin)"
+                      : "Deshacer mi último pick"
+                  }
+                  className="ml-1 inline-flex h-6 w-6 items-center justify-center rounded text-vpv-text-muted transition-colors hover:bg-red-500/15 hover:text-red-500"
+                >
+                  ✕
+                </button>
+              )}
             </div>
-          ))}
+              );
+            });
+          })()}
         </div>
       </div>
 

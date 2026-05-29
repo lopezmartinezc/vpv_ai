@@ -27,6 +27,7 @@ class DraftSummaryRow:
 @dataclass
 class DraftParticipantRow:
     participant_id: int
+    user_id: int
     display_name: str
     draft_order: int | None
 
@@ -109,6 +110,7 @@ class DraftRepository:
         stmt = (
             select(
                 SeasonParticipant.id.label("participant_id"),
+                SeasonParticipant.user_id,
                 User.display_name,
                 SeasonParticipant.draft_order,
             )
@@ -124,6 +126,7 @@ class DraftRepository:
         return [
             DraftParticipantRow(
                 participant_id=row.participant_id,
+                user_id=row.user_id,
                 display_name=row.display_name,
                 draft_order=row.draft_order,
             )

@@ -22,6 +22,7 @@ class DraftListResponse(BaseModel):
 
 class DraftParticipant(BaseModel):
     participant_id: int
+    user_id: int
     display_name: str
     draft_order: int | None
 

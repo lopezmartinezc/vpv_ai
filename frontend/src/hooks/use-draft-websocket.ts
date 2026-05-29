@@ -3,7 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 
 export interface DraftWSEvent {
-  type: "pick_added" | "connected" | "online_count" | "draft_completed";
+  type:
+    | "pick_added"
+    | "pick_deleted"
+    | "connected"
+    | "online_count"
+    | "draft_completed";
   pick?: {
     pick_number: number;
     round_number: number;
@@ -13,6 +18,12 @@ export interface DraftWSEvent {
     position: string;
     team_name: string;
   };
+  // pick_deleted payload
+  pick_number?: number;
+  participant_id?: number;
+  player_id?: number;
+  next_pick_number?: number;
+  // shared
   next_participant_id?: number;
   participants_online?: number;
   draft_id?: number;

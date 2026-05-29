@@ -4,7 +4,7 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.exceptions import BusinessRuleError, NotFoundError
+from src.core.exceptions import AuthorizationError, BusinessRuleError, NotFoundError
 from src.features.drafts.repository import DraftRepository
 from src.features.drafts.schemas import (
     AddPickResponse,
@@ -23,6 +23,7 @@ from src.features.drafts.schemas import (
 )
 from src.features.drafts.websocket import draft_ws_manager
 from src.features.seasons.repository import SeasonRepository
+from src.shared.permissions import Perm
 
 
 def _get_participant_for_pick(
@@ -114,6 +115,7 @@ class DraftService:
             participants=[
                 DraftParticipant(
                     participant_id=p.participant_id,
+                    user_id=p.user_id,
                     display_name=p.display_name,
                     draft_order=p.draft_order,
                 )
@@ -352,16 +354,82 @@ class DraftService:
         self,
         draft_id: int,
         pick_number: int,
+        user: dict,
     ) -> DeletePickResponse:
+        """Delete a draft pick with role-based authorization.
+
+        Allowed callers:
+        * Admin (``is_admin``) or holder of the ``DRAFT`` permission bit:
+          can delete *any* pick.
+        * Otherwise the caller must own the pick AND it must be the last
+          one made in the draft (the "undo my last pick" rule). This
+          prevents a normal user from rewriting history once someone else
+          has picked after them.
+
+        After deleting, broadcasts a ``pick_deleted`` event over the draft
+        WebSocket so connected clients can resync state and turn order.
+        """
         draft = await self.repo.get_draft_by_id(draft_id)
         if draft is None:
             raise NotFoundError("Draft", draft_id)
 
+        picks = await self.repo.get_picks(draft_id)
+        target = next((p for p in picks if p.pick_number == pick_number), None)
+        if target is None:
+            raise NotFoundError("Pick", pick_number)
+
+        is_privileged = bool(user.get("is_admin")) or bool(
+            (user.get("permissions") or 0) & Perm.DRAFT
+        )
+        if not is_privileged:
+            try:
+                caller_user_id = int(user.get("sub") or 0)
+            except (TypeError, ValueError):
+                caller_user_id = 0
+
+            participants = await self.repo.get_participants(draft.season_id)
+            caller_participant_id = next(
+                (p.participant_id for p in participants if p.user_id == caller_user_id),
+                None,
+            )
+            if caller_participant_id is None:
+                raise AuthorizationError("No participas en esta temporada")
+            if target.participant_id != caller_participant_id:
+                raise AuthorizationError("Solo puedes eliminar tus propios picks")
+            last_pick_number = max(p.pick_number for p in picks)
+            if pick_number != last_pick_number:
+                raise AuthorizationError(
+                    "Solo puedes eliminar tu último pick mientras nadie haya fichado después"
+                )
+
         deleted = await self.repo.delete_pick(draft_id, pick_number)
         if not deleted:
             raise NotFoundError("Pick", pick_number)
-
         await self.repo.session.commit()
+
+        # Recompute the "next participant" so connected clients can show the
+        # correct turn after the undo.
+        participants = await self.repo.get_participants(draft.season_id)
+        ordered_pids = [
+            p.participant_id for p in sorted(participants, key=lambda x: x.draft_order or 999)
+        ]
+        next_pid = (
+            _get_participant_for_pick(pick_number, draft.draft_type, ordered_pids)
+            if ordered_pids
+            else None
+        )
+        await draft_ws_manager.broadcast(
+            draft_id,
+            {
+                "type": "pick_deleted",
+                "pick_number": pick_number,
+                "participant_id": target.participant_id,
+                "player_id": target.player_id,
+                "next_participant_id": next_pid,
+                "next_pick_number": pick_number,
+            },
+        )
+
         return DeletePickResponse(deleted_pick_number=pick_number)
 
     async def search_players(
