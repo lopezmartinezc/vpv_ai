@@ -999,7 +999,7 @@ class ScrapingService:
         async with ScrapingClient() as client:
             for team in teams:
                 teams_visited += 1
-                roster_url = f"{base_url}/{prefix}/equipos/{team.slug}"
+                roster_url = f"{base_url}/{prefix}/equipos/{team.slug}/plantilla"
                 try:
                     roster_html = await client.fetch(roster_url)
                 except ScrapingError as exc:
@@ -1102,18 +1102,21 @@ class ScrapingService:
 
             # 3. Fetch each team's roster and create Player rows.
             # Since the 2026-05 redesign, both Liga and tournaments use the
-            # same URL pattern: {base}/{prefix}/equipos/{team_slug}, with
-            # the prefix coming from competition_url_prefix (laliga,
-            # world-cup, eurocopa, ...). The roster page no longer exposes
-            # the position; players are created with position='' and the
-            # value is filled later by PhotoDownloader, which fetches each
-            # player's own page anyway to grab the photo.
+            # same URL pattern: {base}/{prefix}/equipos/{team_slug}/plantilla,
+            # with the prefix coming from competition_url_prefix (laliga,
+            # world-cup, eurocopa, ...). The trailing /plantilla is needed
+            # — the bare /equipos/{slug} URL only renders a partial preview
+            # (starters/most-known players); /plantilla returns the full
+            # ~26-man roster. The roster page no longer exposes position;
+            # players are created with position='' and the value is filled
+            # later by PhotoDownloader, which fetches each player's own
+            # page anyway to grab the photo.
             roster_prefix = competition_url_prefix(
                 season_for_url.kind, season_for_url.tournament_type
             )
             for td in team_data_list:
                 team_id = team_slug_to_id[td.slug]
-                roster_url = f"{base_url}/{roster_prefix}/equipos/{td.slug}"
+                roster_url = f"{base_url}/{roster_prefix}/equipos/{td.slug}/plantilla"
                 try:
                     roster_html = await client.fetch(roster_url)
                 except ScrapingError as exc:
