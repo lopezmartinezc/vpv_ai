@@ -126,6 +126,21 @@ async def cmd_scrape_season_full(season_id: int, start: int | None, end: int | N
     await _run_with_session(_run)
 
 
+async def cmd_import_rosters(season_id: int) -> None:
+    """Fetch every existing team's roster page and create missing players.
+
+    Use when the initial ``initialize`` of a season created the team rows but
+    failed to populate ``players`` (typical when the parser was broken). Safe
+    to re-run: existing slugs are skipped via ``uq_player_slug``.
+    """
+
+    async def _run(session: AsyncSession) -> dict:
+        service = ScrapingService(session)
+        return await service.import_rosters_only(season_id)
+
+    await _run_with_session(_run)
+
+
 async def cmd_scrape_current() -> None:
     """Scrape the current matchday for the active season.
 
@@ -204,6 +219,13 @@ def _build_parser() -> argparse.ArgumentParser:
     p_photos = sub.add_parser("download-photos", help="Download player photos as WebP")
     p_photos.add_argument("season_id", type=int, help="Season primary-key ID")
 
+    # import-rosters
+    p_rosters = sub.add_parser(
+        "import-rosters",
+        help="Fetch each team's roster and create missing players (idempotent)",
+    )
+    p_rosters.add_argument("season_id", type=int, help="Season primary-key ID")
+
     return parser
 
 
@@ -243,6 +265,9 @@ def main() -> None:
 
     elif command == "scrape-season-full":
         asyncio.run(cmd_scrape_season_full(args.season_id, args.start, args.end))
+
+    elif command == "import-rosters":
+        asyncio.run(cmd_import_rosters(args.season_id))
 
     elif command == "download-photos":
         asyncio.run(cmd_download_photos(args.season_id))

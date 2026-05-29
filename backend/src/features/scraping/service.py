@@ -962,6 +962,97 @@ class ScrapingService:
         "DEL": "DEL",
     }
 
+    async def import_rosters_only(self, season_id: int) -> dict[str, int]:
+        """Re-fetch every team's roster and create missing Player rows.
+
+        Useful when the initial ``import_teams_and_players`` run created the
+        Team rows but failed to populate players (e.g. because the
+        ``parse_roster`` selector was broken at the time). Idempotent: a
+        unique constraint on ``(season_id, slug)`` skips already-imported
+        players via ``create_player``.
+
+        Returns ``{"players_added": N, "teams_visited": M, "errors": K}``.
+        """
+        season = await self.repo.get_season(season_id)
+        if season is None:
+            return {"players_added": 0, "teams_visited": 0, "errors": 1}
+
+        teams = await self.repo.get_teams_by_season(season_id)
+        if not teams:
+            logger.warning(
+                "import_rosters_only: season_id=%d has no teams — run import first",
+                season_id,
+            )
+            return {"players_added": 0, "teams_visited": 0, "errors": 0}
+
+        # Skip slugs already present in DB to keep the command idempotent —
+        # `players.uq_player_slug` would otherwise blow up on re-run.
+        existing_slugs = set((await self.repo.get_players_by_slug(season_id)).keys())
+
+        base_url = self._settings.scraping_base_url
+        prefix = competition_url_prefix(season.kind, season.tournament_type)
+
+        players_added = 0
+        teams_visited = 0
+        errors = 0
+
+        async with ScrapingClient() as client:
+            for team in teams:
+                teams_visited += 1
+                roster_url = f"{base_url}/{prefix}/equipos/{team.slug}"
+                try:
+                    roster_html = await client.fetch(roster_url)
+                except ScrapingError as exc:
+                    logger.warning(
+                        "import_rosters_only: roster fetch failed for %s: %s",
+                        team.slug,
+                        exc,
+                    )
+                    errors += 1
+                    continue
+
+                roster = parse_roster(roster_html)
+                if not roster:
+                    logger.info(
+                        "import_rosters_only: %s — no players found (squad not published yet)",
+                        team.name,
+                    )
+                    continue
+
+                added_for_team = 0
+                for player_data in roster:
+                    if player_data.slug in existing_slugs:
+                        continue
+                    position = self._POSITION_MAP.get(player_data.position, player_data.position)
+                    display_name = (
+                        player_data.display_name or player_data.slug.replace("-", " ").title()
+                    )
+                    await self.repo.create_player(
+                        season_id=season_id,
+                        team_id=team.id,
+                        name=display_name,
+                        display_name=display_name,
+                        slug=player_data.slug,
+                        position=position,
+                    )
+                    existing_slugs.add(player_data.slug)
+                    added_for_team += 1
+                    players_added += 1
+
+                logger.info(
+                    "import_rosters_only: %s → +%d players (roster size=%d)",
+                    team.name,
+                    added_for_team,
+                    len(roster),
+                )
+
+        await self.session.flush()
+        return {
+            "players_added": players_added,
+            "teams_visited": teams_visited,
+            "errors": errors,
+        }
+
     async def import_teams_and_players(self, season_id: int, season_slug: str) -> dict[str, int]:
         """Scrape teams from homepage, each team's roster, and the calendar.
 
