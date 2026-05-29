@@ -418,6 +418,29 @@ class ScrapingRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars())
 
+    async def get_players_to_enrich(self, season_id: int) -> list[Player]:
+        """Return players for *season_id* missing either ``photo_path`` or ``position``.
+
+        Used by :class:`PhotoDownloader` to perform both enrichments in a
+        single pass over the player's individual page.
+        """
+        from sqlalchemy import or_
+
+        stmt = (
+            select(Player)
+            .where(
+                Player.season_id == season_id,
+                or_(
+                    Player.photo_path.is_(None),
+                    Player.position.is_(None),
+                    Player.position == "",
+                ),
+            )
+            .order_by(Player.id)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars())
+
     async def update_player_photo(self, player_id: int, photo_path: str, source_url: str) -> None:
         """Set ``photo_path`` and ``source_url`` for a player."""
         stmt = (
@@ -427,6 +450,12 @@ class ScrapingRepository:
         )
         await self.session.execute(stmt)
         logger.debug("update_player_photo: player_id=%d path=%s", player_id, photo_path)
+
+    async def update_player_position(self, player_id: int, position: str) -> None:
+        """Set ``position`` for a player (used when enriching from /jugadores/{slug})."""
+        stmt = update(Player).where(Player.id == player_id).values(position=position)
+        await self.session.execute(stmt)
+        logger.debug("update_player_position: player_id=%d position=%s", player_id, position)
 
     # ------------------------------------------------------------------
     # Match CRC (per-match change detection)

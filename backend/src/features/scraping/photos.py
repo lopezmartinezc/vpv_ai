@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.scraping.client import ScrapingClient, ScrapingError
 from src.features.scraping.config import scraping_settings
-from src.features.scraping.parsers import parse_player_photo
+from src.features.scraping.parsers import parse_player_photo, parse_player_position
 from src.features.scraping.repository import ScrapingRepository
 
 logger = logging.getLogger(__name__)
@@ -37,27 +37,36 @@ class PhotoDownloader:
         self._settings = scraping_settings
 
     async def download_all(self, season_id: int) -> dict[str, int]:
-        """Download photos for every player in *season_id* that lacks one.
+        """Enrich every player in *season_id* that lacks a photo or a position.
 
-        If the WebP file already exists on disk (e.g. from a previous migration),
-        the DB record is updated without re-downloading.
+        For each candidate, fetch the individual ``/jugadores/{slug}`` page and:
+        1. Update ``players.position`` if it was missing.
+        2. Resolve the photo URL (`parse_player_photo`), download the image,
+           resize to 200x200 WebP, save under ``static/players/{slug}.webp``
+           and update ``players.photo_path``.
 
-        Returns a summary dict with keys ``downloaded``, ``skipped``, ``errors``,
-        ``restored``.
+        Files already on disk are restored to the DB without a re-download.
+
+        Returns a summary dict with keys ``downloaded``, ``positions_set``,
+        ``skipped``, ``errors``, ``restored``.
         """
         _PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
 
-        players = await self.repo.get_players_without_photo(season_id)
-        logger.info("PhotoDownloader: %d players without photo", len(players))
+        players = await self.repo.get_players_to_enrich(season_id)
+        logger.info("PhotoDownloader: %d players to enrich", len(players))
 
         downloaded = 0
+        positions_set = 0
         skipped = 0
         errors = 0
         restored = 0
 
-        # Restore photo_path for players whose file already exists on disk
-        remaining = []
+        # Restore photo_path for players whose WebP already exists on disk —
+        # they still need an HTTP fetch if the position is missing, so we
+        # don't drop them from the queue yet.
         for player in players:
+            if player.photo_path:
+                continue
             existing = _PHOTOS_DIR / f"{player.slug}.webp"
             if existing.exists():
                 relative_path = f"players/{player.slug}.webp"
@@ -66,31 +75,24 @@ class PhotoDownloader:
                     photo_path=relative_path,
                     source_url="",
                 )
+                player.photo_path = relative_path
                 restored += 1
-            else:
-                remaining.append(player)
-
         if restored:
             await self.session.commit()
             logger.info("PhotoDownloader: restored %d photos from disk", restored)
 
-        players = remaining
+        # Re-filter after restore — players whose only need was the photo and
+        # had it on disk no longer require the HTTP fetch.
+        players = [p for p in players if not p.photo_path or not p.position]
 
         base_url = self._settings.scraping_base_url
-        # Use season-specific slug from DB, fall back to .env
-        season = await self.repo.get_season(season_id)
-        season_slug = (
-            season.scraping_slug
-            if season and season.scraping_slug
-            else self._settings.scraping_season_slug
-        )
 
         async with ScrapingClient() as client:
             total = len(players)
             for idx, player in enumerate(players, start=1):
                 logger.info("PhotoDownloader: %d/%d slug=%s", idx, total, player.slug)
 
-                page_url = f"{base_url}/jugadores/{player.slug}/{season_slug}"
+                page_url = f"{base_url}/jugadores/{player.slug}"
                 try:
                     html = await client.fetch(page_url)
                 except ScrapingError as exc:
@@ -100,6 +102,18 @@ class PhotoDownloader:
                         exc,
                     )
                     errors += 1
+                    continue
+
+                # Position — only set if currently empty/null.
+                if not player.position:
+                    pos = parse_player_position(html)
+                    if pos:
+                        await self.repo.update_player_position(player.id, pos)
+                        player.position = pos
+                        positions_set += 1
+
+                # Photo — skip if we already have one.
+                if player.photo_path:
                     continue
 
                 photo_url = parse_player_photo(html)
@@ -146,6 +160,7 @@ class PhotoDownloader:
 
         summary = {
             "downloaded": downloaded,
+            "positions_set": positions_set,
             "skipped": skipped,
             "errors": errors,
             "restored": restored,

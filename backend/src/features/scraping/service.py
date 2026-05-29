@@ -1009,20 +1009,20 @@ class ScrapingService:
 
             await self.session.flush()
 
-            # 3. Fetch each team's roster and create Player rows
-            # URL patterns differ:
-            #   Liga:       {base}/{team_slug}/{season_slug}
-            #   Tournament: {base}/{prefix}/equipos/{team_slug}
-            is_tournament = season_for_url.kind == "tournament"
+            # 3. Fetch each team's roster and create Player rows.
+            # Since the 2026-05 redesign, both Liga and tournaments use the
+            # same URL pattern: {base}/{prefix}/equipos/{team_slug}, with
+            # the prefix coming from competition_url_prefix (laliga,
+            # world-cup, eurocopa, ...). The roster page no longer exposes
+            # the position; players are created with position='' and the
+            # value is filled later by PhotoDownloader, which fetches each
+            # player's own page anyway to grab the photo.
+            roster_prefix = competition_url_prefix(
+                season_for_url.kind, season_for_url.tournament_type
+            )
             for td in team_data_list:
                 team_id = team_slug_to_id[td.slug]
-                if is_tournament:
-                    prefix_for_roster = competition_url_prefix(
-                        season_for_url.kind, season_for_url.tournament_type
-                    )
-                    roster_url = f"{base_url}/{prefix_for_roster}/equipos/{td.slug}"
-                else:
-                    roster_url = f"{base_url}/{td.slug}/{season_slug}"
+                roster_url = f"{base_url}/{roster_prefix}/equipos/{td.slug}"
                 try:
                     roster_html = await client.fetch(roster_url)
                 except ScrapingError as exc:
@@ -1042,7 +1042,9 @@ class ScrapingService:
                     continue
                 for player_data in roster:
                     position = self._POSITION_MAP.get(player_data.position, player_data.position)
-                    display_name = player_data.slug.replace("-", " ").title()
+                    display_name = (
+                        player_data.display_name or player_data.slug.replace("-", " ").title()
+                    )
                     await self.repo.create_player(
                         season_id=season_id,
                         team_id=team_id,

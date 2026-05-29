@@ -23,11 +23,18 @@ class TeamData:
 
 @dataclass
 class PlayerUrlData:
-    """A player entry extracted from a team's roster page."""
+    """A player entry extracted from a team's roster page.
+
+    Note: ``position`` is empty (``""``) for tournament rosters scraped
+    after the 2026-05 redesign — the position is no longer rendered in the
+    team page and must be resolved per-player from the individual stats
+    page via :func:`parse_player_position`.
+    """
 
     slug: str  # e.g. "mbappe"
-    position: str  # POR | DEF | MED | DEL
+    position: str  # POR | DEF | MED | DEL, or "" when unknown
     team_name: str
+    display_name: str = ""  # human-readable name from the anchor
 
 
 @dataclass
@@ -160,51 +167,54 @@ def parse_teams(html: str) -> list[TeamData]:
 # Parser: player roster from a team page
 # ---------------------------------------------------------------------------
 
-_POSITION_SECTIONS: list[tuple[str, str]] = [
-    ("porteros", "POR"),
-    ("defensas", "DEF"),
-    ("mediocampistas", "MED"),
-    ("delanteros", "DEL"),
-]
-
 
 def parse_roster(html: str) -> list[PlayerUrlData]:
-    """Extract player slugs and positions from a team's *plantilla* page.
+    """Extract player slugs from a team's roster page.
 
-    The page groups players in ``div.porteros``, ``div.defensas``,
-    ``div.mediocampistas`` and ``div.delanteros``.  Each player is an
-    ``a.jugador`` anchor with href like ``/jugadores/mbappe``.
+    Each player is rendered as an ``a.jugador`` anchor. The href may include
+    a season suffix (e.g. ``/jugadores/lamine-yamal/world-cup-2026``); we
+    keep only the slug — the season slug is stripped because individual
+    stat pages live at ``/jugadores/{slug}`` regardless.
 
-    The team name is read from the first ``span.nombre``.
+    The player's display name comes from the anchor's text. Position is
+    NOT extracted here (the redesigned 2026 layout dropped the position
+    sections) — callers resolve it from the player's own page via
+    :func:`parse_player_position`.
 
     Returns an empty list on any parsing failure.
     """
     try:
         soup = _soup(html)
 
-        # Resolve team name
         team_name_tag = soup.find("span", class_="nombre")
         team_name = _tag_text(team_name_tag if isinstance(team_name_tag, Tag) else None)
 
         players: list[PlayerUrlData] = []
-        for css_class, position in _POSITION_SECTIONS:
-            section = soup.find("div", class_=css_class)
-            if not isinstance(section, Tag):
+        seen_slugs: set[str] = set()
+
+        for anchor in soup.find_all("a", class_="jugador"):
+            if not isinstance(anchor, Tag):
                 continue
-            for anchor in section.find_all("a", class_="jugador"):
-                if not isinstance(anchor, Tag):
-                    continue
-                href = str(anchor.get("href", "")).strip()
-                # href is like "/jugadores/mbappe" — take last segment as slug
-                slug = href.rstrip("/").split("/")[-1]
-                if slug:
-                    players.append(
-                        PlayerUrlData(
-                            slug=slug,
-                            position=position,
-                            team_name=team_name,
-                        )
-                    )
+            href = str(anchor.get("href", "")).strip()
+            if "/jugadores/" not in href:
+                continue
+            after = href.split("/jugadores/", 1)[1].strip("/")
+            if not after:
+                continue
+            slug = after.split("/", 1)[0]
+            if not slug or slug in seen_slugs:
+                continue
+            seen_slugs.add(slug)
+
+            display_name = _tag_text(anchor) or slug.replace("-", " ").title()
+            players.append(
+                PlayerUrlData(
+                    slug=slug,
+                    position="",
+                    team_name=team_name,
+                    display_name=display_name,
+                )
+            )
 
         logger.debug("parse_roster: found %d players (team=%r)", len(players), team_name)
         return players
@@ -212,6 +222,39 @@ def parse_roster(html: str) -> list[PlayerUrlData]:
     except Exception:
         logger.exception("parse_roster: unexpected error")
         return []
+
+
+_POSITION_BOX_TO_CODE: dict[str, str] = {
+    "por": "POR",
+    "def": "DEF",
+    "med": "MED",
+    "del": "DEL",
+}
+
+
+def parse_player_position(html: str) -> str | None:
+    """Extract the player's position (POR/DEF/MED/DEL) from their stats page.
+
+    Looks for ``span.position-box`` whose CSS class includes one of the
+    position keywords (``por``/``def``/``med``/``del``). Returns the upper
+    case 3-letter code, or ``None`` if absent.
+    """
+    try:
+        soup = _soup(html)
+        box = soup.find("span", class_="position-box")
+        if not isinstance(box, Tag):
+            return None
+        for cls in box.get("class") or []:
+            code = _POSITION_BOX_TO_CODE.get(cls.lower())
+            if code:
+                return code
+        text = _tag_text(box).upper()
+        if text in _POSITION_BOX_TO_CODE.values():
+            return text
+        return None
+    except Exception:
+        logger.exception("parse_player_position: unexpected error")
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -738,18 +781,25 @@ def parse_homepage_matchday(html: str) -> HomepageMatchdayInfo | None:
 def parse_player_photo(html: str) -> str | None:
     """Extract the player's profile photo URL from their stats page.
 
-    Looks for the first ``<img>`` inside ``div.profile``.  Returns the
-    ``src`` attribute value or ``None`` if not found.
+    The 2026 layout serves the photo as an ``<img>`` whose ``src`` matches
+    ``.../uploads/images/jugadores/ficha/{id}.png`` (typically via the
+    ``media.futbolfantasy.com/thumb/...`` CDN). Returns the first matching
+    src, or ``None`` if not present.
     """
-    soup = BeautifulSoup(html, "lxml")
-    profile_div = soup.select_one("div.profile")
-    if profile_div is None:
+    try:
+        soup = _soup(html)
+        for img in soup.find_all("img"):
+            if not isinstance(img, Tag):
+                continue
+            src = str(img.get("src", "")).strip()
+            if not src:
+                continue
+            if "/jugadores/ficha/" in src and "stats.png" not in src:
+                return src
         return None
-    img = profile_div.find("img")
-    if not isinstance(img, Tag):
+    except Exception:
+        logger.exception("parse_player_photo: unexpected error")
         return None
-    src = str(img.get("src", "")).strip()
-    return src if src else None
 
 
 # ---------------------------------------------------------------------------
