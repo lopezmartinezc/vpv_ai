@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import unicodedata
 import zlib
 from dataclasses import dataclass, field
 
@@ -231,26 +232,78 @@ _POSITION_BOX_TO_CODE: dict[str, str] = {
     "del": "DEL",
 }
 
+# Fallback for player pages without the rich stats panel: futbolfantasy
+# shows the position in plain Spanish in a div.info-right (or similar).
+# Keys lowercased + accent-free for matching via _norm().
+_POSITION_LABEL_TO_CODE: dict[str, str] = {
+    "portero": "POR",
+    "defensa": "DEF",
+    "defensa central": "DEF",
+    "lateral": "DEF",
+    "lateral derecho": "DEF",
+    "lateral izquierdo": "DEF",
+    "central": "DEF",
+    "centrocampista": "MED",
+    "mediocentro": "MED",
+    "mediocampista": "MED",
+    "mediapunta": "MED",
+    "medio": "MED",
+    "delantero": "DEL",
+    "extremo": "DEL",
+    "extremo derecho": "DEL",
+    "extremo izquierdo": "DEL",
+    "ariete": "DEL",
+    "segundo delantero": "DEL",
+}
+
+
+def _norm_label(value: str) -> str:
+    nfd = unicodedata.normalize("NFD", value)
+    stripped = "".join(c for c in nfd if not unicodedata.combining(c))
+    return stripped.lower().strip()
+
 
 def parse_player_position(html: str) -> str | None:
     """Extract the player's position (POR/DEF/MED/DEL) from their stats page.
 
-    Looks for ``span.position-box`` whose CSS class includes one of the
-    position keywords (``por``/``def``/``med``/``del``). Returns the upper
-    case 3-letter code, or ``None`` if absent.
+    Two-pass:
+    1. Rich pages expose ``span.position-box`` whose CSS class includes
+       the 3-letter code (``por``/``def``/``med``/``del``). This is the
+       fast path for top players.
+    2. Minimal pages (less famous players, recently added profiles) drop
+       the stats panel entirely. Fall back to scanning the info table for
+       a Spanish label like 'Mediocampista' / 'Defensa central' and map
+       it to the canonical 3-letter code.
+
+    Returns the code or ``None`` when neither source carries a position.
     """
     try:
         soup = _soup(html)
+
+        # 1) Rich panel — fastest path.
         box = soup.find("span", class_="position-box")
-        if not isinstance(box, Tag):
-            return None
-        for cls in box.get("class") or []:
-            code = _POSITION_BOX_TO_CODE.get(cls.lower())
+        if isinstance(box, Tag):
+            for cls in box.get("class") or []:
+                code = _POSITION_BOX_TO_CODE.get(cls.lower())
+                if code:
+                    return code
+            text = _tag_text(box).upper()
+            if text in _POSITION_BOX_TO_CODE.values():
+                return text
+
+        # 2) Minimal page — scan the right-hand info column for a Spanish
+        # label and map it. We pick the first matching label to avoid
+        # accidental hits on body copy.
+        for tag in soup.find_all(["div", "li", "span", "td"]):
+            if not isinstance(tag, Tag):
+                continue
+            label = _norm_label(_tag_text(tag))
+            if not label or len(label) > 30:
+                continue
+            code = _POSITION_LABEL_TO_CODE.get(label)
             if code:
                 return code
-        text = _tag_text(box).upper()
-        if text in _POSITION_BOX_TO_CODE.values():
-            return text
+
         return None
     except Exception:
         logger.exception("parse_player_position: unexpected error")
