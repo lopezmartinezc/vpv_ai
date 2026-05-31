@@ -141,6 +141,22 @@ async def cmd_import_rosters(season_id: int) -> None:
     await _run_with_session(_run)
 
 
+async def cmd_sync_rosters(season_id: int) -> None:
+    """Reconcile every team's roster with the live source.
+
+    Adds new players, reactivates returning ones, and soft-deletes (flips
+    ``is_available=False``) those no longer on the official squad. Safer than
+    a hard DELETE: lineups and draft picks that referenced the dropped
+    players keep working but the search/predictions UI stops offering them.
+    """
+
+    async def _run(session: AsyncSession) -> dict:
+        service = ScrapingService(session)
+        return await service.sync_rosters(season_id)
+
+    await _run_with_session(_run)
+
+
 async def cmd_scrape_current() -> None:
     """Scrape the current matchday for the active season.
 
@@ -226,6 +242,17 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_rosters.add_argument("season_id", type=int, help="Season primary-key ID")
 
+    # sync-rosters
+    p_sync = sub.add_parser(
+        "sync-rosters",
+        help=(
+            "Reconcile each team's roster with the live source — adds new "
+            "players, reactivates returning ones, soft-deletes those cut "
+            "from the squad."
+        ),
+    )
+    p_sync.add_argument("season_id", type=int, help="Season primary-key ID")
+
     return parser
 
 
@@ -268,6 +295,9 @@ def main() -> None:
 
     elif command == "import-rosters":
         asyncio.run(cmd_import_rosters(args.season_id))
+
+    elif command == "sync-rosters":
+        asyncio.run(cmd_sync_rosters(args.season_id))
 
     elif command == "download-photos":
         asyncio.run(cmd_download_photos(args.season_id))

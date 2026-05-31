@@ -798,7 +798,12 @@ class TournamentService:
                 Team.name.label("team_name"),
             )
             .join(Team, Player.team_id == Team.id)
-            .where(Player.season_id == season_id)
+            .where(
+                Player.season_id == season_id,
+                # Hide players sync-rosters has flagged as off-squad so they
+                # don't appear in the predicciones combobox.
+                Player.is_available.is_(True),
+            )
             .order_by(Team.name, Player.display_name)
         )
         result = await self.session.execute(stmt)

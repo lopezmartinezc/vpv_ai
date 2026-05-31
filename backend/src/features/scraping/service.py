@@ -1053,6 +1053,138 @@ class ScrapingService:
             "errors": errors,
         }
 
+    async def sync_rosters(self, season_id: int) -> dict[str, int]:
+        """Reconcile every team's roster against the live source.
+
+        For each team in the season:
+        - Fetch the current roster from
+          ``{base}/{prefix}/equipos/{slug}/plantilla``.
+        - Add any slug not yet in DB (same as ``import_rosters_only``).
+        - Flip ``is_available=True`` for slugs that re-appear after being
+          marked off-squad in a previous run.
+        - Flip ``is_available=False`` for slugs that exist in DB but no
+          longer appear in the roster (the player was cut from the official
+          list).
+
+        Soft-delete: the dropped players stay in DB so historical lineups
+        and draft picks keep referring to them. The draft search and the
+        predictions combobox already filter by ``is_available``.
+
+        Returns ``{"players_added", "players_reactivated",
+        "players_deactivated", "teams_visited", "teams_empty", "errors"}``.
+        """
+        season = await self.repo.get_season(season_id)
+        if season is None:
+            return {
+                "players_added": 0,
+                "players_reactivated": 0,
+                "players_deactivated": 0,
+                "teams_visited": 0,
+                "teams_empty": 0,
+                "errors": 1,
+            }
+
+        teams = await self.repo.get_teams_by_season(season_id)
+        if not teams:
+            logger.warning("sync_rosters: season_id=%d has no teams", season_id)
+            return {
+                "players_added": 0,
+                "players_reactivated": 0,
+                "players_deactivated": 0,
+                "teams_visited": 0,
+                "teams_empty": 0,
+                "errors": 0,
+            }
+
+        base_url = self._settings.scraping_base_url
+        prefix = competition_url_prefix(season.kind, season.tournament_type)
+
+        players_added = 0
+        players_reactivated = 0
+        players_deactivated = 0
+        teams_visited = 0
+        teams_empty = 0
+        errors = 0
+
+        async with ScrapingClient() as client:
+            for team in teams:
+                teams_visited += 1
+                roster_url = f"{base_url}/{prefix}/equipos/{team.slug}/plantilla"
+                try:
+                    roster_html = await client.fetch(roster_url)
+                except ScrapingError as exc:
+                    logger.warning("sync_rosters: roster fetch failed for %s: %s", team.slug, exc)
+                    errors += 1
+                    continue
+
+                roster = parse_roster(roster_html)
+                # Safety: if the scrape returns 0 players we treat it as "no
+                # data available right now" rather than "everyone got cut",
+                # otherwise a transient parser glitch would deactivate the
+                # whole squad.
+                if not roster:
+                    logger.info("sync_rosters: %s — empty roster, skipping team", team.name)
+                    teams_empty += 1
+                    continue
+
+                live_slugs = {pd.slug for pd in roster if pd.slug}
+                db_players = await self.repo.get_players_by_team(team.id)
+                db_by_slug = {p.slug: p for p in db_players if p.slug}
+
+                # 1. Add brand-new slugs.
+                added_for_team = 0
+                for pd in roster:
+                    if pd.slug in db_by_slug:
+                        continue
+                    display_name = pd.display_name or pd.slug.replace("-", " ").title()
+                    position = self._POSITION_MAP.get(pd.position, pd.position)
+                    await self.repo.create_player(
+                        season_id=season_id,
+                        team_id=team.id,
+                        name=display_name,
+                        display_name=display_name,
+                        slug=pd.slug,
+                        position=position,
+                    )
+                    added_for_team += 1
+                    players_added += 1
+
+                # 2. Re-activate any DB slug that came back into the roster.
+                reactivate_ids = [
+                    p.id for p in db_players if p.slug in live_slugs and not p.is_available
+                ]
+                players_reactivated += await self.repo.set_players_availability(
+                    reactivate_ids, True
+                )
+
+                # 3. Soft-delete DB slugs no longer in the live roster.
+                deactivate_ids = [
+                    p.id for p in db_players if p.slug not in live_slugs and p.is_available
+                ]
+                players_deactivated += await self.repo.set_players_availability(
+                    deactivate_ids, False
+                )
+
+                logger.info(
+                    "sync_rosters: %s — added=%d, reactivated=%d, deactivated=%d (db=%d, live=%d)",
+                    team.name,
+                    added_for_team,
+                    len(reactivate_ids),
+                    len(deactivate_ids),
+                    len(db_players),
+                    len(live_slugs),
+                )
+
+        await self.session.flush()
+        return {
+            "players_added": players_added,
+            "players_reactivated": players_reactivated,
+            "players_deactivated": players_deactivated,
+            "teams_visited": teams_visited,
+            "teams_empty": teams_empty,
+            "errors": errors,
+        }
+
     async def import_teams_and_players(self, season_id: int, season_slug: str) -> dict[str, int]:
         """Scrape teams from homepage, each team's roster, and the calendar.
 

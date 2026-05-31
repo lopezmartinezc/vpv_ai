@@ -320,7 +320,13 @@ class DraftRepository:
                 Player.photo_path,
             )
             .join(Team, Player.team_id == Team.id)
-            .where(Player.season_id == season_id)
+            .where(
+                Player.season_id == season_id,
+                # Drop players dropped from the official squad — sync-rosters
+                # flips is_available=False for them so they no longer appear
+                # in draft search nor accidentally get picked.
+                Player.is_available.is_(True),
+            )
         )
 
         if query:

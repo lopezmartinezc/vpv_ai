@@ -418,6 +418,21 @@ class ScrapingRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars())
 
+    async def get_players_by_team(self, team_id: int) -> list[Player]:
+        """Return all players (any availability) currently linked to *team_id*."""
+        stmt = select(Player).where(Player.team_id == team_id).order_by(Player.id)
+        result = await self.session.execute(stmt)
+        return list(result.scalars())
+
+    async def set_players_availability(self, player_ids: list[int], is_available: bool) -> int:
+        """Bulk-update ``is_available`` for the given player ids. Returns the
+        number of ids passed (rowcount is unreliable on async SQLAlchemy)."""
+        if not player_ids:
+            return 0
+        stmt = update(Player).where(Player.id.in_(player_ids)).values(is_available=is_available)
+        await self.session.execute(stmt)
+        return len(player_ids)
+
     async def get_players_to_enrich(self, season_id: int) -> list[Player]:
         """Return players for *season_id* missing either ``photo_path`` or ``position``.
 
