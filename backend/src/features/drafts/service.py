@@ -205,6 +205,7 @@ class DraftService:
         self,
         draft_id: int,
         player_id: int,
+        user: dict,
         participant_id: int | None = None,
     ) -> AddPickResponse:
         draft = await self.repo.get_draft_by_id(draft_id)
@@ -238,6 +239,29 @@ class DraftService:
         valid_ids = {p.participant_id for p in participants}
         if final_participant_id not in valid_ids:
             raise BusinessRuleError("Participante no valido para esta temporada")
+
+        # Authorization: admins / DRAFT permission holders can pick for
+        # anyone (including the participant whose turn it is). A regular
+        # user is only allowed to confirm their own pick AND only when the
+        # turn is actually theirs.
+        is_privileged = bool(user.get("is_admin")) or bool(
+            (user.get("permissions") or 0) & Perm.DRAFT
+        )
+        if not is_privileged:
+            try:
+                caller_user_id = int(user.get("sub") or 0)
+            except (TypeError, ValueError):
+                caller_user_id = 0
+            caller_participant_id = next(
+                (p.participant_id for p in participants if p.user_id == caller_user_id),
+                None,
+            )
+            if caller_participant_id is None:
+                raise AuthorizationError("No participas en esta temporada")
+            if final_participant_id != caller_participant_id:
+                raise AuthorizationError("Solo puedes hacer pick para ti mismo")
+            if auto_participant_id != caller_participant_id:
+                raise AuthorizationError("No es tu turno")
 
         pick = await self.repo.add_pick(
             draft_id=draft_id,

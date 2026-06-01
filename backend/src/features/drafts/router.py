@@ -111,10 +111,16 @@ async def add_pick(
     draft_id: int,
     body: AddPickRequest,
     service: DraftService = Depends(_get_service),
-    _user: dict = Depends(require_perm(Perm.DRAFT)),
+    user: dict = Depends(get_current_user),
     _writable: dict = Depends(require_draft_writable),
 ) -> AddPickResponse:
-    return await service.add_pick(draft_id, body.player_id, body.participant_id)
+    """Make a draft pick.
+
+    Authorization is enforced in the service: admins / Perm.DRAFT holders
+    can pick for any participant; a regular user may only pick for
+    themselves AND only when it's actually their turn.
+    """
+    return await service.add_pick(draft_id, body.player_id, user, body.participant_id)
 
 
 @router.put("/{draft_id}/picks/reorder", response_model=ReorderPicksResponse)
@@ -161,8 +167,15 @@ async def search_players_for_draft(
     position: str | None = Query(default=None),
     team_id: int | None = Query(default=None),
     service: DraftService = Depends(_get_service),
-    _user: dict = Depends(require_perm(Perm.DRAFT)),
+    _user: dict = Depends(get_current_user),
 ) -> PlayerSearchResponse:
+    """Browse the draft's available player pool.
+
+    Open to any authenticated user — a participant needs to see the list
+    when their turn comes. The actual pick (POST /picks) is still gated
+    by Perm.DRAFT plus the turn check, and the spectators-only WS already
+    requires a token.
+    """
     return await service.search_players(draft_id, q, position, team_id)
 
 
