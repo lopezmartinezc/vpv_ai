@@ -36,34 +36,61 @@ class PhotoDownloader:
         self.repo = ScrapingRepository(session)
         self._settings = scraping_settings
 
-    async def download_all(self, season_id: int) -> dict[str, int]:
-        """Enrich every player in *season_id* that lacks a photo or a position.
+    async def download_all(
+        self,
+        season_id: int,
+        *,
+        refresh: bool = False,
+    ) -> dict[str, int]:
+        """Enrich players in *season_id* with photo + VPV position.
 
         For each candidate, fetch the individual ``/jugadores/{slug}`` page and:
-        1. Update ``players.position`` if it was missing.
+        1. Update ``players.position`` — when ``refresh`` is False, only
+           when the field was empty; when ``refresh`` is True, whenever the
+           parser returns a non-empty value that differs from the stored one
+           (covers a player who changed position mid-tournament).
         2. Resolve the photo URL (`parse_player_photo`), download the image,
            resize to 200x200 WebP, save under ``static/players/{slug}.webp``
            and update ``players.photo_path``.
 
         Files already on disk are restored to the DB without a re-download.
 
+        Parameters
+        ----------
+        refresh:
+            When True, processes every active player in the season — useful
+            when the official squad list shifts (positions changed, players
+            cut). When False (default), only players missing photo or
+            position get touched (cheaper, fully idempotent).
+
         Returns a summary dict with keys ``downloaded``, ``positions_set``,
-        ``skipped``, ``errors``, ``restored``.
+        ``positions_updated``, ``skipped``, ``errors``, ``restored``.
         """
         _PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
 
-        players = await self.repo.get_players_to_enrich(season_id)
-        logger.info("PhotoDownloader: %d players to enrich", len(players))
+        if refresh:
+            # Process every available player so position changes propagate.
+            all_players = await self.repo.get_players_for_season(season_id)
+            players = [p for p in all_players if p.is_available]
+        else:
+            players = await self.repo.get_players_to_enrich(season_id)
+
+        logger.info(
+            "PhotoDownloader: %d players to process (refresh=%s)",
+            len(players),
+            refresh,
+        )
 
         downloaded = 0
         positions_set = 0
+        positions_updated = 0
         skipped = 0
         errors = 0
         restored = 0
 
         # Restore photo_path for players whose WebP already exists on disk —
-        # they still need an HTTP fetch if the position is missing, so we
-        # don't drop them from the queue yet.
+        # they still need an HTTP fetch if the position is missing or we're
+        # in refresh mode, so we don't drop them from the queue yet.
         for player in players:
             if player.photo_path:
                 continue
@@ -81,9 +108,11 @@ class PhotoDownloader:
             await self.session.commit()
             logger.info("PhotoDownloader: restored %d photos from disk", restored)
 
-        # Re-filter after restore — players whose only need was the photo and
-        # had it on disk no longer require the HTTP fetch.
-        players = [p for p in players if not p.photo_path or not p.position]
+        # In refresh mode we always re-fetch even if both fields look OK,
+        # so we can pick up position changes. Otherwise drop the ones whose
+        # only need (photo) was met by the disk restore above.
+        if not refresh:
+            players = [p for p in players if not p.photo_path or not p.position]
 
         base_url = self._settings.scraping_base_url
 
@@ -104,13 +133,26 @@ class PhotoDownloader:
                     errors += 1
                     continue
 
-                # Position — only set if currently empty/null.
-                if not player.position:
-                    pos = parse_player_position(html)
-                    if pos:
+                # Position — fill when missing, or update when refresh=True
+                # and the parser returns a different non-empty value. Never
+                # overwrite a stored position with None: a parser miss must
+                # not erase good data.
+                pos = parse_player_position(html)
+                if pos:
+                    if not player.position:
                         await self.repo.update_player_position(player.id, pos)
                         player.position = pos
                         positions_set += 1
+                    elif refresh and pos != player.position:
+                        logger.info(
+                            "PhotoDownloader: %s position %s -> %s",
+                            player.slug,
+                            player.position,
+                            pos,
+                        )
+                        await self.repo.update_player_position(player.id, pos)
+                        player.position = pos
+                        positions_updated += 1
 
                 # Photo — skip if we already have one.
                 if player.photo_path:
@@ -161,6 +203,7 @@ class PhotoDownloader:
         summary = {
             "downloaded": downloaded,
             "positions_set": positions_set,
+            "positions_updated": positions_updated,
             "skipped": skipped,
             "errors": errors,
             "restored": restored,

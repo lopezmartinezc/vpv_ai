@@ -100,14 +100,14 @@ async def cmd_update_calendar(season_id: int) -> None:
     await _run_with_session(_run)
 
 
-async def cmd_download_photos(season_id: int) -> None:
-    """Download player photos for *season_id*."""
+async def cmd_download_photos(season_id: int, refresh: bool) -> None:
+    """Download player photos for *season_id* (optionally refresh positions)."""
 
     async def _run(session: AsyncSession) -> dict:
         from src.features.scraping.photos import PhotoDownloader
 
         downloader = PhotoDownloader(session)
-        return await downloader.download_all(season_id)
+        return await downloader.download_all(season_id, refresh=refresh)
 
     await _run_with_session(_run)
 
@@ -232,7 +232,23 @@ def _build_parser() -> argparse.ArgumentParser:
     p_full.add_argument("--end", type=int, default=None, help="Last matchday number (inclusive)")
 
     # download-photos
-    p_photos = sub.add_parser("download-photos", help="Download player photos as WebP")
+    p_photos = sub.add_parser(
+        "download-photos",
+        help=(
+            "Download player photos as WebP. Pass --refresh to re-fetch "
+            "every active player and update their VPV position when it "
+            "changed in the source (mid-tournament reclassifications)."
+        ),
+    )
+    p_photos.add_argument(
+        "--refresh",
+        action="store_true",
+        help=(
+            "Process every available player (not only those missing "
+            "photo/position) and update positions that differ from the "
+            "source. Slower but picks up upstream changes."
+        ),
+    )
     p_photos.add_argument("season_id", type=int, help="Season primary-key ID")
 
     # import-rosters
@@ -300,7 +316,7 @@ def main() -> None:
         asyncio.run(cmd_sync_rosters(args.season_id))
 
     elif command == "download-photos":
-        asyncio.run(cmd_download_photos(args.season_id))
+        asyncio.run(cmd_download_photos(args.season_id, args.refresh))
 
     else:
         parser.print_help()
