@@ -115,13 +115,20 @@ class PhotoDownloader:
             players = [p for p in players if not p.photo_path or not p.position]
 
         base_url = self._settings.scraping_base_url
+        # Use the season's scraping slug as a URL suffix when set
+        # (e.g. .../jugadores/{slug}/world-cup-2026). futbolfantasy serves
+        # the season-specific position and the season-specific kit photo
+        # on that page; the bare URL returns the player's last-known
+        # position which is stale for the Mundial.
+        season = await self.repo.get_season(season_id)
+        url_suffix = f"/{season.scraping_slug}" if season and season.scraping_slug else ""
 
         async with ScrapingClient() as client:
             total = len(players)
             for idx, player in enumerate(players, start=1):
                 logger.info("PhotoDownloader: %d/%d slug=%s", idx, total, player.slug)
 
-                page_url = f"{base_url}/jugadores/{player.slug}"
+                page_url = f"{base_url}/jugadores/{player.slug}{url_suffix}"
                 try:
                     html = await client.fetch(page_url)
                 except ScrapingError as exc:

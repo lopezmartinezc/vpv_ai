@@ -835,9 +835,15 @@ def parse_player_photo(html: str) -> str | None:
     """Extract the player's profile photo URL from their stats page.
 
     The 2026 layout serves the photo as an ``<img>`` whose ``src`` matches
-    ``.../uploads/images/jugadores/ficha/{id}.png`` (typically via the
-    ``media.futbolfantasy.com/thumb/...`` CDN). Returns the first matching
-    src, or ``None`` if not present.
+    one of two CDN paths:
+
+    - ``.../uploads/images/jugadores/ficha/{id}.png`` — kit of the club
+      (default on the bare ``/jugadores/{slug}`` page).
+    - ``.../uploads/images/jugadores/ficha-seleccion/{id}.png`` — kit of
+      the national team (used on the ``/jugadores/{slug}/world-cup-2026``
+      style pages).
+
+    Returns the first matching ``src``, or ``None`` if not present.
     """
     try:
         soup = _soup(html)
@@ -845,9 +851,9 @@ def parse_player_photo(html: str) -> str | None:
             if not isinstance(img, Tag):
                 continue
             src = str(img.get("src", "")).strip()
-            if not src:
+            if not src or "stats.png" in src:
                 continue
-            if "/jugadores/ficha/" in src and "stats.png" not in src:
+            if "/jugadores/ficha/" in src or "/jugadores/ficha-seleccion/" in src:
                 return src
         return None
     except Exception:
