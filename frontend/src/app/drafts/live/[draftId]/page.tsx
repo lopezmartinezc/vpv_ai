@@ -154,20 +154,22 @@ export default function LiveDraftPage() {
           participant_id: pick.participant_id,
           display_name: pick.display_name,
           draft_order: null,
-          player_id: 0,
+          player_id: pick.player_id,
           player_name: pick.player_name,
           position: pick.position,
           team_name: pick.team_name,
-          photo_path: null,
+          photo_path: pick.photo_path ?? null,
           dropped_player_name: null,
         };
         setPicks((prev) => [...prev, newPick]);
         setNextParticipantId(event.next_participant_id ?? null);
         setLastPickFlash(event.pick.pick_number);
         setTimeout(() => setLastPickFlash(null), 2000);
-        // Clear search results when a pick is made
-        setSearchResults([]);
-        setSearch("");
+        // Remove the just-picked player from the visible results instead of
+        // clearing everything — the searcher can keep evaluating the rest.
+        setSearchResults((prev) =>
+          prev.filter((p) => p.id !== pick.player_id),
+        );
       } else if (event.type === "pick_deleted" && event.pick_number) {
         const deletedNumber = event.pick_number;
         setPicks((prev) => prev.filter((p) => p.pick_number !== deletedNumber));

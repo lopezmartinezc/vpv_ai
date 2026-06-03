@@ -9,6 +9,7 @@ import { apiClient } from "@/lib/api-client";
 import { SeasonSelector } from "@/components/layout/season-selector";
 import { PERM, userHasPerm } from "@/lib/permissions";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
+import { useDraftWebSocket, type DraftWSEvent } from "@/hooks/use-draft-websocket";
 import {
   DndContext,
   closestCenter,
@@ -184,6 +185,27 @@ export default function GestionarDraftPage() {
       setEditableParticipants([]);
     }
   }, [selectedSeason, drafts, selectedPhase]);
+
+  // Live-update the management view when other clients add or delete picks
+  // — otherwise a stale 'Añadir pick' panel could still suggest a player
+  // who has already been picked elsewhere, leading to a 4xx on confirm.
+  const currentDraftId = drafts?.drafts.find((d) => d.phase === selectedPhase)?.id;
+  const handleWsEvent = useCallback(
+    (event: DraftWSEvent) => {
+      if (event.type === "pick_added" && event.pick) {
+        const pickedId = event.pick.player_id;
+        // Drop the just-picked player from any visible search dropdown.
+        setAddResults((prev) => prev.filter((p) => p.id !== pickedId));
+      }
+      // For both pick_added and pick_deleted, refresh the picks list so
+      // the table + the participant filter pills stay in sync.
+      if (event.type === "pick_added" || event.type === "pick_deleted") {
+        loadDraftDetail();
+      }
+    },
+    [loadDraftDetail],
+  );
+  useDraftWebSocket(currentDraftId ?? null, handleWsEvent);
 
   useEffect(() => {
     loadDraftDetail();

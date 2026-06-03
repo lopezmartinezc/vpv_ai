@@ -13,10 +13,12 @@ export interface DraftWSEvent {
     pick_number: number;
     round_number: number;
     participant_id: number;
+    player_id: number;
     display_name: string;
     player_name: string;
     position: string;
     team_name: string;
+    photo_path?: string | null;
   };
   // pick_deleted payload
   pick_number?: number;
