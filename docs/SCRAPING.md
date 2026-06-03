@@ -201,11 +201,29 @@ Metodos de acceso a datos relevantes para scraping:
 
 ### Photos (`photos.py`)
 
-`PhotoDownloader` descarga fotos de jugadores:
-- Formato: WebP 200x200 (via Pillow)
-- Ruta: `static/photos/season_{id}/{slug}.webp`
-- Solo descarga jugadores sin `photo_path`
-- Delay entre requests para anti-bot
+`PhotoDownloader` enriquece cada jugador con foto + posicion VPV (POR/DEF/MED/DEL):
+
+- Foto: WebP 200x200 (via Pillow) en `static/players/{slug}.webp`.
+- URL fuente: `/jugadores/{slug}/{season.scraping_slug}` cuando el season
+  define `scraping_slug`; si la suffix-URL responde 4xx, fallback a
+  `/jugadores/{slug}` plano (necesario para Liga, defensivo si el
+  scraping_slug esta mal escrito).
+- Foto sale de `media.futbolfantasy.com/.../jugadores/ficha/{id}.png`
+  (club) o `.../ficha-seleccion/{id}.png` (seleccion nacional, paginas
+  con sufijo de torneo).
+- Posicion: `parse_player_position` busca primero `span.position-box` y
+  cae a etiquetas en castellano (`Portero/Defensa/Mediocampista/...`)
+  para jugadores con pagina minimalista.
+- Modos:
+  - `download_all(season_id, refresh=False)` — solo procesa jugadores
+    sin foto o sin posicion. Idempotente.
+  - `download_all(season_id, refresh=True)` — procesa todos los activos
+    y actualiza la posicion cuando cambia (~70 min Mundial). Foto solo
+    se descarga si falta.
+  - `refresh_positions(season_id, concurrency=5)` — variante rapida
+    (~10-15 min Mundial). Saltea foto/Pillow y lanza fetches en paralelo
+    con `asyncio.gather` + Semaphore. Acumula updates y los aplica al
+    cerrar (commit lo hace el caller).
 
 ### CLI (`cli.py`)
 
@@ -229,9 +247,48 @@ python -m src.features.scraping.cli update-calendar 8
 # Verificar cambios en homepage (CRC)
 python -m src.features.scraping.cli check-updates
 
-# Descargar fotos de jugadores
-python -m src.features.scraping.cli download-photos 8
+# Importar equipos+plantillas+calendario (full bootstrap de temporada)
+# Solo en setup inicial.
+python -m src.features.scraping.cli initialize 11
+
+# Importar SOLO plantillas (cuando teams+matches ya existen pero
+# players no se crearon, p. ej. parser roto en el initialize previo).
+# Idempotente: salta slugs ya presentes.
+python -m src.features.scraping.cli import-rosters 11
+
+# Reconciliar plantillas con la fuente: soft-delete (is_available=false)
+# para los descartados, reactiva los que vuelvan, añade nuevos.
+# Tour cortos: re-ejecuta cuando se publiquen listas definitivas.
+python -m src.features.scraping.cli sync-rosters 11
+
+# Enriquecer foto + posicion (modo idempotente: solo procesa los que
+# les falta foto o posicion).
+python -m src.features.scraping.cli download-photos 11
+
+# Enriquecer + REFRESCAR todas las posiciones (procesa todos los
+# activos, actualiza posicion cuando cambie). Lento (~70 min Mundial).
+python -m src.features.scraping.cli download-photos 11 --refresh
+
+# Solo refrescar posiciones (sin fotos), paralelo. Recomendado cuando
+# solo necesitas alinear positions con la fuente (reclasificaciones
+# durante un torneo). ~10-15 min con concurrency=5.
+python -m src.features.scraping.cli refresh-positions 11
+python -m src.features.scraping.cli refresh-positions 11 --concurrency 8
 ```
+
+#### Glossary de comandos por uso
+
+| Necesito... | Comando |
+|---|---|
+| Bootstrap inicial de una temporada nueva | `initialize <id>` |
+| El initialize creo teams+matches pero no players | `import-rosters <id>` |
+| Reconciliar plantillas con la fuente actual (altas/bajas) | `sync-rosters <id>` |
+| Rellenar foto y/o posicion donde falten | `download-photos <id>` |
+| Refrescar todas las posiciones (foto si falta) | `download-photos <id> --refresh` |
+| Refrescar posiciones rapidamente (sin fotos) | `refresh-positions <id>` |
+| Re-scrape completo por jugador (auditoria fin de temporada) | `scrape-season-full <id> --start N --end M` |
+| Scrape de una jornada concreta | `scrape-matchday <id> <md>` |
+| Calendario + resultados al dia | `update-calendar <id>` |
 
 #### scrape-season-full (auditoria de temporada)
 
@@ -315,16 +372,25 @@ El admin puede:
 | URL | Datos | Parser |
 |-----|-------|--------|
 | `futbolfantasy.com` | Homepage — jornada actual, CRC | `parse_homepage_matchday` |
-| `futbolfantasy.com/laliga/calendario/{year}` | Calendario completo La Liga | `parse_calendar` |
-| `futbolfantasy.com/jugadores/{slug}` | Stats jugador (todas las jornadas) | `parse_player_stats`, `parse_player_all_matchdays` |
+| `futbolfantasy.com/{prefix}/calendario/{year}` | Calendario completo (prefix=`laliga` o torneo) | `parse_calendar` |
+| `futbolfantasy.com/{prefix}/equipos/{slug}/plantilla` | Plantilla completa equipo | `parse_roster` |
+| `futbolfantasy.com/jugadores/{slug}` | Pagina "global" jugador — stats por jornada (Liga), posicion historica | `parse_player_stats`, `parse_player_all_matchdays`, `parse_player_position`, `parse_player_photo` |
+| `futbolfantasy.com/jugadores/{slug}/{season_scraping_slug}` | Pagina especifica del torneo — posicion vigente en ese torneo, foto con kit de seleccion | `parse_player_position`, `parse_player_photo` |
 | `futbolfantasy.com/partidos/{id}-{home}-{away}` | Pagina partido — score, CRC ratings | `parse_match_score`, `parse_match_crc` |
-| `futbolfantasy.com/laliga/equipos/{team-slug}` | Plantilla equipo | `parse_roster` (legacy, ver bugs 2026-05) |
 
-**Nota sobre URLs (cambios mayo 2026)**: futbolfantasy migro los formatos de
-URL. El partido ahora exige slug `{home}-{away}` despues del id; la pagina de
-jugador ya no acepta el sufijo `/{season_slug}`. Las URLs de la BD se
-autocorrigen en el siguiente tick del scheduler (campo `urls_updated` en el
-log de `scrape_calendar`).
+**Cuando usar la URL con sufijo vs la plana**:
+
+- Stats de jornada (`scrape_matchday`/`scrape_match_players`/`scrape_season_full`)
+  → **URL plana** sin sufijo. Con sufijo la pagina viene "lite" y la tabla de
+  stats por jornada no aparece (commit 302331f).
+- Foto + posicion (`PhotoDownloader`) → **URL con sufijo** cuando la season
+  tenga `scraping_slug`. Asi la posicion refleja la convocatoria del torneo
+  (Mundial recategoriza jugadores: p. ej. Marcos Llorente en Liga es MED pero
+  en world-cup-2026 es DEF). Si el suffix URL responde 4xx, fallback automatico
+  a la plana (defensivo si el `scraping_slug` esta mal escrito).
+- Foto: aparece como `.../jugadores/ficha/{id}.png` (URL plana, kit del club)
+  o `.../jugadores/ficha-seleccion/{id}.png` (URL con sufijo de torneo, kit
+  nacional). El parser acepta ambos patrones.
 
 ## Deteccion de cambios (CRC)
 
@@ -441,3 +507,120 @@ DROP TABLE participant_matchday_scores_snap_${TS};
 DROP TABLE lineup_players_snap_${TS};
 DROP TABLE lineups_snap_${TS};
 ```
+
+## Onboarding de un torneo corto (Mundial / Eurocopa)
+
+Receta probada con Season 11 (Mundial 2026). Pasos en orden:
+
+```bash
+# 1) Crear la season en la admin (kind='tournament', tournament_type='mundial',
+#    scraping_slug='world-cup-2026'). El slug DEBE coincidir con el path real
+#    de futbolfantasy — si la URL es /world-cup-2026/..., el slug es
+#    'world-cup-2026', no 'world-cup'.
+
+# 2) Importar equipos, plantillas y calendario en la admin.
+#    Lo hace POST /seasons/admin/{id}/initialize por dentro.
+
+# 3) Si por algun bug (parser antiguo, redesign de futbolfantasy) los players
+#    no se crearon, completar la plantilla:
+sudo -u vpv .venv/bin/python -m src.features.scraping.cli import-rosters 11
+
+# 4) Enriquecer foto + posicion. Idempotente: solo procesa los que falten.
+sudo -u vpv nohup .venv/bin/python -m src.features.scraping.cli download-photos 11 \
+  > /tmp/wc_enrich.log 2>&1 &
+
+# 5) Verificar
+sudo -u postgres psql -d ligavpv -c "
+SELECT t.name, COUNT(*) FILTER (WHERE p.is_available) AS activos,
+       COUNT(*) FILTER (WHERE p.is_available AND p.position <> '') AS con_pos,
+       COUNT(*) FILTER (WHERE p.is_available AND p.photo_path IS NOT NULL) AS con_foto
+FROM teams t LEFT JOIN players p ON p.team_id = t.id
+WHERE t.season_id = 11 GROUP BY t.name ORDER BY t.name;"
+```
+
+Cuando futbolfantasy publica las listas definitivas (al final de la
+preselección) y/o hay lesiones de ultima hora:
+
+```bash
+# Reconciliar plantillas: altas (jugadores que entran), soft-delete (lesionados
+# y descartes). Los players descartados quedan con is_available=false; siguen
+# en BD para no romper lineups/picks historicos pero ya no aparecen en el
+# buscador del draft ni en el combobox de predicciones.
+sudo -u vpv .venv/bin/python -m src.features.scraping.cli sync-rosters 11
+
+# Y refrescar posiciones (rapidisimo, ~10-15 min en paralelo):
+sudo -u vpv .venv/bin/python -m src.features.scraping.cli refresh-positions 11
+```
+
+### Mid-tournament — detectar reclasificaciones y notificar
+
+Cuando un jugador cambia de posicion (caso real durante WC26: Marcos
+Llorente MED → DEF, Dani Olmo MED → DEL, Luiz Henrique DEL → MED, ...):
+
+```bash
+# 1) Snapshot del estado actual (para sacar el delta despues)
+TS=$(date +%Y%m%d_%H%M%S)
+echo "TS=$TS" | sudo tee /tmp/wc_changes_ts
+sudo -u postgres psql -d ligavpv <<EOF
+CREATE TABLE players_pos_snap_${TS} AS
+SELECT id, slug, display_name, position, team_id, is_available
+FROM players WHERE season_id=11;
+EOF
+
+# 2) Reconciliar + refrescar
+sudo -u vpv .venv/bin/python -m src.features.scraping.cli sync-rosters 11
+sudo -u vpv .venv/bin/python -m src.features.scraping.cli refresh-positions 11
+
+# 3) Sacar la lista de cambios y los participantes afectados
+sudo -u postgres psql -d ligavpv -c "
+SELECT t.name AS seleccion, p.display_name AS jugador,
+       s.position AS antes, p.position AS ahora
+FROM players_pos_snap_${TS} s
+JOIN players p ON p.id = s.id
+JOIN teams t ON t.id = p.team_id
+WHERE p.is_available AND COALESCE(s.position,'') <> COALESCE(p.position,'')
+ORDER BY t.name, jugador;"
+
+sudo -u postgres psql -d ligavpv -c "
+SELECT u.display_name AS participante,
+       p.display_name AS jugador,
+       s.position AS antes, p.position AS ahora
+FROM players_pos_snap_${TS} s
+JOIN players p ON p.id = s.id
+JOIN draft_picks dp ON dp.player_id = p.id
+JOIN drafts d ON d.id = dp.draft_id AND d.season_id = 11
+JOIN season_participants sp ON sp.id = dp.participant_id
+JOIN users u ON u.id = sp.user_id
+WHERE p.is_available AND COALESCE(s.position,'') <> COALESCE(p.position,'')
+ORDER BY u.display_name;"
+```
+
+### Impacto de los cambios mientras el draft esta en curso
+
+| Situacion | Efecto |
+|---|---|
+| Jugador pickeado cambia de posicion | `players.position` se actualiza al instante. La proxima alineacion del participante respeta la posicion nueva (1-4-4-2 solo aceptara al jugador en su slot real). Scoring futuro usa la nueva posicion; las jornadas ya scrapeadas preservan la historica (`player_stats.position` no se reescribe — commit 3554599). |
+| Jugador pickeado se cae (off-squad) | `is_available=false`. Sigue en la plantilla del participante pero nunca sumara puntos en jornadas del Mundial. Slot perdido salvo `delete-pick` admin + re-pick. |
+| Reclasificaciones masivas | Las plantillas de los participantes pueden quedar desbalanceadas para algunas formaciones (`POR=1 + N DEF + M MED + K DEL`). Query de sanity check: contar por participante+posicion y compensar con re-pick si alguien queda con DEF<3 o MED<3. |
+
+## Bugs corregidos (2026-06-03)
+
+1. **`sync-rosters` no existia** (`ffdb269`): tras `import-rosters` los
+   descartados de la convocatoria oficial quedaban en BD y aparecian en el
+   buscador del draft. Nuevo comando soft-delete + `is_available` filtrado
+   en `DraftRepository.search_players` y `TournamentService.list_players`.
+2. **`parse_player_position` perdia jugadores oscuros** (`44290a3`): los
+   perfiles minimalistas (selecciones poco conocidas) no traian
+   `span.position-box`. Fallback a etiqueta espanola (`Portero`/`Defensa`/...)
+   con map a POR/DEF/MED/DEL.
+3. **Posiciones del Mundial no se actualizaban** (`638eb8b`): la URL plana
+   `/jugadores/{slug}` devuelve la posicion historica generica
+   (Llorente=MED en Liga) aunque la convocatoria del Mundial diga DEF. Se
+   usa la URL con `season.scraping_slug` cuando esta presente, y la foto
+   acepta el patron `ficha-seleccion`.
+4. **download-photos lentisimo** (`5b03b1c`): nuevo `refresh-positions`
+   que salta foto/Pillow y paraleliza con Semaphore (concurrency 5 por
+   defecto). 70 min → 10-15 min para el Mundial.
+5. **`scraping_slug` con typo provocaba 4xx en cadena**: `PhotoDownloader`
+   ahora hace fallback a la URL plana si el suffix devuelve 4xx
+   (defensivo). El typo debe corregirse igualmente en `seasons.scraping_slug`.
