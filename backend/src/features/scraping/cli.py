@@ -100,6 +100,18 @@ async def cmd_update_calendar(season_id: int) -> None:
     await _run_with_session(_run)
 
 
+async def cmd_refresh_positions(season_id: int, concurrency: int) -> None:
+    """Re-check every active player's VPV position (fast, no photo download)."""
+
+    async def _run(session: AsyncSession) -> dict:
+        from src.features.scraping.photos import PhotoDownloader
+
+        downloader = PhotoDownloader(session)
+        return await downloader.refresh_positions(season_id, concurrency=concurrency)
+
+    await _run_with_session(_run)
+
+
 async def cmd_download_photos(season_id: int, refresh: bool) -> None:
     """Download player photos for *season_id* (optionally refresh positions)."""
 
@@ -231,6 +243,23 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_full.add_argument("--end", type=int, default=None, help="Last matchday number (inclusive)")
 
+    # refresh-positions
+    p_refpos = sub.add_parser(
+        "refresh-positions",
+        help=(
+            "Re-check every active player's VPV position (POR/DEF/MED/DEL) "
+            "in parallel. Skips the photo download/Pillow step so a full "
+            "Mundial squad finishes in ~10-15 min instead of ~70."
+        ),
+    )
+    p_refpos.add_argument("season_id", type=int, help="Season primary-key ID")
+    p_refpos.add_argument(
+        "--concurrency",
+        type=int,
+        default=5,
+        help="Max parallel HTTP fetches (default: 5)",
+    )
+
     # download-photos
     p_photos = sub.add_parser(
         "download-photos",
@@ -317,6 +346,9 @@ def main() -> None:
 
     elif command == "download-photos":
         asyncio.run(cmd_download_photos(args.season_id, args.refresh))
+
+    elif command == "refresh-positions":
+        asyncio.run(cmd_refresh_positions(args.season_id, args.concurrency))
 
     else:
         parser.print_help()

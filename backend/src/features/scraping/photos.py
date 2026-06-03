@@ -128,16 +128,32 @@ class PhotoDownloader:
             for idx, player in enumerate(players, start=1):
                 logger.info("PhotoDownloader: %d/%d slug=%s", idx, total, player.slug)
 
-                page_url = f"{base_url}/jugadores/{player.slug}{url_suffix}"
-                try:
-                    html = await client.fetch(page_url)
-                except ScrapingError as exc:
-                    logger.warning(
-                        "PhotoDownloader: page fetch failed slug=%s: %s",
-                        player.slug,
-                        exc,
-                    )
-                    errors += 1
+                primary_url = f"{base_url}/jugadores/{player.slug}{url_suffix}"
+                fallback_url = f"{base_url}/jugadores/{player.slug}" if url_suffix else None
+                # Try the season-specific URL first; fall back to the bare
+                # one on 404 (the season slug may be wrong, e.g.
+                # 'world-cup' vs 'world-cup-2026').
+                html = None
+                for attempt_url in (primary_url, fallback_url):
+                    if not attempt_url:
+                        continue
+                    try:
+                        html = await client.fetch(attempt_url)
+                        break
+                    except ScrapingError as exc:
+                        if attempt_url == primary_url and fallback_url:
+                            logger.debug(
+                                "PhotoDownloader: %s 4xx on suffix URL, falling back to bare URL",
+                                player.slug,
+                            )
+                            continue
+                        logger.warning(
+                            "PhotoDownloader: page fetch failed slug=%s: %s",
+                            player.slug,
+                            exc,
+                        )
+                        errors += 1
+                if html is None:
                     continue
 
                 # Position — fill when missing, or update when refresh=True
@@ -216,4 +232,100 @@ class PhotoDownloader:
             "restored": restored,
         }
         logger.info("PhotoDownloader: done — %s", summary)
+        return summary
+
+    async def refresh_positions(
+        self,
+        season_id: int,
+        concurrency: int = 5,
+    ) -> dict[str, int]:
+        """Fast pass: only re-check the VPV position for every active player.
+
+        Same source URL strategy as :meth:`download_all` with refresh=True —
+        prefer the season-specific page, fall back to the bare one on 404 —
+        but skips the photo download and the Pillow conversion entirely and
+        fans out the page fetches with ``asyncio.gather`` (semaphore-bounded
+        concurrency). For a 1 300-player squad this typically completes in
+        10-15 minutes instead of the ~70 of download_all --refresh.
+
+        Returns ``{"checked", "positions_updated", "positions_set",
+        "skipped", "errors"}``.
+        """
+        import asyncio
+
+        all_players = await self.repo.get_players_for_season(season_id)
+        players = [p for p in all_players if p.is_available]
+        logger.info(
+            "refresh_positions: %d active players, concurrency=%d",
+            len(players),
+            concurrency,
+        )
+
+        season = await self.repo.get_season(season_id)
+        url_suffix = f"/{season.scraping_slug}" if season and season.scraping_slug else ""
+        base_url = self._settings.scraping_base_url
+
+        checked = 0
+        positions_set = 0
+        positions_updated = 0
+        skipped = 0
+        errors = 0
+        # We collect updates in memory and apply them at the end on the
+        # caller's session — avoids interleaving writes on the same
+        # AsyncSession from multiple coroutines.
+        updates: list[tuple[int, str]] = []
+        sem = asyncio.Semaphore(concurrency)
+
+        async with ScrapingClient() as client:
+
+            async def _one(player) -> None:  # type: ignore[no-untyped-def]
+                nonlocal checked, positions_set, positions_updated, skipped, errors
+                async with sem:
+                    primary_url = f"{base_url}/jugadores/{player.slug}{url_suffix}"
+                    fallback_url = f"{base_url}/jugadores/{player.slug}" if url_suffix else None
+                    html = None
+                    for attempt_url in (primary_url, fallback_url):
+                        if not attempt_url:
+                            continue
+                        try:
+                            html = await client.fetch(attempt_url)
+                            break
+                        except ScrapingError:
+                            if attempt_url == primary_url and fallback_url:
+                                continue
+                            errors += 1
+                    if html is None:
+                        return
+                    checked += 1
+                    pos = parse_player_position(html)
+                    if not pos:
+                        skipped += 1
+                        return
+                    if not player.position:
+                        positions_set += 1
+                        updates.append((player.id, pos))
+                    elif pos != player.position:
+                        logger.info(
+                            "refresh_positions: %s position %s -> %s",
+                            player.slug,
+                            player.position,
+                            pos,
+                        )
+                        positions_updated += 1
+                        updates.append((player.id, pos))
+
+            await asyncio.gather(*[_one(p) for p in players])
+
+        # Persist accumulated updates on the caller's session.
+        for player_id, pos in updates:
+            await self.repo.update_player_position(player_id, pos)
+
+        summary = {
+            "checked": checked,
+            "positions_set": positions_set,
+            "positions_updated": positions_updated,
+            "skipped": skipped,
+            "errors": errors,
+        }
+        logger.info("refresh_positions: done — %s", summary)
         return summary
