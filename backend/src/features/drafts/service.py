@@ -433,8 +433,7 @@ class DraftService:
 
             next_pick_number = await self.repo.get_max_pick_number(draft_id) + 1
             ordered_pids = [
-                p.participant_id
-                for p in sorted(participants, key=lambda x: x.draft_order or 999)
+                p.participant_id for p in sorted(participants, key=lambda x: x.draft_order or 999)
             ]
             next_participant_id = _get_participant_for_pick(
                 next_pick_number, draft.draft_type, ordered_pids

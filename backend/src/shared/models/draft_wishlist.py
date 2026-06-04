@@ -21,7 +21,9 @@ class DraftWishlist(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    draft_id: Mapped[int] = mapped_column(ForeignKey("drafts.id", ondelete="CASCADE"), nullable=False)
+    draft_id: Mapped[int] = mapped_column(
+        ForeignKey("drafts.id", ondelete="CASCADE"), nullable=False
+    )
     participant_id: Mapped[int] = mapped_column(
         ForeignKey("season_participants.id", ondelete="CASCADE"), nullable=False
     )
