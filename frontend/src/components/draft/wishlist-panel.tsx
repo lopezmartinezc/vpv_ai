@@ -197,7 +197,13 @@ export function WishlistPanel({ draftId, refreshKey }: WishlistPanelProps) {
     return null;
   }
 
-  const playerIds = wishlist.players.map((p) => p.player_id.toString());
+  // Already-picked players stay in `wishlist.players` (and in the DB) so
+  // the admin can undo a pick without losing the configured priority,
+  // but we don't render them — they would just be greyed-out clutter
+  // since the auto-pick engine skips them anyway.
+  const visiblePlayers = wishlist.players.filter((p) => !p.is_already_picked);
+  const visibleIds = visiblePlayers.map((p) => p.player_id.toString());
+  const hiddenCount = wishlist.players.length - visiblePlayers.length;
 
   return (
     <div className="space-y-3">
@@ -280,17 +286,24 @@ export function WishlistPanel({ draftId, refreshKey }: WishlistPanelProps) {
 
       <div>
         <p className="mb-1 text-[11px] uppercase tracking-wide text-vpv-text-muted">
-          Mi lista ({wishlist.players.length}/{MAX_ITEMS})
+          Mi lista ({visiblePlayers.length}/{MAX_ITEMS})
+          {hiddenCount > 0 && (
+            <span className="ml-1 normal-case text-vpv-text-muted/60">
+              · {hiddenCount} ya elegido{hiddenCount === 1 ? "" : "s"} oculto{hiddenCount === 1 ? "" : "s"}
+            </span>
+          )}
         </p>
-        {wishlist.players.length === 0 ? (
+        {visiblePlayers.length === 0 ? (
           <p className="rounded-lg border border-dashed border-vpv-border px-3 py-4 text-center text-xs text-vpv-text-muted">
-            Aún no has añadido jugadores.
+            {wishlist.players.length === 0
+              ? "Aún no has añadido jugadores."
+              : "Todos los jugadores de tu lista ya fueron elegidos. Añade más para futuras rondas."}
           </p>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={playerIds} strategy={verticalListSortingStrategy}>
+            <SortableContext items={visibleIds} strategy={verticalListSortingStrategy}>
               <div className="space-y-1">
-                {wishlist.players.map((p, idx) => (
+                {visiblePlayers.map((p, idx) => (
                   <SortableWishlistRow
                     key={p.player_id}
                     item={p}
