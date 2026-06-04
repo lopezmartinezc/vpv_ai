@@ -1,6 +1,7 @@
 from src.shared.models.base import Base
 from src.shared.models.competition import Competition
 from src.shared.models.draft import Draft, DraftPick
+from src.shared.models.draft_wishlist import DraftWishlist, DraftWishlistPlayer
 from src.shared.models.invite import Invite
 from src.shared.models.lineup import Lineup, LineupPlayer
 from src.shared.models.matchday import Match, Matchday
@@ -22,6 +23,8 @@ __all__ = [
     "Competition",
     "Draft",
     "DraftPick",
+    "DraftWishlist",
+    "DraftWishlistPlayer",
     "Invite",
     "Lineup",
     "LineupPlayer",

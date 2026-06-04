@@ -97,6 +97,7 @@ class AddPickResponse(BaseModel):
     position: str
     team_name: str
     photo_path: str | None = None
+    origin: str = "manual"
 
 
 class DeletePickResponse(BaseModel):

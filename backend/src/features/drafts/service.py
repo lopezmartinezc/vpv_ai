@@ -5,7 +5,7 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import AuthorizationError, BusinessRuleError, NotFoundError
-from src.features.drafts.repository import DraftRepository
+from src.features.drafts.repository import DraftRepository, WishlistRepository
 from src.features.drafts.schemas import (
     AddPickResponse,
     CreateDraftResponse,
@@ -23,8 +23,21 @@ from src.features.drafts.schemas import (
     ReorderPicksResponse,
 )
 from src.features.drafts.websocket import draft_ws_manager
+from src.features.drafts.wishlist_schemas import (
+    AdminWishlistResponse,
+    WishlistPlayerItem,
+    WishlistResponse,
+    WishlistUpsertRequest,
+)
 from src.features.seasons.repository import SeasonRepository
 from src.shared.permissions import Perm
+
+MAX_AUTO_PICK_CHAIN = 30
+"""Upper bound for consecutive auto-picks in a single hook invocation.
+
+A normal draft tops out at ~338 picks (13 participants x 26). Real chains
+stay in the 1-3 range; the limit only matters as a defensive guard
+against a misconfigured wishlist that would otherwise loop forever."""
 
 
 def _get_participant_for_pick(
@@ -207,6 +220,7 @@ class DraftService:
         player_id: int,
         user: dict,
         participant_id: int | None = None,
+        origin: str = "manual",
     ) -> AddPickResponse:
         draft = await self.repo.get_draft_by_id(draft_id)
         if draft is None:
@@ -243,10 +257,15 @@ class DraftService:
         # Authorization: admins / DRAFT permission holders can pick for
         # anyone (including the participant whose turn it is). A regular
         # user is only allowed to confirm their own pick AND only when the
-        # turn is actually theirs.
+        # turn is actually theirs. Auto-pick (origin='auto') is driven by
+        # the wishlist engine and bypasses the per-user check — the call
+        # site already enforced that the wishlist belongs to the
+        # participant whose turn it is.
         is_privileged = bool(user.get("is_admin")) or bool(
             (user.get("permissions") or 0) & Perm.DRAFT
         )
+        if origin == "auto":
+            is_privileged = True
         if not is_privileged:
             try:
                 caller_user_id = int(user.get("sub") or 0)
@@ -269,6 +288,7 @@ class DraftService:
             player_id=player_id,
             round_number=round_number,
             pick_number=next_pick,
+            origin=origin,
         )
         await self.repo.session.commit()
 
@@ -286,6 +306,7 @@ class DraftService:
             position=pk.position,
             team_name=pk.team_name,
             photo_path=pk.photo_path,
+            origin=origin,
         )
 
         # Broadcast to all connected WebSocket clients for this draft
@@ -314,6 +335,18 @@ class DraftService:
             )
         except Exception:
             logger.exception("Failed to notify draft pick via Telegram")
+
+        # Auto-pick: if the next participant has a wishlist with at least
+        # one available player, resolve their pick (and any chained ones)
+        # before returning to the caller. The recursive call into add_pick
+        # uses origin='auto' which bypasses the per-user authorization.
+        # Failures here must not break the manual pick that already
+        # committed — log and move on.
+        if origin == "manual":
+            try:
+                await self._maybe_auto_pick(draft_id)
+            except Exception:
+                logger.exception("Auto-pick chain failed after manual pick in draft %d", draft_id)
 
         return response
 
@@ -375,6 +408,235 @@ class DraftService:
                     text,
                     message_thread_id=season.draft_telegram_thread_id,
                 )
+
+    # -------------------------------------------------------------------
+    # Auto-pick (wishlist-driven)
+    # -------------------------------------------------------------------
+
+    async def _maybe_auto_pick(self, draft_id: int) -> None:
+        """Resolve auto-picks while the next participant has an active
+        wishlist with at least one available candidate.
+
+        Iterates (no recursion) so each step rereads draft state after the
+        previous auto-pick's commit. Bound by MAX_AUTO_PICK_CHAIN.
+        """
+        wishlist_repo = WishlistRepository(self.repo.session)
+
+        for _ in range(MAX_AUTO_PICK_CHAIN):
+            draft = await self.repo.get_draft_by_id(draft_id)
+            if draft is None:
+                return
+
+            participants = await self.repo.get_participants(draft.season_id)
+            if not participants:
+                return
+
+            next_pick_number = await self.repo.get_max_pick_number(draft_id) + 1
+            ordered_pids = [
+                p.participant_id
+                for p in sorted(participants, key=lambda x: x.draft_order or 999)
+            ]
+            next_participant_id = _get_participant_for_pick(
+                next_pick_number, draft.draft_type, ordered_pids
+            )
+
+            player_id = await wishlist_repo.get_next_available_player(
+                draft_id, next_participant_id
+            )
+            if player_id is None:
+                return
+
+            owner = next(
+                (p for p in participants if p.participant_id == next_participant_id),
+                None,
+            )
+            system_user = {
+                "sub": owner.user_id if owner else 0,
+                "is_admin": False,
+                "permissions": 0,
+            }
+
+            try:
+                await self.add_pick(
+                    draft_id=draft_id,
+                    player_id=player_id,
+                    user=system_user,
+                    participant_id=next_participant_id,
+                    origin="auto",
+                )
+            except BusinessRuleError:
+                # Player got picked by someone else between our SELECT and
+                # the INSERT — restart the loop, the next iteration will
+                # pick the new top of the wishlist.
+                continue
+        else:
+            logger.warning(
+                "Auto-pick chain reached MAX_AUTO_PICK_CHAIN=%d for draft %d",
+                MAX_AUTO_PICK_CHAIN,
+                draft_id,
+            )
+
+    # -------------------------------------------------------------------
+    # Wishlist CRUD
+    # -------------------------------------------------------------------
+
+    async def _resolve_caller_participant_id(
+        self,
+        season_id: int,
+        user: dict,
+    ) -> int:
+        try:
+            caller_user_id = int(user.get("sub") or 0)
+        except (TypeError, ValueError):
+            caller_user_id = 0
+        participants = await self.repo.get_participants(season_id)
+        caller_participant_id = next(
+            (p.participant_id for p in participants if p.user_id == caller_user_id),
+            None,
+        )
+        if caller_participant_id is None:
+            raise AuthorizationError("No participas en esta temporada")
+        return caller_participant_id
+
+    async def get_my_wishlist(self, draft_id: int, user: dict) -> WishlistResponse:
+        draft = await self.repo.get_draft_by_id(draft_id)
+        if draft is None:
+            raise NotFoundError("Draft", draft_id)
+        participant_id = await self._resolve_caller_participant_id(draft.season_id, user)
+        wishlist_repo = WishlistRepository(self.repo.session)
+        row = await wishlist_repo.get_wishlist_row(draft_id, participant_id)
+        if row is None:
+            return WishlistResponse(
+                draft_id=draft_id,
+                participant_id=participant_id,
+                enabled=True,
+                players=[],
+            )
+        return WishlistResponse(
+            draft_id=row.draft_id,
+            participant_id=row.participant_id,
+            enabled=row.enabled,
+            players=[
+                WishlistPlayerItem(
+                    player_id=p.player_id,
+                    display_name=p.display_name,
+                    position=p.position,
+                    team_name=p.team_name,
+                    photo_path=p.photo_path,
+                    is_already_picked=p.is_already_picked,
+                    priority=p.priority,
+                )
+                for p in row.players
+            ],
+        )
+
+    async def upsert_my_wishlist(
+        self,
+        draft_id: int,
+        user: dict,
+        payload: WishlistUpsertRequest,
+    ) -> WishlistResponse:
+        draft = await self.repo.get_draft_by_id(draft_id)
+        if draft is None:
+            raise NotFoundError("Draft", draft_id)
+        participant_id = await self._resolve_caller_participant_id(draft.season_id, user)
+
+        # Reject duplicates eagerly — the UNIQUE on (wishlist_id, player_id)
+        # would catch it but the message would be DB-flavoured.
+        if len(set(payload.player_ids)) != len(payload.player_ids):
+            raise BusinessRuleError("La lista contiene jugadores duplicados")
+
+        wishlist_repo = WishlistRepository(self.repo.session)
+        if payload.player_ids:
+            valid = await wishlist_repo.validate_players_belong_to_season(
+                draft.season_id, payload.player_ids
+            )
+            invalid = [pid for pid in payload.player_ids if pid not in valid]
+            if invalid:
+                raise BusinessRuleError(
+                    f"Los siguientes jugadores no pertenecen a esta temporada "
+                    f"o no están disponibles: {invalid}"
+                )
+
+        row = await wishlist_repo.upsert_wishlist(
+            draft_id=draft_id,
+            participant_id=participant_id,
+            enabled=payload.enabled,
+            player_ids=payload.player_ids,
+        )
+        await self.repo.session.commit()
+
+        return WishlistResponse(
+            draft_id=row.draft_id,
+            participant_id=row.participant_id,
+            enabled=row.enabled,
+            players=[
+                WishlistPlayerItem(
+                    player_id=p.player_id,
+                    display_name=p.display_name,
+                    position=p.position,
+                    team_name=p.team_name,
+                    photo_path=p.photo_path,
+                    is_already_picked=p.is_already_picked,
+                    priority=p.priority,
+                )
+                for p in row.players
+            ],
+        )
+
+    async def toggle_my_wishlist(
+        self,
+        draft_id: int,
+        user: dict,
+        enabled: bool,
+    ) -> WishlistResponse:
+        draft = await self.repo.get_draft_by_id(draft_id)
+        if draft is None:
+            raise NotFoundError("Draft", draft_id)
+        participant_id = await self._resolve_caller_participant_id(draft.season_id, user)
+        wishlist_repo = WishlistRepository(self.repo.session)
+        existing = await wishlist_repo.get_wishlist_row(draft_id, participant_id)
+        if existing is None:
+            await wishlist_repo.upsert_wishlist(
+                draft_id=draft_id,
+                participant_id=participant_id,
+                enabled=enabled,
+                player_ids=[],
+            )
+        else:
+            await wishlist_repo.set_enabled(draft_id, participant_id, enabled)
+        await self.repo.session.commit()
+        return await self.get_my_wishlist(draft_id, user)
+
+    async def get_all_wishlists_admin(
+        self,
+        draft_id: int,
+    ) -> list[AdminWishlistResponse]:
+        draft = await self.repo.get_draft_by_id(draft_id)
+        if draft is None:
+            raise NotFoundError("Draft", draft_id)
+        wishlist_repo = WishlistRepository(self.repo.session)
+        rows = await wishlist_repo.list_for_admin(draft_id)
+        return [
+            AdminWishlistResponse(
+                participant_id=r.participant_id,
+                display_name=r.display_name,
+                enabled=r.enabled,
+                players=[
+                    WishlistPlayerItem(
+                        player_id=p.player_id,
+                        display_name=p.display_name,
+                        position=p.position,
+                        team_name=p.team_name,
+                        photo_path=p.photo_path,
+                        is_already_picked=p.is_already_picked,
+                        priority=p.priority,
+                    )
+                    for p in r.players
+                ],
+            )
+            for r in rows
+        ]
 
     async def delete_pick(
         self,
@@ -455,6 +717,14 @@ class DraftService:
                 "next_pick_number": pick_number,
             },
         )
+
+        # If the participant who now has the turn (or any chained next
+        # one) has a wishlist, fire it immediately. Defensive try/except
+        # so a wishlist failure does not surface as a 5xx on the delete.
+        try:
+            await self._maybe_auto_pick(draft_id)
+        except Exception:
+            logger.exception("Auto-pick chain failed after delete in draft %d", draft_id)
 
         return DeletePickResponse(deleted_pick_number=pick_number)
 

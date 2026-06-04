@@ -8,6 +8,7 @@ import { useFetch } from "@/hooks/use-fetch";
 import { useDraftWebSocket, type DraftWSEvent } from "@/hooks/use-draft-websocket";
 import { apiClient } from "@/lib/api-client";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
+import { WishlistPanel } from "@/components/draft/wishlist-panel";
 import type {
   DraftDetailResponse,
   DraftPickEntry,
@@ -55,6 +56,10 @@ export default function LiveDraftPage() {
   const [nextParticipantId, setNextParticipantId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Bumped on every pick_added/pick_deleted so child panels (wishlist)
+  // can refresh derived state without owning their own WS connection.
+  const [pickEventCount, setPickEventCount] = useState(0);
+  const [autoPickToast, setAutoPickToast] = useState<string | null>(null);
 
   // Player search
   const [search, setSearch] = useState("");
@@ -160,23 +165,34 @@ export default function LiveDraftPage() {
           team_name: pick.team_name,
           photo_path: pick.photo_path ?? null,
           dropped_player_name: null,
+          origin: pick.origin ?? "manual",
         };
         setPicks((prev) => [...prev, newPick]);
         setNextParticipantId(event.next_participant_id ?? null);
         setLastPickFlash(event.pick.pick_number);
         setTimeout(() => setLastPickFlash(null), 2000);
+        setPickEventCount((c) => c + 1);
         // Remove the just-picked player from the visible results instead of
         // clearing everything — the searcher can keep evaluating the rest.
         setSearchResults((prev) =>
           prev.filter((p) => p.id !== pick.player_id),
         );
+        if (
+          pick.origin === "auto" &&
+          myParticipantId !== null &&
+          pick.participant_id === myParticipantId
+        ) {
+          setAutoPickToast(`Tu auto-pick eligió a ${pick.player_name}`);
+          setTimeout(() => setAutoPickToast(null), 4000);
+        }
       } else if (event.type === "pick_deleted" && event.pick_number) {
         const deletedNumber = event.pick_number;
         setPicks((prev) => prev.filter((p) => p.pick_number !== deletedNumber));
         setNextParticipantId(event.next_participant_id ?? null);
+        setPickEventCount((c) => c + 1);
       }
     },
-    [],
+    [myParticipantId],
   );
 
   const { online, connected } = useDraftWebSocket(draftId, handleWsEvent);
@@ -366,6 +382,12 @@ export default function LiveDraftPage() {
         </div>
       )}
 
+      {autoPickToast && (
+        <div className="rounded-lg border border-vpv-accent/40 bg-vpv-accent/10 px-4 py-2 text-sm text-vpv-accent">
+          {autoPickToast}
+        </div>
+      )}
+
       {/* Admin suggestions panel */}
       {isAdmin && adminStats && (isMyTurn || true) && (
         <div>
@@ -407,6 +429,18 @@ export default function LiveDraftPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* Auto-pick wishlist (only for actual participants) */}
+      {myParticipantId !== null && !testMode && (
+        <details className="rounded-lg border border-vpv-card-border bg-vpv-card">
+          <summary className="cursor-pointer px-4 py-2 text-sm font-medium text-vpv-text">
+            Mi auto-pick
+          </summary>
+          <div className="border-t border-vpv-card-border px-4 py-3">
+            <WishlistPanel draftId={draftId} refreshKey={pickEventCount} />
+          </div>
+        </details>
       )}
 
       {/* Turn indicator + pick interface */}

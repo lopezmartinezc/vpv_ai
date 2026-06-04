@@ -19,6 +19,7 @@ export interface DraftWSEvent {
     position: string;
     team_name: string;
     photo_path?: string | null;
+    origin?: "manual" | "auto";
   };
   // pick_deleted payload
   pick_number?: number;

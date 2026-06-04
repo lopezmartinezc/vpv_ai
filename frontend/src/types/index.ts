@@ -354,6 +354,7 @@ export interface DraftPickEntry {
   team_name: string;
   photo_path: string | null;
   dropped_player_name: string | null;
+  origin?: "manual" | "auto";
 }
 
 export interface DraftDetailResponse {
@@ -383,9 +384,37 @@ export interface AddPickResponse {
   round_number: number;
   participant_id: number;
   display_name: string;
+  player_id?: number;
   player_name: string;
   position: string;
   team_name: string;
+  photo_path?: string | null;
+  origin?: "manual" | "auto";
+}
+
+// Draft auto-pick wishlist
+export interface WishlistPlayerItem {
+  player_id: number;
+  display_name: string;
+  position: string | null;
+  team_name: string | null;
+  photo_path: string | null;
+  is_already_picked: boolean;
+  priority: number;
+}
+
+export interface Wishlist {
+  draft_id: number;
+  participant_id: number;
+  enabled: boolean;
+  players: WishlistPlayerItem[];
+}
+
+export interface AdminWishlist {
+  participant_id: number;
+  display_name: string;
+  enabled: boolean;
+  players: WishlistPlayerItem[];
 }
 
 export interface PlayerSearchItem {

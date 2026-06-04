@@ -22,6 +22,12 @@ from src.features.drafts.schemas import (
 )
 from src.features.drafts.service import DraftService
 from src.features.drafts.websocket import draft_ws_manager
+from src.features.drafts.wishlist_schemas import (
+    AdminWishlistResponse,
+    WishlistResponse,
+    WishlistToggleRequest,
+    WishlistUpsertRequest,
+)
 from src.shared.dependencies import (
     get_current_admin,
     get_current_user,
@@ -65,6 +71,60 @@ async def list_draft_teams(
     ``/drafts/{id}/teams`` (treating "teams" as the phase).
     """
     return await service.list_teams(draft_id)
+
+
+# -------------------------------------------------------------------
+# Wishlist (auto-pick) — declared before /{season_id}/{phase} so the
+# 'wishlist' segment is not treated as a phase name.
+# -------------------------------------------------------------------
+
+
+@router.get("/{draft_id}/wishlist", response_model=WishlistResponse)
+async def get_my_wishlist(
+    draft_id: int,
+    service: DraftService = Depends(_get_service),
+    user: dict = Depends(get_current_user),
+) -> WishlistResponse:
+    """Return the caller's auto-pick wishlist for the draft.
+
+    Each player carries ``is_already_picked`` so the UI can grey out
+    those that another participant already drafted.
+    """
+    return await service.get_my_wishlist(draft_id, user)
+
+
+@router.put("/{draft_id}/wishlist", response_model=WishlistResponse)
+async def upsert_my_wishlist(
+    draft_id: int,
+    body: WishlistUpsertRequest,
+    service: DraftService = Depends(_get_service),
+    user: dict = Depends(get_current_user),
+    _writable: dict = Depends(require_draft_writable),
+) -> WishlistResponse:
+    """Replace the caller's wishlist with the supplied ordered list."""
+    return await service.upsert_my_wishlist(draft_id, user, body)
+
+
+@router.post("/{draft_id}/wishlist/toggle", response_model=WishlistResponse)
+async def toggle_my_wishlist(
+    draft_id: int,
+    body: WishlistToggleRequest,
+    service: DraftService = Depends(_get_service),
+    user: dict = Depends(get_current_user),
+    _writable: dict = Depends(require_draft_writable),
+) -> WishlistResponse:
+    """Enable or disable auto-pick for the caller without touching the list."""
+    return await service.toggle_my_wishlist(draft_id, user, body.enabled)
+
+
+@router.get("/admin/{draft_id}/wishlists", response_model=list[AdminWishlistResponse])
+async def list_all_wishlists_admin(
+    draft_id: int,
+    service: DraftService = Depends(_get_service),
+    _user: dict = Depends(require_perm(Perm.DRAFT)),
+) -> list[AdminWishlistResponse]:
+    """Admin view: read all wishlists for a draft (audit)."""
+    return await service.get_all_wishlists_admin(draft_id)
 
 
 @router.get("/{season_id}/{phase}", response_model=DraftDetailResponse)

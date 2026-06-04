@@ -29,6 +29,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type {
+  AdminWishlist,
   CreateDraftResponse,
   DraftDetailResponse,
   DraftListResponse,
@@ -1106,11 +1107,152 @@ export default function GestionarDraftPage() {
         </section>
       )}
 
+      {/* Wishlists (auto-pick lists) — read-only audit for admin/DRAFT */}
+      {currentDraft && (
+        <WishlistsAdminPanel
+          draftId={currentDraft.id}
+          participantsCount={participants.length}
+        />
+      )}
+
       {/* Load participants for ordering when no draft exists yet */}
       {!currentDraft && !draftDetail && selectedSeason && (
         <ParticipantOrderStandalone seasonId={selectedSeason.id} />
       )}
     </div>
+  );
+}
+
+function WishlistsAdminPanel({
+  draftId,
+  participantsCount,
+}: {
+  draftId: number;
+  participantsCount: number;
+}) {
+  const [wishlists, setWishlists] = useState<AdminWishlist[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await apiClient.get<AdminWishlist[]>(
+        `/drafts/admin/${draftId}/wishlists`,
+      );
+      setWishlists(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error cargando wishlists");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <section className="rounded-lg border border-vpv-card-border bg-vpv-card p-5">
+      <button
+        type="button"
+        onClick={() => {
+          const next = !open;
+          setOpen(next);
+          if (next && wishlists === null) load();
+        }}
+        className="flex w-full items-center justify-between text-left"
+      >
+        <div>
+          <h2 className="text-lg font-semibold text-vpv-text">
+            3. Wishlists (auto-pick)
+          </h2>
+          <p className="text-xs text-vpv-text-muted">
+            {wishlists
+              ? `${wishlists.filter((w) => w.enabled).length} de ${wishlists.length} activas, sobre ${participantsCount} participantes`
+              : "Vista de auditoría — read-only"}
+          </p>
+        </div>
+        <span className="text-xs text-vpv-text-muted">
+          {open ? "Ocultar" : "Mostrar"}
+        </span>
+      </button>
+
+      {open && (
+        <div className="mt-4 space-y-3">
+          {loading && (
+            <p className="text-sm text-vpv-text-muted">Cargando…</p>
+          )}
+          {error && (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+              {error}
+            </div>
+          )}
+          {wishlists && wishlists.length === 0 && (
+            <p className="text-sm text-vpv-text-muted">
+              Ningún participante ha configurado su wishlist todavía.
+            </p>
+          )}
+          {wishlists?.map((wl) => (
+            <div
+              key={wl.participant_id}
+              className="rounded-lg border border-vpv-border bg-vpv-bg/40 p-3"
+            >
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-sm font-semibold text-vpv-text">
+                  {wl.display_name}
+                </span>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                    wl.enabled
+                      ? "bg-green-500/15 text-green-400"
+                      : "bg-vpv-text-muted/15 text-vpv-text-muted"
+                  }`}
+                >
+                  {wl.enabled ? "Activa" : "Pausada"}
+                </span>
+              </div>
+              {wl.players.length === 0 ? (
+                <p className="text-xs text-vpv-text-muted/70">Lista vacía</p>
+              ) : (
+                <ol className="space-y-1 text-xs">
+                  {wl.players.map((p, idx) => (
+                    <li
+                      key={p.player_id}
+                      className={`flex items-center gap-2 ${
+                        p.is_already_picked ? "opacity-50" : ""
+                      }`}
+                    >
+                      <span className="w-5 text-right tabular-nums text-vpv-text-muted">
+                        {idx + 1}.
+                      </span>
+                      {p.position && (
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${POS_COLORS[p.position] ?? ""}`}
+                        >
+                          {p.position}
+                        </span>
+                      )}
+                      <span className="flex-1 truncate text-vpv-text">
+                        {p.display_name}
+                      </span>
+                      {p.team_name && (
+                        <span className="hidden text-vpv-text-muted sm:inline">
+                          {p.team_name}
+                        </span>
+                      )}
+                      {p.is_already_picked && (
+                        <span className="rounded bg-vpv-text-muted/20 px-1.5 py-0.5 text-[10px] text-vpv-text-muted">
+                          elegido
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
