@@ -38,7 +38,7 @@ Si no hay candidato (lista vacía, todo pickeado, o `enabled=false`), el turno q
 ### Visibilidad
 
 - **Participante**: ve sólo su propia wishlist en `/drafts/live/{id}` bajo el `<details>` "Mi auto-pick".
-- **Admin / `Perm.DRAFT`**: ve todas las wishlists en `/drafts/gestionar` bajo "Wishlists (auto-pick)" (read-only, audit).
+- **Admin / `Perm.DRAFT`**: en `/drafts/gestionar` bajo "Wishlists (auto-pick)" ve únicamente metadatos — quién tiene wishlist, si está activa y cuántos jugadores contiene, **nunca los nombres**. El contenido es privado del participante para no dar al admin pista sobre estrategia rival.
 
 ### Origen de pick
 

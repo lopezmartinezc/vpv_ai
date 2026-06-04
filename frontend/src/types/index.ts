@@ -414,7 +414,7 @@ export interface AdminWishlist {
   participant_id: number;
   display_name: string;
   enabled: boolean;
-  players: WishlistPlayerItem[];
+  total: number;
 }
 
 export interface PlayerSearchItem {

@@ -1191,14 +1191,21 @@ function WishlistsAdminPanel({
               Ningún participante ha configurado su wishlist todavía.
             </p>
           )}
+          <p className="text-[11px] text-vpv-text-muted/70">
+            Sólo metadatos — los jugadores elegidos en cada lista son privados
+            del participante.
+          </p>
           {wishlists?.map((wl) => (
             <div
               key={wl.participant_id}
-              className="rounded-lg border border-vpv-border bg-vpv-bg/40 p-3"
+              className="flex items-center justify-between gap-3 rounded-lg border border-vpv-border bg-vpv-bg/40 px-3 py-2"
             >
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-sm font-semibold text-vpv-text">
-                  {wl.display_name}
+              <span className="text-sm font-semibold text-vpv-text">
+                {wl.display_name}
+              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs tabular-nums text-vpv-text-muted">
+                  {wl.total} jugador{wl.total === 1 ? "" : "es"}
                 </span>
                 <span
                   className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
@@ -1210,44 +1217,6 @@ function WishlistsAdminPanel({
                   {wl.enabled ? "Activa" : "Pausada"}
                 </span>
               </div>
-              {wl.players.length === 0 ? (
-                <p className="text-xs text-vpv-text-muted/70">Lista vacía</p>
-              ) : (
-                <ol className="space-y-1 text-xs">
-                  {wl.players.map((p, idx) => (
-                    <li
-                      key={p.player_id}
-                      className={`flex items-center gap-2 ${
-                        p.is_already_picked ? "opacity-50" : ""
-                      }`}
-                    >
-                      <span className="w-5 text-right tabular-nums text-vpv-text-muted">
-                        {idx + 1}.
-                      </span>
-                      {p.position && (
-                        <span
-                          className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${POS_COLORS[p.position] ?? ""}`}
-                        >
-                          {p.position}
-                        </span>
-                      )}
-                      <span className="flex-1 truncate text-vpv-text">
-                        {p.display_name}
-                      </span>
-                      {p.team_name && (
-                        <span className="hidden text-vpv-text-muted sm:inline">
-                          {p.team_name}
-                        </span>
-                      )}
-                      {p.is_already_picked && (
-                        <span className="rounded bg-vpv-text-muted/20 px-1.5 py-0.5 text-[10px] text-vpv-text-muted">
-                          elegido
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ol>
-              )}
             </div>
           ))}
         </div>

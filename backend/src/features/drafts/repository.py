@@ -387,11 +387,16 @@ class WishlistRow:
 
 @dataclass
 class AdminWishlistRow:
+    """Metadata-only summary for the admin audit view.
+
+    Intentionally omits the list of players — see AdminWishlistResponse.
+    """
+
     wishlist_id: int
     participant_id: int
     display_name: str
     enabled: bool
-    players: list[WishlistPlayerRow]
+    total: int
 
 
 class WishlistRepository:
@@ -519,35 +524,49 @@ class WishlistRepository:
         return row[0] if row else None
 
     async def list_for_admin(self, draft_id: int) -> list[AdminWishlistRow]:
+        """Audit summary — counts only, no player_ids leave the DB.
+
+        The admin endpoint must NOT expose the contents of a wishlist
+        (that would defeat the privacy guarantee the participant expects
+        when configuring it). We aggregate the total entries per
+        wishlist in a single SQL pass.
+        """
+        count_subq = (
+            select(
+                DraftWishlistPlayer.wishlist_id.label("wid"),
+                func.count(DraftWishlistPlayer.id).label("total"),
+            )
+            .group_by(DraftWishlistPlayer.wishlist_id)
+            .subquery()
+        )
         wishlists_stmt = (
             select(
                 DraftWishlist.id,
                 DraftWishlist.participant_id,
                 DraftWishlist.enabled,
                 User.display_name,
+                func.coalesce(count_subq.c.total, 0).label("total"),
             )
             .join(
                 SeasonParticipant,
                 SeasonParticipant.id == DraftWishlist.participant_id,
             )
             .join(User, User.id == SeasonParticipant.user_id)
+            .outerjoin(count_subq, count_subq.c.wid == DraftWishlist.id)
             .where(DraftWishlist.draft_id == draft_id)
             .order_by(User.display_name.asc())
         )
         wl_rows = (await self.session.execute(wishlists_stmt)).all()
-        results: list[AdminWishlistRow] = []
-        for row in wl_rows:
-            players = await self._fetch_player_rows(draft_id, row.id)
-            results.append(
-                AdminWishlistRow(
-                    wishlist_id=row.id,
-                    participant_id=row.participant_id,
-                    display_name=row.display_name,
-                    enabled=row.enabled,
-                    players=players,
-                )
+        return [
+            AdminWishlistRow(
+                wishlist_id=row.id,
+                participant_id=row.participant_id,
+                display_name=row.display_name,
+                enabled=row.enabled,
+                total=row.total,
             )
-        return results
+            for row in wl_rows
+        ]
 
     async def _fetch_player_rows(
         self,

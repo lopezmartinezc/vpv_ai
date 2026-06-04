@@ -611,6 +611,12 @@ class DraftService:
         self,
         draft_id: int,
     ) -> list[AdminWishlistResponse]:
+        """Return metadata-only summaries for every wishlist in *draft_id*.
+
+        The admin sees who has configured a wishlist, whether it's
+        active and how many entries it contains, but NEVER the player
+        list — the contents are private to each participant.
+        """
         draft = await self.repo.get_draft_by_id(draft_id)
         if draft is None:
             raise NotFoundError("Draft", draft_id)
@@ -621,18 +627,7 @@ class DraftService:
                 participant_id=r.participant_id,
                 display_name=r.display_name,
                 enabled=r.enabled,
-                players=[
-                    WishlistPlayerItem(
-                        player_id=p.player_id,
-                        display_name=p.display_name,
-                        position=p.position,
-                        team_name=p.team_name,
-                        photo_path=p.photo_path,
-                        is_already_picked=p.is_already_picked,
-                        priority=p.priority,
-                    )
-                    for p in r.players
-                ],
+                total=r.total,
             )
             for r in rows
         ]

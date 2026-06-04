@@ -30,7 +30,15 @@ class WishlistToggleRequest(BaseModel):
 
 
 class AdminWishlistResponse(BaseModel):
+    """Audit view — exposes ONLY metadata, never the player list.
+
+    The wishlist contents are private to each participant; the admin
+    learns that someone has configured one and how many entries it
+    holds, but not which players. This keeps the admin from inferring
+    rival draft strategy through `/drafts/gestionar`.
+    """
+
     participant_id: int
     display_name: str
     enabled: bool
-    players: list[WishlistPlayerItem]
+    total: int
