@@ -717,14 +717,14 @@ class DraftService:
             },
         )
 
-        # If the participant who now has the turn (or any chained next
-        # one) has a wishlist, fire it immediately. Defensive try/except
-        # so a wishlist failure does not surface as a 5xx on the delete.
-        try:
-            await self._maybe_auto_pick(draft_id)
-        except Exception:
-            logger.exception("Auto-pick chain failed after delete in draft %d", draft_id)
-
+        # NOTE: do NOT trigger _maybe_auto_pick here. If the deleted pick
+        # was itself an auto-pick, the participant's wishlist still has
+        # that same player as the top available candidate — re-firing
+        # would re-insert the same pick_number with the same player,
+        # producing a loop (admin deletes -> auto-pick recreates ->
+        # admin deletes again). Deletions are an explicit manual
+        # override; the next manual pick from any participant will
+        # re-engage the auto-pick chain naturally.
         return DeletePickResponse(deleted_pick_number=pick_number)
 
     async def list_teams(self, draft_id: int) -> list[DraftTeamOption]:
