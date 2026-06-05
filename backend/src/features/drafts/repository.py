@@ -528,13 +528,23 @@ class WishlistRepository:
 
         The admin endpoint must NOT expose the contents of a wishlist
         (that would defeat the privacy guarantee the participant expects
-        when configuring it). We aggregate the total entries per
-        wishlist in a single SQL pass.
+        when configuring it). The reported count is the number of
+        entries STILL ELIGIBLE for the auto-pick engine, i.e. excluding
+        players already drafted in this draft or flagged
+        ``is_available = FALSE``. That matches the eligibility filter in
+        :meth:`get_next_available_player` so the number the admin sees
+        reflects what the engine would still consider.
         """
-        count_subq = (
+        picked_subq = select(DraftPick.player_id).where(DraftPick.draft_id == draft_id)
+        eligible_subq = (
             select(
                 DraftWishlistPlayer.wishlist_id.label("wid"),
                 func.count(DraftWishlistPlayer.id).label("total"),
+            )
+            .join(Player, Player.id == DraftWishlistPlayer.player_id)
+            .where(
+                Player.is_available.is_(True),
+                DraftWishlistPlayer.player_id.notin_(picked_subq),
             )
             .group_by(DraftWishlistPlayer.wishlist_id)
             .subquery()
@@ -545,14 +555,14 @@ class WishlistRepository:
                 DraftWishlist.participant_id,
                 DraftWishlist.enabled,
                 User.display_name,
-                func.coalesce(count_subq.c.total, 0).label("total"),
+                func.coalesce(eligible_subq.c.total, 0).label("total"),
             )
             .join(
                 SeasonParticipant,
                 SeasonParticipant.id == DraftWishlist.participant_id,
             )
             .join(User, User.id == SeasonParticipant.user_id)
-            .outerjoin(count_subq, count_subq.c.wid == DraftWishlist.id)
+            .outerjoin(eligible_subq, eligible_subq.c.wid == DraftWishlist.id)
             .where(DraftWishlist.draft_id == draft_id)
             .order_by(User.display_name.asc())
         )
