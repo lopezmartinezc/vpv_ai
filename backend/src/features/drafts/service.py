@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -308,14 +309,24 @@ class DraftService:
             origin=origin,
         )
 
+        # Stamp started_at on the very first pick (legacy data and new
+        # drafts both sit at status='pending' since there is no manual
+        # 'start' button — the first pick is the natural transition).
+        if draft.started_at is None:
+            draft.started_at = datetime.now(UTC)
+            if draft.status == "pending":
+                draft.status = "in_progress"
+            self.repo.session.add(draft)
+
         # Auto-close the preseason draft on the final pick so the UI
         # stops offering further turns and `_maybe_auto_pick` short-
         # circuits via the status check.
-        if draft.phase == "preseason" and draft.status == "in_progress":
+        if draft.phase == "preseason" and draft.status != "completed":
             season_for_close = await self.season_repo.get_by_id(draft.season_id)
             final_pool_size = season_for_close.draft_pool_size if season_for_close else 0
             if final_pool_size and next_pick == num_participants * final_pool_size:
                 draft.status = "completed"
+                draft.completed_at = datetime.now(UTC)
                 self.repo.session.add(draft)
 
         await self.repo.session.commit()
@@ -454,10 +465,12 @@ class DraftService:
             draft = await self.repo.get_draft_by_id(draft_id)
             if draft is None:
                 return
-            if draft.status != "in_progress":
-                # Draft was paused/completed (possibly auto-completed by
-                # add_pick when the last slot was filled). Don't keep
-                # trying to pick.
+            if draft.status == "completed":
+                # Auto-completed by add_pick when the last slot was
+                # filled. Don't keep trying to pick. We deliberately
+                # allow 'pending' here: the codebase has no
+                # `pending -> in_progress` transition, so most drafts
+                # in production sit at 'pending' indefinitely.
                 return
 
             participants = await self.repo.get_participants(draft.season_id)
