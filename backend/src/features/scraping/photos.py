@@ -243,8 +243,15 @@ class PhotoDownloader:
                     img = img.convert("RGBA")
                     img = img.resize(PHOTO_SIZE, Image.Resampling.LANCZOS)
 
+                    # Save as lossless VP8L so the alpha channel is
+                    # preserved. The default lossy VP8 encoder drops
+                    # alpha and bakes transparent areas as solid black,
+                    # which surfaces as black corners on Telegram for
+                    # any player whose source PNG has a transparent
+                    # background. ~30% larger files on 200x200 is a
+                    # rounding error.
                     out_path = _PHOTOS_DIR / f"{player.slug}.webp"
-                    img.save(str(out_path), format="WEBP", quality=WEBP_QUALITY)
+                    img.save(str(out_path), format="WEBP", lossless=True)
                 except Exception as exc:
                     logger.warning(
                         "PhotoDownloader: image processing failed slug=%s: %s",
