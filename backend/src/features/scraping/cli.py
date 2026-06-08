@@ -112,14 +112,16 @@ async def cmd_refresh_positions(season_id: int, concurrency: int) -> None:
     await _run_with_session(_run)
 
 
-async def cmd_download_photos(season_id: int, refresh: bool) -> None:
+async def cmd_download_photos(season_id: int, refresh: bool, force_redownload: bool) -> None:
     """Download player photos for *season_id* (optionally refresh positions)."""
 
     async def _run(session: AsyncSession) -> dict:
         from src.features.scraping.photos import PhotoDownloader
 
         downloader = PhotoDownloader(session)
-        return await downloader.download_all(season_id, refresh=refresh)
+        return await downloader.download_all(
+            season_id, refresh=refresh, force_redownload=force_redownload
+        )
 
     await _run_with_session(_run)
 
@@ -275,7 +277,19 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "Process every available player (not only those missing "
             "photo/position) and update positions that differ from the "
-            "source. Slower but picks up upstream changes."
+            "source. Does NOT re-download photos that are already on "
+            "disk — use --force-redownload for that."
+        ),
+    )
+    p_photos.add_argument(
+        "--force-redownload",
+        action="store_true",
+        help=(
+            "Delete every existing WebP from disk + clear photo_path in "
+            "the DB before the download runs, forcing every player to "
+            "be fetched again from futbolfantasy. Use after a source "
+            "change or to undo a bad batch (e.g. all photos saved with "
+            "the wrong background)."
         ),
     )
     p_photos.add_argument("season_id", type=int, help="Season primary-key ID")
@@ -345,7 +359,7 @@ def main() -> None:
         asyncio.run(cmd_sync_rosters(args.season_id))
 
     elif command == "download-photos":
-        asyncio.run(cmd_download_photos(args.season_id, args.refresh))
+        asyncio.run(cmd_download_photos(args.season_id, args.refresh, args.force_redownload))
 
     elif command == "refresh-positions":
         asyncio.run(cmd_refresh_positions(args.season_id, args.concurrency))

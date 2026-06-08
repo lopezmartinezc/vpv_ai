@@ -456,8 +456,14 @@ class ScrapingRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars())
 
-    async def update_player_photo(self, player_id: int, photo_path: str, source_url: str) -> None:
-        """Set ``photo_path`` and ``source_url`` for a player."""
+    async def update_player_photo(
+        self, player_id: int, photo_path: str | None, source_url: str
+    ) -> None:
+        """Set ``photo_path`` and ``source_url`` for a player.
+
+        ``photo_path=None`` is allowed and used by the force-redownload
+        path of ``PhotoDownloader`` to mark a player as missing-photo so
+        the next iteration of the queue actually fetches it again."""
         stmt = (
             update(Player)
             .where(Player.id == player_id)

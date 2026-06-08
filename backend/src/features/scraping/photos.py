@@ -41,6 +41,7 @@ class PhotoDownloader:
         season_id: int,
         *,
         refresh: bool = False,
+        force_redownload: bool = False,
     ) -> dict[str, int]:
         """Enrich players in *season_id* with photo + VPV position.
 
@@ -87,6 +88,29 @@ class PhotoDownloader:
         skipped = 0
         errors = 0
         restored = 0
+
+        # In force-redownload mode, clear photo_path AND wipe the WebP
+        # on disk so the rest of the pipeline treats every player as
+        # missing-photo. Useful after the source images changed (e.g.
+        # season swap) or when a previous bug left every WebP in a bad
+        # state and we want futbolfantasy to repopulate from scratch.
+        if force_redownload:
+            wiped = 0
+            for player in players:
+                disk_path = _PHOTOS_DIR / f"{player.slug}.webp"
+                if disk_path.exists():
+                    try:
+                        disk_path.unlink()
+                    except OSError as exc:
+                        logger.warning("PhotoDownloader: could not delete %s: %s", disk_path, exc)
+                if player.photo_path is not None:
+                    await self.repo.update_player_photo(
+                        player_id=player.id, photo_path=None, source_url=""
+                    )
+                    player.photo_path = None
+                wiped += 1
+            await self.session.commit()
+            logger.info("PhotoDownloader: force-wiped %d photos", wiped)
 
         # Restore photo_path for players whose WebP already exists on disk —
         # they still need an HTTP fetch if the position is missing or we're
