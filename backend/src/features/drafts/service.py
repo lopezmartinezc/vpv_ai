@@ -240,6 +240,23 @@ class DraftService:
         next_pick = await self.repo.get_max_pick_number(draft_id) + 1
         round_number = (next_pick - 1) // num_participants + 1
 
+        # Enforce the per-participant cap. Only meaningful for the
+        # preseason draft (winter is 1:1 swaps with no fixed total).
+        # Without this check, both manual picks and the auto-pick chain
+        # would keep firing indefinitely past the configured pool size
+        # when admin lowers `season.draft_pool_size` mid-draft or when a
+        # wishlist still has candidates after the participant's squad
+        # was already complete.
+        if draft.phase == "preseason":
+            season = await self.season_repo.get_by_id(draft.season_id)
+            pool_size = season.draft_pool_size if season else 0
+            max_total_picks = num_participants * pool_size
+            if pool_size and next_pick > max_total_picks:
+                raise BusinessRuleError(
+                    f"El draft esta completo: {pool_size} picks por participante x "
+                    f"{num_participants} participantes = {max_total_picks} picks."
+                )
+
         # Auto-determine participant based on draft type + order
         ordered_pids = [
             p.participant_id for p in sorted(participants, key=lambda x: x.draft_order or 999)
@@ -290,6 +307,17 @@ class DraftService:
             pick_number=next_pick,
             origin=origin,
         )
+
+        # Auto-close the preseason draft on the final pick so the UI
+        # stops offering further turns and `_maybe_auto_pick` short-
+        # circuits via the status check.
+        if draft.phase == "preseason" and draft.status == "in_progress":
+            season_for_close = await self.season_repo.get_by_id(draft.season_id)
+            final_pool_size = season_for_close.draft_pool_size if season_for_close else 0
+            if final_pool_size and next_pick == num_participants * final_pool_size:
+                draft.status = "completed"
+                self.repo.session.add(draft)
+
         await self.repo.session.commit()
 
         # Fetch pick details for response
@@ -426,12 +454,27 @@ class DraftService:
             draft = await self.repo.get_draft_by_id(draft_id)
             if draft is None:
                 return
+            if draft.status != "in_progress":
+                # Draft was paused/completed (possibly auto-completed by
+                # add_pick when the last slot was filled). Don't keep
+                # trying to pick.
+                return
 
             participants = await self.repo.get_participants(draft.season_id)
             if not participants:
                 return
 
             next_pick_number = await self.repo.get_max_pick_number(draft_id) + 1
+
+            # Stop the chain when the draft is full. Without this guard
+            # the chain would burn MAX_AUTO_PICK_CHAIN attempts each
+            # raising BusinessRuleError from add_pick's cap check.
+            if draft.phase == "preseason":
+                season = await self.season_repo.get_by_id(draft.season_id)
+                pool_size = season.draft_pool_size if season else 0
+                if pool_size and next_pick_number > len(participants) * pool_size:
+                    return
+
             ordered_pids = [
                 p.participant_id for p in sorted(participants, key=lambda x: x.draft_order or 999)
             ]
