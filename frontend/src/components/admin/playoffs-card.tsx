@@ -38,11 +38,11 @@ export function PlayoffsCard({ seasonId, matchdayStart, matchdayEnd }: PlayoffsC
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
-  // Inputs for start_regular / start_ko
+  // Single input for the regular phase: the user only picks the
+  // starting matchday. The end is derived from the selected format's
+  // required_rounds_regular (so we never send an off-by-one to the
+  // backend). The KO matchdays input remains free-form CSV.
   const [regularStart, setRegularStart] = useState<string>(String(matchdayStart));
-  const [regularEnd, setRegularEnd] = useState<string>(
-    String(Math.min((matchdayEnd ?? matchdayStart + 5), matchdayStart + 5)),
-  );
   const [koMatchdays, setKoMatchdays] = useState<string>(""); // CSV
 
   const load = useCallback(async () => {
@@ -95,13 +95,13 @@ export function PlayoffsCard({ seasonId, matchdayStart, matchdayEnd }: PlayoffsC
   }
 
   async function handleStartRegular() {
-    if (!playoff) return;
+    if (!playoff || !currentFormat) return;
     const start = Number(regularStart);
-    const end = Number(regularEnd);
-    if (!Number.isFinite(start) || !Number.isFinite(end)) {
-      setError("Las jornadas deben ser números");
+    if (!Number.isFinite(start) || start < 1) {
+      setError("Indica una jornada de inicio válida");
       return;
     }
+    const end = start + currentFormat.n_rounds_regular - 1;
     setBusy("regular");
     setError(null);
     try {
@@ -218,15 +218,6 @@ export function PlayoffsCard({ seasonId, matchdayStart, matchdayEnd }: PlayoffsC
                 className="ml-2 w-16 rounded border border-vpv-border bg-vpv-bg px-2 py-1 text-xs text-vpv-text"
               />
             </label>
-            <label className="text-xs">
-              Jornada fin
-              <input
-                type="number"
-                value={regularEnd}
-                onChange={(e) => setRegularEnd(e.target.value)}
-                className="ml-2 w-16 rounded border border-vpv-border bg-vpv-bg px-2 py-1 text-xs text-vpv-text"
-              />
-            </label>
             <button
               onClick={handleStartRegular}
               disabled={busy === "regular"}
@@ -235,6 +226,16 @@ export function PlayoffsCard({ seasonId, matchdayStart, matchdayEnd }: PlayoffsC
               {busy === "regular" ? "Generando…" : "Generar fase regular"}
             </button>
           </div>
+          {currentFormat && Number.isFinite(Number(regularStart)) && Number(regularStart) >= 1 && (
+            <p className="text-[11px] text-vpv-text-muted/70">
+              Esto generará la fase regular sobre las jornadas{" "}
+              <span className="text-vpv-text">
+                J{Number(regularStart)} – J
+                {Number(regularStart) + currentFormat.n_rounds_regular - 1}
+              </span>
+              .
+            </p>
+          )}
         </div>
       )}
 
