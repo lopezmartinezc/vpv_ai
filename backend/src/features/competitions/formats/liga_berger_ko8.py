@@ -1,28 +1,33 @@
-"""Format: 6 jornadas balanced round-robin + KO top-4 (semis + final).
+"""Format: full Berger round-robin + KO top-8 (cuartos + semis + final).
 
-Tailored to 13 participants on 8 VPV matchdays:
-- Regular: each participant plays exactly 4 cruces and rests 2 times.
-  Distribution per jornada: [5, 5, 5, 5, 3, 3].
-- KO: top-4 → semis (1º vs 4º, 2º vs 3º) → final.
+Designed for Liga playoffs (Apertura / Clausura). 13 jornadas Berger
+con BYE para 13 participantes (cada uno juega 12, descansa 1); 11
+rondas si fueran 12 (par); adapta a cualquier N.
+
+KO siempre top-8 a 3 jornadas: cuartos, semis, final.
 """
 
 from __future__ import annotations
 
+import random
+
 from src.features.competitions.formats.base import FormatPlugin
 from src.features.competitions.ko_bracket import chain_winners, seed_classic_bracket
-from src.features.competitions.scheduler import generate_balanced_schedule
+from src.features.competitions.scheduler import generate_berger
 from src.features.competitions.schemas import MatchupDraft, StandingEntry
 
 
-class BalancedKo4Plugin(FormatPlugin):
-    format_id = "balanced_ko4"
-    display_name = "Balanced (4 partidos/uno) + KO top-4"
+class LigaBergerKo8Plugin(FormatPlugin):
+    format_id = "liga_berger_ko8"
+    display_name = "Liga round-robin completo + KO top-8"
 
     def required_rounds_regular(self, n_participants: int) -> int:
-        return 6
+        # Berger schedule: N-1 rounds if even, N rounds if odd (with BYE).
+        return n_participants - 1 if n_participants % 2 == 0 else n_participants
 
     def required_rounds_ko(self) -> int:
-        return 2
+        # Cuartos + semis + final.
+        return 3
 
     def generate_regular_phase(
         self,
@@ -30,20 +35,33 @@ class BalancedKo4Plugin(FormatPlugin):
         matchday_ids: list[int],
         seed: int,
     ) -> list[MatchupDraft]:
-        if len(participants) != 13:
-            raise ValueError(f"balanced_ko4 expects 13 participants, got {len(participants)}")
-        expected = self.required_rounds_regular(len(participants))
+        n = len(participants)
+        if n < 4:
+            raise ValueError(f"liga_berger_ko8 needs at least 4 participants, got {n}")
+        expected = self.required_rounds_regular(n)
         if len(matchday_ids) != expected:
-            raise ValueError(f"balanced_ko4 expects {expected} matchdays, got {len(matchday_ids)}")
-        rounds = generate_balanced_schedule(
-            participants,
-            n_rounds=6,
-            games_per_player=4,
-            seed=seed,
-        )
+            raise ValueError(
+                f"liga_berger_ko8 expects {expected} matchdays for "
+                f"{n} participants, got {len(matchday_ids)}"
+            )
+
+        # Random shuffle to keep the bracket unpredictable across runs.
+        rng = random.Random(seed)
+        shuffled = participants[:]
+        rng.shuffle(shuffled)
+
+        rounds = generate_berger(shuffled)
+        if len(rounds) != expected:
+            raise RuntimeError(f"Berger returned {len(rounds)} rounds, expected {expected}")
+
         drafts: list[MatchupDraft] = []
-        for round_idx, pairs in enumerate(rounds):
-            for pair in pairs:
+        for round_idx, round_pairs in enumerate(rounds):
+            for pair in round_pairs:
+                if pair is None:
+                    # Bye position — the participant on that side of
+                    # the rotation simply rests this round. No matchup
+                    # to insert.
+                    continue
                 drafts.append(
                     MatchupDraft(
                         phase="regular",
@@ -64,16 +82,13 @@ class BalancedKo4Plugin(FormatPlugin):
     ) -> list[MatchupDraft]:
         if len(matchday_ids) != self.required_rounds_ko():
             raise ValueError(
-                f"balanced_ko4 expects {self.required_rounds_ko()} KO matchdays, "
+                f"liga_berger_ko8 expects {self.required_rounds_ko()} KO matchdays, "
                 f"got {len(matchday_ids)}"
             )
-        # Per the agreed rule (puntos → diferencial → nada más), two
-        # participants can legitimately end the regular phase tied on
-        # both. Surface that to the operator before materialising the
-        # bracket; otherwise we'd pick an arbitrary order between the
-        # tied participants and silently break a future appeal.
-        top_n = standings[:4]
-        boundary = standings[:5]  # also catches a 4º/5º tie that decides who's in
+        # Same tie-detection contract as balanced_ko4 — refuse to start
+        # if there is an unresolved tie in the top-8 cutoff (or at the
+        # 8º/9º boundary that decides who's in).
+        boundary = standings[:9]
         seen_ranks: dict[int, list[str]] = {}
         for s in boundary:
             seen_ranks.setdefault(s.rank, []).append(s.display_name)
@@ -81,23 +96,31 @@ class BalancedKo4Plugin(FormatPlugin):
         if ties:
             tied_msg = "; ".join(f"rank {rank}: {', '.join(names)}" for rank, names in ties)
             raise ValueError(
-                "Empate sin desempate dentro del top-4 del playoff. "
+                "Empate sin desempate dentro del top-8 del playoff. "
                 "Resuelve antes de iniciar las eliminatorias: " + tied_msg
             )
-        top4 = [s.participant_id for s in top_n]
-        semis = seed_classic_bracket(top4, round_label="semi", round_number=n_regular_rounds + 1)
-        final = chain_winners(
-            semis,
+
+        top8 = [s.participant_id for s in standings[:8]]
+        cuartos = seed_classic_bracket(
+            top8, round_label="quarter", round_number=n_regular_rounds + 1
+        )
+        semis = chain_winners(
+            cuartos,
             round_number=n_regular_rounds + 2,
-            round_label="final",
+            round_label="semi",
             feeder_offset=0,
         )
+        final = chain_winners(
+            semis,
+            round_number=n_regular_rounds + 3,
+            round_label="final",
+            feeder_offset=len(cuartos),
+        )
 
-        slots = semis + final
-        # Map each slot to its destination matchday and to MatchupDraft.
+        slots = cuartos + semis + final
         drafts: list[MatchupDraft] = []
         for slot in slots:
-            md_id = matchday_ids[0] if slot.round_label == "semi" else matchday_ids[1]
+            md_id = matchday_ids[slot.round_number - n_regular_rounds - 1]
             drafts.append(
                 MatchupDraft(
                     phase="ko",
@@ -119,7 +142,6 @@ class BalancedKo4Plugin(FormatPlugin):
         standings_snapshot: list[StandingEntry],
     ) -> int:
         ranks = {s.participant_id: s.rank for s in standings_snapshot}
-        # The better regular-phase rank (lower number) advances.
         return min(
             (participant_a_id, participant_b_id),
             key=lambda pid: ranks.get(pid, 10_000),

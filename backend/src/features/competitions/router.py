@@ -50,7 +50,7 @@ async def create_playoff(
     service: CompetitionService = Depends(_get_service),
     _admin: dict = Depends(get_current_admin),
 ) -> CompetitionDetail:
-    return await service.create_playoff(season_id, body.format_id)
+    return await service.create_playoff(season_id, body.format_id, body.name)
 
 
 @router.post("/admin/{competition_id}/start-regular")

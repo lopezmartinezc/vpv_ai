@@ -10,11 +10,19 @@
 > - [PLAYOFFS_API.md](PLAYOFFS_API.md) — referencia HTTP de cada endpoint.
 > - [PLAYOFFS_DEV_GUIDE.md](PLAYOFFS_DEV_GUIDE.md) — cómo añadir un formato nuevo.
 
-## Estado v1 (entregado)
+## Estado v1.1 (entregado)
 
-- **Formato único expuesto**: `balanced_ko4` — 6 jornadas balanced round-robin
-  (cada participante juega 4 partidos exactos, descansa 2 exactos)
-  + KO top-4 (semis + final).
+- **Dos formatos expuestos** y un motor pluggable:
+  - `balanced_ko4` (Mundial): 6 jornadas balanced + KO top-4 (semis + final).
+    Tuned a 13 participantes, 8 jornadas VPV.
+  - `liga_berger_ko8` (Liga): round-robin Berger **completo** dependiente del
+    número de participantes (`N-1` jornadas si par, `N` si impar con descanso)
+    + KO top-8 (cuartos + semis + final). Para 13 participantes: 13 RR + 3 KO
+    = 16 jornadas por playoff.
+- **Multi-playoff por temporada**: el modelo soporta múltiples competitions del
+  tipo `playoff` distinguidos por `name`. Tournament season → 1 playoff
+  (`name="Playoff — …"`). Liga → 2 playoffs (`name="Apertura"` y
+  `name="Clausura"`).
 - **Endpoints públicos**: `/competitions/season/{id}`, `/competitions/{id}/matchups`,
   `/competitions/{id}/standings`.
 - **Endpoints admin**: `/competitions/admin/season/{id}` (crear),

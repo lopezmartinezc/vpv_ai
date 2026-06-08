@@ -50,6 +50,16 @@ class CompetitionRepository:
         )
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
+    async def get_by_season_type_and_name(
+        self, season_id: int, type_: str, name: str
+    ) -> Competition | None:
+        stmt = select(Competition).where(
+            Competition.season_id == season_id,
+            Competition.type == type_,
+            Competition.name == name,
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
     async def list_for_season(self, season_id: int) -> list[Competition]:
         stmt = (
             select(Competition)

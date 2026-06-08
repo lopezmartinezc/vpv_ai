@@ -108,6 +108,7 @@ class FormatInfo(BaseModel):
 
 class CreatePlayoffRequest(BaseModel):
     format_id: str = "balanced_ko4"
+    name: str | None = None  # optional: used to distinguish Apertura/Clausura
 
 
 class StartRegularRequest(BaseModel):

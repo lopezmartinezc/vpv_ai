@@ -46,12 +46,18 @@ class CompetitionService:
     # Format discovery
     # ------------------------------------------------------------------
 
-    def list_formats(self) -> list[FormatInfo]:
+    def list_formats(self, n_participants: int | None = None) -> list[FormatInfo]:
+        """Return the formats available, with the regular-rounds count
+        evaluated for the given participant count (so the UI can show
+        the correct number for Berger-based formats). When
+        ``n_participants`` is None, falls back to a probe value of 13
+        — kept for backwards-compat with clients that don't pass it."""
+        probe = n_participants if n_participants is not None else 13
         return [
             FormatInfo(
                 format_id=p.format_id,
                 display_name=p.display_name,
-                n_rounds_regular=p.required_rounds_regular(),
+                n_rounds_regular=p.required_rounds_regular(probe),
                 n_rounds_ko=p.required_rounds_ko(),
             )
             for p in FORMAT_REGISTRY.values()
@@ -78,19 +84,30 @@ class CompetitionService:
         )
 
     async def create_playoff(
-        self, season_id: int, format_id: str = "balanced_ko4"
+        self,
+        season_id: int,
+        format_id: str = "balanced_ko4",
+        name: str | None = None,
     ) -> CompetitionDetail:
+        """Create a playoff competition.
+
+        ``name`` lets the caller distinguish multiple playoffs per
+        season (e.g. Liga has ``Apertura`` and ``Clausura`` running on
+        the same season). Idempotency keys on ``(season_id, type, name)``
+        so a second call with the same name returns the existing row."""
         if format_id not in FORMAT_REGISTRY:
             raise BusinessRuleError(f"Formato desconocido: {format_id}")
 
-        existing = await self.repo.get_by_season_and_type(season_id, "playoff")
+        plugin = get_format(format_id)
+        final_name = name or f"Playoff — {plugin.display_name}"
+
+        existing = await self.repo.get_by_season_type_and_name(season_id, "playoff", final_name)
         if existing is not None:
             return self._to_detail(existing)
 
-        plugin = get_format(format_id)
         comp = await self.repo.create(
             season_id=season_id,
-            name=f"Playoff — {plugin.display_name}",
+            name=final_name,
             type_="playoff",
             config={"format_id": format_id},
         )
@@ -111,12 +128,13 @@ class CompetitionService:
             # Idempotent: nothing to do.
             return 0
 
-        n_required = plugin.required_rounds_regular()
+        participant_ids = await self.repo.get_participant_ids(comp.season_id)
+        n_required = plugin.required_rounds_regular(len(participant_ids))
         n_provided = matchday_end - matchday_start + 1
         if n_provided != n_required:
             raise BusinessRuleError(
-                f"El formato {plugin.format_id} requiere {n_required} jornadas, "
-                f"recibidas {n_provided}"
+                f"El formato {plugin.format_id} requiere {n_required} jornadas "
+                f"para {len(participant_ids)} participantes, recibidas {n_provided}"
             )
 
         # Validate planned_ko_matchday_numbers up front so the operator
@@ -130,7 +148,6 @@ class CompetitionService:
                     f"recibidas {len(planned_ko_matchday_numbers)}"
                 )
 
-        participant_ids = await self.repo.get_participant_ids(comp.season_id)
         matchday_ids = await self.repo.get_matchday_ids_in_range(
             comp.season_id, matchday_start, matchday_end
         )
@@ -186,7 +203,17 @@ class CompetitionService:
         if len(matchday_ids) != n_required:
             raise BusinessRuleError("Algunas jornadas KO solicitadas no existen en la temporada.")
 
-        drafts = plugin.generate_ko_phase(flat, matchday_ids)
+        # Plugin needs to know how many regular rounds it has so KO
+        # matchups get sequential round_number values right after the
+        # regular phase.
+        regular_range = (comp.config or {}).get("matchday_range_regular", {})
+        n_regular_rounds = (
+            int(regular_range.get("end", 0)) - int(regular_range.get("start", 0)) + 1
+            if regular_range
+            else 0
+        )
+
+        drafts = plugin.generate_ko_phase(flat, matchday_ids, n_regular_rounds)
         await self._persist_drafts(competition_id, drafts)
 
         await self.repo.update_config_patch(

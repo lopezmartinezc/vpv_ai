@@ -1137,13 +1137,34 @@ export default function AdminTemporadasPage() {
             </div>
           </div>
 
-          {/* Playoffs — sólo para torneos en v1 */}
+          {/* Playoffs — torneo = 1 playoff. Liga = Apertura + Clausura */}
           {season.kind === "tournament" && (
             <PlayoffsCard
               seasonId={season.id}
               matchdayStart={season.matchday_start}
               matchdayEnd={season.matchday_end}
+              defaultFormatId="balanced_ko4"
             />
+          )}
+          {season.kind === "league" && (
+            <div className="space-y-3">
+              <PlayoffsCard
+                seasonId={season.id}
+                matchdayStart={season.matchday_start}
+                matchdayEnd={season.matchday_end}
+                playoffName="Apertura"
+                title="Playoff Apertura"
+                defaultFormatId="liga_berger_ko8"
+              />
+              <PlayoffsCard
+                seasonId={season.id}
+                matchdayStart={season.matchday_start}
+                matchdayEnd={season.matchday_end}
+                playoffName="Clausura"
+                title="Playoff Clausura"
+                defaultFormatId="liga_berger_ko8"
+              />
+            </div>
           )}
 
           {/* Scoring Rules */}

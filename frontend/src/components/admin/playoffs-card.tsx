@@ -14,6 +14,13 @@ interface PlayoffsCardProps {
   seasonId: number;
   matchdayStart: number;
   matchdayEnd: number | null;
+  /** Distinct playoff name within the season (e.g. "Apertura",
+   *  "Clausura", or just "Playoff" for a tournament). */
+  playoffName?: string;
+  /** Card title shown in the header. Defaults to "Playoffs". */
+  title?: string;
+  /** Default format suggested in the create dropdown. */
+  defaultFormatId?: string;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -30,9 +37,16 @@ const STATUS_COLOR: Record<string, string> = {
   completed: "bg-emerald-500/15 text-emerald-300",
 };
 
-export function PlayoffsCard({ seasonId, matchdayStart, matchdayEnd }: PlayoffsCardProps) {
+export function PlayoffsCard({
+  seasonId,
+  matchdayStart,
+  matchdayEnd,
+  playoffName,
+  title = "Playoffs",
+  defaultFormatId,
+}: PlayoffsCardProps) {
   const [formats, setFormats] = useState<FormatInfo[]>([]);
-  const [selectedFormat, setSelectedFormat] = useState<string>("");
+  const [selectedFormat, setSelectedFormat] = useState<string>(defaultFormatId ?? "");
   const [playoff, setPlayoff] = useState<CompetitionSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,16 +68,21 @@ export function PlayoffsCard({ seasonId, matchdayStart, matchdayEnd }: PlayoffsC
       ]);
       setFormats(formatList);
       if (formatList.length > 0 && !selectedFormat) {
-        setSelectedFormat(formatList[0].format_id);
+        setSelectedFormat(defaultFormatId ?? formatList[0].format_id);
       }
-      const existing = comps.competitions.find((c) => c.type === "playoff") ?? null;
+      // Find this specific playoff — by name when provided, else first
+      // 'playoff' competition of the season.
+      const playoffComps = comps.competitions.filter((c) => c.type === "playoff");
+      const existing = playoffName
+        ? playoffComps.find((c) => c.name === playoffName) ?? null
+        : playoffComps[0] ?? null;
       setPlayoff(existing);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error cargando playoff");
     } finally {
       setLoading(false);
     }
-  }, [seasonId, selectedFormat]);
+  }, [seasonId, selectedFormat, defaultFormatId, playoffName]);
 
   useEffect(() => {
     load();
@@ -92,7 +111,9 @@ export function PlayoffsCard({ seasonId, matchdayStart, matchdayEnd }: PlayoffsC
     try {
       const comp = await apiClient.post<CompetitionDetail>(
         `/competitions/admin/season/${seasonId}`,
-        { format_id: selectedFormat },
+        playoffName
+          ? { format_id: selectedFormat, name: playoffName }
+          : { format_id: selectedFormat },
       );
       setPlayoff({
         id: comp.id,
@@ -175,7 +196,7 @@ export function PlayoffsCard({ seasonId, matchdayStart, matchdayEnd }: PlayoffsC
   return (
     <div className="rounded-lg border border-vpv-card-border bg-vpv-card p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-vpv-text">Playoffs</h3>
+        <h3 className="text-sm font-semibold text-vpv-text">{title}</h3>
         {playoff && (
           <span
             className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
