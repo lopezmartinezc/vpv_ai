@@ -31,6 +31,7 @@ from src.features.drafts.wishlist_schemas import (
     WishlistUpsertRequest,
 )
 from src.features.seasons.repository import SeasonRepository
+from src.shared.models.draft import Draft
 from src.shared.permissions import Perm
 
 MAX_AUTO_PICK_CHAIN = 30
@@ -215,6 +216,46 @@ class DraftService:
             status=draft.status,
         )
 
+    async def set_draft_status(
+        self,
+        draft_id: int,
+        action: str,
+    ) -> Draft:
+        """Pause or resume a draft.
+
+        ``action`` is "pause" or "resume". Both are idempotent:
+            * pause: any non-completed status -> paused. Completed
+              drafts cannot be paused.
+            * resume: paused -> in_progress (or pending if never
+              started). Pending and in_progress are returned as-is.
+
+        Broadcasts ``draft_status_changed`` on the live WebSocket so
+        connected clients update their banner without a full reload.
+        """
+        if action not in ("pause", "resume"):
+            raise BusinessRuleError("Accion no soportada (usa 'pause' o 'resume')")
+        draft = await self.repo.get_draft_by_id(draft_id)
+        if draft is None:
+            raise NotFoundError("Draft", draft_id)
+        if action == "pause":
+            if draft.status == "completed":
+                raise BusinessRuleError("No se puede pausar un draft ya finalizado")
+            draft.status = "paused"
+        else:
+            if draft.status == "completed":
+                raise BusinessRuleError("No se puede reanudar un draft finalizado")
+            if draft.status == "paused":
+                # Restore to the state implied by whether picks exist.
+                next_pick = await self.repo.get_max_pick_number(draft_id) + 1
+                draft.status = "in_progress" if next_pick > 1 else "pending"
+        self.repo.session.add(draft)
+        await self.repo.session.commit()
+        await draft_ws_manager.broadcast(
+            draft_id,
+            {"type": "draft_status_changed", "status": draft.status},
+        )
+        return draft
+
     async def add_pick(
         self,
         draft_id: int,
@@ -226,6 +267,13 @@ class DraftService:
         draft = await self.repo.get_draft_by_id(draft_id)
         if draft is None:
             raise NotFoundError("Draft", draft_id)
+
+        # Block picks while the draft is paused or already completed.
+        # Auto-picks also go through here so the chain stops cleanly.
+        if draft.status == "paused":
+            raise BusinessRuleError("El draft esta pausado")
+        if draft.status == "completed":
+            raise BusinessRuleError("El draft ya esta finalizado")
 
         # Check player not already picked
         picked = await self.repo.get_picked_player_ids(draft_id)
@@ -465,12 +513,12 @@ class DraftService:
             draft = await self.repo.get_draft_by_id(draft_id)
             if draft is None:
                 return
-            if draft.status == "completed":
-                # Auto-completed by add_pick when the last slot was
-                # filled. Don't keep trying to pick. We deliberately
-                # allow 'pending' here: the codebase has no
-                # `pending -> in_progress` transition, so most drafts
-                # in production sit at 'pending' indefinitely.
+            if draft.status in ("completed", "paused"):
+                # Completed by reaching the cap, or paused by the admin.
+                # Don't keep trying to pick. We deliberately allow
+                # 'pending' here: drafts created before the
+                # pending -> in_progress wiring existed sit at
+                # 'pending' until their first pick.
                 return
 
             participants = await self.repo.get_participants(draft.season_id)

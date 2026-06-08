@@ -55,7 +55,18 @@ La columna `draft_picks.origin` (`'manual' | 'auto'`) distingue picks. Se propag
 | GET | `/drafts/{draft_id}/wishlist` | participante del draft | Mi wishlist con `is_already_picked` calculado. |
 | PUT | `/drafts/{draft_id}/wishlist` | participante del draft | Reemplaza la wishlist con `{enabled, player_ids: [...]}`. |
 | POST | `/drafts/{draft_id}/wishlist/toggle` | participante del draft | Activa/pausa sin tocar la lista. |
-| GET | `/drafts/admin/{draft_id}/wishlists` | admin o `Perm.DRAFT` | Vista agregada de todas las wishlists. |
+| GET | `/drafts/admin/{draft_id}/wishlists` | admin o `Perm.DRAFT` | Vista agregada — sólo metadatos. |
+| POST | `/drafts/admin/{draft_id}/pause` | admin o `Perm.DRAFT` | Pausa el draft (manual y auto-picks bloqueados). |
+| POST | `/drafts/admin/{draft_id}/resume` | admin o `Perm.DRAFT` | Reanuda un draft pausado. |
+
+## Estados del draft (`drafts.status`)
+
+| Estado | Cómo se entra | Efecto |
+|---|---|---|
+| `pending` | Default al crear | Permite picks; el primer pick lo transiciona a `in_progress`. |
+| `in_progress` | Tras el primer pick (`started_at` queda timestamped) | Picks y auto-pick activos. |
+| `paused` | Admin → `POST /drafts/admin/{id}/pause` | Picks y auto-pick bloqueados; reanudable. |
+| `completed` | Auto: último pick preseason (`n_part × draft_pool_size`) o admin endpoint futuro | Picks y auto-pick bloqueados; `completed_at` timestamped. Irreversible vía API. |
 
 ### Migraciones
 

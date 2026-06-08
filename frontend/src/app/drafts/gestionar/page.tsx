@@ -579,6 +579,26 @@ export default function GestionarDraftPage() {
   }
 
   const currentDraft = drafts?.drafts.find((d) => d.phase === selectedPhase);
+  const isPaused = currentDraft?.status === "paused";
+  const isCompleted = currentDraft?.status === "completed";
+
+  async function toggleDraftPause() {
+    if (!currentDraft) return;
+    const next = isPaused ? "resume" : "pause";
+    const verb = isPaused ? "reanudar" : "pausar";
+    if (!window.confirm(`¿${verb.charAt(0).toUpperCase() + verb.slice(1)} el draft?`)) {
+      return;
+    }
+    setError(null);
+    try {
+      await apiClient.post(`/drafts/admin/${currentDraft.id}/${next}`, {});
+      showSuccess(isPaused ? "Draft reanudado" : "Draft pausado");
+      await loadDrafts();
+      await loadDraftDetail();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : `Error al ${verb} el draft`);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -586,6 +606,19 @@ export default function GestionarDraftPage() {
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-bold text-vpv-text">Gestionar Draft</h1>
         <div className="flex items-center gap-2">
+          {currentDraft && !isCompleted && (
+            <button
+              type="button"
+              onClick={toggleDraftPause}
+              className={`rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors ${
+                isPaused
+                  ? "bg-amber-600 hover:bg-amber-500"
+                  : "bg-vpv-bg border border-vpv-border text-vpv-text hover:border-amber-500"
+              }`}
+            >
+              {isPaused ? "Reanudar draft" : "Pausar draft"}
+            </button>
+          )}
           {currentDraft && (
             <Link
               href={`/drafts/live/${currentDraft.id}`}
@@ -597,6 +630,21 @@ export default function GestionarDraftPage() {
           <SeasonSelector />
         </div>
       </div>
+
+      {/* Status banner */}
+      {currentDraft && (isPaused || isCompleted) && (
+        <div
+          className={`rounded-lg border px-4 py-3 text-sm ${
+            isCompleted
+              ? "border-green-500/30 bg-green-500/10 text-green-400"
+              : "border-amber-500/30 bg-amber-500/10 text-amber-400"
+          }`}
+        >
+          {isCompleted
+            ? "Draft finalizado — no se admiten más picks."
+            : "Draft pausado — los picks manuales y auto-picks están bloqueados."}
+        </div>
+      )}
 
       {/* Messages */}
       {error && (

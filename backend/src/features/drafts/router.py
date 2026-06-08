@@ -127,6 +127,28 @@ async def list_all_wishlists_admin(
     return await service.get_all_wishlists_admin(draft_id)
 
 
+@router.post("/admin/{draft_id}/pause")
+async def pause_draft(
+    draft_id: int,
+    service: DraftService = Depends(_get_service),
+    _user: dict = Depends(require_perm(Perm.DRAFT)),
+) -> dict:
+    """Pause the draft: new picks (manual or auto) are blocked."""
+    draft = await service.set_draft_status(draft_id, "pause")
+    return {"id": draft.id, "status": draft.status}
+
+
+@router.post("/admin/{draft_id}/resume")
+async def resume_draft(
+    draft_id: int,
+    service: DraftService = Depends(_get_service),
+    _user: dict = Depends(require_perm(Perm.DRAFT)),
+) -> dict:
+    """Resume a paused draft."""
+    draft = await service.set_draft_status(draft_id, "resume")
+    return {"id": draft.id, "status": draft.status}
+
+
 @router.get("/{season_id}/{phase}", response_model=DraftDetailResponse)
 async def get_draft_detail(
     season_id: int,

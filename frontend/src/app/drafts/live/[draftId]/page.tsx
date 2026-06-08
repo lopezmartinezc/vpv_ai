@@ -190,6 +190,10 @@ export default function LiveDraftPage() {
         setPicks((prev) => prev.filter((p) => p.pick_number !== deletedNumber));
         setNextParticipantId(event.next_participant_id ?? null);
         setPickEventCount((c) => c + 1);
+      } else if (event.type === "draft_status_changed" && event.status) {
+        setDraft((prev) =>
+          prev ? { ...prev, status: event.status as string } : prev,
+        );
       }
     },
     [myParticipantId],
@@ -373,6 +377,18 @@ export default function LiveDraftPage() {
       {testMode && (
         <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-center text-sm font-medium text-amber-400">
           MODO TEST — Los picks no se guardan en la base de datos
+        </div>
+      )}
+
+      {draft?.status === "paused" && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm font-medium text-amber-400">
+          Draft pausado por el administrador — los picks están bloqueados.
+        </div>
+      )}
+
+      {draft?.status === "completed" && (
+        <div className="rounded-lg border border-green-500/40 bg-green-500/10 px-4 py-3 text-sm font-medium text-green-400">
+          Draft finalizado.
         </div>
       )}
 

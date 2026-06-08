@@ -8,7 +8,9 @@ export interface DraftWSEvent {
     | "pick_deleted"
     | "connected"
     | "online_count"
-    | "draft_completed";
+    | "draft_completed"
+    | "draft_status_changed";
+  status?: string;
   pick?: {
     pick_number: number;
     round_number: number;
