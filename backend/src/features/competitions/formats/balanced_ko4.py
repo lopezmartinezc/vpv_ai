@@ -68,7 +68,24 @@ class BalancedKo4Plugin(FormatPlugin):
                 f"balanced_ko4 expects {self.required_rounds_ko()} KO matchdays, "
                 f"got {len(matchday_ids)}"
             )
-        top4 = [s.participant_id for s in standings[:4]]
+        # Per the agreed rule (puntos → diferencial → nada más), two
+        # participants can legitimately end the regular phase tied on
+        # both. Surface that to the operator before materialising the
+        # bracket; otherwise we'd pick an arbitrary order between the
+        # tied participants and silently break a future appeal.
+        top_n = standings[:4]
+        boundary = standings[:5]  # also catches a 4º/5º tie that decides who's in
+        seen_ranks: dict[int, list[str]] = {}
+        for s in boundary:
+            seen_ranks.setdefault(s.rank, []).append(s.display_name)
+        ties = [(rank, names) for rank, names in seen_ranks.items() if len(names) > 1]
+        if ties:
+            tied_msg = "; ".join(f"rank {rank}: {', '.join(names)}" for rank, names in ties)
+            raise ValueError(
+                "Empate sin desempate dentro del top-4 del playoff. "
+                "Resuelve antes de iniciar las eliminatorias: " + tied_msg
+            )
+        top4 = [s.participant_id for s in top_n]
         semis = seed_classic_bracket(top4, round_label="semi", round_number=7)
         final = chain_winners(semis, round_number=8, round_label="final", feeder_offset=0)
 

@@ -173,6 +173,45 @@ Cuando se scrapea J8, el aggregator marca el cruce final con su `winner_particip
 
 Pasaste un rango incorrecto. Ajusta `matchday_start` y `matchday_end` para que el rango sea exactamente 6.
 
+### "Empate sin desempate dentro del top-4 del playoff"
+
+Dos o más participantes acabaron la fase regular con **idénticos puntos e
+idéntica diferencia acumulada**, y caen dentro del corte que decide qué top-4
+entra al KO. El sistema rechaza iniciar el KO porque cualquier orden sería
+arbitrario.
+
+Resolución manual (cuando aparezca):
+
+```sql
+-- Ver el empate
+SELECT rank, points, diff_avg, display_name
+FROM (
+  -- query equivalente al cálculo del backend
+  SELECT p.id AS pid, u.display_name,
+         /* tus puntos y diff_avg */
+  FROM ...
+) AS s
+ORDER BY points DESC, diff_avg DESC;
+```
+
+Opciones:
+1. **Esperar más jornadas** — si la temporada permite añadir una más.
+2. **Resolver por sorteo / acuerdo** y editar `competitions.config` para forzar
+   el orden:
+   ```sql
+   UPDATE competitions
+   SET config = jsonb_set(
+       config,
+       '{tie_breaker_overrides}',
+       '{"<participant_id>": <forced_rank>}'::jsonb
+   )
+   WHERE id = <COMP_ID>;
+   ```
+   (Esta override no se aplica automáticamente todavía; v2 la usará. Por ahora
+   sirve como registro documentado.)
+3. **Forzar uno de los dos** vía SQL directo en el config + reintento del
+   `start-ko`.
+
 ### "Quedan N cruces de fase regular sin resolver"
 
 Algún cruce de la fase regular no tiene scores. Causa habitual: el aggregator no se ha ejecutado para esa jornada (scraping pendiente).

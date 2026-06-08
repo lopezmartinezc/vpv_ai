@@ -57,8 +57,12 @@
 
 ## Decisiones cerradas (aplican a todos los formatos)
 
-- **Desempate clasificación**: `puntos DESC, diff_avg DESC, pts_total_vpv DESC,
-  draft_order ASC`. Aplicado en `CompetitionService._compute_standings`.
+- **Desempate clasificación**: `puntos DESC, diff_avg DESC` y **nada más**.
+  Acordado con Oscar para el Mundial 2026: como no jugamos todos contra todos,
+  la diferencia acumulada de puntos VPV resuelve el empate directamente. Si dos
+  participantes acaban iguales en puntos Y en diferencial, comparten `rank` y
+  el plugin del KO se niega a arrancar hasta que se resuelva manualmente.
+  Aplicado en `CompetitionService._compute_standings`.
 - **Empate en cruce regular**: 1 punto cada uno, `winner_participant_id=NULL`.
 - **Empate en KO**: gana el mejor `rank` de la fase regular (snapshot persistido
   en `competitions.config.regular_standings_snapshot`). El plugin decide via

@@ -365,24 +365,33 @@ class CompetitionService:
             created_ids.append(row.id)
 
     async def _compute_standings(self, comp: Competition) -> list[GroupStandings]:
+        """Compute standings sorted by ``(-points, -diff_avg)`` only.
+
+        Per the rule agreed with Oscar (Mundial 2026): since the format
+        is not a full round-robin, ties are broken by accumulated point
+        difference and nothing else. If two participants happen to tie
+        on BOTH, they get the same rank — the operator is expected to
+        resolve it manually (the KO start guard surfaces the case).
+        """
         plugin = self._plugin_for(comp)
         out: list[GroupStandings] = []
         for label in plugin.standings_groups():
             rows = await self.repo.get_standings_rows(comp.id, group_label=label)
-            sorted_rows = sorted(
-                rows,
-                key=lambda r: (
-                    -r.points,
-                    -r.diff_avg,
-                    -r.pts_total_vpv,
-                    r.draft_order,
-                ),
-            )
+            sorted_rows = sorted(rows, key=lambda r: (-r.points, -r.diff_avg))
             entries: list[StandingEntry] = []
+            prev_key: tuple[int, int] | None = None
+            prev_rank: int = 0
             for idx, r in enumerate(sorted_rows, start=1):
+                key = (r.points, r.diff_avg)
+                if key == prev_key:
+                    rank = prev_rank
+                else:
+                    rank = idx
+                    prev_rank = rank
+                    prev_key = key
                 entries.append(
                     StandingEntry(
-                        rank=idx,
+                        rank=rank,
                         participant_id=r.participant_id,
                         display_name=r.display_name,
                         group_label=r.group_label,
