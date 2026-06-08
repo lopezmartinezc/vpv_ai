@@ -201,18 +201,7 @@ class PhotoDownloader:
 
                 try:
                     img: Image.Image = Image.open(io.BytesIO(img_bytes))
-                    # Flatten any transparent background onto solid
-                    # white. futbolfantasy serves player headshots as
-                    # PNG with transparent borders; if we keep alpha in
-                    # the WebP, Telegram dark mode renders those areas
-                    # as black bands around the photo.
-                    if img.mode in ("RGBA", "LA", "P"):
-                        rgba = img.convert("RGBA")
-                        bg = Image.new("RGB", rgba.size, (255, 255, 255))
-                        bg.paste(rgba, mask=rgba.split()[-1])
-                        img = bg
-                    else:
-                        img = img.convert("RGB")
+                    img = img.convert("RGBA")
                     img = img.resize(PHOTO_SIZE, Image.Resampling.LANCZOS)
 
                     out_path = _PHOTOS_DIR / f"{player.slug}.webp"
