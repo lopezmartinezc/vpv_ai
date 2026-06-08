@@ -61,7 +61,10 @@ async def start_regular_phase(
     _admin: dict = Depends(get_current_admin),
 ) -> dict[str, int]:
     inserted = await service.start_regular_phase(
-        competition_id, body.matchday_start, body.matchday_end
+        competition_id,
+        body.matchday_start,
+        body.matchday_end,
+        planned_ko_matchday_numbers=body.planned_ko_matchday_numbers,
     )
     return {"matchups_inserted": inserted}
 

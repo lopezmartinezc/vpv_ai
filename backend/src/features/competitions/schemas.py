@@ -113,6 +113,11 @@ class CreatePlayoffRequest(BaseModel):
 class StartRegularRequest(BaseModel):
     matchday_start: int = Field(ge=1)
     matchday_end: int = Field(ge=1)
+    # Optional: schedule the KO phase upfront. When provided, the
+    # backend will auto-fire start_ko_phase the moment the regular
+    # phase is fully resolved (no second admin click needed). The list
+    # length must match the format's required_rounds_ko.
+    planned_ko_matchday_numbers: list[int] | None = None
 
 
 class StartKoRequest(BaseModel):

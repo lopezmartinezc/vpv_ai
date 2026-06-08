@@ -71,6 +71,20 @@ export function PlayoffsCard({ seasonId, matchdayStart, matchdayEnd }: PlayoffsC
 
   const currentFormat = formats.find((f) => f.format_id === selectedFormat);
 
+  // Keep the KO CSV input in sync with the regular start + format.
+  // Only seeds the default value — the operator can still override.
+  useEffect(() => {
+    if (!currentFormat) return;
+    const start = Number(regularStart);
+    if (!Number.isFinite(start) || start < 1) return;
+    const koStart = start + currentFormat.n_rounds_regular;
+    const numbers = Array.from(
+      { length: currentFormat.n_rounds_ko },
+      (_, i) => koStart + i,
+    );
+    setKoMatchdays(numbers.join(","));
+  }, [regularStart, currentFormat]);
+
   async function handleCreate() {
     if (!selectedFormat) return;
     setBusy("create");
@@ -102,12 +116,27 @@ export function PlayoffsCard({ seasonId, matchdayStart, matchdayEnd }: PlayoffsC
       return;
     }
     const end = start + currentFormat.n_rounds_regular - 1;
+    // Parse the KO matchday CSV (pre-filled to start+N..start+N+M-1).
+    // Sent along with the regular start so the backend can auto-fire
+    // the KO phase the moment the last regular cruce resolves —
+    // operator does not need to come back to this card.
+    const koNumbers = koMatchdays
+      .split(",")
+      .map((s) => Number(s.trim()))
+      .filter((n) => Number.isFinite(n) && n >= 1);
+    if (koNumbers.length !== currentFormat.n_rounds_ko) {
+      setError(
+        `Las jornadas KO deben ser exactamente ${currentFormat.n_rounds_ko} (separadas por coma)`,
+      );
+      return;
+    }
     setBusy("regular");
     setError(null);
     try {
       await apiClient.post(`/competitions/admin/${playoff.id}/start-regular`, {
         matchday_start: start,
         matchday_end: end,
+        planned_ko_matchday_numbers: koNumbers,
       });
       await load();
     } catch (e) {
@@ -204,9 +233,9 @@ export function PlayoffsCard({ seasonId, matchdayStart, matchdayEnd }: PlayoffsC
       {playoff && status === "pending" && (
         <div className="space-y-2">
           <p className="text-xs text-vpv-text-muted">
-            Define el rango de jornadas para la fase regular.
-            {currentFormat &&
-              ` El formato requiere ${currentFormat.n_rounds_regular} jornadas.`}
+            Define la jornada inicio y las jornadas KO. El KO arrancará
+            automáticamente cuando se resuelva la última jornada de la fase
+            regular — no tendrás que volver aquí.
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <label className="text-xs">
@@ -218,22 +247,36 @@ export function PlayoffsCard({ seasonId, matchdayStart, matchdayEnd }: PlayoffsC
                 className="ml-2 w-16 rounded border border-vpv-border bg-vpv-bg px-2 py-1 text-xs text-vpv-text"
               />
             </label>
+            <label className="text-xs">
+              Jornadas KO
+              <input
+                type="text"
+                value={koMatchdays}
+                onChange={(e) => setKoMatchdays(e.target.value)}
+                placeholder={
+                  currentFormat
+                    ? Array.from(
+                        { length: currentFormat.n_rounds_ko },
+                        (_, i) => `${i + 1}`,
+                      ).join(",")
+                    : ""
+                }
+                className="ml-2 w-28 rounded border border-vpv-border bg-vpv-bg px-2 py-1 text-xs text-vpv-text"
+              />
+            </label>
             <button
               onClick={handleStartRegular}
               disabled={busy === "regular"}
               className="rounded bg-vpv-accent px-3 py-1 text-xs font-medium text-vpv-bg transition-opacity disabled:opacity-40"
             >
-              {busy === "regular" ? "Generando…" : "Generar fase regular"}
+              {busy === "regular" ? "Generando…" : "Generar calendario"}
             </button>
           </div>
           {currentFormat && Number.isFinite(Number(regularStart)) && Number(regularStart) >= 1 && (
             <p className="text-[11px] text-vpv-text-muted/70">
-              Esto generará la fase regular sobre las jornadas{" "}
-              <span className="text-vpv-text">
-                J{Number(regularStart)} – J
-                {Number(regularStart) + currentFormat.n_rounds_regular - 1}
-              </span>
-              .
+              Fase regular: J{Number(regularStart)} – J
+              {Number(regularStart) + currentFormat.n_rounds_regular - 1}.
+              KO: J{koMatchdays || "?"}.
             </p>
           )}
         </div>
@@ -242,30 +285,34 @@ export function PlayoffsCard({ seasonId, matchdayStart, matchdayEnd }: PlayoffsC
       {playoff && status === "regular" && (
         <div className="space-y-2">
           <p className="text-xs text-vpv-text-muted">
-            Fase regular en curso. Cuando todos los cruces estén resueltos podrás
-            iniciar las eliminatorias.
-            {currentFormat &&
-              ` El KO necesita ${currentFormat.n_rounds_ko} jornadas (números separados por coma).`}
+            Fase regular en curso. Si configuraste las jornadas KO al crear el
+            calendario, las eliminatorias se iniciarán solas cuando se resuelva
+            el último cruce. Si no, fuérzalo desde aquí:
           </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="text-xs">
-              Jornadas KO
-              <input
-                type="text"
-                placeholder="ej: 7,8"
-                value={koMatchdays}
-                onChange={(e) => setKoMatchdays(e.target.value)}
-                className="ml-2 w-28 rounded border border-vpv-border bg-vpv-bg px-2 py-1 text-xs text-vpv-text"
-              />
-            </label>
-            <button
-              onClick={handleStartKo}
-              disabled={busy === "ko"}
-              className="rounded bg-vpv-accent px-3 py-1 text-xs font-medium text-vpv-bg transition-opacity disabled:opacity-40"
-            >
-              {busy === "ko" ? "Iniciando…" : "Iniciar eliminatorias"}
-            </button>
-          </div>
+          <details className="text-xs">
+            <summary className="cursor-pointer text-vpv-text-muted">
+              Iniciar KO manualmente (fallback)
+            </summary>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <label>
+                Jornadas KO
+                <input
+                  type="text"
+                  placeholder="ej: 7,8"
+                  value={koMatchdays}
+                  onChange={(e) => setKoMatchdays(e.target.value)}
+                  className="ml-2 w-28 rounded border border-vpv-border bg-vpv-bg px-2 py-1 text-vpv-text"
+                />
+              </label>
+              <button
+                onClick={handleStartKo}
+                disabled={busy === "ko"}
+                className="rounded bg-vpv-accent px-3 py-1 font-medium text-vpv-bg transition-opacity disabled:opacity-40"
+              >
+                {busy === "ko" ? "Iniciando…" : "Iniciar eliminatorias"}
+              </button>
+            </div>
+          </details>
         </div>
       )}
 

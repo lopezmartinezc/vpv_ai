@@ -56,8 +56,11 @@ Define el rango de jornadas. Para `balanced_ko4` son **6 jornadas exactas**.
 ### Via UI
 
 1. Tarjeta Playoffs en `/admin/temporadas`.
-2. Inputs `Jornada inicio` / `Jornada fin` → p.ej. `1` y `6` para el Mundial.
-3. **"Generar fase regular"** → se insertan 26 cruces.
+2. Input `Jornada inicio` (la `Jornada fin` se calcula sola desde el formato).
+3. Input `Jornadas KO` (pre-rellenado con `start+6, start+7`, editable).
+4. **"Generar calendario"** → inserta los 26 cruces regular y persiste las
+   jornadas KO planificadas. Cuando se resuelva la última jornada regular, el
+   KO arrancará solo. **No hace falta volver a la tarjeta.**
 
 ### Via curl
 
@@ -68,10 +71,21 @@ COMP_ID=$(curl -sf "https://new.ligavpv.com/api/competitions/season/${SEASON_ID}
 curl -sf -X POST "https://new.ligavpv.com/api/competitions/admin/${COMP_ID}/start-regular" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{"matchday_start":1,"matchday_end":6}' | jq
+  -d '{
+    "matchday_start": 1,
+    "matchday_end": 6,
+    "planned_ko_matchday_numbers": [7, 8]
+  }' | jq
 ```
 
-Respuesta: `{"matchups_inserted":26}`. El sorteo aleatorio queda persistido en `competitions.config.seed`.
+Respuesta: `{"matchups_inserted":26}`. El sorteo aleatorio queda persistido en
+`competitions.config.seed`. Las jornadas KO planificadas se guardan en
+`competitions.config.planned_ko_matchday_numbers` y se ejecutan
+**automáticamente** cuando la fase regular acaba (vía
+`recalculate_matchups_for_matchday`).
+
+Si omites `planned_ko_matchday_numbers`, el comportamiento es el legacy: hay
+que llamar manualmente a `start-ko` tras la última jornada regular.
 
 ### Verificación SQL
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import random
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -101,6 +102,7 @@ class CompetitionService:
         competition_id: int,
         matchday_start: int,
         matchday_end: int,
+        planned_ko_matchday_numbers: list[int] | None = None,
     ) -> int:
         comp = await self._require_competition(competition_id)
         plugin = self._plugin_for(comp)
@@ -117,6 +119,17 @@ class CompetitionService:
                 f"recibidas {n_provided}"
             )
 
+        # Validate planned_ko_matchday_numbers up front so the operator
+        # gets a clear error before any matchup is inserted (instead of
+        # the auto-start failing silently later).
+        if planned_ko_matchday_numbers is not None:
+            ko_required = plugin.required_rounds_ko()
+            if len(planned_ko_matchday_numbers) != ko_required:
+                raise BusinessRuleError(
+                    f"El formato {plugin.format_id} requiere {ko_required} jornadas KO, "
+                    f"recibidas {len(planned_ko_matchday_numbers)}"
+                )
+
         participant_ids = await self.repo.get_participant_ids(comp.season_id)
         matchday_ids = await self.repo.get_matchday_ids_in_range(
             comp.season_id, matchday_start, matchday_end
@@ -131,13 +144,13 @@ class CompetitionService:
         drafts = plugin.generate_regular_phase(participant_ids, matchday_ids, seed)
         await self._persist_drafts(competition_id, drafts)
 
-        await self.repo.update_config_patch(
-            competition_id,
-            {
-                "seed": seed,
-                "matchday_range_regular": {"start": matchday_start, "end": matchday_end},
-            },
-        )
+        config_patch: dict[str, Any] = {
+            "seed": seed,
+            "matchday_range_regular": {"start": matchday_start, "end": matchday_end},
+        }
+        if planned_ko_matchday_numbers is not None:
+            config_patch["planned_ko_matchday_numbers"] = planned_ko_matchday_numbers
+        await self.repo.update_config_patch(competition_id, config_patch)
         await self.repo.update_status(competition_id, "regular")
         await self.session.commit()
         return len(drafts)
@@ -235,9 +248,36 @@ class CompetitionService:
                 await self.repo.propagate_winner_to_feeders(m.id, winner)
             resolved += 1
 
+        await self._maybe_auto_start_ko(last_competition_id)
         await self._maybe_mark_completed(last_competition_id)
         await self.session.commit()
         return {"resolved": resolved, "pending": pending}
+
+    async def _maybe_auto_start_ko(self, competition_id: int | None) -> None:
+        """If the regular phase just finished and the operator pre-set
+        the KO jornadas at start_regular time, fire start_ko_phase
+        automatically. Best-effort: any error is logged and swallowed
+        so the scraping pipeline keeps running."""
+        if competition_id is None:
+            return
+        comp = await self.repo.get(competition_id)
+        if comp is None or comp.status != "regular":
+            return
+        ko_numbers = (comp.config or {}).get("planned_ko_matchday_numbers")
+        if not ko_numbers:
+            return
+        unresolved = await self.repo.count_unresolved_regular(competition_id)
+        if unresolved:
+            return
+        try:
+            await self.start_ko_phase(competition_id, list(ko_numbers))
+            logger.info(
+                "Auto-started KO phase for competition %d on matchdays %s",
+                competition_id,
+                ko_numbers,
+            )
+        except Exception:
+            logger.exception("Auto-start KO failed for competition %d", competition_id)
 
     async def _maybe_mark_completed(self, competition_id: int | None) -> None:
         if competition_id is None:
