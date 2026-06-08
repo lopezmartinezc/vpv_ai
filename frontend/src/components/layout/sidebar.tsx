@@ -36,6 +36,7 @@ const NAV_ITEMS: NavItem[] = [
   // Tournament-only (paginas creadas en Fase 6)
   { href: "/grupos", label: "Grupos", icon: "trophy", appliesTo: "tournament" },
   { href: "/bracket", label: "Cuadro de eliminatorias", icon: "shuffle", appliesTo: "tournament" },
+  { href: "/playoffs", label: "Playoffs", icon: "medal", appliesTo: "tournament" },
   { href: "/predicciones", label: "Predicciones", icon: "clipboard", appliesTo: "tournament" },
   // Common
   { href: "/jornadas", label: "Jornadas", icon: "calendar" },

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.shared.models.base import Base
 
 if TYPE_CHECKING:
+    from src.shared.models.competition_matchup import CompetitionMatchup
     from src.shared.models.season import Season
 
 
@@ -25,3 +26,6 @@ class Competition(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
 
     season: Mapped[Season] = relationship(back_populates="competitions")
+    matchups: Mapped[list[CompetitionMatchup]] = relationship(
+        back_populates="competition", lazy="raise"
+    )

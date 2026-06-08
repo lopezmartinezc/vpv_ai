@@ -422,6 +422,89 @@ export interface AdminWishlist {
   total: number;
 }
 
+// ---------------------------------------------------------------------------
+// Playoff competitions
+// ---------------------------------------------------------------------------
+
+export interface FormatInfo {
+  format_id: string;
+  display_name: string;
+  n_rounds_regular: number;
+  n_rounds_ko: number;
+}
+
+export interface CompetitionDetail {
+  id: number;
+  season_id: number;
+  name: string;
+  type: string;
+  status: "pending" | "regular" | "ko" | "completed" | string;
+  config: Record<string, unknown> | null;
+}
+
+export interface CompetitionSummary {
+  id: number;
+  season_id: number;
+  name: string;
+  type: string;
+  status: string;
+}
+
+export interface CompetitionListResponse {
+  season_id: number;
+  competitions: CompetitionSummary[];
+}
+
+export interface MatchupEntry {
+  id: number;
+  phase: "regular" | "ko" | string;
+  group_label: string | null;
+  round_label: string | null;
+  round_number: number;
+  matchday_id: number | null;
+  matchday_number: number | null;
+  participant_a_id: number | null;
+  participant_a_name: string | null;
+  participant_b_id: number | null;
+  participant_b_name: string | null;
+  feeder_a_id: number | null;
+  feeder_b_id: number | null;
+  score_a: number | null;
+  score_b: number | null;
+  winner_participant_id: number | null;
+  winner_name: string | null;
+}
+
+export interface CompetitionMatchupsResponse {
+  competition: CompetitionDetail;
+  matchups: MatchupEntry[];
+}
+
+export interface StandingEntry {
+  rank: number;
+  participant_id: number;
+  display_name: string;
+  group_label: string;
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  rests: number;
+  points: number;
+  diff_avg: number;
+  pts_total_vpv: number;
+}
+
+export interface GroupStandings {
+  label: string;
+  entries: StandingEntry[];
+}
+
+export interface CompetitionStandingsResponse {
+  competition: CompetitionDetail;
+  groups: GroupStandings[];
+}
+
 export interface PlayerSearchItem {
   id: number;
   display_name: string;

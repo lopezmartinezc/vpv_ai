@@ -45,6 +45,15 @@ class ScoreAggregator:
         await self._update_participant_scores(matchday_id)
         await self._update_rankings(matchday_id)
 
+        # Recalcular cruces de playoff que tengan esta jornada. Best-
+        # effort: cualquier fallo aquí no debe romper el scraping.
+        try:
+            from src.features.competitions.service import CompetitionService
+
+            await CompetitionService(self.session).recalculate_matchups_for_matchday(matchday_id)
+        except Exception:
+            logger.exception("competition matchup recalc failed for matchday_id=%d", matchday_id)
+
         logger.info("ScoreAggregator.aggregate_matchday: matchday_id=%d — done", matchday_id)
 
     # ------------------------------------------------------------------

@@ -1,5 +1,6 @@
 from src.shared.models.base import Base
 from src.shared.models.competition import Competition
+from src.shared.models.competition_matchup import CompetitionMatchup
 from src.shared.models.draft import Draft, DraftPick
 from src.shared.models.draft_wishlist import DraftWishlist, DraftWishlistPlayer
 from src.shared.models.invite import Invite
@@ -21,6 +22,7 @@ from src.shared.models.user import User
 __all__ = [
     "Base",
     "Competition",
+    "CompetitionMatchup",
     "Draft",
     "DraftPick",
     "DraftWishlist",

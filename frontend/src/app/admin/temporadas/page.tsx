@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "@/lib/api-client";
+import { PlayoffsCard } from "@/components/admin/playoffs-card";
 
 interface Season {
   id: number;
@@ -1135,6 +1136,15 @@ export default function AdminTemporadasPage() {
               )}
             </div>
           </div>
+
+          {/* Playoffs — sólo para torneos en v1 */}
+          {season.kind === "tournament" && (
+            <PlayoffsCard
+              seasonId={season.id}
+              matchdayStart={season.matchday_start}
+              matchdayEnd={season.matchday_end}
+            />
+          )}
 
           {/* Scoring Rules */}
           <div className="rounded-lg border border-vpv-card-border bg-vpv-card">

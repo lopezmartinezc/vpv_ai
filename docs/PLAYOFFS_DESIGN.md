@@ -1,8 +1,71 @@
-# Playoffs — Diseño (DOCUMENTACIÓN, no implementar ahora)
+# Playoffs — Diseño + estado actual
 
-> Estado: **diseño aprobado en lo conceptual, NO implementar en este turno**.
-> Cuando se retome, mover este fichero a `docs/PLAYOFFS_DESIGN.md` del repo
-> (es la única acción de "implementación" que se solicita ahora).
+> Estado: **v1 implementado** con el formato `balanced_ko4` para el Mundial 2026.
+> El motor es **pluggable**: añadir un formato nuevo (Berger, 2 grupos, suizo, etc.)
+> se hace creando un fichero en [backend/src/features/competitions/formats/](backend/src/features/competitions/formats/)
+> y registrándolo en el `FORMAT_REGISTRY`. Nada más cambia.
+
+## Estado v1 (entregado)
+
+- **Formato único expuesto**: `balanced_ko4` — 6 jornadas balanced round-robin
+  (cada participante juega 4 partidos exactos, descansa 2 exactos)
+  + KO top-4 (semis + final).
+- **Endpoints públicos**: `/competitions/season/{id}`, `/competitions/{id}/matchups`,
+  `/competitions/{id}/standings`.
+- **Endpoints admin**: `/competitions/admin/season/{id}` (crear),
+  `.../start-regular`, `.../start-ko`.
+- **Discovery**: `GET /competitions/formats` lista los plugins disponibles.
+- **Wiring scraping**: `ScoreAggregator.aggregate_matchday` invoca
+  `CompetitionService.recalculate_matchups_for_matchday` al cerrar cada jornada.
+- **UI admin**: tarjeta "Playoffs" en `/admin/temporadas` (sólo seasons `kind=tournament`).
+- **UI pública**: `/playoffs` con tres tabs (Clasificación, Calendario, Eliminatorias).
+- **Sidebar**: entrada "Playoffs" cuando la season es tournament.
+
+## Cómo añadir un formato nuevo
+
+1. Crear `backend/src/features/competitions/formats/mi_formato.py` con una clase
+   que herede de `FormatPlugin`.
+2. Implementar:
+   - `format_id`, `display_name`.
+   - `required_rounds_regular`, `required_rounds_ko`.
+   - `generate_regular_phase(participants, matchday_ids, seed)`.
+   - `generate_ko_phase(standings, matchday_ids)`.
+   - `resolve_ko_tie(participant_a_id, participant_b_id, standings_snapshot)`.
+   - (Opcional) `standings_groups()` para formatos multi-grupo.
+3. Registrar en `formats/__init__.py`:
+   ```python
+   FORMAT_REGISTRY = {
+       'balanced_ko4': BalancedKo4Plugin(),
+       'mi_formato': MiFormatoPlugin(),   # NUEVO
+   }
+   ```
+4. La UI del admin lo ofrecerá automáticamente en el desplegable de formato.
+
+## Algoritmos reutilizables
+
+- [scheduler.py](backend/src/features/competitions/scheduler.py):
+  - `generate_balanced_schedule()` — 13 jugadores × 4 partidos en 6 jornadas.
+  - `generate_berger()` — round-robin clásico (no usado por v1).
+- [ko_bracket.py](backend/src/features/competitions/ko_bracket.py):
+  - `seed_classic_bracket()` — bracket 1-vs-N, 2-vs-N-1, etc.
+  - `chain_winners()` — encadena ganadores a la siguiente ronda con feeders.
+
+## Decisiones cerradas (aplican a todos los formatos)
+
+- **Desempate clasificación**: `puntos DESC, diff_avg DESC, pts_total_vpv DESC,
+  draft_order ASC`. Aplicado en `CompetitionService._compute_standings`.
+- **Empate en cruce regular**: 1 punto cada uno, `winner_participant_id=NULL`.
+- **Empate en KO**: gana el mejor `rank` de la fase regular (snapshot persistido
+  en `competitions.config.regular_standings_snapshot`). El plugin decide via
+  `resolve_ko_tie`.
+- **Descanso**: 0 puntos para el participante en ese cruce. Cuenta como
+  `rests++` en standings. No afecta a `diff_avg`.
+- **Recálculo retroactivo**: hook automático tras cada
+  `ScoreAggregator.aggregate_matchday`.
+
+---
+
+## Notas históricas (anteriores al v1)
 
 ## Context
 
