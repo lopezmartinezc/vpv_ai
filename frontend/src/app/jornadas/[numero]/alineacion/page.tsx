@@ -420,6 +420,21 @@ function PlayerCard({
         </p>
         <p className="truncate text-xs text-vpv-text-muted">
           {player.team_name}
+          {player.opponent_team_name && (
+            <>
+              <span className="mx-1 text-vpv-text-muted/40">·</span>
+              <span
+                className={
+                  player.is_home
+                    ? "text-emerald-400"
+                    : "text-amber-400"
+                }
+                title={player.is_home ? "Local" : "Visitante"}
+              >
+                {player.is_home ? "vs" : "@"} {player.opponent_team_name}
+              </span>
+            </>
+          )}
         </p>
         {player.recent_form && player.recent_form.matches.length > 0 && (
           <div className="mt-0.5 flex items-center gap-2">

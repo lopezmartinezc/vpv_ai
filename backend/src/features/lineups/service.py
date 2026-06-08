@@ -86,6 +86,11 @@ class LineupService:
         player_ids = [r["player_id"] for r in squad_rows]
         form_data = await self.repo.get_squad_recent_form(season_id, player_ids)
 
+        # Opponent per team for this matchday so the card can show
+        # "vs Rival (Casa/Fuera)" without depending on the prediction
+        # model (which may not run for tournament matchdays).
+        opponents = await self.repo.get_matchday_opponents(matchday.id)
+
         # Get display_name from the user
         from src.shared.models.user import User
 
@@ -114,6 +119,7 @@ class LineupService:
                     penalty_goals=form["penalty_goals"],
                     yellow_cards=form["yellow_cards"],
                 )
+            opp = opponents.get(r["team_id"])
             squad.append(
                 SquadPlayerForLineup(
                     player_id=pid,
@@ -123,6 +129,8 @@ class LineupService:
                     team_name=r["team_name"],
                     season_points=r["season_points"],
                     recent_form=recent_form,
+                    opponent_team_name=opp[0] if opp else None,
+                    is_home=opp[1] if opp else None,
                 )
             )
 

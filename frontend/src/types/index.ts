@@ -309,6 +309,11 @@ export interface SquadPlayerEntry {
   team_name: string;
   season_points: number;
   recent_form: PlayerRecentForm | null;
+  /** Opponent team name for the matchday being submitted. Null when the
+   *  player's team has no scheduled match in this matchday. */
+  opponent_team_name?: string | null;
+  /** True if the player's team plays at home in this matchday. */
+  is_home?: boolean | null;
 }
 
 export interface SquadDetailResponse {

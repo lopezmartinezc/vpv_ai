@@ -5,6 +5,7 @@ from typing import Any
 
 from sqlalchemy import and_, case, delete, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from src.shared.models.lineup import Lineup, LineupPlayer
 from src.shared.models.matchday import Match, Matchday
@@ -285,6 +286,7 @@ class LineupRepository:
                 Player.display_name,
                 Player.photo_path,
                 Player.position,
+                Player.team_id,
                 Team.name.label("team_name"),
                 season_pts,
             )
@@ -306,6 +308,7 @@ class LineupRepository:
                 Player.display_name,
                 Player.photo_path,
                 Player.position,
+                Player.team_id,
                 Team.name,
             )
             .order_by(pos_order.asc(), season_pts.desc())
@@ -313,6 +316,34 @@ class LineupRepository:
 
         result = await self.session.execute(stmt)
         return [dict(r._mapping) for r in result.all()]
+
+    async def get_matchday_opponents(self, matchday_id: int) -> dict[int, tuple[str, bool]]:
+        """Return ``team_id -> (opponent_team_name, is_home)`` for a matchday.
+
+        Used to enrich the squad payload of /lineups so the UI can show
+        each player's upcoming opponent and home/away side without
+        running a separate query per row. A team appears at most once
+        per matchday (round-robin), so the dict is collision-free.
+        """
+        home_alias = aliased(Team)
+        away_alias = aliased(Team)
+        stmt = (
+            select(
+                Match.home_team_id,
+                Match.away_team_id,
+                home_alias.name.label("home_name"),
+                away_alias.name.label("away_name"),
+            )
+            .join(home_alias, home_alias.id == Match.home_team_id)
+            .join(away_alias, away_alias.id == Match.away_team_id)
+            .where(Match.matchday_id == matchday_id)
+        )
+        result = await self.session.execute(stmt)
+        out: dict[int, tuple[str, bool]] = {}
+        for row in result.all():
+            out[row.home_team_id] = (row.away_name, True)
+            out[row.away_team_id] = (row.home_name, False)
+        return out
 
     async def get_squad_recent_form(
         self, season_id: int, player_ids: list[int], n: int = 5

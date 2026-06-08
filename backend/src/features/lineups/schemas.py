@@ -75,6 +75,12 @@ class SquadPlayerForLineup(BaseModel):
     team_name: str
     season_points: int
     recent_form: PlayerRecentForm | None = None
+    # Upcoming match for this matchday. Both are None when the player's
+    # team has no scheduled match in this matchday (e.g. it was already
+    # played and isn't part of the calendar, or it's a bye in a
+    # tournament group stage).
+    opponent_team_name: str | None = None
+    is_home: bool | None = None
 
 
 class MyLineupResponse(BaseModel):
