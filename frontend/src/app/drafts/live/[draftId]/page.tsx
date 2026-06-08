@@ -447,8 +447,8 @@ export default function LiveDraftPage() {
         </div>
       )}
 
-      {/* Auto-pick wishlist (only for actual participants) */}
-      {myParticipantId !== null && !testMode && (
+      {/* Auto-pick wishlist (only for actual participants on an active draft) */}
+      {myParticipantId !== null && !testMode && draft?.status !== "completed" && (
         <details className="rounded-lg border border-vpv-card-border bg-vpv-card">
           <summary className="cursor-pointer px-4 py-2 text-sm font-medium text-vpv-text">
             Mi auto-pick

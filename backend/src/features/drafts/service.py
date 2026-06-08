@@ -791,7 +791,26 @@ class DraftService:
         deleted = await self.repo.delete_pick(draft_id, pick_number)
         if not deleted:
             raise NotFoundError("Pick", pick_number)
+
+        # If the draft was already 'completed' (last pick filled the
+        # cap), the deletion leaves it under-filled — flip it back to
+        # 'in_progress' so add_pick / _maybe_auto_pick will accept
+        # picks again. completed_at is cleared to keep the timestamp
+        # honest; it will be re-stamped when the cap is hit again.
+        status_changed = False
+        if draft.status == "completed":
+            draft.status = "in_progress"
+            draft.completed_at = None
+            self.repo.session.add(draft)
+            status_changed = True
+
         await self.repo.session.commit()
+
+        if status_changed:
+            await draft_ws_manager.broadcast(
+                draft_id,
+                {"type": "draft_status_changed", "status": draft.status},
+            )
 
         # Recompute the "next participant" so connected clients can show the
         # correct turn after the undo.
