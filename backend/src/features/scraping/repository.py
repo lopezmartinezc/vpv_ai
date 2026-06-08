@@ -456,6 +456,18 @@ class ScrapingRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars())
 
+    async def get_slugs_in_other_seasons(self, season_id: int) -> set[str]:
+        """Return the set of player slugs that appear in seasons OTHER
+        than ``season_id``.
+
+        Used by the ``--force-redownload`` path: a slug shared with
+        another season would have its WebP overwritten by a re-fetch
+        with the wrong-season URL, polluting the other season's UI.
+        Those slugs are excluded from the wipe."""
+        stmt = select(Player.slug).distinct().where(Player.season_id != season_id)
+        result = await self.session.execute(stmt)
+        return {slug for (slug,) in result.all()}
+
     async def update_player_photo(
         self, player_id: int, photo_path: str | None, source_url: str
     ) -> None:

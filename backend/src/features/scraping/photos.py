@@ -91,12 +91,23 @@ class PhotoDownloader:
 
         # In force-redownload mode, clear photo_path AND wipe the WebP
         # on disk so the rest of the pipeline treats every player as
-        # missing-photo. Useful after the source images changed (e.g.
-        # season swap) or when a previous bug left every WebP in a bad
-        # state and we want futbolfantasy to repopulate from scratch.
+        # missing-photo. We only touch slugs that DO NOT appear in any
+        # other season — sharing a `.webp` file across seasons is fine
+        # until we'd repopulate with a wrong-season URL, which would
+        # leak a Mundial kit into the Liga UI (or vice-versa). Shared
+        # slugs are skipped and reported in the summary.
+        wiped = 0
+        skipped_shared = 0
         if force_redownload:
-            wiped = 0
+            shared = await self.repo.get_slugs_in_other_seasons(season_id)
             for player in players:
+                if player.slug in shared:
+                    skipped_shared += 1
+                    logger.info(
+                        "PhotoDownloader: skip force-wipe for shared slug=%s",
+                        player.slug,
+                    )
+                    continue
                 disk_path = _PHOTOS_DIR / f"{player.slug}.webp"
                 if disk_path.exists():
                     try:
@@ -110,7 +121,11 @@ class PhotoDownloader:
                     player.photo_path = None
                 wiped += 1
             await self.session.commit()
-            logger.info("PhotoDownloader: force-wiped %d photos", wiped)
+            logger.info(
+                "PhotoDownloader: force-wiped %d photos (shared-slug skipped: %d)",
+                wiped,
+                skipped_shared,
+            )
 
         # Restore photo_path for players whose WebP already exists on disk —
         # they still need an HTTP fetch if the position is missing or we're
@@ -254,6 +269,8 @@ class PhotoDownloader:
             "skipped": skipped,
             "errors": errors,
             "restored": restored,
+            "force_wiped": wiped,
+            "force_wipe_skipped_shared": skipped_shared,
         }
         logger.info("PhotoDownloader: done — %s", summary)
         return summary
