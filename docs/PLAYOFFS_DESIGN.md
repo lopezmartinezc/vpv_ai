@@ -2,8 +2,13 @@
 
 > Estado: **v1 implementado** con el formato `balanced_ko4` para el Mundial 2026.
 > El motor es **pluggable**: añadir un formato nuevo (Berger, 2 grupos, suizo, etc.)
-> se hace creando un fichero en [backend/src/features/competitions/formats/](backend/src/features/competitions/formats/)
+> se hace creando un fichero en [backend/src/features/competitions/formats/](../backend/src/features/competitions/formats/)
 > y registrándolo en el `FORMAT_REGISTRY`. Nada más cambia.
+
+> Otros documentos:
+> - [PLAYOFFS_RUNBOOK.md](PLAYOFFS_RUNBOOK.md) — guía operativa paso a paso.
+> - [PLAYOFFS_API.md](PLAYOFFS_API.md) — referencia HTTP de cada endpoint.
+> - [PLAYOFFS_DEV_GUIDE.md](PLAYOFFS_DEV_GUIDE.md) — cómo añadir un formato nuevo.
 
 ## Estado v1 (entregado)
 

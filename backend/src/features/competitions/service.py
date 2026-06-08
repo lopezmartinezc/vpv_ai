@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import BusinessRuleError, NotFoundError
 from src.features.competitions.formats import FORMAT_REGISTRY, get_format
+from src.features.competitions.formats.base import FormatPlugin
 from src.features.competitions.repository import CompetitionRepository
 from src.features.competitions.schemas import (
     CompetitionDetail,
@@ -284,7 +285,7 @@ class CompetitionService:
             raise NotFoundError("Competition", competition_id)
         return comp
 
-    def _plugin_for(self, comp: Competition):
+    def _plugin_for(self, comp: Competition) -> FormatPlugin:
         format_id = (comp.config or {}).get("format_id")
         if not format_id:
             raise BusinessRuleError(f"La competición {comp.id} no tiene format_id en su config.")
