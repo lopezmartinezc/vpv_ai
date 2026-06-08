@@ -243,17 +243,56 @@ class DraftRepository:
             origin=origin,
         )
         self.session.add(pick)
+        # Keep `players.owner_id` in sync. The lineup validation reads
+        # ownership from that column, not from `draft_picks` — so a
+        # pick without this mutation would leave the participant unable
+        # to put the player in a lineup.
+        await self.session.execute(
+            update(Player).where(Player.id == player_id).values(owner_id=participant_id)
+        )
         await self.session.flush()
         return pick
 
     async def delete_pick(self, draft_id: int, pick_number: int) -> bool:
+        # Read the pick first so we can release ownership on the player.
+        existing = (
+            await self.session.execute(
+                select(DraftPick.player_id).where(
+                    DraftPick.draft_id == draft_id,
+                    DraftPick.pick_number == pick_number,
+                )
+            )
+        ).first()
         result = await self.session.execute(
             delete(DraftPick).where(
                 DraftPick.draft_id == draft_id,
                 DraftPick.pick_number == pick_number,
             )
         )
-        return result.rowcount > 0  # type: ignore[attr-defined]
+        deleted = result.rowcount > 0  # type: ignore[attr-defined]
+        if deleted and existing is not None:
+            # Release ownership unless this player still appears in
+            # ANOTHER pick of the same draft (e.g., they were re-acquired
+            # in a winter swap). The check keeps the semantics
+            # symmetrical with add_pick: ownership tracks the latest
+            # active pick.
+            player_id = existing[0]
+            still_owned = (
+                await self.session.execute(
+                    select(DraftPick.participant_id)
+                    .where(
+                        DraftPick.draft_id == draft_id,
+                        DraftPick.player_id == player_id,
+                    )
+                    .order_by(DraftPick.pick_number.desc())
+                    .limit(1)
+                )
+            ).first()
+            new_owner = still_owned[0] if still_owned is not None else None
+            await self.session.execute(
+                update(Player).where(Player.id == player_id).values(owner_id=new_owner)
+            )
+        return deleted
 
     async def reorder_picks(
         self,
