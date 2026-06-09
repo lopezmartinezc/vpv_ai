@@ -12,6 +12,12 @@ modelo simple. Existe un sistema mucho más sofisticado y backtested
 pero **no está conectado al draft live**. El admin tiene que abrir
 `/admin/estadisticas` en otra pestaña y cruzar la información a ojo.
 
+> **Input crítico**: [DRAFT_SCORECARD.md](DRAFT_SCORECARD.md) contiene el
+> análisis de qué métricas valen por posición y los overrides (regresión,
+> haircut de supervivencia, ajuste por cambio de equipo). El UI debe traducir
+> esos tiers a badges y los haircuts a ajustes del `ensemble_score` antes de
+> mostrar sugerencias.
+
 Tres mejoras que confirmadas para septiembre:
 
 1. **Conectar el modelo Ensemble al draft live**: badge de señal en cada card,
