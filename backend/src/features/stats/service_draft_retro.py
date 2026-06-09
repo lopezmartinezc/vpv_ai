@@ -564,6 +564,9 @@ class DraftRetroService:
         # season_total_points uses the player's stats for the season the
         # DRAFT belongs to. We aggregate in a subquery to avoid a row
         # explosion when joining matchdays.
+        # `season_participants` has no `display_name` column — the
+        # human label lives on `users` via `sp.user_id`. Without this
+        # join the query 500s and the UI silently shows nothing.
         sql = f"""
             WITH season_totals AS (
                 SELECT ps.player_id, md.season_id,
@@ -575,7 +578,7 @@ class DraftRetroService:
                  GROUP BY ps.player_id, md.season_id
             )
             SELECT dp.pick_number, dp.round_number,
-                   dp.participant_id, sp.display_name AS participant_display_name,
+                   dp.participant_id, u.display_name AS participant_display_name,
                    p.id AS player_id, p.display_name AS player_name,
                    p.photo_path,
                    COALESCE(ps_pos.position, 'MED') AS position,
@@ -588,6 +591,7 @@ class DraftRetroService:
               JOIN drafts d ON dp.draft_id = d.id
               JOIN seasons s ON d.season_id = s.id
               JOIN season_participants sp ON dp.participant_id = sp.id
+              JOIN users u ON sp.user_id = u.id
               JOIN players p ON dp.player_id = p.id
               LEFT JOIN teams t ON p.team_id = t.id
               LEFT JOIN season_totals st ON st.player_id = dp.player_id AND st.season_id = d.season_id
