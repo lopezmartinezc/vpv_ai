@@ -143,7 +143,5 @@ def enrich(
         effective_score=round(effective, 2),
         is_mover=is_mover(current_team, last_team),
         is_peak_year=is_peak_year(avg_pts, career_avg_pts),
-        is_likely_penalty_taker=is_likely_penalty_taker(
-            position, penalty_goals, penalties_missed
-        ),
+        is_likely_penalty_taker=is_likely_penalty_taker(position, penalty_goals, penalties_missed),
     )

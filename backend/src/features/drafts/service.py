@@ -919,9 +919,7 @@ class DraftService:
         # Reload the raw history so we can read the previous team and
         # the career baseline (the DraftValueResponse omits both). One
         # extra query per draft session is cheap.
-        raw_seasons = await dv_service._load_seasons(
-            current_season_id=season_id, min_games=1
-        )
+        raw_seasons = await dv_service._load_seasons(current_season_id=season_id, min_games=1)
         by_slug: dict[str, list[_PlayerSeason]] = {}
         for ps in raw_seasons:
             by_slug.setdefault(ps.slug, []).append(ps)
@@ -940,9 +938,7 @@ class DraftService:
             current = seasons[-1] if seasons else None
             history = seasons[:-1] if len(seasons) >= 2 else []
             previous = history[-1] if history else None
-            career_avg = (
-                statistics.mean(s.avg_pts for s in history) if history else None
-            )
+            career_avg = statistics.mean(s.avg_pts for s in history) if history else None
 
             enrichment = scorecard.enrich(
                 position=dv_player.position,
