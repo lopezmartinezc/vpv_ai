@@ -27,12 +27,10 @@ from __future__ import annotations
 
 import logging
 import statistics
-import warnings
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from scipy.stats import ConstantInputWarning, spearmanr  # type: ignore[import-untyped]
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -105,19 +103,48 @@ def tag_pick(delta: float, all_deltas: Sequence[float]) -> str:
     return "normal"
 
 
+def _average_ranks(values: Sequence[float]) -> list[float]:
+    """Return ranks (1..N) with tie-averaging — matches scipy.stats.rankdata.
+
+    Implemented manually so the module stays scipy-free (production
+    backend doesn't ship scipy).
+    """
+    n = len(values)
+    indexed = sorted(enumerate(values), key=lambda x: x[1])
+    ranks = [0.0] * n
+    i = 0
+    while i < n:
+        j = i
+        while j + 1 < n and indexed[j + 1][1] == indexed[i][1]:
+            j += 1
+        avg_rank = (i + j + 2) / 2.0  # 1-based average of positions i..j
+        for k in range(i, j + 1):
+            ranks[indexed[k][0]] = avg_rank
+        i = j + 1
+    return ranks
+
+
 def compute_spearman(
     predicted: Sequence[float],
     actual: Sequence[float],
 ) -> float:
-    """Spearman rank correlation. Returns 0.0 if there's not enough data."""
+    """Spearman rank correlation = Pearson correlation of ranks.
+
+    Returns 0.0 if there's not enough data or either series is constant.
+    """
     if len(predicted) < 3 or len(predicted) != len(actual):
         return 0.0
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", ConstantInputWarning)
-        rho, _ = spearmanr(predicted, actual)
-    if rho != rho:  # NaN guard (constant series)
-        return 0.0
-    return float(rho)
+    rp = _average_ranks(predicted)
+    ra = _average_ranks(actual)
+    n = len(rp)
+    mp = sum(rp) / n
+    ma = sum(ra) / n
+    num = sum((rp[i] - mp) * (ra[i] - ma) for i in range(n))
+    den_p = sum((rp[i] - mp) ** 2 for i in range(n))
+    den_a = sum((ra[i] - ma) ** 2 for i in range(n))
+    if den_p == 0 or den_a == 0:
+        return 0.0  # constant series — correlation undefined
+    return num / (den_p * den_a) ** 0.5
 
 
 def aggregate_buckets(
