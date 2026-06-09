@@ -18,16 +18,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CartesianGrid,
   Cell,
+  ComposedChart,
   Legend,
   Line,
   ResponsiveContainer,
   Scatter,
-  ScatterChart,
   Tooltip,
   XAxis,
   YAxis,
   ZAxis,
-  ComposedChart,
 } from "recharts";
 
 import { apiClient } from "@/lib/api-client";
@@ -121,42 +120,51 @@ function RetrospectivaSubTab({
   const [posFilter, setPosFilter] = useState<string>("");
   const [participantFilter, setParticipantFilter] = useState<string>("");
 
-  // Reset selected draft when season changes.
-  useEffect(() => {
-    setSelectedDraftId(null);
-    setData(null);
-  }, [seasonId]);
+  // Both effects below extract their work into useCallback so the
+  // setState calls happen in a callback, not synchronously in the
+  // effect body (React 19's react-hooks/set-state-in-effect rule).
 
-  useEffect(() => {
+  const fetchDrafts = useCallback(async () => {
     if (seasonId === null) return;
     setLoading(true);
-    apiClient
-      .get<DraftListResponse>(`/drafts/${seasonId}`)
-      .then((d) => {
-        setDrafts(d);
-        // Auto-select the preseason draft if there's only one or it's
-        // the obvious choice.
-        const pre = d.drafts.find((x) => x.phase === "preseason");
-        if (pre) setSelectedDraftId(pre.id);
-      })
-      .catch(() => setDrafts(null))
-      .finally(() => setLoading(false));
+    try {
+      const d = await apiClient.get<DraftListResponse>(`/drafts/${seasonId}`);
+      setDrafts(d);
+      // Auto-select the preseason draft when present — the obvious default.
+      const pre = d.drafts.find((x) => x.phase === "preseason");
+      if (pre) setSelectedDraftId(pre.id);
+    } catch {
+      setDrafts(null);
+    } finally {
+      setLoading(false);
+    }
   }, [seasonId]);
 
   useEffect(() => {
+    fetchDrafts();
+  }, [fetchDrafts]);
+
+  const fetchRetrospective = useCallback(async () => {
     if (selectedDraftId === null) {
       setData(null);
       return;
     }
     setLoading(true);
-    apiClient
-      .get<DraftRetrospectiveResponse>(
+    try {
+      const d = await apiClient.get<DraftRetrospectiveResponse>(
         `/stats/admin/drafts/${selectedDraftId}/retrospective`,
-      )
-      .then(setData)
-      .catch(() => setData(null))
-      .finally(() => setLoading(false));
+      );
+      setData(d);
+    } catch {
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
   }, [selectedDraftId]);
+
+  useEffect(() => {
+    fetchRetrospective();
+  }, [fetchRetrospective]);
 
   const participants = useMemo(() => {
     if (!data) return [];
@@ -182,7 +190,13 @@ function RetrospectivaSubTab({
         <label className="text-xs text-vpv-text-muted">Temporada</label>
         <select
           value={seasonId ?? ""}
-          onChange={(e) => setSeasonId(Number(e.target.value))}
+          onChange={(e) => {
+            // Reset the draft selection so the user doesn't briefly see
+            // a draft from the previous season while the new list loads.
+            setSelectedDraftId(null);
+            setData(null);
+            setSeasonId(Number(e.target.value));
+          }}
           className="rounded border border-vpv-border bg-vpv-bg px-2 py-1 text-xs text-vpv-text"
         >
           {seasons.map((s) => (
@@ -543,21 +557,26 @@ function BacktestSubTab({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchBacktest = useCallback(async () => {
     if (seasonId === null) return;
     setLoading(true);
     setError(null);
-    apiClient
-      .get<BacktestResponse>(`/stats/admin/drafts/backtest?season_id=${seasonId}`)
-      .then((d) => {
-        setData(d);
-      })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : "Error desconocido");
-        setData(null);
-      })
-      .finally(() => setLoading(false));
+    try {
+      const d = await apiClient.get<BacktestResponse>(
+        `/stats/admin/drafts/backtest?season_id=${seasonId}`,
+      );
+      setData(d);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Error desconocido");
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
   }, [seasonId]);
+
+  useEffect(() => {
+    fetchBacktest();
+  }, [fetchBacktest]);
 
   return (
     <div className="space-y-3">
@@ -730,16 +749,23 @@ function DraftIQSubTab() {
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState<number | null>(null);
 
-  useEffect(() => {
+  const fetchIQ = useCallback(async () => {
     setLoading(true);
-    apiClient
-      .get<ParticipantIQResponse>(
+    try {
+      const d = await apiClient.get<ParticipantIQResponse>(
         `/stats/admin/drafts/participant-iq?phase=${phase}&min_seasons=${minSeasons}`,
-      )
-      .then(setData)
-      .catch(() => setData(null))
-      .finally(() => setLoading(false));
+      );
+      setData(d);
+    } catch {
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
   }, [phase, minSeasons]);
+
+  useEffect(() => {
+    fetchIQ();
+  }, [fetchIQ]);
 
   return (
     <div className="space-y-3">
