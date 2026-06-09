@@ -42,6 +42,7 @@ class PhotoDownloader:
         *,
         refresh: bool = False,
         force_redownload: bool = False,
+        photos_only: bool = False,
     ) -> dict[str, int]:
         """Enrich players in *season_id* with photo + VPV position.
 
@@ -68,6 +69,14 @@ class PhotoDownloader:
         ``positions_updated``, ``skipped``, ``errors``, ``restored``.
         """
         _PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
+
+        # photos_only implies "every active player + wipe + redownload"
+        # but never touches positions. Useful when we know the stored
+        # positions are correct and we just want to refresh the artwork
+        # for an entire season.
+        if photos_only:
+            refresh = True
+            force_redownload = True
 
         if refresh:
             # Process every available player so position changes propagate.
@@ -198,23 +207,27 @@ class PhotoDownloader:
                 # Position — fill when missing, or update when refresh=True
                 # and the parser returns a different non-empty value. Never
                 # overwrite a stored position with None: a parser miss must
-                # not erase good data.
-                pos = parse_player_position(html)
-                if pos:
-                    if not player.position:
-                        await self.repo.update_player_position(player.id, pos)
-                        player.position = pos
-                        positions_set += 1
-                    elif refresh and pos != player.position:
-                        logger.info(
-                            "PhotoDownloader: %s position %s -> %s",
-                            player.slug,
-                            player.position,
-                            pos,
-                        )
-                        await self.repo.update_player_position(player.id, pos)
-                        player.position = pos
-                        positions_updated += 1
+                # not erase good data. The whole block is bypassed in
+                # photos_only mode — useful when you want to refresh the
+                # artwork without risking position changes for a season
+                # whose positions are already correct.
+                if not photos_only:
+                    pos = parse_player_position(html)
+                    if pos:
+                        if not player.position:
+                            await self.repo.update_player_position(player.id, pos)
+                            player.position = pos
+                            positions_set += 1
+                        elif refresh and pos != player.position:
+                            logger.info(
+                                "PhotoDownloader: %s position %s -> %s",
+                                player.slug,
+                                player.position,
+                                pos,
+                            )
+                            await self.repo.update_player_position(player.id, pos)
+                            player.position = pos
+                            positions_updated += 1
 
                 # Photo — skip if we already have one.
                 if player.photo_path:

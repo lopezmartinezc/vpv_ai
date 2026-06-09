@@ -112,7 +112,9 @@ async def cmd_refresh_positions(season_id: int, concurrency: int) -> None:
     await _run_with_session(_run)
 
 
-async def cmd_download_photos(season_id: int, refresh: bool, force_redownload: bool) -> None:
+async def cmd_download_photos(
+    season_id: int, refresh: bool, force_redownload: bool, photos_only: bool
+) -> None:
     """Download player photos for *season_id* (optionally refresh positions)."""
 
     async def _run(session: AsyncSession) -> dict:
@@ -120,7 +122,10 @@ async def cmd_download_photos(season_id: int, refresh: bool, force_redownload: b
 
         downloader = PhotoDownloader(session)
         return await downloader.download_all(
-            season_id, refresh=refresh, force_redownload=force_redownload
+            season_id,
+            refresh=refresh,
+            force_redownload=force_redownload,
+            photos_only=photos_only,
         )
 
     await _run_with_session(_run)
@@ -292,6 +297,19 @@ def _build_parser() -> argparse.ArgumentParser:
             "the wrong background)."
         ),
     )
+    p_photos.add_argument(
+        "--photos-only",
+        action="store_true",
+        help=(
+            "Photos-only mode: process every active player in the season "
+            "and force re-download of their photo, but NEVER touch their "
+            "stored position. Equivalent to --refresh --force-redownload "
+            "minus position writes. Use when you want fresh artwork "
+            "without risking position regressions on a season whose "
+            "positions are already correct (e.g. World Cup squad photos "
+            "after the tournament closes)."
+        ),
+    )
     p_photos.add_argument("season_id", type=int, help="Season primary-key ID")
 
     # import-rosters
@@ -359,7 +377,14 @@ def main() -> None:
         asyncio.run(cmd_sync_rosters(args.season_id))
 
     elif command == "download-photos":
-        asyncio.run(cmd_download_photos(args.season_id, args.refresh, args.force_redownload))
+        asyncio.run(
+            cmd_download_photos(
+                args.season_id,
+                args.refresh,
+                args.force_redownload,
+                args.photos_only,
+            )
+        )
 
     elif command == "refresh-positions":
         asyncio.run(cmd_refresh_positions(args.season_id, args.concurrency))
