@@ -138,11 +138,32 @@ class DraftTeamOption(BaseModel):
 
 
 class PlayerDraftStats(BaseModel):
+    """Snapshot served to the live-draft admin UI.
+
+    Combines the Ensemble model output (ensemble_score, signal,
+    reasons) with the heuristic overrides documented in
+    docs/DRAFT_SCORECARD.md: per-position tiers, survival haircut,
+    and warning flags for movers, year-peakers, and likely
+    penalty-takers (DEL).
+    """
+
     player_id: int
+
+    # Raw model output
+    ensemble_score: float
+    signal: str  # "strong_buy" | "buy" | "hold" | "avoid"
+    signal_reasons: list[str]
+
+    # Scorecard-derived
+    position_tier: str  # "elite" | "solid" | "normal" | "weak"
+    survival_haircut_pct: float  # 0..1 (0.22 = 22% trim)
+    effective_score: float  # ensemble_score * (1 - haircut)
+    is_mover: bool  # changed team since the previous season
+    is_peak_year: bool  # last season was their best (regression risk)
+    is_likely_penalty_taker: bool  # DEL only; ≥2 pen attempts last season
+
+    # Useful supporting numbers shown in the card
     avg_pts: float
-    std_dev: float
-    form_5: float | None
-    trend: str  # "rising" | "stable" | "falling"
     matchdays_played: int
     starter_pct: float
 

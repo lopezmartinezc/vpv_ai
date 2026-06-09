@@ -888,72 +888,96 @@ class DraftService:
         )
 
     async def get_player_stats_for_draft(self, draft_id: int) -> DraftPlayerStatsResponse:
-        """Get advanced stats for all unpicked players (admin use during live draft)."""
-        from src.features.stats.repository_advanced import AdvancedStatsRepository
-        from src.features.stats.service_advanced import _ewma
+        """Admin-only: advanced stats + scorecard heuristics for the
+        live draft UI.
 
-        # 1. Get draft to find season_id
+        Wraps the Ensemble model (``DraftValueService``) with the
+        documented overrides (``docs/DRAFT_SCORECARD.md``): per-
+        position tiers, survival haircuts, and warning flags for
+        movers, year-peakers, and likely penalty-takers. Suggestions
+        are ordered by ``effective_score`` (ensemble * (1 - haircut))
+        rather than the raw ensemble - gives the heaviest discount to
+        round 4-8 picks where bust risk is highest.
+        """
+        import statistics
+
+        from src.features.stats import scorecard
+        from src.features.stats.service_draft import DraftValueService, _PlayerSeason
+
+        # 1. Get draft + season + picked ids.
         draft = await self.repo.get_draft_by_id(draft_id)
         if draft is None:
             raise NotFoundError("Draft", draft_id)
         season_id = draft.season_id
-
-        # 2. Get picked player IDs
         picked_ids = await self.repo.get_picked_player_ids(draft_id)
 
-        # 3. Get season stats using the advanced stats repo
-        adv_repo = AdvancedStatsRepository(self.repo.session)
+        # 2. Run the Ensemble model — also gives us seasons of context
+        #    per player which we need for career_avg + previous_team.
+        dv_service = DraftValueService(self.repo.session)
+        dv_response = await dv_service.get_draft_values(season_id)
 
-        player_stats = await adv_repo.get_player_season_stats_for_predictions(season_id)
-        recent_points = await adv_repo.get_player_recent_points(season_id, n=5)
-        starter_pcts = await adv_repo.get_player_starter_pct(season_id, n=5)
+        # Reload the raw history so we can read the previous team and
+        # the career baseline (the DraftValueResponse omits both). One
+        # extra query per draft session is cheap.
+        raw_seasons = await dv_service._load_seasons(
+            current_season_id=season_id, min_games=1
+        )
+        by_slug: dict[str, list[_PlayerSeason]] = {}
+        for ps in raw_seasons:
+            by_slug.setdefault(ps.slug, []).append(ps)
+        for lst in by_slug.values():
+            lst.sort(key=lambda s: s.season_id)
 
-        # 4. Build response (only unpicked players)
+        # 3. Build players + per-position ranking by effective_score.
         players: dict[str, PlayerDraftStats] = {}
         by_position: dict[str, list[tuple[int, float]]] = {}
 
-        for player_id, stats in player_stats.items():
-            if player_id in picked_ids:
+        for dv_player in dv_response.players:
+            if dv_player.player_id in picked_ids:
                 continue
 
-            avg_pts = stats["avg_pts"]
-            pts_list = recent_points.get(player_id, [])
-            form_5 = round(_ewma(pts_list), 1) if len(pts_list) >= 2 else None
-            form_val = form_5 if form_5 is not None else avg_pts
-
-            if avg_pts > 0:
-                if form_val > avg_pts * 1.1:
-                    trend = "rising"
-                elif form_val < avg_pts * 0.9:
-                    trend = "falling"
-                else:
-                    trend = "stable"
-            else:
-                trend = "stable"
-
-            starter_pct = starter_pcts.get(player_id, 1.0)
-
-            players[str(player_id)] = PlayerDraftStats(
-                player_id=player_id,
-                avg_pts=round(avg_pts, 1),
-                std_dev=round(stats["std_dev"], 1),
-                form_5=form_5,
-                trend=trend,
-                matchdays_played=stats["matchdays_played"],
-                starter_pct=round(starter_pct * 100, 0),
+            seasons = by_slug.get(dv_player.slug, [])
+            current = seasons[-1] if seasons else None
+            history = seasons[:-1] if len(seasons) >= 2 else []
+            previous = history[-1] if history else None
+            career_avg = (
+                statistics.mean(s.avg_pts for s in history) if history else None
             )
 
-            # Score for suggestions: avg * starter_factor * trend_factor
-            starter_factor = 1.0 if starter_pct >= 0.8 else 0.7
-            trend_factor = 1.1 if trend == "rising" else (0.9 if trend == "falling" else 1.0)
-            score = avg_pts * starter_factor * trend_factor
+            enrichment = scorecard.enrich(
+                position=dv_player.position,
+                ensemble_score=dv_player.ensemble_score,
+                avg_pts=previous.avg_pts if previous else dv_player.avg_points,
+                career_avg_pts=career_avg,
+                current_team=current.team_name if current else dv_player.team_name,
+                last_team=previous.team_name if previous else None,
+                penalty_goals=previous.penalty_goals if previous else 0,
+                penalties_missed=previous.penalties_missed if previous else 0,
+            )
 
-            position = stats["position"]
-            if position not in by_position:
-                by_position[position] = []
-            by_position[position].append((player_id, score))
+            players[str(dv_player.player_id)] = PlayerDraftStats(
+                player_id=dv_player.player_id,
+                ensemble_score=dv_player.ensemble_score,
+                signal=dv_player.signal,
+                signal_reasons=dv_player.signal_reasons,
+                position_tier=enrichment.position_tier,
+                survival_haircut_pct=enrichment.survival_haircut_pct,
+                effective_score=enrichment.effective_score,
+                is_mover=enrichment.is_mover,
+                is_peak_year=enrichment.is_peak_year,
+                is_likely_penalty_taker=enrichment.is_likely_penalty_taker,
+                avg_pts=round(dv_player.avg_points, 1),
+                matchdays_played=dv_player.games_played,
+                starter_pct=round(dv_player.availability * 100, 0),
+            )
 
-        # 5. Build suggestions (top 5 per position)
+            by_position.setdefault(dv_player.position, []).append(
+                (dv_player.player_id, enrichment.effective_score)
+            )
+
+        # 4. Suggestions: top-5 per position by effective_score
+        #    (the haircut already de-weights fragile picks, so this
+        #    ordering reflects the scorecard's risk-adjusted ranking).
         suggestions: dict[str, list[int]] = {}
         for pos in ["POR", "DEF", "MED", "DEL"]:
             pos_list = by_position.get(pos, [])

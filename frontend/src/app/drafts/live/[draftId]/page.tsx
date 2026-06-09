@@ -73,6 +73,7 @@ export default function LiveDraftPage() {
   // Admin stats (loaded once)
   const [adminStats, setAdminStats] = useState<DraftPlayerStatsResponse | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [showScoreHelp, setShowScoreHelp] = useState(false);
 
   // Find my participant_id. Prefer matching by user_id (added in
   // c1cfd57) — fall back to display_name when the backend/bundle hasn't
@@ -404,6 +405,119 @@ export default function LiveDraftPage() {
         </div>
       )}
 
+      {/* Admin score help / legend */}
+      {isAdmin && adminStats && (
+        <div>
+          <button
+            onClick={() => setShowScoreHelp(!showScoreHelp)}
+            className={`w-full rounded-lg border px-4 py-2 text-left text-xs font-medium transition-colors ${
+              showScoreHelp
+                ? "border-sky-500 bg-sky-500/10 text-sky-300"
+                : "border-vpv-border bg-vpv-card text-vpv-text-muted hover:text-vpv-text"
+            }`}
+          >
+            {showScoreHelp ? "Ocultar leyenda" : "¿Cómo leo los scores? (Admin)"}
+          </button>
+          {showScoreHelp && (
+            <div className="mt-2 space-y-3 rounded-lg border border-sky-500/30 bg-sky-500/5 p-3 text-[11px] text-vpv-text">
+              <div>
+                <p className="mb-1 font-bold text-sky-300">xPts (effective_score)</p>
+                <p className="text-vpv-text-muted">
+                  Puntos esperados por jornada para la próxima temporada, ya
+                  descontado el <span className="text-vpv-text">survival haircut</span>:
+                  <code className="ml-1 rounded bg-vpv-card px-1">xPts = ensemble × (1 − haircut)</code>.
+                  El ensemble lo calcula el modelo (Spearman 0.718 backtest); el
+                  haircut compensa la fragilidad histórica de cada tramo:
+                </p>
+                <ul className="mt-1 ml-3 list-disc text-vpv-text-muted">
+                  <li><span className="text-vpv-text">avg ≥ 7.0</span> → 22% (élite, baja fragilidad)</li>
+                  <li><span className="text-vpv-text">6.0–7.0</span> → 27%</li>
+                  <li><span className="text-vpv-text">5.0–6.0</span> → 32% (rondas 4–8, mayor riesgo de bust)</li>
+                  <li><span className="text-vpv-text">&lt; 5.0</span> → 48%</li>
+                </ul>
+              </div>
+
+              <div>
+                <p className="mb-1 font-bold text-sky-300">Tier por posición</p>
+                <p className="mb-1 text-vpv-text-muted">
+                  Umbrales de <em>avg_pts</em> distintos por posición — un MED con 6.0
+                  no es lo mismo que un DEL con 6.0.
+                </p>
+                <div className="grid grid-cols-2 gap-1 sm:grid-cols-4">
+                  {(["POR", "DEF", "MED", "DEL"] as const).map((pos) => (
+                    <div key={pos} className="rounded border border-vpv-card-border bg-vpv-card p-1.5">
+                      <p className={`mb-0.5 text-center text-[9px] font-bold ${POS_COLORS[pos]?.split(" ")[1] ?? ""}`}>{pos}</p>
+                      <p className="text-[10px] text-vpv-text-muted">
+                        {pos === "POR" && "elite ≥6.5 · sólido ≥6.0 · normal ≥5.4"}
+                        {pos === "DEF" && "elite ≥6.6 · sólido ≥5.8 · normal ≥4.9"}
+                        {pos === "MED" && "elite ≥6.1 · sólido ≥5.3 · normal ≥4.4"}
+                        {pos === "DEL" && "elite ≥7.2 · sólido ≥5.4 · normal ≥4.2"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {(["elite", "solid", "normal", "weak"] as const).map((t) => (
+                    <span
+                      key={t}
+                      className={`rounded px-1.5 py-px text-[9px] font-bold tracking-wide ${TIER_COLORS[t]}`}
+                    >
+                      {TIER_LABELS[t]}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-1 font-bold text-sky-300">Signal (recomendación del modelo)</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(SIGNAL_LABELS).map(([key, v]) => (
+                    <span key={key} className={`rounded px-1.5 py-px text-[9px] font-bold ${v.classes}`}>
+                      {v.label}
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-1 text-vpv-text-muted">
+                  Pasa el ratón sobre el badge para ver las razones (signal_reasons)
+                  que explican la recomendación.
+                </p>
+              </div>
+
+              <div>
+                <p className="mb-1 font-bold text-sky-300">Banderas de aviso</p>
+                <ul className="ml-3 list-none space-y-1 text-vpv-text-muted">
+                  <li>
+                    <span title="Mover">🔄</span>{" "}
+                    <span className="text-vpv-text">Mover</span> — cambia de equipo
+                    respecto a su última temporada. Riesgo de adaptación: rol no
+                    asegurado, posibles minutos reducidos.
+                  </li>
+                  <li>
+                    <span title="Peak year">🔻</span>{" "}
+                    <span className="text-vpv-text">Peak year</span> — su última
+                    temporada fue ≥0.5 pts/J por encima de su media histórica.
+                    Riesgo de regresión a la media.
+                  </li>
+                  <li>
+                    <span title="Penalti">⚽</span>{" "}
+                    <span className="text-vpv-text">Lanzador de penaltis</span> — DEL
+                    con ≥2 lanzamientos (anotados o fallados) la temporada
+                    pasada. Sube el techo en torneos.
+                  </li>
+                </ul>
+              </div>
+
+              <div className="border-t border-sky-500/20 pt-2 text-[10px] text-vpv-text-muted">
+                Las sugerencias del panel siguiente están ordenadas por
+                <span className="text-vpv-text"> xPts</span>, no por avg crudo. Para
+                el detalle completo consulta{" "}
+                <code className="rounded bg-vpv-card px-1">docs/DRAFT_SCORECARD.md</code>.
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Admin suggestions panel */}
       {isAdmin && adminStats && (isMyTurn || true) && (
         <div>
@@ -430,12 +544,22 @@ export default function LiveDraftPage() {
                       return (
                         <button
                           key={pid}
-                          onClick={() => { setSearch(s.avg_pts > 0 ? "" : ""); handlePick(pid); }}
+                          onClick={() => handlePick(pid)}
                           disabled={picking}
                           className="flex w-full items-center justify-between rounded px-1 py-1 text-[10px] transition-colors hover:bg-vpv-accent/10 disabled:opacity-50"
+                          title={
+                            s.signal_reasons.length
+                              ? s.signal_reasons.join(" · ")
+                              : `xPts ${s.effective_score.toFixed(1)} = ensemble ${s.ensemble_score.toFixed(1)} − ${(s.survival_haircut_pct * 100).toFixed(0)}% haircut`
+                          }
                         >
-                          <span className="truncate text-vpv-text">{findPlayerName(pid)}</span>
-                          <span className="ml-1 tabular-nums text-vpv-accent">{s.avg_pts}</span>
+                          <span className="flex items-center gap-1 truncate text-vpv-text">
+                            <span className="truncate">{findPlayerName(pid)}</span>
+                            {s.is_mover && <span title="Cambia de equipo">🔄</span>}
+                            {s.is_peak_year && <span title="Año atípicamente alto">🔻</span>}
+                            {s.is_likely_penalty_taker && <span title="Lanza penaltis">⚽</span>}
+                          </span>
+                          <span className="ml-1 tabular-nums font-bold text-vpv-accent">{s.effective_score.toFixed(1)}</span>
                         </button>
                       );
                     })}
@@ -628,10 +752,43 @@ export default function LiveDraftPage() {
   );
 }
 
-const TREND_COLORS: Record<string, string> = {
-  rising: "text-green-400",
-  stable: "text-vpv-text-muted",
-  falling: "text-red-400",
+// Tier colours from docs/DRAFT_SCORECARD.md. Each colour matches the
+// position colour family but with a clear hierarchy: elite > solid >
+// normal > weak. The admin sees these as a quick "should I pick this
+// player at all" signal.
+const TIER_COLORS: Record<string, string> = {
+  elite: "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30",
+  solid: "bg-blue-500/15 text-blue-300 border border-blue-500/30",
+  normal: "bg-zinc-500/15 text-zinc-300 border border-zinc-500/30",
+  weak: "bg-red-500/15 text-red-300 border border-red-500/30",
+};
+
+const TIER_LABELS: Record<string, string> = {
+  elite: "Elite",
+  solid: "Sólido",
+  normal: "Normal",
+  weak: "Flojo",
+};
+
+// Ensemble model signal — comes from service_draft.py. The strong_buy /
+// buy / hold / avoid scale is the Spearman-0.718 backtest output.
+const SIGNAL_LABELS: Record<string, { label: string; classes: string }> = {
+  strong_buy: {
+    label: "⭐ STRONG BUY",
+    classes: "bg-amber-500/20 text-amber-300 border border-amber-500/40",
+  },
+  buy: {
+    label: "🟢 BUY",
+    classes: "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30",
+  },
+  hold: {
+    label: "🔵 HOLD",
+    classes: "bg-blue-500/10 text-blue-300 border border-blue-500/20",
+  },
+  avoid: {
+    label: "🔴 AVOID",
+    classes: "bg-red-500/15 text-red-300 border border-red-500/30",
+  },
 };
 
 function SearchFilters({
@@ -750,14 +907,60 @@ function SearchResults({
                 )}
               </div>
               {stats && (
-                <div className="flex gap-2 text-[10px] text-vpv-text-muted">
+                <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-vpv-text-muted">
+                  {/* Tier badge \u2014 the headline read */}
+                  <span
+                    className={`rounded px-1.5 py-px text-[9px] font-bold tracking-wide ${TIER_COLORS[stats.position_tier] ?? ""}`}
+                    title={`Tier ${stats.position_tier}: umbral por posici\u00f3n de docs/DRAFT_SCORECARD.md`}
+                  >
+                    {TIER_LABELS[stats.position_tier] ?? stats.position_tier}
+                  </span>
+                  {/* Signal from the Ensemble model */}
+                  {SIGNAL_LABELS[stats.signal] && (
+                    <span
+                      className={`rounded px-1 py-px text-[9px] font-bold ${SIGNAL_LABELS[stats.signal].classes}`}
+                      title={stats.signal_reasons.join(" \u00b7 ")}
+                    >
+                      {SIGNAL_LABELS[stats.signal].label}
+                    </span>
+                  )}
+                  {/* Warning flags from the scorecard heuristics */}
+                  {stats.is_mover && (
+                    <span
+                      title="Cambi\u00f3 de equipo \u2014 re-proyecta el entorno (sensibilidad por posici\u00f3n)"
+                      className="rounded bg-purple-500/15 px-1 py-px text-[9px] text-purple-300"
+                    >
+                      \ud83d\udd04 mover
+                    </span>
+                  )}
+                  {stats.is_peak_year && (
+                    <span
+                      title="\u00daltimo fue su a\u00f1o-techo \u2014 regresa ~0.7 pts seg\u00fan el scorecard"
+                      className="rounded bg-orange-500/15 px-1 py-px text-[9px] text-orange-300"
+                    >
+                      \ud83d\udd3b peak
+                    </span>
+                  )}
+                  {stats.is_likely_penalty_taker && (
+                    <span
+                      title="Tir\u00f3 \u22652 penaltis la \u00faltima temporada \u2014 probable lanzador (vale ~+15 pts/temporada)"
+                      className="rounded bg-cyan-500/15 px-1 py-px text-[9px] text-cyan-300"
+                    >
+                      \u26bd penalti
+                    </span>
+                  )}
+                  {/* Effective score after the survival haircut */}
+                  <span
+                    className="ml-auto font-bold text-vpv-accent tabular-nums"
+                    title={`Ensemble ${stats.ensemble_score.toFixed(1)} \u2212 ${(stats.survival_haircut_pct * 100).toFixed(0)}% haircut`}
+                  >
+                    xPts {stats.effective_score.toFixed(1)}
+                  </span>
+                  {/* Supporting numbers (small, on the next visual row) */}
+                  <span>\u00b7</span>
                   <span>{stats.avg_pts} pts/j</span>
                   <span>PJ:{stats.matchdays_played}</span>
-                  {stats.form_5 != null && <span>F:{stats.form_5}</span>}
                   <span>T:{stats.starter_pct.toFixed(0)}%</span>
-                  <span className={TREND_COLORS[stats.trend] ?? ""}>
-                    {stats.trend === "rising" ? "\u2191" : stats.trend === "falling" ? "\u2193" : "\u2192"}
-                  </span>
                 </div>
               )}
             </div>

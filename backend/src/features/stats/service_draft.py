@@ -47,13 +47,17 @@ class _PlayerSeason:
     std_pts: float
     marca_avg: float | None
     as_avg: float | None
-    goals: int
+    goals: int  # open-play + penalty
     assists: int
     minutes: int
     second_half_avg: float
     team_name: str
     photo_path: str | None
     player_id: int
+    # Penalty signals — needed by the scorecard heuristic for DEL
+    # (≥2 attempts last season → likely penalty taker next season).
+    penalty_goals: int
+    penalties_missed: int
 
 
 class DraftValueService:
@@ -183,6 +187,7 @@ class DraftValueService:
             results.append(
                 DraftValuePlayer(
                     player_id=ps.player_id,
+                    slug=ps.slug,
                     display_name=ps.display_name,
                     team_name=ps.team_name,
                     position=ps.position,
@@ -308,6 +313,8 @@ class DraftValueService:
                        AVG(CASE WHEN ps.as_picas ~ '^[0-9]+$'
                            THEN CAST(ps.as_picas AS INTEGER) END) as as_avg,
                        COALESCE(SUM(ps.goals + ps.penalty_goals), 0) as goals,
+                       COALESCE(SUM(ps.penalty_goals), 0) as penalty_goals,
+                       COALESCE(SUM(ps.penalties_missed), 0) as penalties_missed,
                        COALESCE(SUM(ps.assists), 0) as assists,
                        COALESCE(SUM(ps.minutes_played), 0) as minutes,
                        AVG(CASE WHEN md.number > 19 THEN ps.pts_total END) as second_half_avg
@@ -346,6 +353,8 @@ class DraftValueService:
                 assists=int(r.assists or 0),
                 minutes=int(r.minutes or 0),
                 second_half_avg=float(r.second_half_avg or 0),
+                penalty_goals=int(r.penalty_goals or 0),
+                penalties_missed=int(r.penalties_missed or 0),
             )
             for r in result.all()
         ]

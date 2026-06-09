@@ -28,15 +28,47 @@ Tres mejoras que confirmadas para septiembre:
 
 ## Mejora 1 — Conectar el modelo Ensemble al draft live
 
-### Estado actual
+### Estado (2026-06-09): COMPLETADA + Scorecard heurístico aplicado
 
-[backend/src/features/drafts/service.py:890](backend/src/features/drafts/service.py#L890)
-`get_player_stats_for_draft` calcula localmente:
+Cerrada antes de septiembre con un alcance ampliado para incorporar las
+6 implicaciones técnicas del análisis externo
+([docs/DRAFT_SCORECARD.md](DRAFT_SCORECARD.md)).
+
+**Backend entregado**:
+- [backend/src/features/stats/scorecard.py](../backend/src/features/stats/scorecard.py)
+  — módulo puro con `tier_for`, `survival_haircut`, `is_peak_year`,
+  `is_mover`, `is_likely_penalty_taker`, `enrich`.
+- `DraftValueService` ya devuelve `ensemble_score` + `signal` + razones;
+  `get_player_stats_for_draft` lo envuelve y aplica `enrich` por jugador.
+- `_PlayerSeason` ahora separa `penalty_goals` / `penalties_missed`
+  del agregado `goals` para detectar lanzadores.
+- `DraftValuePlayer.slug` añadido para join estable entre temporadas
+  (el `player_id` cambia, el slug no).
+- Suggestions se ordenan por `effective_score` (ensemble × (1 − haircut)),
+  no por la fórmula heurística antigua.
+
+**Frontend entregado** ([drafts/live/[draftId]/page.tsx](../frontend/src/app/drafts/live/%5BdraftId%5D/page.tsx)):
+- Tier badge (elite/sólido/normal/flojo) por jugador.
+- Signal badge (⭐ STRONG BUY / 🟢 BUY / 🔵 HOLD / 🔴 AVOID) con tooltip
+  mostrando `signal_reasons`.
+- Flags 🔄 (mover) / 🔻 (peak año) / ⚽ (penaltis).
+- `xPts` efectivo en bold accent + métricas de soporte (avg / PJ / T%).
+- Panel "Sugerencias" ordenado por effective_score con los mismos flags.
+- Todo el bloque sigue gated por `isAdmin && adminStats`.
+
+**Tests**: [backend/tests/features/test_scorecard.py](../backend/tests/features/test_scorecard.py)
+cubre thresholds por posición + brackets de haircut + flags + enrich
+end-to-end (24 tests verdes).
+
+### Estado previo (referencia histórica)
+
+[backend/src/features/drafts/service.py:890](../backend/src/features/drafts/service.py#L890)
+`get_player_stats_for_draft` calculaba localmente:
 - `avg_pts × starter_factor × trend_factor` para el ranking.
-- Devuelve `PlayerDraftStats` (avg/std/form/trend/matchdays/starter_pct).
+- Devolvía `PlayerDraftStats` (avg/std/form/trend/matchdays/starter_pct).
 
-El frontend muestra eso inline en las cards de búsqueda + panel
-"Sugerencias de pick (Admin)" desplegable.
+El frontend lo mostraba inline en las cards de búsqueda + panel
+"Sugerencias de pick (Admin)".
 
 ### Cambios
 

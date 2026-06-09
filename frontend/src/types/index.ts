@@ -36,10 +36,22 @@ export interface PredictionsResponse {
 
 export interface PlayerDraftStats {
   player_id: number;
+
+  // Model output (Ensemble, Spearman 0.718 backtested)
+  ensemble_score: number;
+  signal: "strong_buy" | "buy" | "hold" | "avoid" | string;
+  signal_reasons: string[];
+
+  // Scorecard heuristics (docs/DRAFT_SCORECARD.md)
+  position_tier: "elite" | "solid" | "normal" | "weak" | string;
+  survival_haircut_pct: number; // 0..1
+  effective_score: number; // ensemble_score * (1 - haircut)
+  is_mover: boolean;
+  is_peak_year: boolean;
+  is_likely_penalty_taker: boolean;
+
+  // Supporting numbers shown in the card
   avg_pts: number;
-  std_dev: number;
-  form_5: number | null;
-  trend: string;
   matchdays_played: number;
   starter_pct: number;
 }

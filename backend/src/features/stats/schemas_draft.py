@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 class DraftValuePlayer(BaseModel):
     player_id: int
+    slug: str  # stable across seasons; used to join with historical rows
     display_name: str
     team_name: str
     position: str
