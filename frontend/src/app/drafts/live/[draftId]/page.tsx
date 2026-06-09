@@ -9,6 +9,11 @@ import { useDraftWebSocket, type DraftWSEvent } from "@/hooks/use-draft-websocke
 import { apiClient } from "@/lib/api-client";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
 import { WishlistPanel } from "@/components/draft/wishlist-panel";
+import {
+  SIGNAL_LABELS,
+  TIER_COLORS,
+  TIER_LABELS,
+} from "@/lib/draft-scorecard";
 import type {
   DraftDetailResponse,
   DraftPickEntry,
@@ -756,40 +761,8 @@ export default function LiveDraftPage() {
 // position colour family but with a clear hierarchy: elite > solid >
 // normal > weak. The admin sees these as a quick "should I pick this
 // player at all" signal.
-const TIER_COLORS: Record<string, string> = {
-  elite: "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30",
-  solid: "bg-blue-500/15 text-blue-300 border border-blue-500/30",
-  normal: "bg-zinc-500/15 text-zinc-300 border border-zinc-500/30",
-  weak: "bg-red-500/15 text-red-300 border border-red-500/30",
-};
-
-const TIER_LABELS: Record<string, string> = {
-  elite: "Elite",
-  solid: "Sólido",
-  normal: "Normal",
-  weak: "Flojo",
-};
-
-// Ensemble model signal — comes from service_draft.py. The strong_buy /
-// buy / hold / avoid scale is the Spearman-0.718 backtest output.
-const SIGNAL_LABELS: Record<string, { label: string; classes: string }> = {
-  strong_buy: {
-    label: "⭐ STRONG BUY",
-    classes: "bg-amber-500/20 text-amber-300 border border-amber-500/40",
-  },
-  buy: {
-    label: "🟢 BUY",
-    classes: "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30",
-  },
-  hold: {
-    label: "🔵 HOLD",
-    classes: "bg-blue-500/10 text-blue-300 border border-blue-500/20",
-  },
-  avoid: {
-    label: "🔴 AVOID",
-    classes: "bg-red-500/15 text-red-300 border border-red-500/30",
-  },
-};
+// Tier / signal colors are shared with the Draft Retro analytics page —
+// keep them in src/lib/draft-scorecard.ts so any tweak hits both surfaces.
 
 function SearchFilters({
   search,

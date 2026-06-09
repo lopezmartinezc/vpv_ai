@@ -41,8 +41,15 @@ from src.features.stats.schemas_advanced import (
     TeamDependencyResponse,
 )
 from src.features.stats.schemas_draft import DraftValueResponse
+from src.features.stats.schemas_draft_retro import (
+    BacktestResponse,
+    DraftRetrospectiveResponse,
+    DraftScatterResponse,
+    ParticipantIQResponse,
+)
 from src.features.stats.service_advanced import AdvancedStatsService
 from src.features.stats.service_draft import DraftValueService
+from src.features.stats.service_draft_retro import DraftRetroService
 from src.shared.dependencies import get_db, require_perm
 from src.shared.permissions import Perm
 
@@ -64,6 +71,77 @@ async def get_draft_values(
     """Draft value predictions using backtested models."""
     service = DraftValueService(db)
     return await service.get_draft_values(season_id, min_games=min_games)
+
+
+# ---------------------------------------------------------------------------
+# Draft retrospective analytics
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/admin/drafts/scatter",
+    response_model=DraftScatterResponse,
+)
+async def get_draft_scatter(
+    season_ids: str | None = Query(
+        default=None,
+        description="Comma-separated season IDs (default: all valid seasons)",
+    ),
+    phases: str | None = Query(
+        default=None,
+        description="Comma-separated phases (default: 'preseason')",
+    ),
+    admin: dict = Depends(require_perm(Perm.STATS)),
+    db: AsyncSession = Depends(get_db),
+) -> DraftScatterResponse:
+    """Every historical pick as a scatter point: pick_number vs total_points."""
+    sids = [int(s) for s in season_ids.split(",") if s.strip()] if season_ids else None
+    phs = [p.strip() for p in phases.split(",") if p.strip()] if phases else None
+    service = DraftRetroService(db)
+    return await service.scatter(season_ids=sids, phases=phs)
+
+
+@router.get(
+    "/admin/drafts/backtest",
+    response_model=BacktestResponse,
+)
+async def get_draft_backtest(
+    season_id: int = Query(..., description="Completed season to backtest against"),
+    admin: dict = Depends(require_perm(Perm.STATS)),
+    db: AsyncSession = Depends(get_db),
+) -> BacktestResponse:
+    """Replay the scorecard against a completed season and report hit rate."""
+    service = DraftRetroService(db)
+    return await service.backtest(season_id)
+
+
+@router.get(
+    "/admin/drafts/participant-iq",
+    response_model=ParticipantIQResponse,
+)
+async def get_participant_iq(
+    phase: str = Query(default="preseason"),
+    min_seasons: int = Query(default=2, ge=1, le=10),
+    admin: dict = Depends(require_perm(Perm.STATS)),
+    db: AsyncSession = Depends(get_db),
+) -> ParticipantIQResponse:
+    """Per-participant draft IQ across all seasons in `phase`."""
+    service = DraftRetroService(db)
+    return await service.participant_iq(phase=phase, min_seasons=min_seasons)
+
+
+@router.get(
+    "/admin/drafts/{draft_id}/retrospective",
+    response_model=DraftRetrospectiveResponse,
+)
+async def get_draft_retrospective(
+    draft_id: int,
+    admin: dict = Depends(require_perm(Perm.STATS)),
+    db: AsyncSession = Depends(get_db),
+) -> DraftRetrospectiveResponse:
+    """Pick-by-pick post-mortem of a single draft."""
+    service = DraftRetroService(db)
+    return await service.retrospective(draft_id)
 
 
 # ---------------------------------------------------------------------------

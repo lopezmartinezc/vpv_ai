@@ -1191,3 +1191,113 @@ export interface PredictionRequest {
   notes: string | null;
   bracket_predictions?: BracketPredictions | null;
 }
+
+// ---------------------------------------------------------------------------
+// Draft retrospective (admin) — backend: stats/admin/drafts/...
+// ---------------------------------------------------------------------------
+
+export interface RetroPick {
+  pick_number: number;
+  round_number: number;
+  participant_id: number;
+  participant_display_name: string;
+  player_id: number;
+  player_name: string;
+  position: string;
+  team_name: string;
+  photo_path: string | null;
+  season_total_points: number;
+  season_avg_pts: number;
+  matchdays_played: number;
+  slot_median_total_points: number | null;
+  delta_vs_slot: number | null;
+  tag: "steal" | "bust" | "normal" | string;
+}
+
+export interface DraftRetrospectiveResponse {
+  draft_id: number;
+  season_id: number;
+  season_name: string;
+  phase: string;
+  n_picks: number;
+  picks: RetroPick[];
+}
+
+export interface PickPoint {
+  pick_number: number;
+  round_number: number;
+  total_points: number;
+  avg_points: number;
+  matchdays_played: number;
+  position: string;
+  player_id: number;
+  player_name: string;
+  team_name: string;
+  season_id: number;
+  season_name: string;
+  phase: string;
+  participant_display_name: string;
+}
+
+export interface DraftScatterResponse {
+  season_ids: number[];
+  phases: string[];
+  n_points: number;
+  points: PickPoint[];
+  slot_curve: Record<number, number>;
+}
+
+export interface BacktestPoint {
+  player_id: number;
+  player_name: string;
+  position: string;
+  seasons_history: number;
+  predicted_effective_score: number;
+  predicted_signal: "strong_buy" | "buy" | "hold" | "avoid" | string;
+  predicted_tier: "elite" | "solid" | "normal" | "weak" | string;
+  actual_total_points: number;
+  actual_avg_points: number;
+  actual_matchdays_played: number;
+}
+
+export interface SignalBucket {
+  n: number;
+  mean_actual: number;
+  median_actual: number;
+}
+
+export interface BacktestResponse {
+  season_id: number;
+  season_name: string;
+  n_players: number;
+  spearman_rank_correlation: number;
+  by_signal: Record<string, SignalBucket>;
+  by_tier: Record<string, SignalBucket>;
+  points: BacktestPoint[];
+}
+
+export interface BestPickHighlight {
+  player_name: string;
+  season_name: string;
+  pick_number: number;
+  round_number: number;
+  delta_vs_slot: number;
+}
+
+export interface ParticipantIQEntry {
+  participant_id: number;
+  display_name: string;
+  n_drafts: number;
+  total_picks: number;
+  sum_delta_vs_slot: number;
+  mean_delta_per_pick: number;
+  best_pick: BestPickHighlight | null;
+  worst_pick: BestPickHighlight | null;
+  by_round: Record<number, number>;
+}
+
+export interface ParticipantIQResponse {
+  phase: string;
+  min_seasons: number;
+  participants: ParticipantIQEntry[];
+}

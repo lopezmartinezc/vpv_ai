@@ -73,7 +73,7 @@ class TestSurvivalHaircut:
         assert survival_haircut(6.0) == 0.27
 
     def test_round_4_8_range(self) -> None:
-        # The 5.0–6.0 band is the costly one for draft round 4-8.
+        # The 5.0-6.0 band is the costly one for draft round 4-8.
         assert survival_haircut(5.5) == 0.32
         assert survival_haircut(5.0) == 0.32
 

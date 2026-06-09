@@ -144,6 +144,54 @@ manual actual).
 
 ---
 
+## Mejora 1.5 — Draft Retro analytics (entregada 2026-06-09)
+
+Tras cerrar la Mejora 1 quedaba la pregunta "¿hubiera funcionado el
+scorecard?". Esta mejora añade una capa retrospectiva con cuatro vistas
+admin sobre `draft_picks` + `player_stats`:
+
+1. **Retrospectiva por draft** — `GET /stats/admin/drafts/{draft_id}/retrospective`
+   Tabla pick-a-pick con `season_total_points`, `slot_median_total_points`
+   (mediana histórica del mismo `pick_number`), `delta_vs_slot` y tag
+   `steal`/`bust`/`normal` por cuartiles dentro del draft.
+
+2. **Scatter histórico** — `GET /stats/admin/drafts/scatter`
+   Cada pick como punto en un ScatterChart de recharts (primer scatter
+   del repo). Color por posición, línea amarilla = mediana del slot.
+   Outliers arriba = steals, abajo = busts.
+
+3. **Backtest del scorecard** — `GET /stats/admin/drafts/backtest?season_id=X`
+   Reentrena con seasons < X, aplica `scorecard.enrich()`, compara con
+   los puntos reales de la season X. Devuelve Spearman ρ + médias por
+   signal/tier. Sanity check: el grupo `strong_buy` debe puntuar más
+   que `avoid`.
+
+4. **Draft IQ** — `GET /stats/admin/drafts/participant-iq`
+   Ranking de participantes por `mean_delta_per_pick` con mejor/peor
+   pick histórico y breakdown por ronda (¿quién acierta en R1 vs R10?).
+
+| Capa | Fichero | Acción |
+|---|---|---|
+| Backend | `backend/src/features/stats/service_draft_retro.py` | NUEVO — lógica + SQL |
+| Backend | `backend/src/features/stats/schemas_draft_retro.py` | NUEVO — Pydantic |
+| Backend | `backend/src/features/stats/router.py` | +4 endpoints `/admin/drafts/...` |
+| Tests | `backend/tests/features/test_draft_retro.py` | NUEVO — pure helpers (20 tests) |
+| Frontend | `frontend/src/components/admin/draft-retro-tab.tsx` | NUEVO — tab + 4 sub-vistas |
+| Frontend | `frontend/src/lib/draft-scorecard.ts` | NUEVO — constantes compartidas |
+| Frontend | `frontend/src/app/admin/estadisticas/page.tsx` | +tab "Draft Retro" |
+| Frontend | `frontend/src/app/drafts/live/[draftId]/page.tsx` | refactor: importa desde lib/ |
+
+Decisiones cerradas:
+- `tag_pick` usa cuartiles inclusivos dentro del propio draft (no umbral
+  fijo) — comparativo, no absoluto.
+- El backtest usa una ensemble simplificada (mean(last, career)) en
+  lugar de la productiva, para aislar el efecto del scorecard.
+- Las medianas del slot baseline se calculan con todas las temporadas
+  válidas en la misma fase; no se segmenta por posición porque el slot
+  ya captura escasez implícitamente.
+
+---
+
 ## Mejora 2 — Comparativa lateral de 2-3 jugadores
 
 ### UX
