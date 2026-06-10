@@ -366,6 +366,9 @@ class DraftRetroService:
             # the ensemble model. The scorecard is what's new.
             ensemble = (last.avg_pts + career_avg) / 2
 
+            # Reuse the same signal logic as production.
+            availability = last.games_45min / max(last.games, 1)
+
             enrichment = scorecard.enrich(
                 position=last.position,
                 ensemble_score=ensemble,
@@ -375,10 +378,10 @@ class DraftRetroService:
                 last_team=last.team_name,
                 penalty_goals=last.penalty_goals,
                 penalties_missed=last.penalties_missed,
+                starter_pct=availability,
+                games_played=last.games,
             )
 
-            # Reuse the same signal logic as production.
-            availability = last.games_45min / max(last.games, 1)
             consistency = max(
                 0.0, 1.0 - (last.std_pts / last.avg_pts if last.avg_pts > 0 else 1.0)
             )
