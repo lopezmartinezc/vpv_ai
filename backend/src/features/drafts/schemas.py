@@ -155,12 +155,17 @@ class PlayerDraftStats(BaseModel):
     signal_reasons: list[str]
 
     # Scorecard-derived
-    position_tier: str  # "elite" | "solid" | "normal" | "weak"
+    position_tier: str  # "elite" | "solid" | "normal" | "weak" | "team_dependent" (POR)
     survival_haircut_pct: float  # 0..1 (0.22 = 22% trim)
     effective_score: float  # ensemble_score * (1 - haircut)
     is_mover: bool  # changed team since the previous season
     is_peak_year: bool  # last season was their best (regression risk)
     is_likely_penalty_taker: bool  # DEL only; ≥2 pen attempts last season
+    is_bench_risk: bool  # starter_pct < 0.79 OR games_played < 22 (p50)
+    # If is_mover: how many pts to mentally subtract when the team-quality
+    # jump is large (POR 2.0, others 1.0). UI shows it as a hint; the
+    # effective_score does NOT apply it automatically.
+    mover_penalty_hint: float | None
 
     # Useful supporting numbers shown in the card
     avg_pts: float

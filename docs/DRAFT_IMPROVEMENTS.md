@@ -192,6 +192,60 @@ Decisiones cerradas:
 
 ---
 
+## Mejora 1.6 — Refinamientos del scorecard (entregada 2026-06-09)
+
+Tras un nuevo análisis (Claude Fable, junio 2026), refinamos cuatro
+piezas concretas del scorecard porque la versión inicial perdía señal
+en casos importantes:
+
+1. **POR sin tiers**. El rango p25–p90 de avg_pts en porteros (5.4–7.6)
+   es demasiado estrecho para que los tiers signifiquen algo. Ahora
+   `tier_for("POR", ...)` devuelve `"team_dependent"` con label
+   "Evalúa equipo". El admin sabe que tiene que mirar la calidad
+   defensiva del club, no el número del portero.
+
+2. **Flag 📌 suplente**. Paso 0 del decision-tree: la disponibilidad
+   bate al talento. Si `starter_pct < 0.79` o `games_played < 22`
+   (p50 del dataset 6-8), el jugador se marca como riesgo de
+   banquillo. La banderita sale ANTES de las otras tres en la card.
+
+3. **Mover cuantificado (informativo)**. Cuando `is_mover=True`,
+   `mover_penalty_hint` indica magnitud sugerida: POR 2.0 pts, otros
+   1.0. El backend NO lo resta automáticamente al `effective_score`
+   porque no tenemos la standings del equipo previo; el tooltip lo
+   muestra para que el admin lo aplique a mano cuando el salto es
+   grande.
+
+4. **Penalti taker matizado**. El flag ⚽ ya marcaba DEL con ≥2
+   intentos previos. Añadido al tooltip: "el rol solo persiste el 44%
+   YoY — verifica quién lanza esta temporada".
+
+5. **Decision-tree en la leyenda**. Bloque destacado al inicio del
+   panel "¿Cómo leo los scores?" que recuerda el orden canónico:
+   disponibilidad → tier → entorno → desempate posicional.
+
+### Ficheros tocados
+
+| Capa | Fichero | Acción |
+|---|---|---|
+| Backend | `backend/src/features/stats/scorecard.py` | `tier_for("POR")="team_dependent"`, `is_bench_risk`, `mover_penalty_hint_for`, `enrich(...starter_pct, games_played)` |
+| Backend | `backend/src/features/drafts/schemas.py` | `PlayerDraftStats.is_bench_risk`, `mover_penalty_hint` |
+| Backend | `backend/src/features/drafts/service.py` | pasa `starter_pct` + `games` a `enrich` |
+| Tests | `backend/tests/features/test_scorecard.py` | 9 tests nuevos: POR tier, bench risk, mover hints; total 33 |
+| Frontend | `frontend/src/lib/draft-scorecard.ts` | TIER `team_dependent` color + label |
+| Frontend | `frontend/src/types/index.ts` | `is_bench_risk`, `mover_penalty_hint` |
+| Frontend | `frontend/src/app/drafts/live/[draftId]/page.tsx` | flag 📌, tooltip penalty, decision-tree block, leyenda POR |
+
+### Pendiente (out-of-scope hoy)
+
+- **xG/xA por jugador** desde Understat para DEL — necesita scraping.
+- **Edad del jugador** — necesita columna nueva o scraping.
+- **Aplicar `mover_penalty_hint` al `effective_score`** automáticamente
+  — requiere tabla de standings por equipo+temporada para gauge del
+  salto. Si lo añadimos, queda el efecto cuantitativo en el ranking.
+
+---
+
 ## Mejora 2 — Comparativa lateral de 2-3 jugadores
 
 ### UX

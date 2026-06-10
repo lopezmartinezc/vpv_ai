@@ -940,6 +940,13 @@ class DraftService:
             previous = history[-1] if history else None
             career_avg = statistics.mean(s.avg_pts for s in history) if history else None
 
+            # availability is 0..1 (games_45min / games); the scorecard
+            # uses the same scale for the bench-risk check.
+            ref_starter_pct = (
+                previous.games_45min / previous.games if previous else dv_player.availability
+            )
+            ref_games = previous.games if previous else dv_player.games_played
+
             enrichment = scorecard.enrich(
                 position=dv_player.position,
                 ensemble_score=dv_player.ensemble_score,
@@ -949,6 +956,8 @@ class DraftService:
                 last_team=previous.team_name if previous else None,
                 penalty_goals=previous.penalty_goals if previous else 0,
                 penalties_missed=previous.penalties_missed if previous else 0,
+                starter_pct=ref_starter_pct,
+                games_played=ref_games,
             )
 
             players[str(dv_player.player_id)] = PlayerDraftStats(
@@ -962,6 +971,8 @@ class DraftService:
                 is_mover=enrichment.is_mover,
                 is_peak_year=enrichment.is_peak_year,
                 is_likely_penalty_taker=enrichment.is_likely_penalty_taker,
+                is_bench_risk=enrichment.is_bench_risk,
+                mover_penalty_hint=enrichment.mover_penalty_hint,
                 avg_pts=round(dv_player.avg_points, 1),
                 matchdays_played=dv_player.games_played,
                 starter_pct=round(dv_player.availability * 100, 0),

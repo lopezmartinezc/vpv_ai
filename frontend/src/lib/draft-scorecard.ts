@@ -11,7 +11,12 @@
  * component or page.
  */
 
-export type ScorecardTier = "elite" | "solid" | "normal" | "weak";
+export type ScorecardTier =
+  | "elite"
+  | "solid"
+  | "normal"
+  | "weak"
+  | "team_dependent";
 
 export type ScorecardSignal = "strong_buy" | "buy" | "hold" | "avoid";
 
@@ -20,6 +25,10 @@ export const TIER_COLORS: Record<string, string> = {
   solid: "bg-blue-500/15 text-blue-300 border border-blue-500/30",
   normal: "bg-zinc-500/15 text-zinc-300 border border-zinc-500/30",
   weak: "bg-red-500/15 text-red-300 border border-red-500/30",
+  // Used for POR — the avg_pts range is too narrow for tiers; value
+  // comes from the team's defensive quality, which we can't read from
+  // the player's history.
+  team_dependent: "bg-sky-500/15 text-sky-300 border border-sky-500/30",
 };
 
 export const TIER_LABELS: Record<string, string> = {
@@ -27,6 +36,7 @@ export const TIER_LABELS: Record<string, string> = {
   solid: "Sólido",
   normal: "Normal",
   weak: "Flojo",
+  team_dependent: "Evalúa equipo",
 };
 
 export const SIGNAL_LABELS: Record<string, { label: string; classes: string }> = {

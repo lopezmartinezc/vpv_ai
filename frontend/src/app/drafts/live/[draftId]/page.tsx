@@ -425,6 +425,30 @@ export default function LiveDraftPage() {
           </button>
           {showScoreHelp && (
             <div className="mt-2 space-y-3 rounded-lg border border-sky-500/30 bg-sky-500/5 p-3 text-[11px] text-vpv-text">
+              <div className="rounded border border-sky-500/40 bg-sky-500/10 p-2">
+                <p className="mb-1 font-bold text-sky-300">Orden de decisión (decision-tree)</p>
+                <ol className="ml-4 list-decimal text-vpv-text-muted">
+                  <li>
+                    <span className="text-vpv-text">Disponibilidad</span> — si
+                    📌 suplente: pásalo. El Paso 0 manda sobre todo lo demás.
+                  </li>
+                  <li>
+                    <span className="text-vpv-text">Tier propio</span> — POR es
+                    {" "}<em>evalúa equipo</em> (no avg); el resto van por umbrales de avg_pts.
+                  </li>
+                  <li>
+                    <span className="text-vpv-text">Entorno / equipo</span> —
+                    POR y DEF se llevan los puntos pasivos del equipo (clean
+                    sheets, gol +8 para DEF). Si 🔄 mover: re-evalúa.
+                  </li>
+                  <li>
+                    <span className="text-vpv-text">Desempate posicional</span>{" "}
+                    — DEL: ¿lanza penaltis? · MED: titularidad fija ·
+                    DEF: amenaza ofensiva.
+                  </li>
+                </ol>
+              </div>
+
               <div>
                 <p className="mb-1 font-bold text-sky-300">xPts (effective_score)</p>
                 <p className="text-vpv-text-muted">
@@ -453,7 +477,7 @@ export default function LiveDraftPage() {
                     <div key={pos} className="rounded border border-vpv-card-border bg-vpv-card p-1.5">
                       <p className={`mb-0.5 text-center text-[9px] font-bold ${POS_COLORS[pos]?.split(" ")[1] ?? ""}`}>{pos}</p>
                       <p className="text-[10px] text-vpv-text-muted">
-                        {pos === "POR" && "elite ≥6.5 · sólido ≥6.0 · normal ≥5.4"}
+                        {pos === "POR" && "evalúa equipo (rango p25=5.4 a p90=7.6 — tiers no separan)"}
                         {pos === "DEF" && "elite ≥6.6 · sólido ≥5.8 · normal ≥4.9"}
                         {pos === "MED" && "elite ≥6.1 · sólido ≥5.3 · normal ≥4.4"}
                         {pos === "DEL" && "elite ≥7.2 · sólido ≥5.4 · normal ≥4.2"}
@@ -462,7 +486,7 @@ export default function LiveDraftPage() {
                   ))}
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1">
-                  {(["elite", "solid", "normal", "weak"] as const).map((t) => (
+                  {(["elite", "solid", "normal", "weak", "team_dependent"] as const).map((t) => (
                     <span
                       key={t}
                       className={`rounded px-1.5 py-px text-[9px] font-bold tracking-wide ${TIER_COLORS[t]}`}
@@ -492,22 +516,32 @@ export default function LiveDraftPage() {
                 <p className="mb-1 font-bold text-sky-300">Banderas de aviso</p>
                 <ul className="ml-3 list-none space-y-1 text-vpv-text-muted">
                   <li>
+                    <span title="Suplente">📌</span>{" "}
+                    <span className="text-vpv-text">Suplente</span> —{" "}
+                    <em>starter_pct &lt; 79%</em> o jugó &lt; 22 partidos
+                    (Paso 0). La disponibilidad pesa más que el talento: si
+                    no juega, no puntúa.
+                  </li>
+                  <li>
                     <span title="Mover">🔄</span>{" "}
-                    <span className="text-vpv-text">Mover</span> — cambia de equipo
-                    respecto a su última temporada. Riesgo de adaptación: rol no
-                    asegurado, posibles minutos reducidos.
+                    <span className="text-vpv-text">Mover</span> — cambia de
+                    equipo. Hint del scorecard: <em>POR ±2 pts</em>,{" "}
+                    <em>DEL/MED ±1 pt</em>, <em>DEF ±1 pt</em> según salto de
+                    calidad. Solo aplica si el salto es grande (top-4 ↔
+                    descenso); resta o suma a mano.
                   </li>
                   <li>
                     <span title="Peak year">🔻</span>{" "}
                     <span className="text-vpv-text">Peak year</span> — su última
                     temporada fue ≥0.5 pts/J por encima de su media histórica.
-                    Riesgo de regresión a la media.
+                    Riesgo de regresión a la media (~0.7 pts).
                   </li>
                   <li>
                     <span title="Penalti">⚽</span>{" "}
                     <span className="text-vpv-text">Lanzador de penaltis</span> — DEL
-                    con ≥2 lanzamientos (anotados o fallados) la temporada
-                    pasada. Sube el techo en torneos.
+                    con ≥2 lanzamientos la temporada pasada (≈+15
+                    pts/temporada). <strong>OJO:</strong> el rol solo persiste
+                    el 44% YoY — verifica quién lanza ESTA temporada.
                   </li>
                 </ul>
               </div>
@@ -560,9 +594,10 @@ export default function LiveDraftPage() {
                         >
                           <span className="flex items-center gap-1 truncate text-vpv-text">
                             <span className="truncate">{findPlayerName(pid)}</span>
+                            {s.is_bench_risk && <span title="Suplente / poco juego">📌</span>}
                             {s.is_mover && <span title="Cambia de equipo">🔄</span>}
                             {s.is_peak_year && <span title="Año atípicamente alto">🔻</span>}
-                            {s.is_likely_penalty_taker && <span title="Lanza penaltis">⚽</span>}
+                            {s.is_likely_penalty_taker && <span title="Lanzador (verifica esta temporada)">⚽</span>}
                           </span>
                           <span className="ml-1 tabular-nums font-bold text-vpv-accent">{s.effective_score.toFixed(1)}</span>
                         </button>
@@ -897,10 +932,20 @@ function SearchResults({
                       {SIGNAL_LABELS[stats.signal].label}
                     </span>
                   )}
+                  {/* Step 0 \u2014 availability. If the player is at bench
+                      risk this beats everything; surface it first. */}
+                  {stats.is_bench_risk && (
+                    <span
+                      title="Suplente / poco juego \u2014 starter_pct < 79% o jug\u00f3 < 22 partidos. Por el Paso 0 del scorecard, el riesgo de banquillo pesa m\u00e1s que el talento."
+                      className="rounded bg-yellow-500/20 px-1 py-px text-[9px] font-bold text-yellow-300"
+                    >
+                      \ud83d\udccc suplente
+                    </span>
+                  )}
                   {/* Warning flags from the scorecard heuristics */}
                   {stats.is_mover && (
                     <span
-                      title="Cambi\u00f3 de equipo \u2014 re-proyecta el entorno (sensibilidad por posici\u00f3n)"
+                      title={`Cambi\u00f3 de equipo \u2014 re-proyecta el entorno. Hint del scorecard: \u00b1${(stats.mover_penalty_hint ?? 1).toFixed(0)} pt(s) seg\u00fan salto de calidad de equipo (POR \u00b12, otros \u00b11).`}
                       className="rounded bg-purple-500/15 px-1 py-px text-[9px] text-purple-300"
                     >
                       \ud83d\udd04 mover
@@ -916,7 +961,7 @@ function SearchResults({
                   )}
                   {stats.is_likely_penalty_taker && (
                     <span
-                      title="Tir\u00f3 \u22652 penaltis la \u00faltima temporada \u2014 probable lanzador (vale ~+15 pts/temporada)"
+                      title="Tir\u00f3 \u22652 penaltis la \u00faltima temporada \u2014 lanzador probable (~+15 pts/temporada). OJO: solo persiste el 44% YoY \u2014 verifica qui\u00e9n lanza ESTA temporada."
                       className="rounded bg-cyan-500/15 px-1 py-px text-[9px] text-cyan-300"
                     >
                       \u26bd penalti
