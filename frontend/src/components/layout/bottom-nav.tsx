@@ -39,8 +39,14 @@ const TOURNAMENT_TABS: Tab[] = [
 
 export function BottomNav() {
   const pathname = usePathname();
-  const { isTournamentContext } = useSeason();
-  const tabs = isTournamentContext ? TOURNAMENT_TABS : LEAGUE_TABS;
+  const { isTournamentContext, selectedSeason } = useSeason();
+  // Liga without weekly payments (rare but possible) should hide the
+  // Economia tab. Tournaments already omit it from TOURNAMENT_TABS.
+  const economyEnabled = selectedSeason?.weekly_payments_enabled !== false;
+  const rawTabs = isTournamentContext ? TOURNAMENT_TABS : LEAGUE_TABS;
+  const tabs = economyEnabled
+    ? rawTabs
+    : rawTabs.filter((t) => t.href !== "/economia");
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-vpv-border bg-vpv-card/95 backdrop-blur md:hidden">

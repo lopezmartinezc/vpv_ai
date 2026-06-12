@@ -111,7 +111,13 @@ export function Sidebar({
   const { selectedSeason, isTournamentContext } = useSeason();
   const prevPathname = useRef(pathname);
 
+  // Hide Pagometro/Economia surfaces for seasons without the weekly
+  // payments mechanic. `undefined` keeps the historic behavior so
+  // older bundles don't lose the entry.
+  const economyEnabled = selectedSeason?.weekly_payments_enabled !== false;
+
   const visibleNavItems = NAV_ITEMS.filter((item) => {
+    if (item.href === "/economia" && !economyEnabled) return false;
     if (!item.appliesTo || item.appliesTo === "all") return true;
     if (item.appliesTo === "league") return !isTournamentContext;
     if (item.appliesTo === "tournament") return isTournamentContext;
@@ -350,12 +356,28 @@ function AdminSubmenu({
   const isInAdmin = pathname.startsWith("/admin");
   const [expanded, setExpanded] = useState(isInAdmin);
 
-  // Build sections: one per active competition + global
+  // Build sections: one per active competition + global. Drop the
+  // per-season admin "Economia" entry when the season has no weekly
+  // payments mechanic — the page would only show empty data.
+  const dropEconomyIfDisabled = (
+    items: typeof PER_SEASON_ADMIN_ITEMS,
+    season: typeof activeLeague,
+  ) =>
+    season?.weekly_payments_enabled === false
+      ? items.filter((item) => item.href !== "/admin/economia")
+      : items;
+
   const ligaItems = activeLeague
-    ? filterSeasonItems(PER_SEASON_ADMIN_ITEMS, "league", isAdmin, permissions)
+    ? dropEconomyIfDisabled(
+        filterSeasonItems(PER_SEASON_ADMIN_ITEMS, "league", isAdmin, permissions),
+        activeLeague,
+      )
     : [];
   const tournamentItems = activeTournament
-    ? filterSeasonItems(PER_SEASON_ADMIN_ITEMS, "tournament", isAdmin, permissions)
+    ? dropEconomyIfDisabled(
+        filterSeasonItems(PER_SEASON_ADMIN_ITEMS, "tournament", isAdmin, permissions),
+        activeTournament,
+      )
     : [];
 
   const globalSections = isAdmin

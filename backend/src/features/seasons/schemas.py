@@ -17,6 +17,10 @@ class SeasonSummary(BaseModel):
     lineup_deadline_min: int
     kind: str = "league"
     tournament_type: str | None = None
+    # Exposed so the frontend can hide /economia, the Pagometro widgets
+    # and the nav card when a season has no weekly payments mechanic
+    # (typically torneos cortos like Mundial / Eurocopa).
+    weekly_payments_enabled: bool = False
 
     model_config = {"from_attributes": True}
 

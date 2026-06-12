@@ -104,6 +104,12 @@ export default function Home() {
   // Pagometro uses whichever matchday is being displayed
   const pagometroMatchday = displayMatchday?.stats_ok ? displayMatchday : null;
 
+  // Hide every Pagometro/Economia surface for seasons without the
+  // weekly-payments mechanic (typical for Mundial / torneos cortos).
+  // `undefined` is treated as enabled so older API bundles keep their
+  // behavior; the gate fires only on an explicit `false`.
+  const economyEnabled = selectedSeason?.weekly_payments_enabled !== false;
+
   const leader = standings?.entries[0] ?? null;
   const copaLeader = copaData?.standings[0] ?? null;
   const currentCopaMatchday = copaData?.matchdays.find(
@@ -135,12 +141,16 @@ export default function Home() {
         ? `Actual: J${currentMatchdayDetail.number}`
         : "Puntuaciones por jornada",
     },
-    {
-      title: "Economia",
-      href: "/economia",
-      icon: "coins" as const,
-      detail: "Balance global de pagos",
-    },
+    ...(economyEnabled
+      ? [
+          {
+            title: "Economia",
+            href: "/economia",
+            icon: "coins" as const,
+            detail: "Balance global de pagos",
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -190,7 +200,8 @@ export default function Home() {
         <CopaWidget entries={copaData.standings} />
       )}
 
-      {pagometroMatchday &&
+      {economyEnabled &&
+        pagometroMatchday &&
         pagometroMatchday.scores.length > 0 &&
         Object.keys(weeklyRules).length > 0 && (
           <PagometroJornadaWidget
@@ -200,7 +211,7 @@ export default function Home() {
           />
         )}
 
-      {economy && economy.balances.length > 0 && (
+      {economyEnabled && economy && economy.balances.length > 0 && (
         <PagometroWidget balances={economy.balances} />
       )}
 

@@ -99,6 +99,12 @@ export interface SeasonSummary {
   lineup_deadline_min: number;
   kind?: "league" | "tournament";
   tournament_type?: string | null;
+  /**
+   * False ⇒ hide /economia + Pagometro widgets + nav cards. Typical
+   * for torneos cortos that don't run the weekly-payments mechanic.
+   * Treat undefined as true (back-compat with older bundles).
+   */
+  weekly_payments_enabled?: boolean;
 }
 
 export interface SeasonDetail {
