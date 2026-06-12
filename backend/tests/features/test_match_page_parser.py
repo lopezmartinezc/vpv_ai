@@ -106,14 +106,17 @@ class TestStarterMinutes:
 class TestStatExtraction:
     """End-to-end checks on a few notable players."""
 
-    def test_rangel_clean_sheet_and_two_saves(self, players: list[MatchPagePlayer]) -> None:
+    def test_rangel_clean_sheet_and_picas(self, players: list[MatchPagePlayer]) -> None:
         rangel = next(p for p in players if "Rangel" in p.player_name_raw)
-        # 2 paradas → penalties_saved=2 (closest stat field we have)
-        assert rangel.stats.penalties_saved == 2
-        # Mexico didn't concede — goals_against=0.
+        # Mexico didn't concede — goals_against=0. The clean sheet itself
+        # is derived downstream from goals_against by the ScoringEngine.
         assert rangel.stats.goals_against == 0
         # 1 picas (one <img class="pica">).
         assert rangel.stats.as_picas == "1"
+        # "Paradas" (total saves) is NOT credited as penalties_saved —
+        # VPV only scores penalty saves and the match page doesn't
+        # surface those separately yet.
+        assert rangel.stats.penalties_saved == 0
 
     def test_jimenez_scored_one(self, players: list[MatchPagePlayer]) -> None:
         jimenez = next(p for p in players if "Jiménez" in p.player_name_raw)

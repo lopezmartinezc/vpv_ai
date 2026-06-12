@@ -957,10 +957,15 @@ class MatchPagePlayer:
 # PlayerMatchdayStats field they should fill. Values that don't map to
 # any of our fields (sofascore-style metrics like "Pases clave") are
 # intentionally absent — they're discarded.
+#
+# We deliberately do NOT map "Paradas" (total saves) to anything: VPV
+# scoring only credits *penalty* saves, and the match page doesn't
+# expose them distinctly from regular saves yet. When we see a real
+# penalty save in production we'll add the detection (likely a new
+# "Paradas de penalti" desglose entry, or an icon in td.events).
 _DESGLOSE_STAT_TO_FIELD: dict[str, str] = {
     "Goles": "goals",
     "Asistencias": "assists",
-    "Paradas": "penalties_saved",  # closest match in our model (saves on shots)
     "Tiros al palo": "woodwork",
 }
 
@@ -1116,7 +1121,10 @@ def _build_match_page_stats(
     goals = desglose_counts.get("Goles", 0)
     assists = desglose_counts.get("Asistencias", 0)
     woodwork = desglose_counts.get("Tiros al palo", 0)
-    penalties_saved = desglose_counts.get("Paradas", 0)
+    # Penalty saves are NOT taken from "Paradas" — that's total saves,
+    # and VPV scoring only credits penalty saves. Leave at 0 until we
+    # find a reliable signal on the match page.
+    penalties_saved = 0
 
     return PlayerMatchdayStats(
         matchday_number=matchday_number,
