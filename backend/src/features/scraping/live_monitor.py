@@ -59,17 +59,6 @@ async def _check_live_matches(session: AsyncSession) -> None:
     if season is None:
         return
 
-    # Per-season opt-out: skip the whole live-match scan when the
-    # admin disabled the "live_match_events" alert. Saves the cost of
-    # fetching match HTML / parsing events entirely.
-    from src.features.telegram.alerts_config import (
-        EVENT_LIVE_MATCH_EVENTS,
-        is_alert_event_enabled,
-    )
-
-    if not is_alert_event_enabled(season.alerts_config, EVENT_LIVE_MATCH_EVENTS):
-        return
-
     now = datetime.now(UTC)
     live_matches: list[tuple[Match, int]] = []  # (match, matchday_number)
 
@@ -152,6 +141,8 @@ async def _check_live_matches(session: AsyncSession) -> None:
 
             sends_this_tick = 0
 
+            from src.features.telegram.alerts_config import is_live_event_enabled
+
             for event in new_events:
                 from html import escape
 
@@ -160,6 +151,13 @@ async def _check_live_matches(session: AsyncSession) -> None:
 
                 is_vpv = owner_name is not None
                 if not is_vpv and event.event_type not in always_send:
+                    seen.add(event.dedup_key)
+                    continue
+
+                # Per-subtype opt-out: admin disabled this event type
+                # for the season. Mark as seen so we don't re-evaluate
+                # it on every tick.
+                if not is_live_event_enabled(season.alerts_config, event.event_type):
                     seen.add(event.dedup_key)
                     continue
 

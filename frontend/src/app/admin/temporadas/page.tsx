@@ -111,7 +111,20 @@ export default function AdminTemporadasPage() {
   // truth as `send_alert` will apply at runtime.
   const [editAlertDeadlineReminder, setEditAlertDeadlineReminder] = useState(true);
   const [editAlertLineupSubmitted, setEditAlertLineupSubmitted] = useState(true);
-  const [editAlertLiveMatchEvents, setEditAlertLiveMatchEvents] = useState(true);
+  // Per-subtype toggles for live match events. Keys mirror
+  // backend/src/features/scraping/live_events.py::ICON_MAP — keep in sync.
+  const [editLiveEvents, setEditLiveEvents] = useState<Record<string, boolean>>({
+    goal: true,
+    assist: true,
+    yellow: true,
+    red: true,
+    sub_in: true,
+    sub_out: true,
+    penalty_committed: true,
+    woodwork: true,
+    error_garrafal: true,
+    last_man_tackle: true,
+  });
   const [editMatchdayCurrent, setEditMatchdayCurrent] = useState("");
   const [editMatchdayEnd, setEditMatchdayEnd] = useState("");
   const [editMatchdayWinter, setEditMatchdayWinter] = useState("");
@@ -197,7 +210,28 @@ export default function AdminTemporadasPage() {
       const events = detail.alerts_config?.events ?? {};
       setEditAlertDeadlineReminder(events.deadline_reminder !== false);
       setEditAlertLineupSubmitted(events.lineup_submitted !== false);
-      setEditAlertLiveMatchEvents(events.live_match_events !== false);
+      // Legacy kill-switch: a saved `live_match_events: false` flips
+      // every subtype off so the UI keeps consistency with the
+      // backend's is_live_event_enabled() resolution.
+      const liveKillSwitch = events.live_match_events === false;
+      setEditLiveEvents({
+        goal: liveKillSwitch ? false : events["live_match.goal"] !== false,
+        assist: liveKillSwitch ? false : events["live_match.assist"] !== false,
+        yellow: liveKillSwitch ? false : events["live_match.yellow"] !== false,
+        red: liveKillSwitch ? false : events["live_match.red"] !== false,
+        sub_in: liveKillSwitch ? false : events["live_match.sub_in"] !== false,
+        sub_out: liveKillSwitch ? false : events["live_match.sub_out"] !== false,
+        penalty_committed: liveKillSwitch
+          ? false
+          : events["live_match.penalty_committed"] !== false,
+        woodwork: liveKillSwitch ? false : events["live_match.woodwork"] !== false,
+        error_garrafal: liveKillSwitch
+          ? false
+          : events["live_match.error_garrafal"] !== false,
+        last_man_tackle: liveKillSwitch
+          ? false
+          : events["live_match.last_man_tackle"] !== false,
+      });
       setEditTournamentConfig(
         detail.tournament_config
           ? JSON.stringify(detail.tournament_config, null, 2)
@@ -276,25 +310,49 @@ export default function AdminTemporadasPage() {
       // Event toggles: only ship the keys that are disabled, since the
       // backend treats absence as "enabled" and the JSONB stays small.
       const currentEvents = season.alerts_config?.events ?? {};
+      const currentKillSwitch = currentEvents.live_match_events === false;
+      const currentLiveEvents = {
+        goal: currentKillSwitch ? false : currentEvents["live_match.goal"] !== false,
+        assist: currentKillSwitch ? false : currentEvents["live_match.assist"] !== false,
+        yellow: currentKillSwitch ? false : currentEvents["live_match.yellow"] !== false,
+        red: currentKillSwitch ? false : currentEvents["live_match.red"] !== false,
+        sub_in: currentKillSwitch ? false : currentEvents["live_match.sub_in"] !== false,
+        sub_out: currentKillSwitch ? false : currentEvents["live_match.sub_out"] !== false,
+        penalty_committed: currentKillSwitch
+          ? false
+          : currentEvents["live_match.penalty_committed"] !== false,
+        woodwork: currentKillSwitch ? false : currentEvents["live_match.woodwork"] !== false,
+        error_garrafal: currentKillSwitch
+          ? false
+          : currentEvents["live_match.error_garrafal"] !== false,
+        last_man_tackle: currentKillSwitch
+          ? false
+          : currentEvents["live_match.last_man_tackle"] !== false,
+      };
       const currentValue = {
         deadline_reminder: currentEvents.deadline_reminder !== false,
         lineup_submitted: currentEvents.lineup_submitted !== false,
-        live_match_events: currentEvents.live_match_events !== false,
+        live: currentLiveEvents,
       };
       const nextValue = {
         deadline_reminder: editAlertDeadlineReminder,
         lineup_submitted: editAlertLineupSubmitted,
-        live_match_events: editAlertLiveMatchEvents,
+        live: editLiveEvents,
       };
+      const liveChanged = Object.keys(currentValue.live).some(
+        (k) => (currentValue.live as Record<string, boolean>)[k] !== (nextValue.live as Record<string, boolean>)[k],
+      );
       if (
         currentValue.deadline_reminder !== nextValue.deadline_reminder ||
         currentValue.lineup_submitted !== nextValue.lineup_submitted ||
-        currentValue.live_match_events !== nextValue.live_match_events
+        liveChanged
       ) {
         const eventsPayload: Record<string, boolean> = {};
         if (!nextValue.deadline_reminder) eventsPayload.deadline_reminder = false;
         if (!nextValue.lineup_submitted) eventsPayload.lineup_submitted = false;
-        if (!nextValue.live_match_events) eventsPayload.live_match_events = false;
+        for (const [subtype, enabled] of Object.entries(nextValue.live)) {
+          if (!enabled) eventsPayload[`live_match.${subtype}`] = false;
+        }
         // Send `{events: {...}}` even when empty — the backend's
         // SeasonUpdate.model_dump(exclude_none=True) drops nulls, so
         // we can't clear via `null`. An empty events dict is treated
@@ -1027,16 +1085,41 @@ export default function AdminTemporadasPage() {
                   />
                 </div>
 
-                <div className="rounded border border-vpv-border bg-vpv-bg/40 p-3">
-                  <p className="mb-2 text-xs font-medium text-vpv-text">
+                <div className="space-y-3 rounded border border-vpv-border bg-vpv-bg/40 p-3">
+                  <p className="text-xs font-medium text-vpv-text">
                     Eventos que disparan alertas Telegram
                   </p>
-                  <div className="space-y-1.5">
-                    <label className="flex cursor-pointer items-center gap-2 text-xs text-vpv-text">
+
+                  {/* Group 1: events that go to the Alineaciones thread */}
+                  <div className="rounded border border-vpv-card-border bg-vpv-card/40 p-2.5">
+                    <p className="mb-1.5 text-[11px] font-bold text-vpv-text-muted">
+                      Hilo de Alineaciones (telegram_thread_id general)
+                    </p>
+                    <label className="flex cursor-pointer items-start gap-2 text-xs text-vpv-text">
+                      <input
+                        type="checkbox"
+                        checked={editAlertLineupSubmitted}
+                        onChange={(e) => setEditAlertLineupSubmitted(e.target.checked)}
+                        className="mt-0.5"
+                      />
+                      <span>
+                        <strong>Alineación enviada</strong> — imagen + caption
+                        cuando un participante guarda su alineación.
+                      </span>
+                    </label>
+                  </div>
+
+                  {/* Group 2: events that go to the Alertas thread */}
+                  <div className="rounded border border-vpv-card-border bg-vpv-card/40 p-2.5">
+                    <p className="mb-1.5 text-[11px] font-bold text-vpv-text-muted">
+                      Hilo de Alertas (alerts_telegram_thread_id)
+                    </p>
+                    <label className="mb-2 flex cursor-pointer items-start gap-2 text-xs text-vpv-text">
                       <input
                         type="checkbox"
                         checked={editAlertDeadlineReminder}
                         onChange={(e) => setEditAlertDeadlineReminder(e.target.checked)}
+                        className="mt-0.5"
                       />
                       <span>
                         <strong>Recordatorios de deadline</strong> — &quot;Faltan
@@ -1044,30 +1127,48 @@ export default function AdminTemporadasPage() {
                         alineación.
                       </span>
                     </label>
-                    <label className="flex cursor-pointer items-center gap-2 text-xs text-vpv-text">
-                      <input
-                        type="checkbox"
-                        checked={editAlertLineupSubmitted}
-                        onChange={(e) => setEditAlertLineupSubmitted(e.target.checked)}
-                      />
-                      <span>
-                        <strong>Alineación enviada</strong> — imagen + caption
-                        cuando un participante guarda su alineación.
-                      </span>
-                    </label>
-                    <label className="flex cursor-pointer items-center gap-2 text-xs text-vpv-text">
-                      <input
-                        type="checkbox"
-                        checked={editAlertLiveMatchEvents}
-                        onChange={(e) => setEditAlertLiveMatchEvents(e.target.checked)}
-                      />
-                      <span>
-                        <strong>Eventos en vivo</strong> — goles, tarjetas y
-                        cambios mientras se juega el partido.
-                      </span>
-                    </label>
+
+                    <div className="mt-2">
+                      <p className="mb-1 text-xs font-medium text-vpv-text">
+                        Eventos en vivo — qué subtipos enviar
+                      </p>
+                      <div className="grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2">
+                        {(
+                          [
+                            ["goal", "⚽ Gol"],
+                            ["assist", "👟 Asistencia"],
+                            ["yellow", "🟨 Amarilla"],
+                            ["red", "🟥 Roja"],
+                            ["sub_in", "🔼 Entra (cambio)"],
+                            ["sub_out", "🔽 Sale (cambio)"],
+                            ["penalty_committed", "⚠️ Penalti cometido"],
+                            ["woodwork", "🪵 Palo"],
+                            ["error_garrafal", "💥 Error garrafal"],
+                            ["last_man_tackle", "🛡️ Robo último hombre"],
+                          ] as const
+                        ).map(([key, label]) => (
+                          <label
+                            key={key}
+                            className="flex cursor-pointer items-center gap-2 text-xs text-vpv-text"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={editLiveEvents[key] ?? true}
+                              onChange={(e) =>
+                                setEditLiveEvents((prev) => ({
+                                  ...prev,
+                                  [key]: e.target.checked,
+                                }))
+                              }
+                            />
+                            <span>{label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                  <p className="mt-2 text-xs text-vpv-text-muted">
+
+                  <p className="text-xs text-vpv-text-muted">
                     Por defecto todos los eventos están activos. Desactiva los
                     que quieras silenciar para esta temporada.
                   </p>
