@@ -22,6 +22,8 @@ interface Season {
   weekly_payments_enabled?: boolean;
   tournament_type?: string | null;
   telegram_chat_id?: string | null;
+  alerts_telegram_chat_id?: string | null;
+  alerts_telegram_thread_id?: number | null;
   telegram_thread_id?: number | null;
   draft_telegram_chat_id?: string | null;
   draft_telegram_thread_id?: number | null;
@@ -101,6 +103,8 @@ export default function AdminTemporadasPage() {
   const [editTelegramThreadId, setEditTelegramThreadId] = useState("");
   const [editDraftTelegramChatId, setEditDraftTelegramChatId] = useState("");
   const [editDraftTelegramThreadId, setEditDraftTelegramThreadId] = useState("");
+  const [editAlertsTelegramChatId, setEditAlertsTelegramChatId] = useState("");
+  const [editAlertsTelegramThreadId, setEditAlertsTelegramThreadId] = useState("");
   const [editMatchdayCurrent, setEditMatchdayCurrent] = useState("");
   const [editMatchdayEnd, setEditMatchdayEnd] = useState("");
   const [editMatchdayWinter, setEditMatchdayWinter] = useState("");
@@ -179,6 +183,10 @@ export default function AdminTemporadasPage() {
       setEditDraftTelegramThreadId(
         detail.draft_telegram_thread_id != null ? String(detail.draft_telegram_thread_id) : "",
       );
+      setEditAlertsTelegramChatId(detail.alerts_telegram_chat_id ?? "");
+      setEditAlertsTelegramThreadId(
+        detail.alerts_telegram_thread_id != null ? String(detail.alerts_telegram_thread_id) : "",
+      );
       setEditTournamentConfig(
         detail.tournament_config
           ? JSON.stringify(detail.tournament_config, null, 2)
@@ -239,6 +247,18 @@ export default function AdminTemporadasPage() {
       if (editDraftTelegramThreadId !== currentThreadId) {
         body.draft_telegram_thread_id = editDraftTelegramThreadId
           ? Number(editDraftTelegramThreadId)
+          : null;
+      }
+
+      if (editAlertsTelegramChatId !== (season.alerts_telegram_chat_id ?? ""))
+        body.alerts_telegram_chat_id = editAlertsTelegramChatId || null;
+      const currentAlertsThreadId =
+        season.alerts_telegram_thread_id != null
+          ? String(season.alerts_telegram_thread_id)
+          : "";
+      if (editAlertsTelegramThreadId !== currentAlertsThreadId) {
+        body.alerts_telegram_thread_id = editAlertsTelegramThreadId
+          ? Number(editAlertsTelegramThreadId)
           : null;
       }
 
@@ -934,6 +954,34 @@ export default function AdminTemporadasPage() {
                     inputMode="numeric"
                     value={editDraftTelegramThreadId}
                     onChange={(e) => setEditDraftTelegramThreadId(e.target.value)}
+                    placeholder="Topic ID (sólo grupos con topics)"
+                    className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-vpv-text-muted">
+                    Telegram chat ID de Alertas
+                  </label>
+                  <input
+                    type="text"
+                    value={editAlertsTelegramChatId}
+                    onChange={(e) => setEditAlertsTelegramChatId(e.target.value)}
+                    placeholder="Canal específico para deadline reminders y warnings"
+                    className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
+                  />
+                  <p className="mt-1 text-xs text-vpv-text-muted">
+                    Si lo dejas vacío, las alertas van al chat general de la temporada (con su thread).
+                  </p>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-vpv-text-muted">
+                    Telegram thread ID de Alertas
+                  </label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={editAlertsTelegramThreadId}
+                    onChange={(e) => setEditAlertsTelegramThreadId(e.target.value)}
                     placeholder="Topic ID (sólo grupos con topics)"
                     className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
                   />

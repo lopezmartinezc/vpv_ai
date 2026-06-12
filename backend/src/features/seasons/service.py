@@ -279,6 +279,8 @@ class SeasonService:
             tournament_config=request.tournament_config,
             telegram_chat_id=request.telegram_chat_id,
             telegram_thread_id=request.telegram_thread_id,
+            alerts_telegram_chat_id=request.alerts_telegram_chat_id,
+            alerts_telegram_thread_id=request.alerts_telegram_thread_id,
         )
 
         # 2. Copy scoring rules and payments from source

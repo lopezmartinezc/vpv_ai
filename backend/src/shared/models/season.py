@@ -52,6 +52,11 @@ class Season(Base):
     telegram_thread_id: Mapped[int | None] = mapped_column(Integer)
     draft_telegram_chat_id: Mapped[str | None] = mapped_column(String(50))
     draft_telegram_thread_id: Mapped[int | None] = mapped_column(Integer)
+    # Dedicated channel/topic for system alerts (deadline reminders,
+    # late-pick warnings, etc). Falls back to telegram_chat_id when
+    # NULL — see TelegramService.send_alert.
+    alerts_telegram_chat_id: Mapped[str | None] = mapped_column(String(50))
+    alerts_telegram_thread_id: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
 
     scoring_rules: Mapped[list[ScoringRule]] = relationship(back_populates="season", lazy="raise")

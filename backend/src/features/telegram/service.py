@@ -134,26 +134,29 @@ class TelegramNotifier:
         """Send a message to the alerts chat (deadline reminders, etc.).
 
         Resolution order:
-        1. season.telegram_chat_id (if season_id provided + season has it)
-        2. settings.telegram_alerts_chat_id (dedicated alerts chat)
-        3. telegram_settings.telegram_chat_id (global default)
+        1. season.alerts_telegram_chat_id (dedicated alerts channel for
+           this season — preferred to avoid spamming the general thread)
+        2. season.telegram_chat_id (general per-season chat with its
+           lineup thread, when no dedicated alerts channel set)
+        3. settings.telegram_alerts_chat_id (env-level alerts chat)
+        4. telegram_settings.telegram_chat_id (global default)
         """
         if not telegram_settings.telegram_enabled:
             return False
 
         from src.core.config import settings
 
-        # Try per-season chat first (with its thread); otherwise alerts chat
-        # (no thread) or global default.
         thread_id: int | None = None
+        chat_id: str = ""
         if season_id is not None:
             season = await self.repo.session.get(Season, season_id)
-            if season is not None and season.telegram_chat_id:
+            if season is not None and season.alerts_telegram_chat_id:
+                chat_id = season.alerts_telegram_chat_id
+                thread_id = season.alerts_telegram_thread_id
+            elif season is not None and season.telegram_chat_id:
                 chat_id = season.telegram_chat_id
                 thread_id = season.telegram_thread_id
-            else:
-                chat_id = settings.telegram_alerts_chat_id or telegram_settings.telegram_chat_id
-        else:
+        if not chat_id:
             chat_id = settings.telegram_alerts_chat_id or telegram_settings.telegram_chat_id
 
         try:

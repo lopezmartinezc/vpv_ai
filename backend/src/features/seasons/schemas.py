@@ -43,6 +43,8 @@ class SeasonDetail(BaseModel):
     telegram_thread_id: int | None = None
     draft_telegram_chat_id: str | None = None
     draft_telegram_thread_id: int | None = None
+    alerts_telegram_chat_id: str | None = None
+    alerts_telegram_thread_id: int | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -101,6 +103,8 @@ class SeasonUpdateRequest(BaseModel):
     telegram_thread_id: int | None = None
     draft_telegram_chat_id: str | None = None
     draft_telegram_thread_id: int | None = None
+    alerts_telegram_chat_id: str | None = None
+    alerts_telegram_thread_id: int | None = None
 
 
 class ScoringRuleUpdateRequest(BaseModel):
@@ -164,6 +168,8 @@ class SeasonInitializeRequest(BaseModel):
     tournament_config: dict[str, Any] | None = None
     telegram_chat_id: str | None = None
     telegram_thread_id: int | None = None
+    alerts_telegram_chat_id: str | None = None
+    alerts_telegram_thread_id: int | None = None
 
 
 class SeasonInitializeResponse(BaseModel):
