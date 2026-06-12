@@ -924,6 +924,348 @@ def parse_match_score(html: str) -> tuple[int, int] | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# Parser: per-match player stats (for tournaments where the per-jornada
+# player table doesn't exist — Mundial, Eurocopa, etc.)
+#
+# Configured via `seasons.tournament_config["stats_source"] = "match_page"`.
+# The match page (https://www.futbolfantasy.com/partidos/{id}-...) is a
+# single fetch that yields BOTH teams' rosters (~52 players) plus their
+# raw stats, instead of N per-player fetches that fail anyway because
+# tournament player pages lack the `jorn-td` markers we look for.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class MatchPagePlayer:
+    """One player's stats extracted from a match page.
+
+    `player_name_raw` keeps the surname as it appears on the page
+    (e.g. "Montes 91'") so callers can both resolve the DB player
+    and recover the sub-minute. `is_starter` reflects which section
+    (Titulares vs Suplentes) the row sat under.
+    """
+
+    team_name: str
+    player_name_raw: str  # e.g. "Rangel" or "Montes 91'" or "Zwane 60' 83'"
+    surname_clean: str  # surname only, lowercased, accents folded
+    is_starter: bool
+    stats: PlayerMatchdayStats
+
+
+# Maps the Spanish stat names that appear in the desglose row to the
+# PlayerMatchdayStats field they should fill. Values that don't map to
+# any of our fields (sofascore-style metrics like "Pases clave") are
+# intentionally absent — they're discarded.
+_DESGLOSE_STAT_TO_FIELD: dict[str, str] = {
+    "Goles": "goals",
+    "Asistencias": "assists",
+    "Paradas": "penalties_saved",  # closest match in our model (saves on shots)
+    "Tiros al palo": "woodwork",
+}
+
+
+def _strip_accents_lower(value: str) -> str:
+    """Lowercase + strip diacritics. Used to match scraped surnames to DB
+    player names regardless of accents (Rangel vs Rangél, etc.)."""
+    normalized = unicodedata.normalize("NFD", value)
+    no_marks = "".join(c for c in normalized if not unicodedata.combining(c))
+    return no_marks.lower().strip()
+
+
+def _surname_from_raw(name: str) -> tuple[str, list[int]]:
+    """Split "Surname 65' 83'" into ("Surname", [65, 83]).
+
+    The match page renders substitution minutes inline with the name
+    (e.g. "Montes 91'", "Brian Gutiérrez 65'", "Zwane 60' 83'"). We
+    keep BOTH the cleaned surname (for player matching) and the list
+    of minutes (for inferring minutes_played later).
+    """
+    import re as _re
+
+    minutes = [int(m) for m in _re.findall(r"(\d+)'", name)]
+    # Strip every "NN'" token from the name, collapse whitespace, take
+    # the LAST whitespace-separated token as the surname — matches both
+    # "Rangel" and "Brian Gutiérrez" (we want "Gutiérrez").
+    cleaned = _re.sub(r"\d+'", "", name).strip()
+    if not cleaned:
+        return ("", minutes)
+    surname = cleaned.split()[-1]
+    return (surname, minutes)
+
+
+def _infer_minutes_played(is_starter: bool, minutes_in_name: list[int]) -> int:
+    """Approximate minutes from the name's substitution markers.
+
+    Starters with no marker → 90 (played the full game).
+    Starters with a marker → subbed off at minute N → played N minutes.
+    Subs with a marker → entered at minute N → played 90 - N minutes.
+    Subs without a marker → never played → 0.
+    """
+    if is_starter:
+        if not minutes_in_name:
+            return 90
+        return minutes_in_name[0]
+    if not minutes_in_name:
+        return 0
+    return max(0, 90 - minutes_in_name[0])
+
+
+def _events_flags(events_td: Tag | None) -> dict[str, bool | int]:
+    """Read yellow / red / own-goal flags from the events column.
+
+    The match page renders each event as an `<img alt="...">`. We look at
+    the alt text rather than the icon URL because alt is stable across
+    image-asset changes.
+    """
+    flags = {
+        "yellow_card": False,
+        "double_yellow": False,
+        "red_card": False,
+        "own_goals": 0,
+    }
+    if events_td is None:
+        return flags
+    yellow_count = 0
+    for img in events_td.find_all("img"):
+        alt = str(img.get("alt") or "").lower()
+        if "roja" in alt:
+            flags["red_card"] = True
+        if "amarilla" in alt:
+            yellow_count += 1
+        if "error" in alt and "gol en contra" in alt:
+            # Increment in case there's more than one (unlikely).
+            assert isinstance(flags["own_goals"], int)
+            flags["own_goals"] = flags["own_goals"] + 1
+    if yellow_count == 1:
+        flags["yellow_card"] = True
+    elif yellow_count >= 2:
+        flags["double_yellow"] = True
+        flags["red_card"] = True  # double yellow ⇒ red, so the scoring engine sees both
+    return flags
+
+
+def _picas_count(picas_td: Tag | None) -> int:
+    """The AS picas value is the count of `<img class="pica">` icons."""
+    if picas_td is None:
+        return 0
+    return len(picas_td.find_all("img", class_="pica"))
+
+
+def _parse_desglose_counts(desglose_row: Tag) -> dict[str, int]:
+    """Pull raw stat counts from the first column of the desglose row.
+
+    The desglose row has 12 `<div class="desg ...">` blocks, one per
+    fantasy system. Raw COUNTS are identical across systems (only the
+    points differ), so we read whichever block has the most stats
+    (futbolfantasy-rpg is usually the richest).
+    """
+    import re as _re
+
+    best_block: Tag | None = None
+    best_count = -1
+    for div in desglose_row.find_all("div", class_="desg"):
+        stats_count = len(div.find_all("div", class_="estadistica"))
+        if stats_count > best_count:
+            best_count = stats_count
+            best_block = div
+    counts: dict[str, int] = {}
+    if best_block is None:
+        return counts
+    for est in best_block.find_all("div", class_="estadistica"):
+        text = est.get_text(" ", strip=True)
+        # Forms we accept:
+        #   "2  Paradas → 6 p"       → count=2 name="Paradas"
+        #   "Portería a cero → 6 p"  → count=1 name="Portería a cero" (boolean event)
+        #   "92%  Precisión pases → 4 p" → discarded (percent stats not in our model)
+        m = _re.match(r"^(\d+)\s+(.+?)\s+(?:→\s+)?(-?[\d.]+)\s*p\s*$", text)
+        if m:
+            count = int(m.group(1))
+            name = m.group(2).strip()
+            counts[name] = count
+            continue
+        m_bool = _re.match(r"^([A-ZÁÉÍÓÚa-záéíóú][^\d]+?)\s+(?:→\s+)?(-?[\d.]+)\s*p\s*$", text)
+        if m_bool:
+            name = m_bool.group(1).strip()
+            counts[name] = 1
+    return counts
+
+
+def _build_match_page_stats(
+    *,
+    matchday_number: int,
+    is_starter: bool,
+    minutes_played: int,
+    home_score: int,
+    away_score: int,
+    is_home_player: bool,
+    picas: int,
+    marca_rating: str | None,
+    event_flags: dict[str, bool | int],
+    desglose_counts: dict[str, int],
+) -> PlayerMatchdayStats:
+    goals_for = home_score if is_home_player else away_score
+    goals_against = away_score if is_home_player else home_score
+    if goals_for > goals_against:
+        result = 2
+    elif goals_for == goals_against:
+        result = 1
+    else:
+        result = 0
+
+    goals = desglose_counts.get("Goles", 0)
+    assists = desglose_counts.get("Asistencias", 0)
+    woodwork = desglose_counts.get("Tiros al palo", 0)
+    penalties_saved = desglose_counts.get("Paradas", 0)
+
+    return PlayerMatchdayStats(
+        matchday_number=matchday_number,
+        played=minutes_played > 0,
+        home_score=home_score,
+        away_score=away_score,
+        result=result,
+        goals_for=goals_for,
+        goals_against=goals_against,
+        # Substitution event is approximate — match page doesn't say
+        # whether the player came on or went off, only the minute(s).
+        event=None,
+        event_minute=None,
+        minutes_played=minutes_played,
+        goals=goals,
+        # Match page doesn't differentiate penalty goals — assume 0
+        # and let the admin annotate later if needed. Tournaments
+        # rarely have penalty-from-spot frequency that breaks scoring.
+        penalty_goals=0,
+        assists=assists,
+        penalties_saved=penalties_saved,
+        woodwork=woodwork,
+        penalties_won=0,
+        penalties_missed=0,
+        own_goals=int(event_flags.get("own_goals") or 0),
+        yellow_card=bool(event_flags.get("yellow_card")),
+        yellow_removed=False,
+        double_yellow=bool(event_flags.get("double_yellow")),
+        red_card=bool(event_flags.get("red_card")),
+        penalties_committed=0,
+        marca_rating=marca_rating,
+        as_picas=str(picas) if picas else None,
+    )
+
+
+def _parse_match_score(soup: BeautifulSoup) -> tuple[int, int] | None:
+    """Read the final score from a match page's `.resultado` block.
+
+    Returns ``(home_score, away_score)`` or None when the score isn't
+    yet published (early matchday).
+    """
+    el = soup.find(class_="resultado")
+    if not isinstance(el, Tag):
+        return None
+    import re as _re
+
+    # The block reads like "México 2 0 Sudáfrica" — two integers split
+    # by whitespace, surrounded by team names.
+    nums = _re.findall(r"\b(\d+)\b", el.get_text(" ", strip=True))
+    if len(nums) < 2:
+        return None
+    return (int(nums[0]), int(nums[1]))
+
+
+def parse_match_page_players(
+    html: str,
+    *,
+    matchday_number: int,
+    home_team_name: str,
+    away_team_name: str,
+) -> list[MatchPagePlayer]:
+    """Parse all players' stats from a single match page.
+
+    Matches by `class="tablestats"`: the first two are the per-player
+    summary tables (home then away). Each table has a "Titulares" header
+    followed by 11 player rows (paired plegado + desglose), then a
+    "Suplentes" header and up to 15 sub rows.
+
+    Returns one entry per player found, in document order. Players who
+    didn't actually play (subs with no minute marker, 0 minutes
+    inferred) are still returned so the caller can decide to skip them
+    when persisting.
+    """
+    soup = _soup(html)
+    score = _parse_match_score(soup)
+    if score is None:
+        logger.debug("parse_match_page_players: no score found, defaulting to 0-0")
+        score = (0, 0)
+    home_score, away_score = score
+
+    tables = soup.find_all("table", class_="tablestats")
+    # Defensive: page might have extra tablestats (desktop wide variants).
+    # We want the two simple per-team tables that have plegado rows.
+    per_team_tables = [t for t in tables if t.find("tr", class_="plegado")][:2]
+    if len(per_team_tables) < 2:
+        logger.warning(
+            "parse_match_page_players: expected 2 per-team tablestats, found %d",
+            len(per_team_tables),
+        )
+        return []
+
+    out: list[MatchPagePlayer] = []
+    for tbl_idx, tbl in enumerate(per_team_tables):
+        team_name = home_team_name if tbl_idx == 0 else away_team_name
+        is_home = tbl_idx == 0
+        is_starter = True  # flips to False when we cross "Suplentes"
+        rows = tbl.find_all("tr")
+        for i, row in enumerate(rows):
+            cls: list[str] = list(row.get("class") or [])
+            text = row.get_text(" ", strip=True)
+            if "header" in cls or ("Suplentes" in text and not cls):
+                is_starter = False
+                continue
+            if "plegado" not in cls:
+                continue
+            name_td = row.find("td", class_="name")
+            if not isinstance(name_td, Tag):
+                continue
+            raw_name = name_td.get_text(" ", strip=True)
+            surname_raw, minutes_in_name = _surname_from_raw(raw_name)
+            surname_clean = _strip_accents_lower(surname_raw)
+            picas = _picas_count(row.find("td", class_="picas"))
+            marca_td = row.find("td", class_="marca")
+            marca_raw = _tag_text(marca_td) if isinstance(marca_td, Tag) else ""
+            # Treat "SC" (sin calificar) and "-" as absence; preserve real values.
+            marca_rating = marca_raw if marca_raw and marca_raw not in {"SC", "-"} else None
+            event_flags = _events_flags(row.find("td", class_="events"))
+
+            # The desglose row immediately follows the plegado row.
+            desglose_row = rows[i + 1] if i + 1 < len(rows) else None
+            desglose_counts: dict[str, int] = {}
+            if isinstance(desglose_row, Tag) and "desglose" in (desglose_row.get("class") or []):
+                desglose_counts = _parse_desglose_counts(desglose_row)
+
+            minutes_played = _infer_minutes_played(is_starter, minutes_in_name)
+            stats = _build_match_page_stats(
+                matchday_number=matchday_number,
+                is_starter=is_starter,
+                minutes_played=minutes_played,
+                home_score=home_score,
+                away_score=away_score,
+                is_home_player=is_home,
+                picas=picas,
+                marca_rating=marca_rating,
+                event_flags=event_flags,
+                desglose_counts=desglose_counts,
+            )
+            out.append(
+                MatchPagePlayer(
+                    team_name=team_name,
+                    player_name_raw=raw_name,
+                    surname_clean=surname_clean,
+                    is_starter=is_starter,
+                    stats=stats,
+                )
+            )
+    return out
+
+
 def parse_match_crc(html: str) -> str:
     """Compute a CRC from the match page's player ratings.
 

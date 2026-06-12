@@ -37,6 +37,31 @@ _TOURNAMENT_URL_PREFIX: dict[str, str] = {
 }
 
 
+VALID_STATS_SOURCES = ("player_page", "match_page")
+
+
+def stats_source_for(tournament_config: dict | None) -> str:
+    """Return the stats-source strategy for a season.
+
+    "player_page" (default) keeps the historic flow: fetch each player's
+    individual stats page and look for the per-matchday `jorn-td` row.
+
+    "match_page" is used for tournaments whose player pages don't carry
+    a per-jornada table (Mundial, Eurocopa, ...). The scraper instead
+    fetches each match's source URL once and parses the in-page table
+    that lists all 52 players + raw stats.
+
+    Tournament admins opt-in by setting
+    ``seasons.tournament_config = {"stats_source": "match_page", ...}``.
+    """
+    if not tournament_config:
+        return "player_page"
+    candidate = tournament_config.get("stats_source")
+    if candidate in VALID_STATS_SOURCES:
+        return candidate
+    return "player_page"
+
+
 def competition_url_prefix(kind: str, tournament_type: str | None = None) -> str:
     """Return the futbolfantasy.com URL path segment for a competition.
 

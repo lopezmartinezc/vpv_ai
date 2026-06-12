@@ -9,12 +9,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.features.economy.service import EconomyService
 from src.features.scraping.aggregation import ScoreAggregator
 from src.features.scraping.client import ScrapingClient, ScrapingError
-from src.features.scraping.config import competition_url_prefix, scraping_settings
+from src.features.scraping.config import (
+    competition_url_prefix,
+    scraping_settings,
+    stats_source_for,
+)
 from src.features.scraping.log_buffer import scraping_log
 from src.features.scraping.log_repository import ScrapingLogRepository
 from src.features.scraping.parsers import (
     parse_calendar,
     parse_homepage_matchday,
+    parse_match_page_players,
     parse_player_all_matchdays,
     parse_player_stats,
     parse_roster,
@@ -22,6 +27,8 @@ from src.features.scraping.parsers import (
 )
 from src.features.scraping.repository import ScrapingRepository
 from src.features.scraping.scoring import ScoringEngine
+from src.shared.models.matchday import Match
+from src.shared.models.player import Player
 from src.shared.models.team import Team
 
 logger = logging.getLogger(__name__)
@@ -117,6 +124,156 @@ class ScrapingService:
             return f"{player_name} ({team_name}): HTTP {cause.response.status_code}"
         return f"{player_name} ({team_name}): {type(cause).__name__}"
 
+    async def _process_match_via_match_page(
+        self,
+        *,
+        client: ScrapingClient,
+        match: Match,
+        matchday_id: int,
+        matchday_number: int,
+        engine: ScoringEngine,
+        players_by_team: dict[int, list[Player]],
+        team_names: dict[int, str],
+    ) -> tuple[int, int, list[str]]:
+        """Scrape one match by parsing the match page (Mundial/Eurocopa flow).
+
+        Replaces N per-player fetches with a single fetch of
+        ``match.source_url``. The page lists both teams' rosters (up to
+        52 players) with raw stats. Players are matched to DB rows by
+        team_id + accent-folded surname; entries with no surname match
+        (e.g. a substitute who never made the season roster) are
+        skipped silently.
+
+        Returns ``(processed, errors, error_details)``.
+        """
+        import unicodedata as _ud
+
+        source_url = match.source_url
+        match_id = match.id
+        home_team_id = match.home_team_id
+        away_team_id = match.away_team_id
+
+        home_team_name = team_names.get(home_team_id, "?")
+        away_team_name = team_names.get(away_team_id, "?")
+
+        if not source_url:
+            msg = (
+                f"match_id={match_id} sin source_url, no se puede scrapear "
+                f"desde la página del partido"
+            )
+            logger.warning("scrape_matchday[match_page]: %s", msg)
+            return (0, 1, [msg])
+
+        logger.info(
+            "scrape_matchday[match_page]: fetching match_id=%d url=%s",
+            match_id,
+            source_url,
+        )
+        try:
+            html = await client.fetch(source_url)
+        except ScrapingError as exc:
+            msg = self._format_scrape_error(
+                f"match {match_id}", f"{home_team_name} vs {away_team_name}", exc
+            )
+            logger.warning("scrape_matchday[match_page]: fetch failed: %s", msg)
+            return (0, 1, [msg])
+
+        try:
+            parsed = parse_match_page_players(
+                html,
+                matchday_number=matchday_number,
+                home_team_name=home_team_name,
+                away_team_name=away_team_name,
+            )
+        except Exception as exc:
+            logger.exception(
+                "scrape_matchday[match_page]: parser failed for match_id=%d", match_id
+            )
+            return (0, 1, [f"match_id={match_id} parser error: {exc}"])
+
+        if not parsed:
+            msg = f"match_id={match_id} parser devolvió 0 jugadores (¿stats aún no publicadas?)"
+            logger.info("scrape_matchday[match_page]: %s", msg)
+            return (0, 0, [])
+
+        # Build surname → Player lookups per team. The surname is the
+        # LAST whitespace-separated token of `display_name`, lowercased
+        # with diacritics stripped — keeps matching robust to encoding
+        # variants ("Sánchez" vs "Sanchez").
+        def _surname_key(name: str) -> str:
+            n = _ud.normalize("NFD", name or "")
+            n = "".join(c for c in n if not _ud.combining(c)).lower().strip()
+            return n.split()[-1] if n else ""
+
+        per_team_by_surname: dict[int, dict[str, Player]] = {}
+        for team_id in (home_team_id, away_team_id):
+            lookup: dict[str, Player] = {}
+            for player in players_by_team.get(team_id, []):
+                key = _surname_key(player.display_name)
+                if key:
+                    # Last write wins; surname collisions on the same
+                    # team are rare and a tie-break heuristic isn't worth
+                    # the complexity for v1.
+                    lookup[key] = player
+            per_team_by_surname[team_id] = lookup
+
+        processed = 0
+        errors = 0
+        error_details: list[str] = []
+        for mp in parsed:
+            team_id = home_team_id if mp.team_name == home_team_name else away_team_id
+            lookup = per_team_by_surname.get(team_id, {})
+            matched: Player | None = lookup.get(mp.surname_clean)
+            if matched is None:
+                logger.debug(
+                    "scrape_matchday[match_page]: surname=%s team_id=%d not in roster, skipping",
+                    mp.surname_clean,
+                    team_id,
+                )
+                continue
+            if mp.stats.minutes_played == 0:
+                # Bench player who didn't enter — no point in scoring.
+                continue
+
+            # Preserve historical position/match_id if we already have a
+            # row for this player+matchday (mirrors the player-page flow).
+            player_id = matched.id
+            existing = await self.repo.get_player_stat(player_id, matchday_id)
+            if existing is not None:
+                position = existing.position
+                persisted_match_id = existing.match_id or match_id
+            else:
+                position = matched.position
+                persisted_match_id = match_id
+
+            try:
+                breakdown = engine.calculate(mp.stats, position)
+            except Exception as exc:
+                logger.exception(
+                    "scrape_matchday[match_page]: scoring failed for player_id=%d", player_id
+                )
+                errors += 1
+                error_details.append(f"{mp.player_name_raw} ({mp.team_name}): scoring error {exc}")
+                continue
+
+            await self.repo.upsert_player_stat(
+                player_id=player_id,
+                matchday_id=matchday_id,
+                match_id=persisted_match_id,
+                position=position,
+                stats=mp.stats,
+                breakdown=breakdown,
+            )
+            processed += 1
+
+        logger.info(
+            "scrape_matchday[match_page]: match_id=%d processed=%d errors=%d",
+            match_id,
+            processed,
+            errors,
+        )
+        return (processed, errors, error_details)
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -181,6 +338,14 @@ class ScrapingService:
         for player in all_players:
             players_by_team.setdefault(player.team_id, []).append(player)
 
+        # Strategy per season: "player_page" (Liga default) hits each
+        # player's individual stats page; "match_page" (Mundial etc.)
+        # fetches the match page once and reads all 52 players at once.
+        stats_source = stats_source_for(
+            getattr(season, "tournament_config", None) if season else None
+        )
+        logger.info("scrape_matchday: season_id=%d stats_source=%s", season_id, stats_source)
+
         total_processed = 0
         total_skipped = 0
         total_errors = 0
@@ -190,6 +355,27 @@ class ScrapingService:
 
         async with ScrapingClient() as client:
             for match in counting_matches:
+                if stats_source == "match_page":
+                    processed, errors, errs = await self._process_match_via_match_page(
+                        client=client,
+                        match=match,
+                        matchday_id=matchday_id,
+                        matchday_number=matchday_number,
+                        engine=engine,
+                        players_by_team=players_by_team,
+                        team_names=team_names,
+                    )
+                    total_processed += processed
+                    total_errors += errors
+                    error_details.extend(errs)
+                    if errors == 0 and processed > 0:
+                        await self.repo.mark_match_stats_ok(match.id)
+                        logger.info(
+                            "scrape_matchday[match_page]: marked match_id=%d stats_ok",
+                            match.id,
+                        )
+                    continue
+
                 match_players = players_by_team.get(match.home_team_id, []) + players_by_team.get(
                     match.away_team_id, []
                 )
