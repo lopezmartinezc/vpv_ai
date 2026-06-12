@@ -616,6 +616,68 @@ class ScrapingService:
         home_team = team_names.get(match.home_team_id, "?")
         away_team = team_names.get(match.away_team_id, "?")
         match_label = f"{home_team} vs {away_team}"
+
+        # Per-season strategy: tournaments configured with
+        # tournament_config["stats_source"]="match_page" parse all 52
+        # players from the match page itself instead of doing N
+        # per-player fetches that don't work for tournaments anyway
+        # (their player pages lack the per-jornada table).
+        season_for_strategy = await self.repo.get_season(season_id)
+        stats_source = stats_source_for(
+            getattr(season_for_strategy, "tournament_config", None)
+            if season_for_strategy
+            else None
+        )
+
+        if stats_source == "match_page":
+            scraping_log(
+                _MANUAL,
+                f"Match {match_id} ({match_label}) J{matchday_number}: "
+                f"scrapeando vía página del partido (match_page)",
+            )
+            await ScrapingLogRepository.write_log(
+                _make_log(None, "ok", f"Inicio [match_page]: {match_label}")
+            )
+            players_by_team: dict[int, list[Player]] = {}
+            for player_row in match_players:
+                players_by_team.setdefault(player_row.team_id, []).append(player_row)
+            async with ScrapingClient() as client:
+                processed, errors, errs = await self._process_match_via_match_page(
+                    client=client,
+                    match=match,
+                    matchday_id=matchday_id,
+                    matchday_number=matchday_number,
+                    engine=engine,
+                    players_by_team=players_by_team,
+                    team_names=team_names,
+                )
+            if errors == 0 and processed > 0:
+                await self.repo.mark_match_stats_ok(match_id)
+                scraping_log(
+                    _MANUAL,
+                    f"Match {match_id} stats_ok marcado (procesados={processed})",
+                )
+            else:
+                scraping_log(
+                    _MANUAL,
+                    f"Match {match_id} sin marcar stats_ok "
+                    f"(procesados={processed}, errores={errors})",
+                    "warning" if errors else "info",
+                )
+            await ScrapingLogRepository.write_log(
+                _make_log(
+                    None,
+                    "ok" if errors == 0 else "warning",
+                    f"Fin [match_page]: procesados={processed}, errores={errors}",
+                )
+            )
+            return {
+                "processed": processed,
+                "skipped": 0,
+                "errors": errors,
+                "error_details": errs,
+            }
+
         scraping_log(
             _MANUAL,
             f"Match {match_id} ({match_label}) J{matchday_number}: "
