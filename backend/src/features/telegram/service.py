@@ -64,6 +64,26 @@ class TelegramNotifier:
             logger.warning("Lineup %d not found for image generation", lineup_id)
             return False
 
+        # Honor the per-season opt-out for the "lineup_submitted" event.
+        # We do this BEFORE generating the image so disabling the event
+        # also saves the render cost.
+        from src.features.telegram.alerts_config import (
+            EVENT_LINEUP_SUBMITTED,
+            is_alert_event_enabled,
+        )
+
+        season_id = data.get("season_id")
+        if season_id is not None:
+            season = await self.repo.session.get(Season, season_id)
+            if season is not None and not is_alert_event_enabled(
+                season.alerts_config, EVENT_LINEUP_SUBMITTED
+            ):
+                logger.info(
+                    "lineup_submitted alert disabled for season %d, skipping image",
+                    season_id,
+                )
+                return False
+
         # Generate image
         try:
             png_bytes = generate_lineup_image(

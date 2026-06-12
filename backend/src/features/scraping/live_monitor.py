@@ -59,6 +59,17 @@ async def _check_live_matches(session: AsyncSession) -> None:
     if season is None:
         return
 
+    # Per-season opt-out: skip the whole live-match scan when the
+    # admin disabled the "live_match_events" alert. Saves the cost of
+    # fetching match HTML / parsing events entirely.
+    from src.features.telegram.alerts_config import (
+        EVENT_LIVE_MATCH_EVENTS,
+        is_alert_event_enabled,
+    )
+
+    if not is_alert_event_enabled(season.alerts_config, EVENT_LIVE_MATCH_EVENTS):
+        return
+
     now = datetime.now(UTC)
     live_matches: list[tuple[Match, int]] = []  # (match, matchday_number)
 

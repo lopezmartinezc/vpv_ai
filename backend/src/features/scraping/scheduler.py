@@ -418,11 +418,23 @@ async def _deadline_reminder() -> None:
                     f"Sin alineacion: {names_str}"
                 )
 
-                # Send to Telegram group
+                # Send to Telegram group — gated by per-season opt-out.
+                from src.features.telegram.alerts_config import (
+                    EVENT_DEADLINE_REMINDER,
+                    is_alert_event_enabled,
+                )
                 from src.features.telegram.service import TelegramNotifier
 
-                notifier = TelegramNotifier(session)
-                await notifier.send_alert(message)
+                if is_alert_event_enabled(
+                    getattr(season, "alerts_config", None), EVENT_DEADLINE_REMINDER
+                ):
+                    notifier = TelegramNotifier(session)
+                    await notifier.send_alert(message, season_id=season.id)
+                else:
+                    _log(
+                        "deadline_reminder",
+                        f"J{md_number} ({label}): alerts.deadline_reminder desactivado, omitido",
+                    )
 
                 # Send push notifications to users without lineup
                 try:

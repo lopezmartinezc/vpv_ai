@@ -24,6 +24,7 @@ interface Season {
   telegram_chat_id?: string | null;
   alerts_telegram_chat_id?: string | null;
   alerts_telegram_thread_id?: number | null;
+  alerts_config?: { events?: Record<string, boolean> } | null;
   telegram_thread_id?: number | null;
   draft_telegram_chat_id?: string | null;
   draft_telegram_thread_id?: number | null;
@@ -105,6 +106,12 @@ export default function AdminTemporadasPage() {
   const [editDraftTelegramThreadId, setEditDraftTelegramThreadId] = useState("");
   const [editAlertsTelegramChatId, setEditAlertsTelegramChatId] = useState("");
   const [editAlertsTelegramThreadId, setEditAlertsTelegramThreadId] = useState("");
+  // Alert-event toggles. Defaults to true: matches the backend
+  // `is_alert_event_enabled` fallback, so the UI shows the same
+  // truth as `send_alert` will apply at runtime.
+  const [editAlertDeadlineReminder, setEditAlertDeadlineReminder] = useState(true);
+  const [editAlertLineupSubmitted, setEditAlertLineupSubmitted] = useState(true);
+  const [editAlertLiveMatchEvents, setEditAlertLiveMatchEvents] = useState(true);
   const [editMatchdayCurrent, setEditMatchdayCurrent] = useState("");
   const [editMatchdayEnd, setEditMatchdayEnd] = useState("");
   const [editMatchdayWinter, setEditMatchdayWinter] = useState("");
@@ -187,6 +194,10 @@ export default function AdminTemporadasPage() {
       setEditAlertsTelegramThreadId(
         detail.alerts_telegram_thread_id != null ? String(detail.alerts_telegram_thread_id) : "",
       );
+      const events = detail.alerts_config?.events ?? {};
+      setEditAlertDeadlineReminder(events.deadline_reminder !== false);
+      setEditAlertLineupSubmitted(events.lineup_submitted !== false);
+      setEditAlertLiveMatchEvents(events.live_match_events !== false);
       setEditTournamentConfig(
         detail.tournament_config
           ? JSON.stringify(detail.tournament_config, null, 2)
@@ -260,6 +271,35 @@ export default function AdminTemporadasPage() {
         body.alerts_telegram_thread_id = editAlertsTelegramThreadId
           ? Number(editAlertsTelegramThreadId)
           : null;
+      }
+
+      // Event toggles: only ship the keys that are disabled, since the
+      // backend treats absence as "enabled" and the JSONB stays small.
+      const currentEvents = season.alerts_config?.events ?? {};
+      const currentValue = {
+        deadline_reminder: currentEvents.deadline_reminder !== false,
+        lineup_submitted: currentEvents.lineup_submitted !== false,
+        live_match_events: currentEvents.live_match_events !== false,
+      };
+      const nextValue = {
+        deadline_reminder: editAlertDeadlineReminder,
+        lineup_submitted: editAlertLineupSubmitted,
+        live_match_events: editAlertLiveMatchEvents,
+      };
+      if (
+        currentValue.deadline_reminder !== nextValue.deadline_reminder ||
+        currentValue.lineup_submitted !== nextValue.lineup_submitted ||
+        currentValue.live_match_events !== nextValue.live_match_events
+      ) {
+        const eventsPayload: Record<string, boolean> = {};
+        if (!nextValue.deadline_reminder) eventsPayload.deadline_reminder = false;
+        if (!nextValue.lineup_submitted) eventsPayload.lineup_submitted = false;
+        if (!nextValue.live_match_events) eventsPayload.live_match_events = false;
+        // Send `{events: {...}}` even when empty — the backend's
+        // SeasonUpdate.model_dump(exclude_none=True) drops nulls, so
+        // we can't clear via `null`. An empty events dict is treated
+        // as "every event enabled" by is_alert_event_enabled.
+        body.alerts_config = { events: eventsPayload };
       }
 
       // tournament_config is a JSON textarea
@@ -985,6 +1025,52 @@ export default function AdminTemporadasPage() {
                     placeholder="Topic ID (sólo grupos con topics)"
                     className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
                   />
+                </div>
+
+                <div className="rounded border border-vpv-border bg-vpv-bg/40 p-3">
+                  <p className="mb-2 text-xs font-medium text-vpv-text">
+                    Eventos que disparan alertas Telegram
+                  </p>
+                  <div className="space-y-1.5">
+                    <label className="flex cursor-pointer items-center gap-2 text-xs text-vpv-text">
+                      <input
+                        type="checkbox"
+                        checked={editAlertDeadlineReminder}
+                        onChange={(e) => setEditAlertDeadlineReminder(e.target.checked)}
+                      />
+                      <span>
+                        <strong>Recordatorios de deadline</strong> — &quot;Faltan
+                        Xh para el deadline&quot; con lista de participantes sin
+                        alineación.
+                      </span>
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-2 text-xs text-vpv-text">
+                      <input
+                        type="checkbox"
+                        checked={editAlertLineupSubmitted}
+                        onChange={(e) => setEditAlertLineupSubmitted(e.target.checked)}
+                      />
+                      <span>
+                        <strong>Alineación enviada</strong> — imagen + caption
+                        cuando un participante guarda su alineación.
+                      </span>
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-2 text-xs text-vpv-text">
+                      <input
+                        type="checkbox"
+                        checked={editAlertLiveMatchEvents}
+                        onChange={(e) => setEditAlertLiveMatchEvents(e.target.checked)}
+                      />
+                      <span>
+                        <strong>Eventos en vivo</strong> — goles, tarjetas y
+                        cambios mientras se juega el partido.
+                      </span>
+                    </label>
+                  </div>
+                  <p className="mt-2 text-xs text-vpv-text-muted">
+                    Por defecto todos los eventos están activos. Desactiva los
+                    que quieras silenciar para esta temporada.
+                  </p>
                 </div>
                 <div>
                   <label className="mb-1 block text-xs text-vpv-text-muted">

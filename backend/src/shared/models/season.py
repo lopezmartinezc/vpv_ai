@@ -57,6 +57,13 @@ class Season(Base):
     # NULL — see TelegramService.send_alert.
     alerts_telegram_chat_id: Mapped[str | None] = mapped_column(String(50))
     alerts_telegram_thread_id: Mapped[int | None] = mapped_column(Integer)
+    # Per-event opt-in/out for Telegram alerts. Shape:
+    #   { "events": { "deadline_reminder": true,
+    #                 "lineup_submitted": false,
+    #                 "live_match_events": true } }
+    # NULL or missing key ⇒ enabled (backwards-compat). See
+    # `src.features.telegram.alerts_config.is_alert_event_enabled`.
+    alerts_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
 
     scoring_rules: Mapped[list[ScoringRule]] = relationship(back_populates="season", lazy="raise")
