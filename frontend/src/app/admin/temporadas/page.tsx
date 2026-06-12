@@ -1053,27 +1053,82 @@ export default function AdminTemporadasPage() {
               </div>
 
               {season.kind === "tournament" && (
-                <div>
-                  <label className="mb-1 block text-xs text-vpv-text-muted">
-                    Configuracion del torneo (JSON)
-                  </label>
-                  <textarea
-                    value={editTournamentConfig}
-                    onChange={(e) => {
-                      setEditTournamentConfig(e.target.value);
-                      setTournamentConfigError(null);
-                    }}
-                    rows={12}
-                    spellCheck={false}
-                    placeholder='{"groups": {"count": 12, ...}, "knockout": {...}}'
-                    className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 font-mono text-xs text-vpv-text"
-                  />
-                  {tournamentConfigError && (
-                    <p className="mt-1 text-xs text-red-400">{tournamentConfigError}</p>
-                  )}
-                  <p className="mt-1 text-xs text-vpv-text-muted">
-                    Estructura: groups.count, groups.teams_per_group, groups.matchdays[], knockout.rounds[]
-                  </p>
+                <div className="space-y-3">
+                  <div>
+                    <label className="mb-1 block text-xs text-vpv-text-muted">
+                      Fuente del scrape de stats
+                    </label>
+                    <select
+                      value={(() => {
+                        try {
+                          const parsed = editTournamentConfig
+                            ? JSON.parse(editTournamentConfig)
+                            : {};
+                          const v = parsed?.stats_source;
+                          return v === "match_page" ? "match_page" : "player_page";
+                        } catch {
+                          return "player_page";
+                        }
+                      })()}
+                      onChange={(e) => {
+                        let parsed: Record<string, unknown> = {};
+                        try {
+                          parsed = editTournamentConfig
+                            ? JSON.parse(editTournamentConfig)
+                            : {};
+                        } catch {
+                          // ignore — overwrite the broken JSON with a fresh object.
+                        }
+                        if (e.target.value === "match_page") {
+                          parsed.stats_source = "match_page";
+                        } else {
+                          delete parsed.stats_source;
+                        }
+                        const next = Object.keys(parsed).length
+                          ? JSON.stringify(parsed, null, 2)
+                          : "";
+                        setEditTournamentConfig(next);
+                        setTournamentConfigError(null);
+                      }}
+                      className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-xs text-vpv-text"
+                    >
+                      <option value="player_page">
+                        Pagina del jugador (defecto — Liga)
+                      </option>
+                      <option value="match_page">
+                        Pagina del partido (Mundial / torneos)
+                      </option>
+                    </select>
+                    <p className="mt-1 text-xs text-vpv-text-muted">
+                      Las paginas individuales de jugadores del Mundial no
+                      tienen tabla por jornada. Selecciona &quot;pagina del partido&quot;
+                      para scrapear los 52 jugadores de cada partido en un solo fetch.
+                      Cambia <code>tournament_config.stats_source</code> en el JSON.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs text-vpv-text-muted">
+                      Configuracion del torneo (JSON)
+                    </label>
+                    <textarea
+                      value={editTournamentConfig}
+                      onChange={(e) => {
+                        setEditTournamentConfig(e.target.value);
+                        setTournamentConfigError(null);
+                      }}
+                      rows={12}
+                      spellCheck={false}
+                      placeholder='{"groups": {"count": 12, ...}, "knockout": {...}}'
+                      className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 font-mono text-xs text-vpv-text"
+                    />
+                    {tournamentConfigError && (
+                      <p className="mt-1 text-xs text-red-400">{tournamentConfigError}</p>
+                    )}
+                    <p className="mt-1 text-xs text-vpv-text-muted">
+                      Estructura: groups.count, groups.teams_per_group, groups.matchdays[], knockout.rounds[]
+                    </p>
+                  </div>
                 </div>
               )}
 

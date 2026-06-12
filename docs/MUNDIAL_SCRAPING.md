@@ -30,6 +30,15 @@ en `backend/src/features/scraping/config.py`.
 
 ### Encender para el Mundial en producción
 
+**Recomendado** — desde la UI admin (`/admin/temporadas`):
+1. Selecciona la temporada del torneo (Mundial 2026).
+2. En el bloque "Configuracion del torneo" hay un select **"Fuente del
+   scrape de stats"**. Cámbialo a **"Pagina del partido (Mundial /
+   torneos)"**.
+3. Guardar. El campo se persiste como `tournament_config.stats_source = "match_page"`.
+
+**Alternativa SQL** (cuando no tienes la UI a mano):
+
 ```sql
 UPDATE seasons
    SET tournament_config = jsonb_set(
@@ -40,7 +49,10 @@ UPDATE seasons
    AND tournament_type = 'mundial';
 ```
 
-Si quieres apagarlo:
+Para apagarlo desde la UI: vuelve a poner "Pagina del jugador
+(defecto — Liga)" — el campo se elimina del JSON al guardar.
+
+Equivalente SQL:
 
 ```sql
 UPDATE seasons
