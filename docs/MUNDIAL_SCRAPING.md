@@ -49,6 +49,20 @@ UPDATE seasons
    AND tournament_type = 'mundial';
 ```
 
+### El scheduler ya considera torneos
+
+Hasta el 2026-06-12 el scheduler filtraba por `kind='league'` y se
+saltaba los torneos (logueaba `"Sin temporada activa, omitiendo"` cada
+15 min en pleno Mundial). Ya está corregido: `get_active_season()` mira
+cualquier season con `status='active'` y, si hay varias en paralelo,
+toma la del `id` más alto (la más reciente).
+
+Implicación operativa: si Liga y Mundial están `active` a la vez (caso
+raro — solapamiento septiembre/octubre por temporadas que no han
+cambiado de estado), el scheduler sólo procesará una de las dos por
+tick. Cambia el `status` de la que no corresponda a `'paused'` o
+`'finished'` para que el scheduler trabaje sobre la deseada.
+
 ### Verificación manual tras activarlo
 
 ```bash

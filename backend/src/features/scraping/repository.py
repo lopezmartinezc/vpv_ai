@@ -40,15 +40,18 @@ class ScrapingRepository:
     # ------------------------------------------------------------------
 
     async def get_active_season(self) -> Season | None:
-        """Return the active Liga season (kind='league'), or ``None``.
+        """Return the most recently created active season, or ``None``.
 
-        Used by the scheduler. Tournaments (kind='tournament') don't run
-        through this auto-scrape pipeline; they're triggered manually or
-        via a separate scheduler config.
+        Used by the scheduler. Both Liga (``kind='league'``) and
+        tournaments (``kind='tournament'``) are considered — anything
+        with ``status='active'`` is eligible. When more than one season
+        is active simultaneously (e.g. Liga + Mundial overlap), the
+        highest ``id`` wins; typically the newest season is the one
+        currently in progress.
         """
         stmt = (
             select(Season)
-            .where(Season.status == "active", Season.kind == "league")
+            .where(Season.status == "active")
             .order_by(Season.id.desc())
             .limit(1)
         )
