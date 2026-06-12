@@ -201,6 +201,154 @@ async def cmd_scrape_current() -> None:
     await _run_with_session(_run)
 
 
+async def cmd_simulate_live(season_id: int, urls: list[str]) -> dict[str, Any]:
+    """Dry-run the live-match alert pipeline against given match URLs.
+
+    Fetches every URL, parses live events the same way ``live_monitor``
+    does, then walks each event through the SAME filters that would
+    decide whether to send a Telegram message: ownership (always-send
+    list) and ``alerts_config`` per-subtype gate. Nothing is sent.
+
+    Prints, per URL:
+    - parsed events count
+    - which events WOULD send (with the rendered Telegram text)
+    - which events were FILTERED OUT and why
+
+    The dedup map is intentionally ignored — the simulation is for
+    config validation, not for replaying historical reality.
+    """
+    from src.features.scraping.client import ScrapingClient
+    from src.features.scraping.live_events import (
+        EVENT_EMOJI,
+        EVENT_LABEL,
+        parse_live_events,
+    )
+    from src.features.telegram.alerts_config import is_live_event_enabled
+
+    async def _run(session: AsyncSession) -> dict[str, Any]:
+        from sqlalchemy import select
+
+        from src.shared.models.season import Season
+
+        season = await session.get(Season, season_id)
+        if season is None:
+            return {"error": f"season_id={season_id} not found"}
+
+        # Build the ownership map (slug → owner display_name) for the
+        # season so we can respect the always-send vs VPV-only rule.
+        from src.shared.models.participant import SeasonParticipant
+        from src.shared.models.player import Player
+        from src.shared.models.user import User
+
+        stmt = (
+            select(Player.slug, User.display_name)
+            .outerjoin(SeasonParticipant, Player.owner_id == SeasonParticipant.id)
+            .outerjoin(User, SeasonParticipant.user_id == User.id)
+            .where(Player.season_id == season_id)
+        )
+        result = await session.execute(stmt)
+        ownership: dict[str, str | None] = {row.slug: row.display_name for row in result.all()}
+
+        always_send = {"goal"}
+        per_url: list[dict[str, Any]] = []
+
+        async with ScrapingClient() as client:
+            for url in urls:
+                try:
+                    html = await client.fetch(url)
+                except Exception as exc:
+                    per_url.append({"url": url, "error": f"fetch failed: {exc}"})
+                    continue
+
+                events = parse_live_events(html)
+                would_send: list[dict[str, Any]] = []
+                filtered: list[dict[str, Any]] = []
+
+                for event in events:
+                    owner_name = ownership.get(event.player_slug)
+                    is_vpv = owner_name is not None
+                    if not is_vpv and event.event_type not in always_send:
+                        filtered.append(
+                            {
+                                "event_type": event.event_type,
+                                "player": event.player_name,
+                                "minute": event.minute,
+                                "reason": "not VPV (and not in always_send list)",
+                            }
+                        )
+                        continue
+                    if not is_live_event_enabled(season.alerts_config, event.event_type):
+                        filtered.append(
+                            {
+                                "event_type": event.event_type,
+                                "player": event.player_name,
+                                "minute": event.minute,
+                                "reason": (
+                                    "disabled in alerts_config "
+                                    f"(live_match.{event.event_type}=false)"
+                                ),
+                            }
+                        )
+                        continue
+
+                    emoji = EVENT_EMOJI.get(event.event_type, "")
+                    label = EVENT_LABEL.get(event.event_type, event.event_type)
+                    rendered = f"{emoji} {label} — {event.player_name} ({event.minute})" + (
+                        f" | Propietario: {owner_name}" if is_vpv else ""
+                    )
+                    would_send.append(
+                        {
+                            "event_type": event.event_type,
+                            "player": event.player_name,
+                            "minute": event.minute,
+                            "vpv_owner": owner_name,
+                            "rendered": rendered,
+                        }
+                    )
+
+                per_url.append(
+                    {
+                        "url": url,
+                        "events_parsed": len(events),
+                        "would_send": would_send,
+                        "filtered": filtered,
+                    }
+                )
+
+        # Top-line summary so the operator can eyeball the result.
+        total_send = sum(len(b["would_send"]) for b in per_url if "would_send" in b)
+        total_filtered = sum(len(b["filtered"]) for b in per_url if "filtered" in b)
+        return {
+            "season_id": season_id,
+            "season_name": season.name,
+            "alerts_config": season.alerts_config,
+            "summary": {
+                "matches": len(urls),
+                "would_send_total": total_send,
+                "filtered_total": total_filtered,
+            },
+            "matches": per_url,
+        }
+
+    return await _run_simulate_and_print(_run)
+
+
+async def _run_simulate_and_print(coro_factory: Any) -> dict[str, Any]:
+    """Variant of _run_with_session that returns the dict for simulate-live."""
+    async with AsyncSessionLocal() as session:
+        try:
+            result = await coro_factory(session)
+            # Rollback by default — simulation must never persist anything.
+            await session.rollback()
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+            return result
+        except Exception as exc:
+            await session.rollback()
+            logger.error("simulate-live failed: %s", exc, exc_info=True)
+            print(json.dumps({"error": str(exc)}), file=sys.stderr)
+            sys.exit(1)
+
+
 # ---------------------------------------------------------------------------
 # Argument parser
 # ---------------------------------------------------------------------------
@@ -249,6 +397,23 @@ def _build_parser() -> argparse.ArgumentParser:
         "--start", type=int, default=None, help="First matchday number (inclusive)"
     )
     p_full.add_argument("--end", type=int, default=None, help="Last matchday number (inclusive)")
+
+    # simulate-live
+    p_sim = sub.add_parser(
+        "simulate-live",
+        help=(
+            "Dry-run the live-event Telegram pipeline against given "
+            "match URLs. Honors the season's alerts_config so you can "
+            "verify which subtypes would actually be sent. Nothing is "
+            "persisted, nothing is sent to Telegram."
+        ),
+    )
+    p_sim.add_argument("season_id", type=int, help="Season primary-key ID")
+    p_sim.add_argument(
+        "urls",
+        nargs="+",
+        help="Match URL(s) on futbolfantasy.com (e.g. https://.../partidos/12345-...)",
+    )
 
     # refresh-positions
     p_refpos = sub.add_parser(
@@ -388,6 +553,9 @@ def main() -> None:
 
     elif command == "refresh-positions":
         asyncio.run(cmd_refresh_positions(args.season_id, args.concurrency))
+
+    elif command == "simulate-live":
+        asyncio.run(cmd_simulate_live(args.season_id, args.urls))
 
     else:
         parser.print_help()

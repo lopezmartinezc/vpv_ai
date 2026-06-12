@@ -61,6 +61,27 @@ UPDATE seasons
    AND tournament_type = 'mundial';
 ```
 
+### Simular alertas en vivo (dry-run)
+
+Para validar la `alerts_config` (qué subtipos vas a recibir) sin
+mandar nada a Telegram ni persistir nada en BD:
+
+```bash
+python -m src.features.scraping.cli simulate-live <season_id> \
+  https://www.futbolfantasy.com/partidos/22196-mexico-sudafrica \
+  https://www.futbolfantasy.com/partidos/22197-corea-del-sur-rep-checa
+```
+
+Imprime JSON con:
+- `season.alerts_config` (lo que tienes guardado).
+- Por cada URL: eventos parseados, los que SE ENVIARÍAN (con el texto
+  renderizado), y los FILTRADOS con la razón ("not VPV" o
+  "disabled in alerts_config (live_match.{event_type}=false)").
+
+Útil para hacer ajustes finos: cambias el toggle en
+`/admin/temporadas`, ejecutas el simulador con un partido que sepas
+que tuvo el evento dudoso, y confirmas que el output ya no lo lista.
+
 ### El scheduler ya considera torneos
 
 Hasta el 2026-06-12 el scheduler filtraba por `kind='league'` y se
