@@ -49,12 +49,7 @@ class ScrapingRepository:
         highest ``id`` wins; typically the newest season is the one
         currently in progress.
         """
-        stmt = (
-            select(Season)
-            .where(Season.status == "active")
-            .order_by(Season.id.desc())
-            .limit(1)
-        )
+        stmt = select(Season).where(Season.status == "active").order_by(Season.id.desc()).limit(1)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
