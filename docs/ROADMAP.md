@@ -58,6 +58,11 @@ La app esta en produccion (new.ligavpv.com) con todas las funcionalidades core:
 - **Complejidad**: Media-Alta
 - **Estado**: [x] Completado (2026-03-18)
 - **Notas**: Nueva tabla `push_subscriptions`. Env vars: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `TELEGRAM_ALERTS_CHAT_ID`
+- **2026-06-12**: configuracion per-season ampliada con canal/topic
+  dedicado de alertas (`alerts_telegram_chat_id`) y opt-out por evento
+  (incluido per-subtype para eventos en vivo: gol/amarilla/cambio/...).
+  Doc: [`docs/TELEGRAM_ALERTS.md`](TELEGRAM_ALERTS.md). CLI
+  `simulate-live` para ensayar la config sin enviar.
 
 ### 1.5 Desglose de puntos en la jornada
 - **Problema**: Usuarios ven puntos totales pero no el desglose
