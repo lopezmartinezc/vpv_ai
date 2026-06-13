@@ -20,9 +20,15 @@ import type {
   MarcaApplyRequest,
   MarcaAssignment,
   MarcaPlayerRow,
+  MarcaPreviewResponse,
   MarcaRatingValue,
   MarcaRosterResponse,
 } from "@/types";
+
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
+
+type ModeTab = "manual" | "image";
 
 // Sentinel para que <option value=""> represente "no jugó" (null en BD).
 const NO_PLAYED_SENTINEL = "";
@@ -80,6 +86,11 @@ export default function AdminMarcaPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [mode, setMode] = useState<ModeTab>("manual");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [uploadBusy, setUploadBusy] = useState(false);
+  const [preview, setPreview] = useState<MarcaPreviewResponse | null>(null);
 
   // Fetch matchdays when the season changes.
   useEffect(() => {
@@ -114,6 +125,12 @@ export default function AdminMarcaPage() {
         setSelectedMatchId(null);
         setRoster(null);
         setEdits({});
+        setPreview(null);
+        setImageFile(null);
+        setImagePreviewUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return null;
+        });
       })
       .catch(() => setMatchdayDetail(null));
   }, [selectedSeason, selectedMatchdayNumber]);
@@ -170,6 +187,48 @@ export default function AdminMarcaPage() {
     }
     return out;
   }, [roster, edits]);
+
+  const handleUpload = useCallback(async () => {
+    if (!selectedMatchId || !imageFile) return;
+    setUploadBusy(true);
+    setMessage(null);
+    try {
+      const form = new FormData();
+      form.append("match_id", String(selectedMatchId));
+      form.append("image", imageFile);
+      const token =
+        typeof window !== "undefined" ? window.localStorage.getItem("vpv_token") : null;
+      const res = await fetch(`${API_BASE_URL}/scraping/admin/marca/preview`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: form,
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+      }
+      const data = (await res.json()) as MarcaPreviewResponse;
+      setPreview(data);
+      // Auto-apply each successful match into the dropdown state so the
+      // admin can review the whole roster and tweak before "Aplicar".
+      setEdits((prev) => {
+        const next = { ...prev };
+        for (const m of data.matches) {
+          next[m.player_id] = m.marca_rating as MarcaRatingValue;
+        }
+        return next;
+      });
+      setMessage(
+        `OCR: ${data.matches.length} jugador(es) identificado(s) automáticamente,` +
+          ` ${data.unmatched.length} pendiente(s).`,
+      );
+    } catch (err) {
+      setMessage(
+        `Error subiendo: ${err instanceof Error ? err.message : "desconocido"}`,
+      );
+    } finally {
+      setUploadBusy(false);
+    }
+  }, [selectedMatchId, imageFile]);
 
   const handleApply = useCallback(async () => {
     if (!roster || dirtyAssignments.length === 0) return;
@@ -256,6 +315,112 @@ export default function AdminMarcaPage() {
           </>
         )}
       </div>
+
+      {selectedMatchId !== null && (
+        <div className="flex gap-1 border-b border-vpv-border pb-px text-xs">
+          {(["manual", "image"] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              className={`rounded-t-md px-3 py-1.5 font-medium transition-colors ${
+                mode === m
+                  ? "border-b-2 border-vpv-accent text-vpv-accent"
+                  : "text-vpv-text-muted hover:text-vpv-text"
+              }`}
+            >
+              {m === "manual" ? "Entrada manual" : "Subir imagen (OCR)"}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {mode === "image" && selectedMatchId !== null && (
+        <div className="space-y-3 rounded-lg border border-vpv-card-border bg-vpv-card p-3 text-xs">
+          <p className="text-vpv-text-muted">
+            Sube el cromo de Marca del partido. El servidor lee los nombres y
+            cuenta las estrellas (rojas), y rellena los desplegables de la
+            pestaña Manual con la propuesta. Después puedes corregir los que
+            haga falta y pulsar &quot;Aplicar&quot;.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={(e) => {
+                const file = e.target.files?.[0] ?? null;
+                setImageFile(file);
+                setImagePreviewUrl((prev) => {
+                  if (prev) URL.revokeObjectURL(prev);
+                  return file ? URL.createObjectURL(file) : null;
+                });
+                setPreview(null);
+              }}
+              className="text-vpv-text"
+            />
+            <button
+              onClick={handleUpload}
+              disabled={uploadBusy || !imageFile}
+              className="rounded bg-vpv-accent px-3 py-1 text-xs font-bold text-white disabled:opacity-40"
+            >
+              {uploadBusy ? "Procesando…" : "Procesar imagen"}
+            </button>
+          </div>
+
+          {imagePreviewUrl && (
+            // Pequeña vista previa, no decisiva — solo confirma que es el cromo
+            // correcto.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={imagePreviewUrl}
+              alt="Vista previa del cromo"
+              className="max-h-64 rounded border border-vpv-border"
+            />
+          )}
+
+          {preview && preview.unmatched.length > 0 && (
+            <div className="space-y-1">
+              <p className="font-medium text-amber-300">
+                Pendientes de asignar ({preview.unmatched.length})
+              </p>
+              <ul className="space-y-1">
+                {preview.unmatched.map((u, idx) => (
+                  <li
+                    key={`${u.row.surname_clean}-${idx}`}
+                    className="flex flex-wrap items-center gap-2 rounded bg-vpv-bg/40 p-2 text-vpv-text"
+                  >
+                    <span className="font-mono text-[10px] text-vpv-text-muted">
+                      {u.row.raw_text}
+                    </span>
+                    <span className="rounded bg-vpv-accent/20 px-1.5 py-0.5 text-[10px] text-vpv-accent">
+                      {u.row.stars > 0 ? "★".repeat(u.row.stars) : "SC"}
+                    </span>
+                    <select
+                      defaultValue=""
+                      onChange={(e) => {
+                        const pid = Number(e.target.value);
+                        if (!Number.isFinite(pid) || pid === 0) return;
+                        const newRating =
+                          u.row.stars > 0
+                            ? ("★".repeat(u.row.stars) as MarcaRatingValue)
+                            : ("SC" as MarcaRatingValue);
+                        setEdits((prev) => ({ ...prev, [pid]: newRating }));
+                      }}
+                      className="rounded border border-vpv-border bg-vpv-bg px-2 py-1 text-xs text-vpv-text"
+                    >
+                      <option value="">— asignar a jugador —</option>
+                      {u.candidates.map((c) => (
+                        <option key={c.player_id} value={c.player_id}>
+                          {c.display_name} ({c.team_name})
+                        </option>
+                      ))}
+                    </select>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
 
       {message && (
         <p

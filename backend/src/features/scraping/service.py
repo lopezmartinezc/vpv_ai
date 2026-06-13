@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, ClassVar
 if TYPE_CHECKING:
     from src.features.scraping.schemas_marca import (
         MarcaApplyRequest,
+        MarcaPreviewResponse,
         MarcaRosterResponse,
     )
 
@@ -1740,3 +1741,81 @@ class ScrapingService:
         if updated:
             await self._aggregator.aggregate_matchday(match.matchday_id)
         return {"updated": updated, "matchday_id": match.matchday_id}
+
+    async def marca_preview(self, match_id: int, image_bytes: bytes) -> MarcaPreviewResponse:
+        """OCR the cromo image and try to auto-match each row to a player.
+
+        Returns the same ``MarcaPreviewResponse`` regardless of whether
+        the image was readable: an empty result is a legitimate answer
+        when Tesseract didn't find anything. The frontend renders the
+        roster regardless so the admin can fall back to manual entry.
+        """
+        import unicodedata as _ud
+
+        from src.features.scraping.marca_image import parse_marca_image
+        from src.features.scraping.schemas_marca import (
+            MarcaPreviewMatch,
+            MarcaPreviewResponse,
+            MarcaPreviewRow,
+            MarcaPreviewUnmatched,
+        )
+
+        # Reuse the roster builder so the response is consistent
+        # between the manual and image flows.
+        roster_resp = await self.marca_roster(match_id)
+        rows = parse_marca_image(image_bytes)
+
+        # Build surname → MarcaPlayerRow lookup per team. Last write
+        # wins on collisions (same logic as _process_match_via_match_page).
+        def _surname_key(name: str) -> str:
+            n = _ud.normalize("NFD", name or "")
+            n = "".join(c for c in n if not _ud.combining(c)).lower().strip()
+            return n.split()[-1] if n else ""
+
+        all_roster = roster_resp.home + roster_resp.away
+        by_surname: dict[str, list] = {}
+        for player_row in all_roster:
+            key = _surname_key(player_row.display_name)
+            if key:
+                by_surname.setdefault(key, []).append(player_row)
+
+        stars_to_rating = {0: "SC", 1: "★", 2: "★★", 3: "★★★", 4: "★★★★"}
+
+        matches: list[MarcaPreviewMatch] = []
+        unmatched: list[MarcaPreviewUnmatched] = []
+        for parsed in rows:
+            preview_row = MarcaPreviewRow(
+                surname_clean=parsed.surname_clean,
+                stars=parsed.stars,
+                is_substitute=parsed.is_substitute,
+                minute=parsed.minute,
+                raw_text=parsed.raw_text,
+                confidence=parsed.confidence,
+            )
+            candidates = by_surname.get(parsed.surname_clean, [])
+            if len(candidates) == 1:
+                player = candidates[0]
+                matches.append(
+                    MarcaPreviewMatch(
+                        row=preview_row,
+                        player_id=player.player_id,
+                        player_name=player.display_name,
+                        marca_rating=stars_to_rating.get(parsed.stars, "SC"),
+                    )
+                )
+            else:
+                # 0 candidates: surname mangled by OCR. Surface every
+                # player so the admin can pick from a dropdown.
+                # >1 candidates: ambiguous (same surname two players).
+                # Same outcome either way — render the candidates list.
+                shortlist = candidates if candidates else all_roster
+                unmatched.append(MarcaPreviewUnmatched(row=preview_row, candidates=shortlist))
+
+        return MarcaPreviewResponse(
+            match_id=match_id,
+            match_label=roster_resp.match_label,
+            matchday_number=roster_resp.matchday_number,
+            roster=all_roster,
+            matches=matches,
+            unmatched=unmatched,
+        )

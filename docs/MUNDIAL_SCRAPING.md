@@ -217,3 +217,68 @@ convenciones de `tablestats / plegado / desglose / desg.{system}`.
 | Service | `backend/src/features/scraping/service.py` | `_process_match_via_match_page()`, branch en `scrape_matchday`. |
 | Tests | `backend/tests/features/test_match_page_parser.py` | 21 tests sobre fixture. |
 | Fixture | `backend/tests/fixtures/scraping/match_mundial_mex_sud.html` | HTML real México-Sudáfrica J1. |
+
+---
+
+## Notas Marca (UI `/admin/marca`)
+
+`futbolfantasy.com` no expone calificaciones Marca para Mundial — todos
+los jugadores quedan en `SC` y el `ScoringEngine` aplica
+`ptos_marca_sc`. Hay un workflow admin separado para meterlas a mano o
+desde el cromo de prensa.
+
+### Permiso
+
+`Perm.MARCA = 1024` — delegable a un usuario que no tenga `SCRAPING`
+ni `STATS`. Concedible desde `/admin/usuarios` → "Permisos".
+
+### Modos
+
+| Modo | Cómo |
+|---|---|
+| **Manual** | Selecciona partido → tabla por equipos con dropdown
+  (`no jugó` / `SC` / `−` / `★` … `★★★★`) → "Aplicar" guarda en
+  `player_stats.marca_rating`, recalcula `pts_marca`/`pts_total` y
+  dispara `aggregate_matchday`. |
+| **Subir imagen** | Sube el cromo en `.png`/`.jpg`/`.webp`. El backend
+  corre Tesseract + análisis HSV para contar las estrellas rojas, y
+  matchea cada apellido contra el roster del partido. Los jugadores
+  matcheados prerellenan los desplegables; los no resueltos (apellido
+  mal OCR-eado, o homonimia) salen en un panel separado con un
+  dropdown para asignarlos a mano. Después "Aplicar". |
+
+### Dependencias del sistema (instalar en prod)
+
+```bash
+# AlmaLinux / RHEL
+sudo dnf install -y tesseract tesseract-langpack-spa
+# Debian / Ubuntu
+sudo apt install -y tesseract-ocr tesseract-ocr-spa
+```
+
+`pytesseract` y `python-multipart` ya están como dependencias Python
+en `pyproject.toml` — los recoge `pip install` durante el deploy.
+
+### Verificación
+
+```bash
+tesseract --version
+# Si quieres comprobar el lenguaje:
+tesseract --list-langs | grep spa
+```
+
+En la UI: abre `/admin/marca` con usuario admin o con `Perm.MARCA`,
+elige una jornada del Mundial, elige un partido, alterna entre los dos
+tabs. El backend NO debe pedirte tesseract para abrir la tab Manual.
+
+### Fichero clave
+
+| Capa | Fichero | Responsabilidad |
+|---|---|---|
+| Permiso | `backend/src/shared/permissions.py` | `Perm.MARCA = 1024` |
+| Parser | `backend/src/features/scraping/marca_image.py` | `parse_marca_image()` — Tesseract + counter rojo |
+| Service | `backend/src/features/scraping/service.py` | `marca_roster()`, `marca_preview()`, `marca_apply()` |
+| Endpoints | `backend/src/features/scraping/router.py` | `GET /admin/marca/match/{id}/roster`, `POST /admin/marca/preview`, `POST /admin/marca/apply` |
+| Schemas | `backend/src/features/scraping/schemas_marca.py` | Pydantic |
+| Tests | `backend/tests/features/test_marca_image.py` (17) + `test_marca_apply.py` (11) | parsers + shapes |
+| UI | `frontend/src/app/admin/marca/page.tsx` | Página con dos tabs |

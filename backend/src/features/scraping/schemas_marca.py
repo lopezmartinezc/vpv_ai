@@ -69,3 +69,51 @@ class MarcaApplyRequest(BaseModel):
 
     match_id: int
     assignments: list[MarcaAssignment]
+
+
+# Image preview --------------------------------------------------------
+
+
+class MarcaPreviewRow(BaseModel):
+    """One row extracted from the cromo image."""
+
+    surname_clean: str
+    stars: int  # 0..4
+    is_substitute: bool
+    minute: int | None
+    raw_text: str
+    confidence: float  # 0..1, Tesseract's confidence average
+
+
+class MarcaPreviewMatch(BaseModel):
+    """A successful auto-match between an extracted row and a DB player."""
+
+    row: MarcaPreviewRow
+    player_id: int
+    player_name: str
+    # Pre-translated to one of the dropdown values so the UI can render
+    # the suggestion directly: 0 → "SC", 1..4 → "★"..."★★★★".
+    marca_rating: str
+
+
+class MarcaPreviewUnmatched(BaseModel):
+    """An extracted row whose surname didn't resolve to a unique player.
+
+    ``candidates`` is a subset of the roster the admin can pick from
+    — typically the surname matched 0 players (Tesseract mangled it)
+    or several (same surname on both teams).
+    """
+
+    row: MarcaPreviewRow
+    candidates: list[MarcaPlayerRow]
+
+
+class MarcaPreviewResponse(BaseModel):
+    """Result of OCR + matching for a single match's cromo image."""
+
+    match_id: int
+    match_label: str
+    matchday_number: int
+    roster: list[MarcaPlayerRow]  # both teams, so the UI can fall back
+    matches: list[MarcaPreviewMatch]
+    unmatched: list[MarcaPreviewUnmatched]

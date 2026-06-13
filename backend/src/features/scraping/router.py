@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.scraping.log_repository import ScrapingLogRepository
@@ -283,6 +283,7 @@ async def scheduler_stop(
 
 from src.features.scraping.schemas_marca import (  # noqa: E402  (placed after router declarations on purpose)
     MarcaApplyRequest,
+    MarcaPreviewResponse,
     MarcaRosterResponse,
 )
 
@@ -315,3 +316,27 @@ async def marca_apply(
     per assignment, then re-aggregate the matchday so participant
     scores reflect the new marca points immediately."""
     return await service.marca_apply(request)
+
+
+@router.post(
+    "/admin/marca/preview",
+    summary="OCR a Marca cromo image and propose ratings per player",
+    response_model=MarcaPreviewResponse,
+)
+async def marca_preview(
+    match_id: int = Form(...),
+    image: UploadFile = File(...),
+    _admin: dict = Depends(require_perm(Perm.MARCA)),
+    service: ScrapingService = Depends(_get_service),
+) -> MarcaPreviewResponse:
+    """Multipart upload: a press-clipping image of one match.
+
+    The server runs Tesseract + a red-blob star counter on the image,
+    matches each parsed row to a roster player by accent-folded
+    surname, and returns matches + unmatched rows + the full roster.
+
+    No DB writes — the admin reviews the suggestions in the UI and
+    sends a separate POST to ``/admin/marca/apply``.
+    """
+    image_bytes = await image.read()
+    return await service.marca_preview(match_id, image_bytes)

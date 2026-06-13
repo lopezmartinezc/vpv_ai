@@ -1346,3 +1346,33 @@ export interface MarcaApplyRequest {
   match_id: number;
   assignments: MarcaAssignment[];
 }
+
+export interface MarcaPreviewRow {
+  surname_clean: string;
+  stars: number;             // 0..4
+  is_substitute: boolean;
+  minute: number | null;
+  raw_text: string;
+  confidence: number;        // 0..1
+}
+
+export interface MarcaPreviewMatch {
+  row: MarcaPreviewRow;
+  player_id: number;
+  player_name: string;
+  marca_rating: string;      // "SC" | "★"... | "★★★★"
+}
+
+export interface MarcaPreviewUnmatched {
+  row: MarcaPreviewRow;
+  candidates: MarcaPlayerRow[];
+}
+
+export interface MarcaPreviewResponse {
+  match_id: number;
+  match_label: string;
+  matchday_number: number;
+  roster: MarcaPlayerRow[];
+  matches: MarcaPreviewMatch[];
+  unmatched: MarcaPreviewUnmatched[];
+}
