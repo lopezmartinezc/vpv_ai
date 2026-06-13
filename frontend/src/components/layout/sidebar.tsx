@@ -53,6 +53,7 @@ const ROUTE_PERM: Record<string, number | null> = {
   "/admin/usuarios": null,
   "/admin/invitaciones": null,
   "/admin/economia": PERM.ECONOMY,
+  "/admin/marca": PERM.MARCA,
   "/admin/participantes": PERM.PARTICIPANTS,
   "/admin/alineaciones": PERM.LINEUPS_ADMIN,
   "/admin/scraping": PERM.SCRAPING,
@@ -77,6 +78,7 @@ const PER_SEASON_ADMIN_ITEMS: { href: string; label: string; appliesTo?: "league
   { href: "/admin/grupos", label: "Grupos", appliesTo: "tournament" },
   { href: "/admin/logros", label: "Logros", appliesTo: "league" },
   { href: "/admin/predicciones", label: "Predicciones" },
+  { href: "/admin/marca", label: "Notas Marca" },
 ];
 
 /** Items global (no scoped por temporada). */

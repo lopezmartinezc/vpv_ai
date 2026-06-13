@@ -20,6 +20,10 @@ class Perm(IntFlag):
     PLAYERS = 128
     LINEUPS_ADMIN = 256
     PARTICIPANTS = 512
+    # Notas Marca por partido. Delegable sin tener que dar SCRAPING
+    # o STATS — el rol Marca solo escribe player_stats.marca_rating
+    # y dispara el re-aggregate de la jornada.
+    MARCA = 1024
 
 
 # Labels for UI display (Spanish)
@@ -34,4 +38,5 @@ PERM_LABELS: dict[Perm, str] = {
     Perm.PLAYERS: "Jugadores",
     Perm.LINEUPS_ADMIN: "Alineaciones admin",
     Perm.PARTICIPANTS: "Participantes",
+    Perm.MARCA: "Notas Marca",
 }

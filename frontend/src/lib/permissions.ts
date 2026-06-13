@@ -10,6 +10,7 @@ export const PERM = {
   PLAYERS: 128,
   LINEUPS_ADMIN: 256,
   PARTICIPANTS: 512,
+  MARCA: 1024,
 } as const;
 
 export type PermKey = keyof typeof PERM;
@@ -26,6 +27,7 @@ export const PERM_LABELS: Record<PermKey, string> = {
   PLAYERS: "Jugadores",
   LINEUPS_ADMIN: "Alineaciones admin",
   PARTICIPANTS: "Participantes",
+  MARCA: "Notas Marca",
 };
 
 /** Check if a permissions bitmap includes a specific permission */

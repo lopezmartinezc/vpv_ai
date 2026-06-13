@@ -1309,3 +1309,39 @@ export interface ParticipantIQResponse {
   min_seasons: number;
   participants: ParticipantIQEntry[];
 }
+
+// ---------------------------------------------------------------------------
+// Marca-rating admin tool (/admin/marca). Backend: scraping/schemas_marca.py
+// ---------------------------------------------------------------------------
+
+/** Six values the dropdown emits — matches `VALID_MARCA_VALUES` in backend. */
+export type MarcaRatingValue = "★" | "★★" | "★★★" | "★★★★" | "SC" | "-";
+
+export interface MarcaPlayerRow {
+  player_id: number;
+  display_name: string;
+  team_id: number;
+  team_name: string;
+  /** Estado actual en BD. `null` = sin player_stats todavía. */
+  marca_rating: string | null;
+  minutes_played: number;
+  position: string;
+}
+
+export interface MarcaRosterResponse {
+  match_id: number;
+  match_label: string;
+  matchday_number: number;
+  home: MarcaPlayerRow[];
+  away: MarcaPlayerRow[];
+}
+
+export interface MarcaAssignment {
+  player_id: number;
+  marca_rating: MarcaRatingValue;
+}
+
+export interface MarcaApplyRequest {
+  match_id: number;
+  assignments: MarcaAssignment[];
+}

@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 import logging
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
+
+if TYPE_CHECKING:
+    from src.features.scraping.schemas_marca import (
+        MarcaApplyRequest,
+        MarcaRosterResponse,
+    )
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1604,3 +1610,124 @@ class ScrapingService:
             matches_created,
         )
         return {"teams": teams_created, "players": players_created, "matches": matches_created}
+
+    # ==================================================================
+    # Marca rating (admin tool for tournaments where futbolfantasy
+    # ships everyone as "SC").
+    # ==================================================================
+
+    async def marca_roster(self, match_id: int) -> "MarcaRosterResponse":
+        """Return both teams' rosters with their current marca_rating.
+
+        Used by the Manual tab of /admin/marca to render an editable
+        table without uploading an image. Players without a
+        player_stats row yet appear with ``marca_rating=None`` and
+        ``minutes_played=0`` so the admin can still classify them.
+        """
+        from src.features.scraping.schemas_marca import (
+            MarcaPlayerRow,
+            MarcaRosterResponse,
+        )
+        from src.shared.models.matchday import Match, Matchday
+        from src.shared.models.player_stat import PlayerStat
+
+        match = await self.session.get(Match, match_id)
+        if match is None:
+            from src.core.exceptions import NotFoundError
+
+            raise NotFoundError("Match", match_id)
+        matchday = await self.session.get(Matchday, match.matchday_id)
+        if matchday is None:
+            from src.core.exceptions import NotFoundError
+
+            raise NotFoundError("Matchday", match.matchday_id)
+        team_ids = {match.home_team_id, match.away_team_id}
+        team_names = await self._team_names(team_ids)
+        players = await self.repo.get_players_for_teams(matchday.season_id, team_ids)
+
+        from sqlalchemy import select as sa_select
+
+        stats_stmt = sa_select(PlayerStat).where(
+            PlayerStat.matchday_id == match.matchday_id,
+            PlayerStat.player_id.in_([p.id for p in players]),
+        )
+        stats_result = await self.session.execute(stats_stmt)
+        stats_by_player: dict[int, PlayerStat] = {s.player_id: s for s in stats_result.scalars()}
+
+        def _row(player: Player) -> MarcaPlayerRow:
+            existing = stats_by_player.get(player.id)
+            return MarcaPlayerRow(
+                player_id=player.id,
+                display_name=player.display_name,
+                team_id=player.team_id,
+                team_name=team_names.get(player.team_id, ""),
+                marca_rating=existing.marca_rating if existing else None,
+                minutes_played=existing.minutes_played if existing else 0,
+                position=(existing.position if existing else player.position) or "",
+            )
+
+        home_rows = [_row(p) for p in players if p.team_id == match.home_team_id]
+        away_rows = [_row(p) for p in players if p.team_id == match.away_team_id]
+        # Sort: starters first (more minutes), GK then DEF/MED/DEL
+        pos_order = {"POR": 0, "DEF": 1, "MED": 2, "DEL": 3, "": 4}
+        home_rows.sort(key=lambda r: (-r.minutes_played, pos_order.get(r.position, 4)))
+        away_rows.sort(key=lambda r: (-r.minutes_played, pos_order.get(r.position, 4)))
+
+        home_label = team_names.get(match.home_team_id, "?")
+        away_label = team_names.get(match.away_team_id, "?")
+        match_label = f"{home_label} vs {away_label}"
+
+        return MarcaRosterResponse(
+            match_id=match_id,
+            match_label=match_label,
+            matchday_number=matchday.number,
+            home=home_rows,
+            away=away_rows,
+        )
+
+    async def marca_apply(self, request: "MarcaApplyRequest") -> dict[str, int]:
+        """Persist marca_rating for each assignment, recompute pts and
+        re-aggregate the matchday.
+        """
+        from src.core.exceptions import BusinessRuleError, NotFoundError
+        from src.features.scraping.schemas_marca import VALID_MARCA_VALUES
+        from src.shared.models.matchday import Match, Matchday
+
+        match = await self.session.get(Match, request.match_id)
+        if match is None:
+            raise NotFoundError("Match", request.match_id)
+        matchday = await self.session.get(Matchday, match.matchday_id)
+        if matchday is None:
+            raise NotFoundError("Matchday", match.matchday_id)
+        rules = await self.repo.get_scoring_rules(matchday.season_id)
+        engine = ScoringEngine(rules)
+
+        updated = 0
+        for a in request.assignments:
+            if a.marca_rating not in VALID_MARCA_VALUES:
+                raise BusinessRuleError(
+                    f"marca_rating inválido para player_id={a.player_id}: {a.marca_rating!r}"
+                )
+            existing = await self.repo.get_player_stat(a.player_id, match.matchday_id)
+            if existing is None:
+                # No player_stats row yet — skip silently. The admin
+                # can re-trigger after the next scrape populates it.
+                logger.info(
+                    "marca_apply: no player_stats row for player_id=%d matchday_id=%d, skipping",
+                    a.player_id,
+                    match.matchday_id,
+                )
+                continue
+            old_marca_as = existing.pts_marca_as
+            new_pts_marca = engine._calc_marca(a.marca_rating)
+            new_pts_marca_as = new_pts_marca + existing.pts_as
+            existing.marca_rating = a.marca_rating
+            existing.pts_marca = new_pts_marca
+            existing.pts_marca_as = new_pts_marca_as
+            existing.pts_total = existing.pts_total - old_marca_as + new_pts_marca_as
+            updated += 1
+
+        await self.session.flush()
+        if updated:
+            await self._aggregator.aggregate_matchday(match.matchday_id)
+        return {"updated": updated, "matchday_id": match.matchday_id}

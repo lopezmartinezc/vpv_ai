@@ -273,3 +273,45 @@ async def scheduler_stop(
 ) -> dict:
     stop_scheduler()
     return get_scheduler_status()
+
+
+# ---------------------------------------------------------------------------
+# Marca rating admin tool — gated by Perm.MARCA so the role can be
+# delegated without granting SCRAPING / STATS.
+# ---------------------------------------------------------------------------
+
+
+from src.features.scraping.schemas_marca import (  # noqa: E402  (placed after router declarations on purpose)
+    MarcaApplyRequest,
+    MarcaRosterResponse,
+)
+
+
+@router.get(
+    "/admin/marca/match/{match_id}/roster",
+    summary="Roster + current marca_rating for both teams of a match",
+    response_model=MarcaRosterResponse,
+)
+async def marca_match_roster(
+    match_id: int,
+    _admin: dict = Depends(require_perm(Perm.MARCA)),
+    service: ScrapingService = Depends(_get_service),
+) -> MarcaRosterResponse:
+    """Used by the Manual tab of `/admin/marca` to render an editable
+    table without uploading an image."""
+    return await service.marca_roster(match_id)
+
+
+@router.post(
+    "/admin/marca/apply",
+    summary="Persist marca_rating for the players of a single match",
+)
+async def marca_apply(
+    request: MarcaApplyRequest,
+    _admin: dict = Depends(require_perm(Perm.MARCA)),
+    service: ScrapingService = Depends(_get_service),
+) -> dict:
+    """Update player_stats.marca_rating + pts_marca/pts_marca_as/pts_total
+    per assignment, then re-aggregate the matchday so participant
+    scores reflect the new marca points immediately."""
+    return await service.marca_apply(request)
