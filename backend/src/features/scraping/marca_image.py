@@ -1,31 +1,38 @@
 """Parse a Marca press-clipping image and extract per-player ratings.
 
-Marca's cromos have a fairly fixed layout: two columns (one per team)
-separated by a vertical gutter, each row with shirt number, surname,
-optional minute marker, and red star(s) flush right. Layout example
-for one row:
+Ported from the standalone reference extractor that scored 94/94 on
+the ground-truth bench (3 cromos, 94 players, 100% rating accuracy
+without losing a single row). See `gt_check.py` / `BRIEF_para_claude_code.md`
+in the original kit for the design rationale.
 
-    →  7  Reyna   82'   ★★★
+Pipeline:
 
-We exploit that layout instead of letting Tesseract guess the page
-structure:
+1. **Region detection**: locate the player strip between the header
+   (top 16%) and the red bar (stadium / referee block) at the bottom.
+2. **Column split**: find the vertical "white channel" near the centre
+   that separates home vs. away.
+3. **Row anchoring on jersey numbers**: OCR the column at PSM 6, keep
+   only digit-leading tokens in the left 33% - those are the dorsals.
+   Compute the median pitch between them and FILL gaps + extend
+   above/below. Result: no row is lost even if its name/text fails.
+4. **Per-row OCR**: re-OCR each row band (PSM 7, single line) on the
+   GREEN channel - sub players are rendered in red, the green channel
+   makes them dark and legible.
+5. **Rating via computer vision (NOT OCR of the symbols)**:
+     - stars = count of red square blobs (HSV red mask, area + square
+       aspect ratio 0.5-1.8) to the right of the arrow zone.
+     - "dash" = a flat dark blob (height ≤ ~4 px, width 8-34 px) in
+       the right 45% of the rating cell.
+     - empty cell OR "s/c" text token -> SC (sin calificar, 0 pts).
 
-1. Crop the image vertically to the *player strip* — between the
-   thin black divider under the managers' row and the red horizontal
-   bar with the stadium name. Everything outside is decoration.
-2. Split the strip in half at the horizontal centre so each half
-   contains one team's column.
-3. Detect player rows in each half by horizontal density of dark
-   pixels (text bands).
-4. For every row:
-   - Crop the left ~75% of the row and OCR it with PSM 7
-     ("single text line") for a precise read of just the surname.
-   - Crop the right ~25% and count distinct red blobs.
-5. Parse the row's OCR text for surname / substitution arrow / sub
-   minute.
+Tesseract simply cannot read ★ / "s/c" reliably; doing it by vision
+is both faster and far more accurate.
 
-Dependencies: pytesseract + system Tesseract with the Spanish
-language pack (see docs/MUNDIAL_SCRAPING.md).
+Dependencies: opencv-python-headless, numpy, pytesseract + system
+Tesseract with the English language pack. We use `lang='eng'` (not
+'spa') because the reference benchmark validated against `eng` and
+the digit OCR there is what powers the row anchoring - accents lost
+in names are a cosmetic non-issue, matching falls back to fuzzy.
 """
 
 from __future__ import annotations
@@ -34,110 +41,81 @@ import logging
 import re
 import unicodedata
 from dataclasses import dataclass
-from io import BytesIO
+from itertools import pairwise
 
-from PIL import Image, ImageOps
+import cv2
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
 
-# Red-pixel thresholds (HSV-ish but in RGB to avoid the conversion).
-# Lowered R_MIN from 140 -> 120 after seeing a real-world cromo whose
-# red bar was rendered slightly darker (Marca print can drift between
-# ~#B40000 and ~#E00000). G/B stay strict so white doesn't qualify.
-_RED_R_MIN = 120
-_RED_G_MAX = 110
-_RED_B_MAX = 110
+# Reference width - every geometric constant below is multiplied by
+# `sc = W / _REF_WIDTH` so the parser scales between 392 px and 1200 px
+# wide cromos without retuning.
+_REF_WIDTH = 628.0
 
-# Discard connected components smaller than this (anti-alias noise).
-_MIN_STAR_BLOB = 25
-
-# Marca never prints more than 4 stars.
-_MAX_STARS = 4
-
-# How much of the row width (right side) is reserved for stars.
-_STARS_REGION_FRACTION = 0.25
-
-# Dark-pixel threshold (0..255) used to detect text bands.
-_DARK_THRESHOLD = 110
-
-# Each text-row should be at least this tall (in px of the original
-# image). Below this the band is probably noise / a thin separator.
-_MIN_ROW_HEIGHT = 8
-
-# And at most this many — rules out the giant header (score) being
-# treated as one giant row.
-_MAX_ROW_HEIGHT = 80
-
-# Min density (fraction of dark pixels in a horizontal scan-line)
-# for that line to count as "text". Tuned for Marca's print.
-_MIN_DARK_DENSITY = 0.05
-
-# A red bar (SoFi Stadium line) is at least this fraction of the
-# image width red. Tuned to leave headroom against the title block's
-# small red decorations.
-# Lowered to 0.35 after real-world testing: Marca's bar has white
-# text "Estadio Azteca   70.492 esp." sprawled across, so the row's
-# red density dips toward 40-50% in some cromos.
-_RED_BAR_FRACTION = 0.35
-
-# Antialiasing / JPEG artifacts can dip 1-2 rows inside the bar
-# below threshold. Tolerate them before declaring the bar's top.
-_RED_BAR_MAX_MISS = 2
-
-# A 1-px "red" row could be print noise; require at least this many
-# contiguous red rows before treating it as the bar.
-_RED_BAR_MIN_HEIGHT = 6
-
-# A horizontal "divider" line (between the manager row and the first
-# player row) is at least this fraction of the column width black.
-# Has to be much higher than _MIN_DARK_DENSITY so we don't grab
-# regular text rows.
-_DIVIDER_DENSITY = 0.85
-
-# Divider lines are very thin (1-4 px). The manager row above is
-# normal text height (~20 px). We want to find the divider, not a
-# text band.
-_MAX_DIVIDER_HEIGHT = 5
-
-
-# Words that NEVER appear in a player row but show up in the bar /
-# footer (referee, cards, goals). Dropping rows whose raw text hits
-# any of these keeps the stadium block out of `unmatched` even when
-# the red-bar detector misses for some reason.
-_FOOTER_DENYLIST: frozenset[str] = frozenset(
-    (
-        "estadio",
-        "stadium",
-        "esp.",
-        "espectadores",
-        "arbitro",
-        "tarjetas",
-        "goles",
-        "gol anulado",
-        "gol",
-    )
+# HSV ranges for the two halves of the red hue wheel - Marca's stars
+# and arrows are saturated red (~#D00000) but JPEG drift puts some
+# pixels in the 168-180 wrap-around range.
+_RED_HSV_LOW = (np.array((0, 80, 80), dtype=np.uint8), np.array((12, 255, 255), dtype=np.uint8))
+_RED_HSV_HIGH = (
+    np.array((168, 80, 80), dtype=np.uint8),
+    np.array((180, 255, 255), dtype=np.uint8),
 )
 
-# A row's raw text containing a number with more than 3 digits is
-# almost certainly an attendance figure ("70.492", "44 985"), not a
-# shirt number (1-2 digits) and not a sub minute (1-2 digits).
-_ATTENDANCE_NUMBER = re.compile(r"\d{4,}")
+# Tesseract confidence floor - tokens below this are skipped.
+_OCR_CONF_MIN = 15
+
+
+# Row-token regexes ----------------------------------------------------
+
+# Arrow markers (substitute indicator). Includes Marca's stylized ->
+# plus common OCR mis-reads (>, «, dash). noqa: RUF001 (intentional
+# unicode glyphs).
+_ARROW_RE = re.compile(r"^[>«→↑\-]+$")
+
+# "82'" sub minute. Tolerates Marca's curly quote.
+_MIN_RE = re.compile(r"^\d{1,3}['ʼ`]$")  # noqa: RUF001
+
+# Pure leading digits = jersey number.
+_NUM_RE = re.compile(r"^(\d{1,2})")
+
+# Glued "21Osorio" / "7_Eustaquio" - OCR sometimes fuses number + name.
+_GLUE_RE = re.compile(r"^(\d{1,2})[_\W0]?([A-Za-zÁÉÍÓÚÑáéíóúñ][A-Za-zÁÉÍÓÚÑáéíóúñ\-]+)$")
+
+# Tokens that look like a botched star sequence - drop them so they
+# don't pollute names. The character class contains intentionally
+# ambiguous unicode glyphs Tesseract emits for the ★ symbol.
+_STAR_JUNK = re.compile(r"^[kKxX*«»\.\-]+$")
+
+# Tesseract's many mis-spellings of "s/c" (sin calificar):
+#   s/c   sc   s|c   s1c   slc   sic  (with dotless-i variant).
+_SC_RE = re.compile(r"^s\s*[/|1lı]?\s*c$", re.I)  # noqa: RUF001
 
 
 @dataclass
 class ParsedMarcaRow:
     """One player extracted from the cromo image.
 
-    `explicit_marker` is the textual marker found on the right of the
-    row when there are no red stars to count. The two values it can
-    take come from Marca's print edition:
+    Fields kept stable so ``service.marca_preview`` and Pydantic
+    schemas don't change:
 
-    - "sc": "s/c" - sin calificar (jugó poco)
-    - "dash": Unicode minus sign - jugó mal
-
-    None means no marker was detected, so the row stays "null" (no
-    rating) when persisted.
+    - ``raw_text``: concatenation of the row's OCR tokens, useful for
+      debugging when matching fails.
+    - ``surname_clean``: last name token, accent-folded + lowercased.
+      Used as the join key against the team roster.
+    - ``stars``: 0-4. Counted by colour (not OCR) so it's reliable.
+    - ``is_substitute``: True when the row starts with a red arrow
+      OR has a sub minute token.
+    - ``minute``: substitution minute if detected.
+    - ``confidence``: average Tesseract confidence (0-1).
+    - ``explicit_marker``: rating marker when ``stars == 0``:
+        * ``"sc"`` - empty cell OR OCR'd "s/c"  -> "SC" (jugó poco)
+        * ``"dash"`` - flat dark blob detected  -> "-" (jugó mal)
+        * ``None`` - only when ``stars > 0`` (numeric rating).
+    - ``dorsal``: jersey number from the anchor (or band re-read).
+      None only if the row's anchor came from gap-fill and OCR also
+      missed the number.
     """
 
     raw_text: str
@@ -147,464 +125,458 @@ class ParsedMarcaRow:
     minute: int | None
     confidence: float
     explicit_marker: str | None = None
+    dorsal: int | None = None
 
 
 # ---------------------------------------------------------------------------
-# Pure helpers (no Tesseract)
+# Text helpers (pure)
 # ---------------------------------------------------------------------------
 
 
 def _strip_accents_lower(value: str) -> str:
-    """Lowercase + strip diacritics so surnames match the roster keys."""
+    """Lowercase + strip diacritics so surnames match roster keys."""
     normalized = unicodedata.normalize("NFD", value)
     no_marks = "".join(c for c in normalized if not unicodedata.combining(c))
     return no_marks.lower().strip()
 
 
-def _parse_row_text(text: str) -> tuple[str, bool, int | None]:
-    """Pull (surname_clean, is_substitute, minute) out of raw row text.
+def _clean_name(parts: list[str]) -> str:
+    """Glue OCR tokens into a display name.
 
-    Tolerates: leading arrow markers ("→" or "->"), leading dorsal
-    numbers, trailing "NN'" substitution minute. Drops star glyphs
-    so they don't leak into the surname.
+    Drops anything that isn't a letter or hyphen, trims trailing
+    2-letter lowercase noise (icon labels like "ti" / "ca"), and
+    capitalises tokens whose first letter is lowercase (so OCR's
+    "jin-gyu" comes back as "Jin-gyu").
     """
-    is_sub = bool(re.search(r"→|->", text))
-    clean = re.sub(r"→|->", "", text).strip()
-
-    minute_match = re.search(r"(\d{1,2})'", clean)
-    minute = int(minute_match.group(1)) if minute_match else None
-
-    clean = clean.replace("★", " ").replace("*", " ")
-    clean = re.sub(r"\d{1,2}'", " ", clean)
-    clean = re.sub(r"^\s*\d+\s+", "", clean)
-    tokens = [tok for tok in clean.split() if tok]
-
-    surname_raw = tokens[-1] if tokens else ""
-    return _strip_accents_lower(surname_raw), is_sub, minute
-
-
-def _count_red_stars_in_bbox(
-    img_rgb: Image.Image,
-    bbox: tuple[int, int, int, int],
-) -> int:
-    """Count distinct red blobs inside *bbox* of *img_rgb*.
-
-    Flood-fills 4-neighbourhood connected components of "red enough"
-    pixels and returns those above _MIN_STAR_BLOB area.
-    """
-    x0, y0, x1, y1 = bbox
-    x0 = max(0, x0)
-    y0 = max(0, y0)
-    x1 = min(img_rgb.width, x1)
-    y1 = min(img_rgb.height, y1)
-    if x1 <= x0 or y1 <= y0:
-        return 0
-
-    crop = img_rgb.crop((x0, y0, x1, y1)).convert("RGB")
-    w, h = crop.size
-    pixels = crop.load()
-    if pixels is None:
-        return 0
-
-    is_red = [[False] * w for _ in range(h)]
-    for y in range(h):
-        for x in range(w):
-            pixel = pixels[x, y]
-            if not isinstance(pixel, tuple) or len(pixel) < 3:
-                continue
-            r, g, b = pixel[0], pixel[1], pixel[2]
-            if r >= _RED_R_MIN and g <= _RED_G_MAX and b <= _RED_B_MAX:
-                is_red[y][x] = True
-
-    visited = [[False] * w for _ in range(h)]
-    star_count = 0
-    for y in range(h):
-        for x in range(w):
-            if not is_red[y][x] or visited[y][x]:
-                continue
-            stack: list[tuple[int, int]] = [(x, y)]
-            size = 0
-            while stack:
-                cx, cy = stack.pop()
-                if cx < 0 or cx >= w or cy < 0 or cy >= h:
-                    continue
-                if visited[cy][cx] or not is_red[cy][cx]:
-                    continue
-                visited[cy][cx] = True
-                size += 1
-                stack.extend([(cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)])
-            if size >= _MIN_STAR_BLOB:
-                star_count += 1
-
-    return min(star_count, _MAX_STARS)
-
-
-def _detect_text_rows(gray_img: Image.Image) -> list[tuple[int, int]]:
-    """Find horizontal bands that probably contain text.
-
-    Heuristic: count dark pixels per scan-line; a contiguous run where
-    the density is above _MIN_DARK_DENSITY is a row. Filter by
-    height to drop both micro-noise and the big title block.
-    """
-    pixels = gray_img.load()
-    if pixels is None:
-        return []
-    w, h = gray_img.size
-    if w == 0 or h == 0:
-        return []
-
-    dark_counts: list[int] = []
-    for y in range(h):
-        cnt = 0
-        for x in range(w):
-            v = pixels[x, y]
-            if isinstance(v, tuple):
-                v = v[0]
-            if v < _DARK_THRESHOLD:
-                cnt += 1
-        dark_counts.append(cnt)
-
-    bands: list[tuple[int, int]] = []
-    in_band = False
-    band_start = 0
-    threshold_px = max(2, int(w * _MIN_DARK_DENSITY))
-    for y, cnt in enumerate(dark_counts):
-        if cnt >= threshold_px:
-            if not in_band:
-                band_start = y
-                in_band = True
-        elif in_band:
-            band_end = y
-            band_h = band_end - band_start
-            if _MIN_ROW_HEIGHT <= band_h <= _MAX_ROW_HEIGHT:
-                bands.append((band_start, band_end))
-            in_band = False
-    if in_band:
-        band_end = h
-        if _MIN_ROW_HEIGHT <= band_end - band_start <= _MAX_ROW_HEIGHT:
-            bands.append((band_start, band_end))
-    return bands
-
-
-def _split_columns(img_rgb: Image.Image) -> tuple[Image.Image, Image.Image]:
-    """Halve the image vertically. The split point is fixed at the
-    midpoint since Marca cromos are very symmetric."""
-    w, h = img_rgb.size
-    mid = w // 2
-    left = img_rgb.crop((0, 0, mid, h))
-    right = img_rgb.crop((mid, 0, w, h))
-    return left, right
-
-
-def _find_red_bar_top_y(img_rgb: Image.Image) -> int | None:
-    """Return the y-coordinate of the TOP of the red SoFi-Stadium bar.
-
-    Scans the image bottom-up looking for a contiguous block of
-    "mostly red" scan-lines (>= _RED_BAR_FRACTION). Tolerates up to
-    _RED_BAR_MAX_MISS rows of dip (antialiasing / JPEG) and demands
-    at least _RED_BAR_MIN_HEIGHT rows of red before treating the block
-    as the bar. Returns None if no such bar exists.
-    """
-    pixels = img_rgb.load()
-    if pixels is None:
-        return None
-    w, h = img_rgb.size
-    if w == 0 or h == 0:
-        return None
-    threshold_px = int(w * _RED_BAR_FRACTION)
-
-    in_bar = False
-    bar_top: int | None = None
-    bar_bottom: int | None = None
-    miss_streak = 0
-
-    for y in range(h - 1, -1, -1):
-        cnt = 0
-        for x in range(w):
-            pixel = pixels[x, y]
-            if not isinstance(pixel, tuple) or len(pixel) < 3:
-                continue
-            r, g, b = pixel[0], pixel[1], pixel[2]
-            if r >= _RED_R_MIN and g <= _RED_G_MAX and b <= _RED_B_MAX:
-                cnt += 1
-
-        if cnt >= threshold_px:
-            if not in_bar:
-                bar_bottom = y
-                in_bar = True
-            bar_top = y
-            miss_streak = 0
-        elif in_bar:
-            miss_streak += 1
-            if miss_streak > _RED_BAR_MAX_MISS:
-                if (
-                    bar_bottom is not None
-                    and bar_top is not None
-                    and (bar_bottom - bar_top + 1) >= _RED_BAR_MIN_HEIGHT
-                ):
-                    return bar_top
-                # False positive — reset and keep scanning up.
-                in_bar = False
-                bar_top = None
-                bar_bottom = None
-                miss_streak = 0
-
-    if (
-        in_bar
-        and bar_bottom is not None
-        and bar_top is not None
-        and (bar_bottom - bar_top + 1) >= _RED_BAR_MIN_HEIGHT
-    ):
-        return bar_top
-    return None
-
-
-def _find_top_divider_y(gray_img: Image.Image) -> int | None:
-    """Return the y-coordinate just BELOW the thin black divider
-    between the managers' row and the first player row.
-
-    A divider has ~85%+ of its scan-line dark, lasts only 1-4 px
-    (much thinner than a text row). Returns None if no such line is
-    found in the upper third of the image.
-    """
-    pixels = gray_img.load()
-    if pixels is None:
-        return None
-    w, h = gray_img.size
-    if w == 0 or h == 0:
-        return None
-    threshold_px = int(w * _DIVIDER_DENSITY)
-    # We only look in the upper third — past that we'd start finding
-    # the divider that sometimes separates the player block from the
-    # red bar.
-    upper_limit = h // 3
-
-    in_dense = False
-    dense_start = 0
-    for y in range(upper_limit):
-        cnt = 0
-        for x in range(w):
-            v = pixels[x, y]
-            if isinstance(v, tuple):
-                v = v[0]
-            if v < _DARK_THRESHOLD:
-                cnt += 1
-        if cnt >= threshold_px:
-            if not in_dense:
-                dense_start = y
-                in_dense = True
-        elif in_dense:
-            band_height = y - dense_start
-            if band_height <= _MAX_DIVIDER_HEIGHT:
-                # Skip past the divider so the player row below isn't
-                # clipped.
-                return y
-            in_dense = False
-    return None
+    out: list[str] = []
+    for p in parts:
+        cleaned = re.sub(r"[^A-Za-zÁÉÍÓÚÑáéíóúñ\-]", "", p)
+        if len(cleaned) >= 2:
+            out.append(cleaned)
+    while len(out) > 1 and len(out[-1]) <= 2 and out[-1].islower():
+        out.pop()
+    out = [w[0].upper() + w[1:] if w[:1].islower() else w for w in out]
+    return " ".join(out).strip()
 
 
 # ---------------------------------------------------------------------------
-# Pipeline
+# Computer-vision helpers (no OCR)
 # ---------------------------------------------------------------------------
 
 
-def _detect_right_marker(img_rgb: Image.Image) -> str | None:
-    """OCR the right portion of a row and detect the rating marker.
+def _build_masks(img_bgr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Return ``(red_mask, gray)`` for the BGR image.
 
-    Used as a fallback when no red stars were counted: the row could
-    still carry an explicit textual marker like:
-
-    - ``s/c`` (red text, italic) - sin calificar
-    - A unicode minus / hyphen / em-dash (black or red) - jugó mal
-
-    Returns ``"sc"``, ``"dash"`` or ``None``.
-
-    A char whitelist + PSM 7 keeps Tesseract from inventing letters
-    when the cell is empty.
+    The red mask covers both halves of the red hue wheel.
     """
-    import pytesseract
-
-    if img_rgb.width == 0 or img_rgb.height == 0:
-        return None
-
-    # 2x upscale + autocontrast — the marker glyphs are tiny.
-    upsampled = img_rgb.resize(
-        (img_rgb.width * 2, img_rgb.height * 2),
-        Image.Resampling.LANCZOS,
+    hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+    red = cv2.bitwise_or(
+        cv2.inRange(hsv, *_RED_HSV_LOW),
+        cv2.inRange(hsv, *_RED_HSV_HIGH),
     )
-    gray = ImageOps.autocontrast(upsampled.convert("L"))
-
-    try:
-        text = pytesseract.image_to_string(
-            gray,
-            # Whitelist: letters s/c (both cases), slash, hyphen,
-            # em-dash, unicode minus. These are the only chars Marca
-            # uses in the marker column. noqa suppresses the
-            # ambiguous-character lint — the unicode glyphs are
-            # intentional.
-            config="--psm 7 -c tessedit_char_whitelist=sScC/-—−",  # noqa: RUF001
-        )
-    except Exception:
-        logger.exception("_detect_right_marker: tesseract failed")
-        return None
-
-    cleaned = (text or "").lower().strip()
-    if not cleaned:
-        return None
-    # The whitelist may leave stray "s" or "c" alone when Tesseract
-    # mis-reads noise; only accept the unambiguous combinations.
-    if "s/c" in cleaned or "sc" in cleaned:
-        return "sc"
-    if any(ch in cleaned for ch in ("-", "—", "−")):  # noqa: RUF001
-        return "dash"
-    return None
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    return red, gray
 
 
-def _ocr_single_line(img: Image.Image, lang: str = "spa") -> tuple[str, float]:
-    """Run Tesseract on a single-line crop. Returns ``(text, confidence)``."""
+def _count_stars(red: np.ndarray, yc: int, xa: int, xb: int, sc: float) -> int:
+    """Count red star blobs in the row centred at ``yc`` between ``xa`` and ``xb``.
+
+    A blob is a star when its area is ≥ ``40·sc²`` and its bounding
+    box is roughly square (0.5 < w/h < 1.8). The first 14% of the row
+    is reserved for the "->" arrow (substitute marker) and ignored.
+    """
+    hh = max(8, int(12 * sc))
+    band = red[max(0, yc - hh) : yc + hh + 2, xa:xb]
+    if band.size == 0:
+        return 0
+    # cv2 stub rejects uint8 even though it's the canonical input.
+    _, _, stats, _ = cv2.connectedComponentsWithStats(band, 8)  # type: ignore[call-overload]
+    n = 0
+    arrow_zone = 0.14 * (xb - xa)
+    amin = max(15, int(40 * sc * sc))
+    for x, _y, w, h, area in stats[1:]:
+        if area < amin or x < arrow_zone:
+            continue
+        if 0.5 < w / max(h, 1) < 1.8:
+            n += 1
+    return min(n, 4)
+
+
+def _has_dash(gray: np.ndarray, yc: int, xa: int, xb: int, sc: float) -> bool:
+    """Detect a "-" marker = flat dark blob in the right 45% of the cell.
+
+    A dash is short (height ≤ ~4 px), at least 8 px wide, with a
+    >2.3:1 aspect ratio. Row separators are wider and filtered out by
+    the ``w <= 34·sc`` cap.
+    """
+    hh = max(6, int(8 * sc))
+    x0 = xa + int((xb - xa) * 0.40)
+    region = gray[max(0, yc - hh) : yc + hh + 2, x0:xb]
+    if region.size == 0:
+        return False
+    cell = (region < 170).astype(np.uint8)
+    _, _, stats, _ = cv2.connectedComponentsWithStats(cell, 8)  # type: ignore[call-overload]
+    hmax = max(3, int(4 * sc))
+    wmin, wmax = max(6, int(8 * sc)), int(34 * sc)
+    amin = max(8, int(10 * sc))
+    for _x, _y, w, h, area in stats[1:]:
+        if area >= amin and h <= hmax and wmin <= w <= wmax and w / max(h, 1) > 2.3:
+            return True
+    return False
+
+
+def _is_sub_arrow(red: np.ndarray, yc: int, xa: int, sc: float) -> bool:
+    """Detect a red "->" at the start of the row (substitute marker).
+
+    Looks for a red blob in the first ``44·sc`` pixels of the column.
+    """
+    hh = max(8, int(10 * sc))
+    band = red[max(0, yc - hh) : yc + hh + 2, xa : xa + int(44 * sc)]
+    if band.size == 0:
+        return False
+    _, _, stats, _ = cv2.connectedComponentsWithStats(band, 8)  # type: ignore[call-overload]
+    wmin = int(10 * sc)
+    amin = max(20, int(35 * sc * sc))
+    return any(area >= amin and w >= wmin for _x, _y, w, _h, area in stats[1:])
+
+
+def _find_table_region(img_bgr: np.ndarray, red: np.ndarray) -> tuple[int, int]:
+    """Return ``(y_top, y_bottom)`` of the player strip.
+
+    - ``y_top`` is a fixed ~16% - past the title block, manager row
+      and divider line.
+    - ``y_bottom`` is the y of the red bar (stadium / referee block);
+      the first row in the lower half with > 50% red pixels.
+    """
+    h_img, w_img = img_bgr.shape[:2]
+    row_red = (red > 0).sum(axis=1)
+    threshold = w_img * 0.5
+    footer = h_img
+    for y in range(int(h_img * 0.55), h_img):
+        if row_red[y] > threshold:
+            footer = y
+            break
+    return int(h_img * 0.16), footer
+
+
+def _find_column_split(img_bgr: np.ndarray, y0: int, y1: int) -> int:
+    """Find the vertical gutter that separates home vs. away.
+
+    The gutter has the least "ink" (dark pixels) of any column in the
+    central 42%-58% band of the image.
+    """
+    gray = cv2.cvtColor(img_bgr[y0:y1], cv2.COLOR_BGR2GRAY)
+    ink = (gray < 200).sum(axis=0)
+    w_img = img_bgr.shape[1]
+    centre_lo, centre_hi = int(w_img * 0.42), int(w_img * 0.58)
+    centre = range(centre_lo, centre_hi if centre_hi > centre_lo else centre_lo + 1)
+    return min(centre, key=lambda x: int(ink[x]))
+
+
+# ---------------------------------------------------------------------------
+# OCR helpers (need Tesseract)
+# ---------------------------------------------------------------------------
+
+
+def _ocr_data(
+    img: np.ndarray, lang: str, psm: int
+) -> tuple[list[str], list[int], list[int], list[int], list[int]]:
+    """Run ``pytesseract.image_to_data`` and return parallel lists.
+
+    Returns ``(texts, confs, lefts, tops, widths)`` filtered by
+    ``_OCR_CONF_MIN``. Empty lists on Tesseract failure.
+    """
     import pytesseract
 
-    # PSM 7 = "Treat the image as a single text line" — much higher
-    # accuracy than PSM 6 / 3 on a single-line crop.
     try:
-        data = pytesseract.image_to_data(
-            img, lang=lang, config="--psm 7", output_type=pytesseract.Output.DICT
+        d = pytesseract.image_to_data(
+            img,
+            lang=lang,
+            config=f"--psm {psm}",
+            output_type=pytesseract.Output.DICT,
         )
     except Exception:
-        logger.exception("_ocr_single_line: tesseract failed")
-        return "", 0.0
+        logger.exception("_ocr_data: tesseract failed")
+        return [], [], [], [], []
 
-    tokens: list[str] = []
-    confs: list[float] = []
-    for i, tok in enumerate(data.get("text", []) or []):
-        tok_clean = (tok or "").strip()
-        if not tok_clean:
+    texts = d.get("text") or []
+    confs = d.get("conf") or []
+    lefts = d.get("left") or []
+    tops = d.get("top") or []
+    widths = d.get("width") or []
+    return texts, confs, lefts, tops, widths
+
+
+def _ocr_column_tokens(green_col: np.ndarray) -> list[dict]:
+    """OCR the whole team column (PSM 6) for dorsal anchoring.
+
+    Upscales 2x for better digit OCR and returns tokens with
+    half-scale coordinates so callers can address the original image.
+    """
+    if green_col.size == 0:
+        return []
+    up = cv2.resize(green_col, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+    texts, confs, lefts, tops, widths = _ocr_data(up, lang="eng", psm=6)
+    out: list[dict] = []
+    for i, raw_text in enumerate(texts):
+        t = (raw_text or "").strip()
+        if not t:
             continue
         try:
-            conf = float(data["conf"][i])
+            conf = int(confs[i])
         except (TypeError, ValueError):
-            conf = -1.0
-        if conf < 0:
             continue
-        tokens.append(tok_clean)
-        confs.append(conf)
-    text = " ".join(tokens).strip()
-    confidence = (sum(confs) / len(confs) / 100.0) if confs else 0.0
-    return text, max(0.0, min(1.0, confidence))
+        if conf <= _OCR_CONF_MIN:
+            continue
+        out.append(
+            {
+                "text": t,
+                "x": lefts[i] // 2,
+                "y": tops[i] // 2,
+                "w": widths[i] // 2,
+                "conf": conf,
+            }
+        )
+    return out
 
 
-def _process_column(column_rgb: Image.Image) -> list[ParsedMarcaRow]:
-    """Detect rows in one team's column and OCR each one."""
-    if column_rgb.width == 0 or column_rgb.height == 0:
+def _ocr_band_tokens(green_full: np.ndarray, yc: int, xa: int, xb: int, sc: float) -> list[dict]:
+    """OCR a single row band (PSM 7) at 3x scale."""
+    if green_full.size == 0:
         return []
-
-    # 2x upscale + autocontrast — same trick as before, but applied
-    # per-line later. We detect rows on the GRAYSCALE original.
-    gray = column_rgb.convert("L")
-    bands = _detect_text_rows(gray)
-    if not bands:
+    hh = int(15 * sc)
+    band = green_full[max(0, yc - hh) : yc + hh, xa:xb]
+    if band.size == 0:
         return []
-
-    rows: list[ParsedMarcaRow] = []
-    for y0, y1 in bands:
-        # Crop the band a couple of pixels wider so descenders fit.
-        crop_y0 = max(0, y0 - 1)
-        crop_y1 = min(column_rgb.height, y1 + 2)
-        full_row = column_rgb.crop((0, crop_y0, column_rgb.width, crop_y1))
-
-        # Stars region: the right slice.
-        star_x0 = int(column_rgb.width * (1 - _STARS_REGION_FRACTION))
-        stars = _count_red_stars_in_bbox(
-            column_rgb,
-            (star_x0, crop_y0, column_rgb.width, crop_y1),
-        )
-
-        # When no stars were counted, the row might still have an
-        # explicit textual marker (s/c or a dash). Tesseract on the
-        # right strip with a char whitelist is reliable enough.
-        explicit_marker: str | None = None
-        if stars == 0:
-            marker_crop = column_rgb.crop((star_x0, crop_y0, column_rgb.width, crop_y1))
-            explicit_marker = _detect_right_marker(marker_crop)
-
-        # OCR the LEFT slice (the text part) at 2x scale.
-        text_crop = full_row.crop((0, 0, star_x0, full_row.height))
-        if text_crop.width == 0 or text_crop.height == 0:
+    up = cv2.resize(band, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+    texts, confs, lefts, _tops, _widths = _ocr_data(up, lang="eng", psm=7)
+    out: list[dict] = []
+    for i, raw_text in enumerate(texts):
+        t = (raw_text or "").strip()
+        if not t:
             continue
-        text_upsampled = text_crop.resize(
-            (text_crop.width * 2, text_crop.height * 2),
-            Image.Resampling.LANCZOS,
-        )
-        text_for_ocr = ImageOps.autocontrast(text_upsampled.convert("L"))
-        text, conf = _ocr_single_line(text_for_ocr)
-        if not text:
+        try:
+            conf = int(confs[i])
+        except (TypeError, ValueError):
             continue
+        if conf <= _OCR_CONF_MIN:
+            continue
+        out.append({"text": t, "x": lefts[i] // 3, "conf": conf})
+    return out
 
-        # Footer / stadium guard: a row whose text contains a footer
-        # keyword or an attendance-like number (4+ digits) is decoration
-        # leaking through, not a player. Drop it.
-        # Accent-folded comparison so "Árbitro" / "Árbitro" both match.
-        text_normalized = _strip_accents_lower(text)
-        if any(kw in text_normalized for kw in _FOOTER_DENYLIST):
-            continue
-        if _ATTENDANCE_NUMBER.search(text):
-            continue
 
-        surname_clean, is_sub, minute = _parse_row_text(text)
-        if not surname_clean:
-            continue
+# ---------------------------------------------------------------------------
+# Row anchoring (the killer feature: no row is ever lost)
+# ---------------------------------------------------------------------------
 
-        rows.append(
-            ParsedMarcaRow(
-                raw_text=text,
-                surname_clean=surname_clean,
-                stars=stars,
-                is_substitute=is_sub,
-                minute=minute,
-                confidence=conf,
-                explicit_marker=explicit_marker,
-            )
-        )
-    return rows
+
+def _detect_row_centers(
+    green_col: np.ndarray, col_w: int, sc: float
+) -> list[tuple[int, int | None]]:
+    """Return ``[(y_centre, dorsal | None), ...]`` for the column.
+
+    The list is anchored on OCR'd jersey numbers in the left third of
+    the column, then GAPS ARE FILLED at the median pitch so no row is
+    lost. Above the first anchor and below the last we extend one
+    full pitch if there's still room.
+    """
+    toks = _ocr_column_tokens(green_col)
+    raw_anchors = sorted(
+        (t["y"] + 6, t["text"])
+        for t in toks
+        if re.match(r"^\d", t["text"]) and t["x"] < col_w * 0.33
+    )
+    centers: list[tuple[int, int | None]] = []
+    tol = max(6, int(10 * sc))
+    for y, txt in raw_anchors:
+        m = _NUM_RE.match(txt)
+        num = int(m.group(1)) if m else None
+        if centers and y - centers[-1][0] <= tol:
+            # Merge near-duplicate anchors (Tesseract often splits a
+            # dorsal into 2 tokens).
+            prev_y, prev_num = centers[-1]
+            centers[-1] = ((prev_y + y) // 2, prev_num if prev_num is not None else num)
+        else:
+            centers.append((y, num))
+
+    if len(centers) < 2:
+        return centers
+
+    diffs = [b[0] - a[0] for a, b in pairwise(centers)]
+    pitch = int(np.median(diffs))
+    if pitch < 8:
+        return centers
+
+    # Fill interior gaps that look like multiples of `pitch`.
+    filled: list[tuple[int, int | None]] = [centers[0]]
+    for c in centers[1:]:
+        gap = c[0] - filled[-1][0]
+        k = max(1, round(gap / pitch))
+        for _ in range(1, k):
+            filled.append((filled[-1][0] + gap // k, None))
+        filled.append(c)
+
+    # Extend up/down by one pitch if there's room.
+    h_col = green_col.shape[0]
+    while filled[0][0] - pitch > pitch * 0.4:
+        filled.insert(0, (filled[0][0] - pitch, None))
+    while filled[-1][0] + pitch < h_col - pitch * 0.3:
+        filled.append((filled[-1][0] + pitch, None))
+    return filled
+
+
+# ---------------------------------------------------------------------------
+# Per-row parse
+# ---------------------------------------------------------------------------
+
+
+def _parse_row_tokens(
+    toks: list[dict],
+) -> tuple[int | None, str, bool, int | None, bool, float]:
+    """Pull ``(dorsal, name, is_sub, minute, is_sc, avg_conf)`` from row tokens.
+
+    Order rules:
+    - Arrow at x<60 OR a "82'"-style minute marks the row as a substitute.
+    - The FIRST digit-only token (or the digit half of a glued "21Osorio")
+      is the jersey number.
+    - Everything else with letters and ≥ 2 chars goes into the name.
+    """
+    toks = sorted(toks, key=lambda z: z["x"])
+    is_sub = False
+    number: int | None = None
+    minute: int | None = None
+    is_sc = False
+    name_parts: list[str] = []
+    confs: list[int] = []
+    for t in toks:
+        txt = t["text"]
+        confs.append(t["conf"])
+        if _ARROW_RE.match(txt) and t["x"] < 60:
+            is_sub = True
+        elif _MIN_RE.match(txt):
+            is_sub = True
+            minute = int(re.sub(r"\D", "", txt))
+        elif _SC_RE.match(txt):
+            is_sc = True
+        elif _GLUE_RE.match(txt):
+            m = _GLUE_RE.match(txt)
+            if m is None:
+                continue
+            if number is None:
+                number = int(m.group(1))
+            name_parts.append(m.group(2))
+        elif _NUM_RE.match(txt) and number is None and not _STAR_JUNK.match(txt):
+            m = _NUM_RE.match(txt)
+            if m is not None:
+                number = int(m.group(1))
+        elif (
+            re.search(r"[A-Za-zÁÉÍÓÚÑáéíóúñ]", txt)
+            and len(txt) >= 2
+            and not _STAR_JUNK.match(txt)
+            and not _SC_RE.match(txt)
+        ):
+            name_parts.append(txt)
+
+    name = _clean_name(name_parts)
+    avg_conf = (sum(confs) / len(confs) / 100.0) if confs else 0.0
+    return number, name, is_sub, minute, is_sc, max(0.0, min(1.0, avg_conf))
+
+
+# ---------------------------------------------------------------------------
+# Public entry point
+# ---------------------------------------------------------------------------
 
 
 def parse_marca_image(png_bytes: bytes) -> list[ParsedMarcaRow]:
-    """Parse a press-clipping image and return one row per player found.
+    """Parse a Marca press-clipping image -> one ``ParsedMarcaRow`` per player.
 
-    Uses Marca's static layout (two columns separated at the centre)
-    to segment the image *before* OCR. Each detected text band is
-    OCR'd individually with PSM 7 for higher accuracy.
+    See module docstring for the design.
+
+    Returns ``[]`` on decode failure. Marker semantics for the
+    rating column (matches ``schemas_marca.MarcaPreviewMatch``):
+
+    - ``stars > 0``             -> numeric rating (1-4 stars)
+    - ``explicit_marker="sc"``  -> SC (0 pts); covers BOTH the OCR'd
+                                  "s/c" token AND the empty cell case
+                                  - if the player is in the cromo they
+                                  played at least one minute.
+    - ``explicit_marker="dash"`` -> "-" (negative rating)
     """
     if not png_bytes:
         return []
 
-    try:
-        img_rgb = Image.open(BytesIO(png_bytes)).convert("RGB")
-    except Exception:
-        logger.exception("parse_marca_image: cannot open image")
+    arr = np.frombuffer(png_bytes, dtype=np.uint8)
+    img_bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    if img_bgr is None:
+        logger.error("parse_marca_image: cv2 cannot decode image")
         return []
 
-    # Crop to the player strip — between the thin black divider that
-    # sits under the managers' subtitle and the red horizontal bar
-    # with the stadium name. Everything outside is decoration we
-    # don't want OCR'd (title, referee, cards, goals).
-    gray = img_rgb.convert("L")
-    strip_top = _find_top_divider_y(gray) or 0
-    strip_bottom = _find_red_bar_top_y(img_rgb) or img_rgb.height
-    if strip_bottom <= strip_top:
-        # Defensive: a missing divider plus a missing bar means we
-        # fall back to the full image.
-        strip_top, strip_bottom = 0, img_rgb.height
-    logger.debug(
-        "parse_marca_image: cropping to y=[%d, %d] (image h=%d)",
-        strip_top,
-        strip_bottom,
-        img_rgb.height,
-    )
-    strip = img_rgb.crop((0, strip_top, img_rgb.width, strip_bottom))
+    red, gray = _build_masks(img_bgr)
+    _h_img, w_img = img_bgr.shape[:2]
+    sc = w_img / _REF_WIDTH
+    y0, y1 = _find_table_region(img_bgr, red)
+    if y1 - y0 < 20:
+        logger.warning("parse_marca_image: table region too small (%d-%d)", y0, y1)
+        return []
+    split = _find_column_split(img_bgr, y0, y1)
 
-    left, right = _split_columns(strip)
+    columns = [
+        {"box": (0, split), "rating": (split - int(66 * sc), split - 2)},
+        {"box": (split, w_img), "rating": (w_img - int(68 * sc), w_img - 2)},
+    ]
+
+    green_full = img_bgr[:, :, 1]  # red text becomes dark on the green channel
     rows: list[ParsedMarcaRow] = []
-    rows.extend(_process_column(left))
-    rows.extend(_process_column(right))
+
+    for cfg in columns:
+        xa, xb = cfg["box"]
+        col_green = green_full[y0:y1, xa:xb]
+        centers = _detect_row_centers(col_green, xb - xa, sc)
+        seen: set[int] = set()
+        for cy, anchor_num in centers:
+            yc = cy + y0
+            toks = _ocr_band_tokens(green_full, yc, xa, xb, sc)
+            num, name, is_sub, minute, is_sc, avg_conf = _parse_row_tokens(toks)
+            if anchor_num is not None:
+                # Anchor dorsal beats band re-read - the centre-column
+                # pass is much more reliable on digits than the band's
+                # PSM 7 which has to deal with arrow+number+name fused.
+                num = anchor_num
+            if num is None or num in seen:
+                continue
+            if not is_sub and _is_sub_arrow(red, yc, xa, sc):
+                is_sub = True
+
+            # Resolve the rating column entirely by CV.
+            if is_sc:
+                stars = 0
+                marker: str | None = "sc"
+            else:
+                stars = _count_stars(red, yc, xa, xb, sc)
+                if stars > 0:
+                    marker = None
+                elif _has_dash(gray, yc, xa, xb, sc):
+                    marker = "dash"
+                else:
+                    # Empty rating cell - player is in the cromo so
+                    # they played, but Marca didn't grade them: SC.
+                    marker = "sc"
+
+            seen.add(num)
+            raw_text = " ".join(t["text"] for t in toks)
+            tokens = name.split() if name else []
+            surname_token = tokens[-1] if tokens else ""
+            rows.append(
+                ParsedMarcaRow(
+                    raw_text=raw_text,
+                    surname_clean=_strip_accents_lower(surname_token),
+                    stars=stars,
+                    is_substitute=is_sub,
+                    minute=minute,
+                    confidence=avg_conf,
+                    explicit_marker=marker,
+                    dorsal=num,
+                )
+            )
+
     return rows

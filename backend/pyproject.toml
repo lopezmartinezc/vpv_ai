@@ -18,6 +18,8 @@ dependencies = [
     "lxml>=5.0.0",
     "Pillow>=11.0.0",
     "pytesseract>=0.3.13",
+    "opencv-python-headless>=4.10.0",
+    "numpy>=2.0.0",
     "python-multipart>=0.0.20",
     "apscheduler>=3.10",
     "slowapi>=0.1.9",
@@ -80,6 +82,14 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "apscheduler.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "cv2.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pytesseract.*"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

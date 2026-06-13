@@ -1,501 +1,455 @@
-"""Tests for the Marca cromo image parser.
+"""Unit tests for the OpenCV-based Marca cromo parser.
 
-`_parse_row_text`, `_count_red_stars_in_bbox`, `_detect_text_rows`,
-and `_split_columns` are unit-tested directly — none need Tesseract
-running. `parse_marca_image` is exercised against a synthetic image
-with `_ocr_single_line` mocked so CI doesn't need the system binary
-installed.
+The CV helpers (`_count_stars`, `_has_dash`, `_is_sub_arrow`,
+`_find_column_split`, `_find_table_region`) are exercised on tiny
+synthetic numpy images so CI doesn't need Tesseract.
 
-The fuzzy-fallback logic lives in `ScrapingService.marca_preview`
-and is covered by a difflib-based smoke test at the bottom.
+`_detect_row_centers` and `parse_marca_image` are tested with
+`_ocr_column_tokens` / `_ocr_band_tokens` mocked.
+
+The end-to-end check against the 4 real cromos lives in
+``test_marca_image_integration.py`` (skipped unless both Tesseract
+and the fixture PNGs are present).
 """
 
 from __future__ import annotations
 
-import difflib
-from io import BytesIO
+from itertools import pairwise
 from unittest.mock import patch
 
-from PIL import Image, ImageDraw
+import cv2
+import numpy as np
 
 from src.features.scraping.marca_image import (
-    _count_red_stars_in_bbox,
-    _detect_right_marker,
-    _detect_text_rows,
-    _find_red_bar_top_y,
-    _find_top_divider_y,
-    _parse_row_text,
-    _split_columns,
+    ParsedMarcaRow,
+    _build_masks,
+    _clean_name,
+    _count_stars,
+    _detect_row_centers,
+    _find_column_split,
+    _find_table_region,
+    _has_dash,
+    _is_sub_arrow,
+    _parse_row_tokens,
+    _strip_accents_lower,
     parse_marca_image,
 )
 
 # ---------------------------------------------------------------------------
-# Row-text parser
+# Pure helpers - no images
 # ---------------------------------------------------------------------------
 
 
-class TestParseRowText:
-    def test_starter_with_stars_in_text(self) -> None:
-        surname, is_sub, minute = _parse_row_text("10 Pulisic ★★★")
-        assert surname == "pulisic"
-        assert is_sub is False
-        assert minute is None
+class TestStripAccentsLower:
+    def test_drops_diacritics(self) -> None:
+        assert _strip_accents_lower("Gutiérrez") == "gutierrez"
+        assert _strip_accents_lower("Niño") == "nino"
+        assert _strip_accents_lower("García-López") == "garcia-lopez"
 
-    def test_starter_no_marks(self) -> None:
-        surname, is_sub, minute = _parse_row_text("24 Freese")
-        assert surname == "freese"
-        assert is_sub is False
-        assert minute is None
+    def test_already_clean(self) -> None:
+        assert _strip_accents_lower("Pulisic") == "pulisic"
 
-    def test_starter_with_substitution_minute(self) -> None:
-        surname, is_sub, minute = _parse_row_text("→ 7 Reyna 82'")
-        assert surname == "reyna"
+    def test_strip_whitespace(self) -> None:
+        assert _strip_accents_lower("  Reyna  ") == "reyna"
+
+
+class TestCleanName:
+    def test_basic(self) -> None:
+        assert _clean_name(["Pulisic"]) == "Pulisic"
+
+    def test_drops_non_letters(self) -> None:
+        assert _clean_name(["Reyna82'"]) == "Reyna"
+
+    def test_lowercase_first_capitalised(self) -> None:
+        assert _clean_name(["jin-gyu"]) == "Jin-gyu"
+
+    def test_drops_short_trailing_lowercase_noise(self) -> None:
+        # OCR sometimes leaves "ca" / "ti" tokens from icon labels.
+        assert _clean_name(["Eustaquio", "ca"]) == "Eustaquio"
+
+    def test_keeps_short_token_if_only_one(self) -> None:
+        assert _clean_name(["Li"]) == "Li"
+
+    def test_drops_tokens_below_2_letters(self) -> None:
+        assert _clean_name(["A", "Pulisic"]) == "Pulisic"
+
+    def test_multi_word_name_preserved(self) -> None:
+        assert _clean_name(["Jonathan", "David"]) == "Jonathan David"
+
+
+class TestParseRowTokens:
+    def test_starter_simple(self) -> None:
+        toks = [
+            {"text": "10", "x": 30, "conf": 90},
+            {"text": "Pulisic", "x": 80, "conf": 85},
+        ]
+        num, name, is_sub, minute, is_sc, conf = _parse_row_tokens(toks)
+        assert (num, name, is_sub, minute, is_sc) == (10, "Pulisic", False, None, False)
+        assert 0.8 < conf < 0.9
+
+    def test_substitute_with_minute(self) -> None:
+        toks = [
+            {"text": "→", "x": 10, "conf": 90},
+            {"text": "7", "x": 35, "conf": 90},
+            {"text": "Reyna", "x": 80, "conf": 85},
+            {"text": "82'", "x": 200, "conf": 80},
+        ]
+        num, name, is_sub, minute, _is_sc, _ = _parse_row_tokens(toks)
+        assert num == 7
+        assert name == "Reyna"
         assert is_sub is True
         assert minute == 82
 
-    def test_arrow_ascii_fallback(self) -> None:
-        surname, is_sub, _ = _parse_row_text("-> 14 Berhalter 45'")
-        assert surname == "berhalter"
-        assert is_sub is True
+    def test_glued_number_name(self) -> None:
+        # "21Osorio" or "7_Eustaquio" - OCR fuses dorsal + name.
+        toks = [{"text": "7_Eustaquio", "x": 30, "conf": 88}]
+        num, name, _, _, _, _ = _parse_row_tokens(toks)
+        assert num == 7
+        assert name == "Eustaquio"
 
-    def test_accents_are_folded(self) -> None:
-        surname, _, _ = _parse_row_text("4 Cáceres")
-        assert surname == "caceres"
+    def test_sc_token(self) -> None:
+        toks = [
+            {"text": "13", "x": 30, "conf": 90},
+            {"text": "Chytil", "x": 80, "conf": 85},
+            {"text": "s/c", "x": 250, "conf": 75},
+        ]
+        num, name, _, _, is_sc, _ = _parse_row_tokens(toks)
+        assert num == 13
+        assert name == "Chytil"
+        assert is_sc is True
 
-    def test_compound_surname_keeps_last_token(self) -> None:
-        surname, _, _ = _parse_row_text("17 Brian Gutiérrez 65'")
-        assert surname == "gutierrez"
+    def test_star_junk_ignored_for_name(self) -> None:
+        toks = [
+            {"text": "10", "x": 30, "conf": 90},
+            {"text": "Pulisic", "x": 80, "conf": 85},
+            # Tesseract sometimes reads ★★★ as "kkk" / "***".
+            {"text": "kkk", "x": 220, "conf": 60},
+        ]
+        _, name, _, _, _, _ = _parse_row_tokens(toks)
+        assert name == "Pulisic"
 
-    def test_empty_input_returns_empty_surname(self) -> None:
-        surname, is_sub, minute = _parse_row_text("")
-        assert surname == ""
+    def test_empty_tokens(self) -> None:
+        num, name, is_sub, minute, is_sc, conf = _parse_row_tokens([])
+        assert (num, name, is_sub, minute, is_sc, conf) == (None, "", False, None, False, 0.0)
+
+    def test_arrow_late_in_row_does_not_mark_sub(self) -> None:
+        # The arrow keyword must be left-aligned (x < 60); otherwise
+        # it could be a stylised character inside the name.
+        toks = [
+            {"text": "10", "x": 30, "conf": 90},
+            {"text": "Pulisic", "x": 80, "conf": 85},
+            {"text": "→", "x": 200, "conf": 70},
+        ]
+        _, _, is_sub, _, _, _ = _parse_row_tokens(toks)
         assert is_sub is False
-        assert minute is None
-
-    def test_only_numbers_and_punct_returns_empty(self) -> None:
-        surname, _, _ = _parse_row_text("12 5'")
-        assert surname == ""
 
 
 # ---------------------------------------------------------------------------
-# Star counter on synthetic images
+# CV helpers - synthetic numpy images
 # ---------------------------------------------------------------------------
 
 
-def _make_image_with_red_blobs(
-    width: int, height: int, blobs: list[tuple[int, int, int]]
-) -> Image.Image:
-    img = Image.new("RGB", (width, height), (255, 255, 255))
-    draw = ImageDraw.Draw(img)
-    for cx, cy, r in blobs:
-        draw.ellipse((cx - r, cy - r, cx + r, cy + r), fill=(200, 30, 30))
-    return img
+def _make_image(h: int, w: int, bgcolor: tuple[int, int, int] = (255, 255, 255)) -> np.ndarray:
+    """White BGR image of size (h, w)."""
+    return np.full((h, w, 3), bgcolor, dtype=np.uint8)
 
 
-class TestCountRedStars:
-    def test_no_blobs(self) -> None:
-        img = Image.new("RGB", (200, 40), (255, 255, 255))
-        assert _count_red_stars_in_bbox(img, (0, 0, 200, 40)) == 0
+def _draw_square(img: np.ndarray, xc: int, yc: int, size: int, bgr: tuple[int, int, int]) -> None:
+    """Filled square centred at (xc, yc)."""
+    half = size // 2
+    cv2.rectangle(img, (xc - half, yc - half), (xc + half, yc + half), bgr, thickness=-1)
 
-    def test_three_distinct_blobs(self) -> None:
-        img = _make_image_with_red_blobs(200, 40, [(40, 20, 6), (90, 20, 6), (140, 20, 6)])
-        assert _count_red_stars_in_bbox(img, (0, 0, 200, 40)) == 3
 
-    def test_caps_at_four(self) -> None:
-        img = _make_image_with_red_blobs(
-            300, 40, [(40, 20, 6), (80, 20, 6), (120, 20, 6), (160, 20, 6), (200, 20, 6)]
-        )
-        assert _count_red_stars_in_bbox(img, (0, 0, 300, 40)) == 4
+def _draw_rect(
+    img: np.ndarray,
+    x0: int,
+    y0: int,
+    x1: int,
+    y1: int,
+    bgr: tuple[int, int, int],
+) -> None:
+    cv2.rectangle(img, (x0, y0), (x1, y1), bgr, thickness=-1)
 
-    def test_tiny_red_specks_are_ignored(self) -> None:
-        img = Image.new("RGB", (200, 40), (255, 255, 255))
-        img.putpixel((50, 20), (200, 30, 30))
-        img.putpixel((100, 20), (200, 30, 30))
-        assert _count_red_stars_in_bbox(img, (0, 0, 200, 40)) == 0
 
-    def test_bbox_outside_image_is_clipped(self) -> None:
-        img = _make_image_with_red_blobs(200, 40, [(40, 20, 6)])
-        assert _count_red_stars_in_bbox(img, (300, 0, 400, 40)) == 0
+class TestCountStars:
+    def test_no_stars(self) -> None:
+        img = _make_image(40, 200)
+        red, _ = _build_masks(img)
+        assert _count_stars(red, yc=20, xa=0, xb=200, sc=1.0) == 0
+
+    def test_three_stars(self) -> None:
+        img = _make_image(40, 200)
+        for xc in (100, 130, 160):
+            _draw_square(img, xc, 20, 8, (0, 0, 200))
+        red, _ = _build_masks(img)
+        assert _count_stars(red, yc=20, xa=0, xb=200, sc=1.0) == 3
+
+    def test_capped_at_four(self) -> None:
+        img = _make_image(40, 250)
+        for xc in (100, 120, 140, 160, 180):
+            _draw_square(img, xc, 20, 8, (0, 0, 200))
+        red, _ = _build_masks(img)
+        assert _count_stars(red, yc=20, xa=0, xb=250, sc=1.0) == 4
+
+    def test_arrow_zone_excluded(self) -> None:
+        img = _make_image(40, 200)
+        # Blob inside the arrow zone (first 14%).
+        _draw_square(img, 10, 20, 12, (0, 0, 200))
+        red, _ = _build_masks(img)
+        assert _count_stars(red, yc=20, xa=0, xb=200, sc=1.0) == 0
+
+    def test_long_thin_blob_rejected(self) -> None:
+        img = _make_image(40, 200)
+        # 8:1 aspect ratio - not a star.
+        _draw_rect(img, 100, 18, 180, 22, (0, 0, 200))
+        red, _ = _build_masks(img)
+        assert _count_stars(red, yc=20, xa=0, xb=200, sc=1.0) == 0
+
+
+class TestHasDash:
+    def test_finds_short_flat_blob(self) -> None:
+        img = _make_image(40, 200)
+        _draw_rect(img, 160, 19, 172, 22, (0, 0, 0))
+        _, gray = _build_masks(img)
+        assert _has_dash(gray, yc=20, xa=0, xb=200, sc=1.0) is True
+
+    def test_too_tall_rejected(self) -> None:
+        img = _make_image(40, 200)
+        _draw_rect(img, 160, 14, 172, 24, (0, 0, 0))
+        _, gray = _build_masks(img)
+        assert _has_dash(gray, yc=20, xa=0, xb=200, sc=1.0) is False
+
+    def test_in_left_half_ignored(self) -> None:
+        img = _make_image(40, 200)
+        _draw_rect(img, 30, 19, 42, 22, (0, 0, 0))
+        _, gray = _build_masks(img)
+        assert _has_dash(gray, yc=20, xa=0, xb=200, sc=1.0) is False
+
+    def test_empty(self) -> None:
+        img = _make_image(40, 200)
+        _, gray = _build_masks(img)
+        assert _has_dash(gray, yc=20, xa=0, xb=200, sc=1.0) is False
+
+
+class TestIsSubArrow:
+    def test_red_blob_at_start(self) -> None:
+        img = _make_image(40, 200)
+        _draw_rect(img, 5, 17, 25, 23, (0, 0, 200))
+        red, _ = _build_masks(img)
+        assert _is_sub_arrow(red, yc=20, xa=0, sc=1.0) is True
+
+    def test_no_red_blob(self) -> None:
+        img = _make_image(40, 200)
+        red, _ = _build_masks(img)
+        assert _is_sub_arrow(red, yc=20, xa=0, sc=1.0) is False
+
+    def test_red_blob_far_right_ignored(self) -> None:
+        img = _make_image(40, 200)
+        _draw_rect(img, 150, 17, 175, 23, (0, 0, 200))
+        red, _ = _build_masks(img)
+        assert _is_sub_arrow(red, yc=20, xa=0, sc=1.0) is False
+
+
+class TestFindColumnSplit:
+    def test_picks_white_gutter(self) -> None:
+        img = _make_image(200, 400)
+        _draw_rect(img, 30, 50, 180, 150, (0, 0, 0))
+        _draw_rect(img, 220, 50, 370, 150, (0, 0, 0))
+        split = _find_column_split(img, 0, 200)
+        # The gutter is between x=180 and x=220; centre band is
+        # 168..232, so the function picks something inside the gutter.
+        assert 180 <= split <= 220
+
+
+class TestFindTableRegion:
+    def test_red_bar_caps_bottom(self) -> None:
+        img = _make_image(300, 500)
+        _draw_rect(img, 0, 250, 500, 258, (0, 0, 220))
+        red, _ = _build_masks(img)
+        y0, y1 = _find_table_region(img, red)
+        assert y0 == int(300 * 0.16)
+        assert y1 == 250
+
+    def test_no_red_bar_falls_through_to_bottom(self) -> None:
+        img = _make_image(300, 500)
+        red, _ = _build_masks(img)
+        _, y1 = _find_table_region(img, red)
+        assert y1 == 300
 
 
 # ---------------------------------------------------------------------------
-# Column splitter
+# Row anchoring - mock _ocr_column_tokens
 # ---------------------------------------------------------------------------
 
 
-class TestSplitColumns:
-    def test_halves_at_mid(self) -> None:
-        img = Image.new("RGB", (200, 100), (255, 255, 255))
-        left, right = _split_columns(img)
-        assert left.size == (100, 100)
-        assert right.size == (100, 100)
+class TestDetectRowCenters:
+    """Pure anchor/pitch/fill logic, OCR mocked away."""
 
-    def test_odd_width(self) -> None:
-        # 201 px wide → left should be 100, right should be 101.
-        img = Image.new("RGB", (201, 50), (255, 255, 255))
-        left, right = _split_columns(img)
-        assert left.size == (100, 50)
-        assert right.size == (101, 50)
+    def test_simple_three_anchors_no_gap(self) -> None:
+        tokens = [
+            {"text": "10", "x": 5, "y": 14, "w": 10, "conf": 90},
+            {"text": "11", "x": 5, "y": 34, "w": 10, "conf": 90},
+            {"text": "12", "x": 5, "y": 54, "w": 10, "conf": 90},
+        ]
+        col = np.zeros((80, 50), dtype=np.uint8)
+        with patch(
+            "src.features.scraping.marca_image._ocr_column_tokens",
+            return_value=tokens,
+        ):
+            centers = _detect_row_centers(col, col_w=50, sc=1.0)
+        nums = [c[1] for c in centers]
+        assert 10 in nums and 11 in nums and 12 in nums
+        ys = [c[0] for c in centers]
+        diffs = [b - a for a, b in pairwise(ys)]
+        for d in diffs:
+            assert 14 <= d <= 26
+
+    def test_fills_interior_gap(self) -> None:
+        # 4 anchors: #10, #11, #12 sit 20 px apart so the median pitch
+        # is 20. #14 is 40 px past #12 (gap = 2x pitch) so one
+        # interpolated row gets inserted between them.
+        tokens = [
+            {"text": "10", "x": 5, "y": 14, "w": 10, "conf": 90},  # → y=20
+            {"text": "11", "x": 5, "y": 34, "w": 10, "conf": 90},  # → y=40
+            {"text": "12", "x": 5, "y": 54, "w": 10, "conf": 90},  # → y=60
+            {"text": "14", "x": 5, "y": 94, "w": 10, "conf": 90},  # → y=100 (gap=40)
+        ]
+        col = np.zeros((130, 50), dtype=np.uint8)
+        with patch(
+            "src.features.scraping.marca_image._ocr_column_tokens",
+            return_value=tokens,
+        ):
+            centers = _detect_row_centers(col, col_w=50, sc=1.0)
+        anchors = [c for c in centers if c[1] is not None]
+        gap_fills = [c for c in centers if c[1] is None]
+        assert len(anchors) == 4
+        assert len(gap_fills) >= 1
+        # Interpolated row should sit around y=80 (between #12 @ 60 and #14 @ 100).
+        assert any(75 <= y <= 85 for y, num in centers if num is None)
+
+    def test_drops_tokens_outside_left_third(self) -> None:
+        # Anchor x must be < col_w/3. A digit token at x=40 (80% of
+        # col_w) is a name-like misread, not a jersey number.
+        tokens = [
+            {"text": "10", "x": 5, "y": 14, "w": 10, "conf": 90},
+            {"text": "11", "x": 40, "y": 34, "w": 10, "conf": 90},
+            {"text": "12", "x": 5, "y": 54, "w": 10, "conf": 90},
+        ]
+        col = np.zeros((80, 50), dtype=np.uint8)
+        with patch(
+            "src.features.scraping.marca_image._ocr_column_tokens",
+            return_value=tokens,
+        ):
+            centers = _detect_row_centers(col, col_w=50, sc=1.0)
+        nums = [c[1] for c in centers]
+        assert 11 not in nums
+
+    def test_extends_below_last_anchor(self) -> None:
+        tokens = [
+            {"text": "10", "x": 5, "y": 14, "w": 10, "conf": 90},
+            {"text": "11", "x": 5, "y": 34, "w": 10, "conf": 90},
+        ]
+        col = np.zeros((80, 50), dtype=np.uint8)
+        with patch(
+            "src.features.scraping.marca_image._ocr_column_tokens",
+            return_value=tokens,
+        ):
+            centers = _detect_row_centers(col, col_w=50, sc=1.0)
+        assert any(c[0] > 40 for c in centers)
 
 
 # ---------------------------------------------------------------------------
-# Row detector (horizontal density)
+# End-to-end with mocked OCR
 # ---------------------------------------------------------------------------
 
 
-def _draw_text_band(img: Image.Image, y0: int, y1: int, dark_fraction: float = 0.5) -> None:
-    """Fill a horizontal band with dark pixels every ``1/dark_fraction``.
-
-    Uses a fill that matches the image mode (grayscale or RGB).
-    """
-    draw = ImageDraw.Draw(img)
-    step = max(1, int(1 / max(0.01, dark_fraction)))
-    fill = 40 if img.mode == "L" else (40, 40, 40)
-    for x in range(0, img.width, step):
-        draw.line((x, y0, x, y1 - 1), fill=fill)
-
-
-class TestDetectTextRows:
-    def test_picks_up_three_bands(self) -> None:
-        img = Image.new("L", (200, 200), 255)
-        _draw_text_band(img, 30, 50, dark_fraction=0.3)
-        _draw_text_band(img, 80, 100, dark_fraction=0.3)
-        _draw_text_band(img, 130, 150, dark_fraction=0.3)
-        bands = _detect_text_rows(img)
-        assert len(bands) == 3
-        # Sanity-check the first band roughly matches what we drew.
-        y0, y1 = bands[0]
-        assert 28 <= y0 <= 32
-        assert 48 <= y1 <= 52
-
-    def test_filters_out_tall_header(self) -> None:
-        img = Image.new("L", (200, 300), 255)
-        # 100-pixel tall band (the title block) — should be discarded.
-        _draw_text_band(img, 10, 110, dark_fraction=0.3)
-        # And a normal row.
-        _draw_text_band(img, 150, 170, dark_fraction=0.3)
-        bands = _detect_text_rows(img)
-        assert len(bands) == 1
-        y0, _ = bands[0]
-        assert 148 <= y0 <= 152
-
-    def test_filters_out_micro_noise(self) -> None:
-        img = Image.new("L", (200, 100), 255)
-        # 2 px tall band — below _MIN_ROW_HEIGHT.
-        _draw_text_band(img, 30, 32, dark_fraction=0.3)
-        bands = _detect_text_rows(img)
-        assert bands == []
-
-    def test_empty_image(self) -> None:
-        img = Image.new("L", (200, 100), 255)
-        bands = _detect_text_rows(img)
-        assert bands == []
-
-
-# ---------------------------------------------------------------------------
-# End-to-end parse_marca_image with mocked single-line OCR
-# ---------------------------------------------------------------------------
-
-
-def _png_bytes_with_layout(
-    width: int, height: int, left_rows: list[tuple[int, int]], right_rows: list[tuple[int, int]]
-) -> bytes:
-    """Build a synthetic two-column cromo. rows = list of (y0, y1) bands.
-
-    Both columns get dark text bands; we don't bother drawing stars
-    here because the OCR is mocked.
-    """
-    img = Image.new("RGB", (width, height), (255, 255, 255))
-    mid = width // 2
-    for y0, y1 in left_rows:
-        draw = ImageDraw.Draw(img)
-        for x in range(0, mid, 3):
-            draw.line((x, y0, x, y1 - 1), fill=(40, 40, 40))
-    for y0, y1 in right_rows:
-        draw = ImageDraw.Draw(img)
-        for x in range(mid, width, 3):
-            draw.line((x, y0, x, y1 - 1), fill=(40, 40, 40))
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
-
-
-class TestParseMarcaImageWithMockedOcr:
-    def test_empty_bytes_returns_empty_list(self) -> None:
+class TestParseMarcaImage:
+    def test_empty_bytes_returns_empty(self) -> None:
         assert parse_marca_image(b"") == []
 
-    def test_two_columns_one_row_each(self) -> None:
-        png = _png_bytes_with_layout(
-            width=400,
-            height=200,
-            left_rows=[(40, 70)],
-            right_rows=[(40, 70)],
-        )
-        # Mock returns one surname for left, another for right.
-        seq = iter([("10 Pulisic", 0.92), ("→ 7 Reyna 82'", 0.87)])
+    def test_invalid_bytes_returns_empty(self) -> None:
+        assert parse_marca_image(b"not an image") == []
 
-        def fake_ocr(_img, lang: str = "spa") -> tuple[str, float]:
-            return next(seq)
+    def test_full_pipeline_with_mocked_ocr(self) -> None:
+        """Tiny synthetic cromo + both OCR passes mocked.
 
-        with patch("src.features.scraping.marca_image._ocr_single_line", side_effect=fake_ocr):
-            rows = parse_marca_image(png)
+        Image is 200 (h) by 400 (w). Footer red bar at y=170-180 so
+        `_find_table_region` returns y0=32 (= 200·0.16), y1=170.
+        The left-column OCR anchor at token.y=50 maps to
+        ``center.y = 50 + 6 = 56`` in strip coordinates, or
+        ``y_abs = 56 + 32 = 88`` in image coordinates — that's where
+        we paint the red stars so `_count_stars` finds them.
+        """
+        img = _make_image(200, 400)
+        _draw_rect(img, 0, 170, 400, 180, (0, 0, 220))
+        # Red stars at y=88, x=80/100/120, well inside the LEFT column
+        # (column split is auto-detected ~ x=168, so anything past that
+        # would leak into the away column).
+        for xc in (80, 100, 120):
+            _draw_square(img, xc, 88, 8, (0, 0, 200))
 
-        assert len(rows) == 2
-        assert rows[0].surname_clean == "pulisic"
-        assert rows[0].is_substitute is False
-        assert rows[1].surname_clean == "reyna"
-        assert rows[1].is_substitute is True
-        assert rows[1].minute == 82
+        call_state = {"col_calls": 0}
 
-    def test_rows_without_surname_are_dropped(self) -> None:
-        png = _png_bytes_with_layout(
-            width=400,
-            height=200,
-            left_rows=[(40, 70)],
-            right_rows=[(40, 70)],
-        )
-        with patch(
-            "src.features.scraping.marca_image._ocr_single_line",
-            side_effect=[("12 5'", 0.3), ("", 0.0)],
+        def fake_col_ocr(green_col: np.ndarray) -> list[dict]:
+            # First column processed is the LEFT one (parser iterates
+            # columns in order). Only the left gets the anchor.
+            call_state["col_calls"] += 1
+            if call_state["col_calls"] == 1:
+                return [{"text": "10", "x": 8, "y": 50, "w": 10, "conf": 90}]
+            return []
+
+        def fake_band_ocr(
+            green_full: np.ndarray, yc: int, xa: int, xb: int, sc: float
+        ) -> list[dict]:
+            if xa < 100:
+                return [
+                    {"text": "10", "x": 5, "conf": 88},
+                    {"text": "Pulisic", "x": 30, "conf": 85},
+                ]
+            return []
+
+        ok, buf = cv2.imencode(".png", img)
+        assert ok
+        png_bytes = bytes(buf)
+
+        with (
+            patch(
+                "src.features.scraping.marca_image._ocr_column_tokens",
+                side_effect=fake_col_ocr,
+            ),
+            patch(
+                "src.features.scraping.marca_image._ocr_band_tokens",
+                side_effect=fake_band_ocr,
+            ),
         ):
-            rows = parse_marca_image(png)
-        assert rows == []
+            rows = parse_marca_image(png_bytes)
+
+        pulisic = next((r for r in rows if r.surname_clean == "pulisic"), None)
+        assert pulisic is not None
+        assert pulisic.stars == 3
+        assert pulisic.explicit_marker is None
+        assert pulisic.dorsal == 10
 
 
 # ---------------------------------------------------------------------------
-# Fuzzy fallback (mirrors the contract used in ScrapingService.marca_preview)
+# ParsedMarcaRow dataclass shape - service.marca_preview depends on it
 # ---------------------------------------------------------------------------
 
 
-_FUZZY_CUTOFF = 0.78
-_FUZZY_ROSTER = (
-    "pulisic",
-    "balogun",
-    "freese",
-    "tillman",
-    "reyna",
-    "bobadilla",
-    "almiron",
-    "gomez",
-    "alderete",
-    "gill",
-)
-
-
-def _close_fuzzy(ocr: str) -> list[str]:
-    return difflib.get_close_matches(ocr, _FUZZY_ROSTER, n=1, cutoff=_FUZZY_CUTOFF)
-
-
-class TestSurnameFuzzyFallback:
-    def test_one_letter_off_matches(self) -> None:
-        assert _close_fuzzy("plisic") == ["pulisic"]
-        assert _close_fuzzy("balogn") == ["balogun"]
-        assert _close_fuzzy("freesee") == ["freese"]
-
-    def test_too_different_does_not_match(self) -> None:
-        assert _close_fuzzy("messi") == []
-        assert _close_fuzzy("ronaldo") == []
-
-    def test_exact_match_still_returned(self) -> None:
-        assert _close_fuzzy("pulisic") == ["pulisic"]
-
-
-# ---------------------------------------------------------------------------
-# Image-strip detectors (red bar at bottom, divider line at top)
-# ---------------------------------------------------------------------------
-
-
-class TestFindRedBarTopY:
-    def test_detects_full_width_red_band(self) -> None:
-        # 200x400 image with a red 20-px tall bar at y=300.
-        img = Image.new("RGB", (200, 400), (255, 255, 255))
-        draw = ImageDraw.Draw(img)
-        draw.rectangle((0, 300, 199, 319), fill=(220, 30, 30))
-        # `y=300` is the top edge of the bar — that's what we want.
-        assert _find_red_bar_top_y(img) == 300
-
-    def test_returns_none_when_no_bar(self) -> None:
-        # Lots of small red blobs (like stars) — none span the full width.
-        img = _make_image_with_red_blobs(200, 400, [(40, 100, 6), (90, 100, 6), (140, 100, 6)])
-        assert _find_red_bar_top_y(img) is None
-
-    def test_takes_lowest_bar_when_two_exist(self) -> None:
-        # If the title block happened to contain a red strip (shouldn't,
-        # but be defensive), we want the LAST one going from bottom up.
-        img = Image.new("RGB", (200, 400), (255, 255, 255))
-        draw = ImageDraw.Draw(img)
-        draw.rectangle((0, 50, 199, 60), fill=(220, 30, 30))
-        draw.rectangle((0, 300, 199, 319), fill=(220, 30, 30))
-        # The bottom bar starts at y=300 and we scan upward; we should
-        # return the top of THAT bar, not the title's.
-        assert _find_red_bar_top_y(img) == 300
-
-
-class TestFindTopDividerY:
-    def test_detects_thin_black_line(self) -> None:
-        # 200x300 with a 2-px tall black line at y=60.
-        img = Image.new("L", (200, 300), 255)
-        draw = ImageDraw.Draw(img)
-        draw.rectangle((0, 60, 199, 61), fill=0)
-        # The function returns the y just BELOW the divider so the
-        # caller can crop without clipping the first player row.
-        y = _find_top_divider_y(img)
-        assert y is not None
-        assert 61 <= y <= 63
-
-    def test_ignores_text_band(self) -> None:
-        # A regular text band — dense but ~20 px tall — should NOT be
-        # treated as a divider.
-        img = Image.new("L", (200, 300), 255)
-        _draw_text_band(img, 30, 50, dark_fraction=0.6)
-        # Density is high but band is way taller than the divider.
-        assert _find_top_divider_y(img) is None
-
-    def test_only_looks_in_upper_third(self) -> None:
-        # A thin black line in the bottom half is ignored.
-        img = Image.new("L", (200, 300), 255)
-        draw = ImageDraw.Draw(img)
-        draw.rectangle((0, 250, 199, 251), fill=0)
-        assert _find_top_divider_y(img) is None
-
-
-# ---------------------------------------------------------------------------
-# Right-side marker OCR (s/c, dash)
-# ---------------------------------------------------------------------------
-
-
-class TestDetectRightMarker:
-    """The OCR call is mocked because CI has no Tesseract installed."""
-
-    def test_sc_text_returns_sc(self) -> None:
-        # The whitelist may give us a slash so the raw output is "s/c".
-        with patch("pytesseract.image_to_string", return_value="s/c\n"):
-            assert _detect_right_marker(Image.new("RGB", (40, 20), (255, 255, 255))) == "sc"
-
-    def test_uppercase_sc_is_normalised(self) -> None:
-        with patch("pytesseract.image_to_string", return_value="SC"):
-            assert _detect_right_marker(Image.new("RGB", (40, 20), (255, 255, 255))) == "sc"
-
-    def test_em_dash_returns_dash(self) -> None:
-        with patch("pytesseract.image_to_string", return_value="—\n"):
-            assert _detect_right_marker(Image.new("RGB", (40, 20), (255, 255, 255))) == "dash"
-
-    def test_minus_sign_returns_dash(self) -> None:
-        with patch("pytesseract.image_to_string", return_value="−"):  # noqa: RUF001
-            assert _detect_right_marker(Image.new("RGB", (40, 20), (255, 255, 255))) == "dash"
-
-    def test_hyphen_returns_dash(self) -> None:
-        with patch("pytesseract.image_to_string", return_value="- "):
-            assert _detect_right_marker(Image.new("RGB", (40, 20), (255, 255, 255))) == "dash"
-
-    def test_empty_ocr_returns_none(self) -> None:
-        with patch("pytesseract.image_to_string", return_value=""):
-            assert _detect_right_marker(Image.new("RGB", (40, 20), (255, 255, 255))) is None
-
-    def test_unknown_text_returns_none(self) -> None:
-        with patch("pytesseract.image_to_string", return_value="xyz"):
-            assert _detect_right_marker(Image.new("RGB", (40, 20), (255, 255, 255))) is None
-
-    def test_empty_image_short_circuits(self) -> None:
-        # An empty bbox would result in a 0x0 crop — must not call OCR.
-        assert _detect_right_marker(Image.new("RGB", (0, 0), (255, 255, 255))) is None
-
-
-# ---------------------------------------------------------------------------
-# Stadium / footer denylist (defensive — even if the red bar detector misses)
-# ---------------------------------------------------------------------------
-
-
-class TestStadiumRowsAreDropped:
-    """Belt-and-suspenders: when OCR sees footer-y text, drop the row.
-
-    These tests use the existing mocked _ocr_single_line plumbing.
-    """
-
-    def _png(self) -> bytes:
-        png = _png_bytes_with_layout(
-            width=400,
-            height=200,
-            left_rows=[(40, 70), (90, 120)],
-            right_rows=[(40, 70)],
-        )
-        return png
-
-    def test_estadio_text_dropped(self) -> None:
-        # First left row is the stadium ("Estadio Azteca"), second is
-        # a real player. Right column has a referee row ("Árbitro …").
-        responses = iter(
-            [
-                ("Estadio Azteca", 0.9),
-                ("10 Pulisic", 0.92),
-                ("Árbitro Tello", 0.8),
-            ]
-        )
-
-        def fake_ocr(_img, lang: str = "spa") -> tuple[str, float]:
-            return next(responses)
-
-        with patch("src.features.scraping.marca_image._ocr_single_line", side_effect=fake_ocr):
-            rows = parse_marca_image(self._png())
-        # Only Pulisic survives.
-        assert [r.surname_clean for r in rows] == ["pulisic"]
-
-    def test_attendance_number_dropped(self) -> None:
-        # "70.492 esp." has a 4+ digit number — even without the
-        # keyword the row should be discarded.
-        responses = iter(
-            [
-                ("70.492 esp.", 0.9),
-                ("24 Freese", 0.92),
-                ("8 McKennie", 0.85),
-            ]
-        )
-
-        def fake_ocr(_img, lang: str = "spa") -> tuple[str, float]:
-            return next(responses)
-
-        with patch("src.features.scraping.marca_image._ocr_single_line", side_effect=fake_ocr):
-            rows = parse_marca_image(self._png())
-        # Two players left, no attendance row.
-        assert sorted(r.surname_clean for r in rows) == ["freese", "mckennie"]
-
-    def test_goles_block_dropped(self) -> None:
-        responses = iter(
-            [
-                ("Goles 0-1 7 Bobadilla", 0.7),
-                ("10 Pulisic", 0.92),
-                ("Tarjetas 10 Cáceres", 0.7),
-            ]
-        )
-
-        def fake_ocr(_img, lang: str = "spa") -> tuple[str, float]:
-            return next(responses)
-
-        with patch("src.features.scraping.marca_image._ocr_single_line", side_effect=fake_ocr):
-            rows = parse_marca_image(self._png())
-        assert [r.surname_clean for r in rows] == ["pulisic"]
-
-
-# ---------------------------------------------------------------------------
-# Red bar detector: tolerate antialiasing
-# ---------------------------------------------------------------------------
-
-
-class TestRedBarTolerance:
-    def test_skips_dipped_rows_inside_bar(self) -> None:
-        """A 12-px tall bar with one antialiased row in the middle is
-        still detected as a single bar."""
-        img = Image.new("RGB", (200, 400), (255, 255, 255))
-        draw = ImageDraw.Draw(img)
-        # Two red sub-bars with a 1px white gap → should still count.
-        draw.rectangle((0, 300, 199, 305), fill=(220, 30, 30))
-        draw.rectangle((0, 307, 199, 314), fill=(220, 30, 30))
-        # Returns the topmost red y across the merged block.
-        assert _find_red_bar_top_y(img) == 300
-
-    def test_short_red_band_is_ignored(self) -> None:
-        # 3-px tall red band — below _RED_BAR_MIN_HEIGHT.
-        img = Image.new("RGB", (200, 400), (255, 255, 255))
-        draw = ImageDraw.Draw(img)
-        draw.rectangle((0, 300, 199, 302), fill=(220, 30, 30))
-        assert _find_red_bar_top_y(img) is None
+def test_parsed_marca_row_has_stable_shape() -> None:
+    row = ParsedMarcaRow(
+        raw_text="10 Pulisic",
+        surname_clean="pulisic",
+        stars=3,
+        is_substitute=False,
+        minute=None,
+        confidence=0.9,
+        explicit_marker=None,
+        dorsal=10,
+    )
+    assert row.surname_clean == "pulisic"
+    assert row.stars == 3
+    assert row.is_substitute is False
+    assert row.minute is None
+    assert row.explicit_marker is None
+    assert row.dorsal == 10
