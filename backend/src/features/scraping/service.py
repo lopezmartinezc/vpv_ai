@@ -1779,6 +1779,16 @@ class ScrapingService:
             if key:
                 by_surname.setdefault(key, []).append(player_row)
 
+        # Fuzzy fallback: cuando el apellido OCR no matchea exacto,
+        # buscamos el más cercano del roster con difflib (stdlib).
+        # Tesseract típicamente se equivoca en 1-2 letras ("Plisic"
+        # → "Pulisic", "Vasquez" → con / sin tilde). Un cutoff alto
+        # evita falsos positivos.
+        import difflib
+
+        roster_keys = list(by_surname.keys())
+        fuzzy_cutoff = 0.78
+
         stars_to_rating = {0: "SC", 1: "★", 2: "★★", 3: "★★★", 4: "★★★★"}
 
         matches: list[MarcaPreviewMatch] = []
@@ -1793,6 +1803,13 @@ class ScrapingService:
                 confidence=parsed.confidence,
             )
             candidates = by_surname.get(parsed.surname_clean, [])
+            if not candidates and parsed.surname_clean:
+                close = difflib.get_close_matches(
+                    parsed.surname_clean, roster_keys, n=1, cutoff=fuzzy_cutoff
+                )
+                if close:
+                    candidates = by_surname.get(close[0], [])
+
             if len(candidates) == 1:
                 player = candidates[0]
                 matches.append(
@@ -1804,9 +1821,8 @@ class ScrapingService:
                     )
                 )
             else:
-                # 0 candidates: surname mangled by OCR. Surface every
-                # player so the admin can pick from a dropdown.
-                # >1 candidates: ambiguous (same surname two players).
+                # 0 candidates: surname mangled beyond fuzzy rescue.
+                # >1 candidates: ambiguous (same surname twice).
                 # Same outcome either way — render the candidates list.
                 shortlist = candidates if candidates else all_roster
                 unmatched.append(MarcaPreviewUnmatched(row=preview_row, candidates=shortlist))

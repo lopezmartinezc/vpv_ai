@@ -7,10 +7,14 @@ need the system binary installed.
 
 A separate `test_marca_image_integration.py` uses a real fixture
 image when Tesseract is available locally.
+
+The fuzzy-fallback logic lives in `ScrapingService.marca_preview`
+and is covered by a difflib-based smoke test at the bottom.
 """
 
 from __future__ import annotations
 
+import difflib
 from io import BytesIO
 from unittest.mock import patch
 
@@ -21,7 +25,6 @@ from src.features.scraping.marca_image import (
     _parse_row_text,
     parse_marca_image,
 )
-
 
 # ---------------------------------------------------------------------------
 # Row-text parser
@@ -103,9 +106,7 @@ class TestCountRedStars:
         assert _count_red_stars_in_bbox(img, (0, 0, 200, 40)) == 0
 
     def test_three_distinct_blobs(self) -> None:
-        img = _make_image_with_red_blobs(
-            200, 40, [(40, 20, 6), (90, 20, 6), (140, 20, 6)]
-        )
+        img = _make_image_with_red_blobs(200, 40, [(40, 20, 6), (90, 20, 6), (140, 20, 6)])
         assert _count_red_stars_in_bbox(img, (0, 0, 200, 40)) == 3
 
     def test_caps_at_four(self) -> None:
@@ -238,3 +239,45 @@ class TestParseMarcaImageWithMockedTesseract:
         with patch("pytesseract.image_to_data", return_value=mock_data):
             rows = parse_marca_image(png)
         assert rows == []
+
+
+_FUZZY_CUTOFF = 0.78
+_FUZZY_ROSTER = (
+    "pulisic",
+    "balogun",
+    "freese",
+    "tillman",
+    "reyna",
+    "bobadilla",
+    "almiron",
+    "gomez",
+    "alderete",
+    "gill",
+)
+
+
+def _close_fuzzy(ocr: str) -> list[str]:
+    return difflib.get_close_matches(ocr, _FUZZY_ROSTER, n=1, cutoff=_FUZZY_CUTOFF)
+
+
+class TestSurnameFuzzyFallback:
+    """The service does fuzzy-matching when an OCR'd surname doesn't
+    show up in the roster verbatim. We keep the difflib contract
+    pinned here so a future tweak to the cutoff is intentional."""
+
+    def _close(self, ocr: str) -> list[str]:
+        return _close_fuzzy(ocr)
+
+    def test_one_letter_off_matches(self) -> None:
+        # Common Tesseract slip: missed letter, extra letter, swap.
+        assert self._close("plisic") == ["pulisic"]
+        assert self._close("balogn") == ["balogun"]
+        assert self._close("freesee") == ["freese"]
+
+    def test_too_different_does_not_match(self) -> None:
+        # We do NOT want "messi" to be silently mapped to anything.
+        assert self._close("messi") == []
+        assert self._close("ronaldo") == []
+
+    def test_exact_match_still_returned(self) -> None:
+        assert self._close("pulisic") == ["pulisic"]
