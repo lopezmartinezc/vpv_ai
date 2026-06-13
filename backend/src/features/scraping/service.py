@@ -1668,10 +1668,17 @@ class ScrapingService:
 
         home_rows = [_row(p) for p in players if p.team_id == match.home_team_id]
         away_rows = [_row(p) for p in players if p.team_id == match.away_team_id]
-        # Sort: starters first (more minutes), GK then DEF/MED/DEL
+        # Order by position (POR → DEF → MED → DEL → "") so the admin
+        # scans down a familiar shape. Within a position, most minutes
+        # first (titulares antes que suplentes) and luego por nombre.
         pos_order = {"POR": 0, "DEF": 1, "MED": 2, "DEL": 3, "": 4}
-        home_rows.sort(key=lambda r: (-r.minutes_played, pos_order.get(r.position, 4)))
-        away_rows.sort(key=lambda r: (-r.minutes_played, pos_order.get(r.position, 4)))
+        sort_key = lambda r: (  # noqa: E731
+            pos_order.get(r.position, 4),
+            -r.minutes_played,
+            r.display_name.lower(),
+        )
+        home_rows.sort(key=sort_key)
+        away_rows.sort(key=sort_key)
 
         home_label = team_names.get(match.home_team_id, "?")
         away_label = team_names.get(match.away_team_id, "?")
