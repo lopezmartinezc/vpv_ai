@@ -10,16 +10,18 @@ for one row:
 We exploit that layout instead of letting Tesseract guess the page
 structure:
 
-1. Split the image in half at the horizontal centre so each half
+1. Crop the image vertically to the *player strip* — between the
+   thin black divider under the managers' row and the red horizontal
+   bar with the stadium name. Everything outside is decoration.
+2. Split the strip in half at the horizontal centre so each half
    contains one team's column.
-2. Detect player rows in each half by horizontal density of dark
-   pixels (text bands) — skips the top header (score) and the bottom
-   block (cards / goals / stadium).
-3. For every row:
+3. Detect player rows in each half by horizontal density of dark
+   pixels (text bands).
+4. For every row:
    - Crop the left ~75% of the row and OCR it with PSM 7
      ("single text line") for a precise read of just the surname.
    - Crop the right ~25% and count distinct red blobs.
-4. Parse the row's OCR text for surname / substitution arrow / sub
+5. Parse the row's OCR text for surname / substitution arrow / sub
    minute.
 
 Dependencies: pytesseract + system Tesseract with the Spanish
@@ -67,6 +69,22 @@ _MAX_ROW_HEIGHT = 80
 # Min density (fraction of dark pixels in a horizontal scan-line)
 # for that line to count as "text". Tuned for Marca's print.
 _MIN_DARK_DENSITY = 0.05
+
+# A red bar (SoFi Stadium line) is at least this fraction of the
+# image width red. Tuned to leave headroom against the title block's
+# small red decorations.
+_RED_BAR_FRACTION = 0.5
+
+# A horizontal "divider" line (between the manager row and the first
+# player row) is at least this fraction of the column width black.
+# Has to be much higher than _MIN_DARK_DENSITY so we don't grab
+# regular text rows.
+_DIVIDER_DENSITY = 0.85
+
+# Divider lines are very thin (1-4 px). The manager row above is
+# normal text height (~20 px). We want to find the divider, not a
+# text band.
+_MAX_DIVIDER_HEIGHT = 5
 
 
 @dataclass
@@ -228,6 +246,85 @@ def _split_columns(img_rgb: Image.Image) -> tuple[Image.Image, Image.Image]:
     return left, right
 
 
+def _find_red_bar_top_y(img_rgb: Image.Image) -> int | None:
+    """Return the y-coordinate of the TOP of the red SoFi-Stadium bar.
+
+    Scans the image bottom-up looking for a contiguous block where
+    every scan-line has >= _RED_BAR_FRACTION of red pixels. The bar
+    spans the FULL width of the cromo, so this is robust against the
+    small red decorations (stars, vertical dividers) elsewhere.
+
+    Returns None if no such bar exists.
+    """
+    pixels = img_rgb.load()
+    if pixels is None:
+        return None
+    w, h = img_rgb.size
+    if w == 0 or h == 0:
+        return None
+    threshold_px = int(w * _RED_BAR_FRACTION)
+
+    bar_top: int | None = None
+    for y in range(h - 1, -1, -1):
+        cnt = 0
+        for x in range(w):
+            pixel = pixels[x, y]
+            if not isinstance(pixel, tuple) or len(pixel) < 3:
+                continue
+            r, g, b = pixel[0], pixel[1], pixel[2]
+            if r >= _RED_R_MIN and g <= _RED_G_MAX and b <= _RED_B_MAX:
+                cnt += 1
+        if cnt >= threshold_px:
+            bar_top = y
+        elif bar_top is not None:
+            return bar_top
+    return bar_top
+
+
+def _find_top_divider_y(gray_img: Image.Image) -> int | None:
+    """Return the y-coordinate just BELOW the thin black divider
+    between the managers' row and the first player row.
+
+    A divider has ~85%+ of its scan-line dark, lasts only 1-4 px
+    (much thinner than a text row). Returns None if no such line is
+    found in the upper third of the image.
+    """
+    pixels = gray_img.load()
+    if pixels is None:
+        return None
+    w, h = gray_img.size
+    if w == 0 or h == 0:
+        return None
+    threshold_px = int(w * _DIVIDER_DENSITY)
+    # We only look in the upper third — past that we'd start finding
+    # the divider that sometimes separates the player block from the
+    # red bar.
+    upper_limit = h // 3
+
+    in_dense = False
+    dense_start = 0
+    for y in range(upper_limit):
+        cnt = 0
+        for x in range(w):
+            v = pixels[x, y]
+            if isinstance(v, tuple):
+                v = v[0]
+            if v < _DARK_THRESHOLD:
+                cnt += 1
+        if cnt >= threshold_px:
+            if not in_dense:
+                dense_start = y
+                in_dense = True
+        elif in_dense:
+            band_height = y - dense_start
+            if band_height <= _MAX_DIVIDER_HEIGHT:
+                # Skip past the divider so the player row below isn't
+                # clipped.
+                return y
+            in_dense = False
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Pipeline
 # ---------------------------------------------------------------------------
@@ -338,7 +435,26 @@ def parse_marca_image(png_bytes: bytes) -> list[ParsedMarcaRow]:
         logger.exception("parse_marca_image: cannot open image")
         return []
 
-    left, right = _split_columns(img_rgb)
+    # Crop to the player strip — between the thin black divider that
+    # sits under the managers' subtitle and the red horizontal bar
+    # with the stadium name. Everything outside is decoration we
+    # don't want OCR'd (title, referee, cards, goals).
+    gray = img_rgb.convert("L")
+    strip_top = _find_top_divider_y(gray) or 0
+    strip_bottom = _find_red_bar_top_y(img_rgb) or img_rgb.height
+    if strip_bottom <= strip_top:
+        # Defensive: a missing divider plus a missing bar means we
+        # fall back to the full image.
+        strip_top, strip_bottom = 0, img_rgb.height
+    logger.debug(
+        "parse_marca_image: cropping to y=[%d, %d] (image h=%d)",
+        strip_top,
+        strip_bottom,
+        img_rgb.height,
+    )
+    strip = img_rgb.crop((0, strip_top, img_rgb.width, strip_bottom))
+
+    left, right = _split_columns(strip)
     rows: list[ParsedMarcaRow] = []
     rows.extend(_process_column(left))
     rows.extend(_process_column(right))

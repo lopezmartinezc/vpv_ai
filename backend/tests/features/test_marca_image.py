@@ -21,6 +21,8 @@ from PIL import Image, ImageDraw
 from src.features.scraping.marca_image import (
     _count_red_stars_in_bbox,
     _detect_text_rows,
+    _find_red_bar_top_y,
+    _find_top_divider_y,
     _parse_row_text,
     _split_columns,
     parse_marca_image,
@@ -295,3 +297,62 @@ class TestSurnameFuzzyFallback:
 
     def test_exact_match_still_returned(self) -> None:
         assert _close_fuzzy("pulisic") == ["pulisic"]
+
+
+# ---------------------------------------------------------------------------
+# Image-strip detectors (red bar at bottom, divider line at top)
+# ---------------------------------------------------------------------------
+
+
+class TestFindRedBarTopY:
+    def test_detects_full_width_red_band(self) -> None:
+        # 200x400 image with a red 20-px tall bar at y=300.
+        img = Image.new("RGB", (200, 400), (255, 255, 255))
+        draw = ImageDraw.Draw(img)
+        draw.rectangle((0, 300, 199, 319), fill=(220, 30, 30))
+        # `y=300` is the top edge of the bar — that's what we want.
+        assert _find_red_bar_top_y(img) == 300
+
+    def test_returns_none_when_no_bar(self) -> None:
+        # Lots of small red blobs (like stars) — none span the full width.
+        img = _make_image_with_red_blobs(200, 400, [(40, 100, 6), (90, 100, 6), (140, 100, 6)])
+        assert _find_red_bar_top_y(img) is None
+
+    def test_takes_lowest_bar_when_two_exist(self) -> None:
+        # If the title block happened to contain a red strip (shouldn't,
+        # but be defensive), we want the LAST one going from bottom up.
+        img = Image.new("RGB", (200, 400), (255, 255, 255))
+        draw = ImageDraw.Draw(img)
+        draw.rectangle((0, 50, 199, 60), fill=(220, 30, 30))
+        draw.rectangle((0, 300, 199, 319), fill=(220, 30, 30))
+        # The bottom bar starts at y=300 and we scan upward; we should
+        # return the top of THAT bar, not the title's.
+        assert _find_red_bar_top_y(img) == 300
+
+
+class TestFindTopDividerY:
+    def test_detects_thin_black_line(self) -> None:
+        # 200x300 with a 2-px tall black line at y=60.
+        img = Image.new("L", (200, 300), 255)
+        draw = ImageDraw.Draw(img)
+        draw.rectangle((0, 60, 199, 61), fill=0)
+        # The function returns the y just BELOW the divider so the
+        # caller can crop without clipping the first player row.
+        y = _find_top_divider_y(img)
+        assert y is not None
+        assert 61 <= y <= 63
+
+    def test_ignores_text_band(self) -> None:
+        # A regular text band — dense but ~20 px tall — should NOT be
+        # treated as a divider.
+        img = Image.new("L", (200, 300), 255)
+        _draw_text_band(img, 30, 50, dark_fraction=0.6)
+        # Density is high but band is way taller than the divider.
+        assert _find_top_divider_y(img) is None
+
+    def test_only_looks_in_upper_third(self) -> None:
+        # A thin black line in the bottom half is ignored.
+        img = Image.new("L", (200, 300), 255)
+        draw = ImageDraw.Draw(img)
+        draw.rectangle((0, 250, 199, 251), fill=0)
+        assert _find_top_divider_y(img) is None
