@@ -944,6 +944,13 @@ class MatchPagePlayer:
     (e.g. "Montes 91'") so callers can both resolve the DB player
     and recover the sub-minute. `is_starter` reflects which section
     (Titulares vs Suplentes) the row sat under.
+
+    `slug` is the futbolfantasy player slug pulled out of the desglose
+    row's "Ver la ficha del jugador" link. It coincides with the
+    ``players.slug`` column in our DB, so it's the safest match key —
+    use it before falling back to ``surname_clean``, which can be a
+    one-letter abbreviation ("Armando G.") when the page truncates
+    long names.
     """
 
     team_name: str
@@ -951,6 +958,7 @@ class MatchPagePlayer:
     surname_clean: str  # surname only, lowercased, accents folded
     is_starter: bool
     stats: PlayerMatchdayStats
+    slug: str | None = None
 
 
 # Maps the Spanish stat names that appear in the desglose row to the
@@ -976,6 +984,27 @@ def _strip_accents_lower(value: str) -> str:
     normalized = unicodedata.normalize("NFD", value)
     no_marks = "".join(c for c in normalized if not unicodedata.combining(c))
     return no_marks.lower().strip()
+
+
+def _extract_player_slug(desglose_row: Tag) -> str | None:
+    """Pull the futbolfantasy player slug from the desglose row.
+
+    The desglose contains a "Ver la ficha del jugador" anchor with an
+    href like ``/jugadores/armando-gonzalez/world-cup-2026``. That slug
+    coincides with the ``players.slug`` column in our DB and is the
+    safest match key — much better than the plegado row's text, which
+    can truncate names ("Armando G." for "Armando González") and break
+    the surname-based match.
+    """
+    import re as _re
+
+    for a in desglose_row.find_all("a", href=True):
+        href_raw = a.get("href")
+        href = href_raw if isinstance(href_raw, str) else ""
+        m = _re.search(r"/jugadores/([a-z0-9-]+)(?:/|$)", href)
+        if m:
+            return m.group(1)
+    return None
 
 
 def _surname_from_raw(name: str) -> tuple[str, list[int]]:
@@ -1246,8 +1275,10 @@ def parse_match_page_players(
             # The desglose row immediately follows the plegado row.
             desglose_row = rows[i + 1] if i + 1 < len(rows) else None
             desglose_counts: dict[str, int] = {}
+            slug: str | None = None
             if isinstance(desglose_row, Tag) and "desglose" in (desglose_row.get("class") or []):
                 desglose_counts = _parse_desglose_counts(desglose_row)
+                slug = _extract_player_slug(desglose_row)
 
             minutes_played = _infer_minutes_played(is_starter, minutes_in_name)
             stats = _build_match_page_stats(
@@ -1269,6 +1300,7 @@ def parse_match_page_players(
                     surname_clean=surname_clean,
                     is_starter=is_starter,
                     stats=stats,
+                    slug=slug,
                 )
             )
     return out

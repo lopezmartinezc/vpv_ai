@@ -214,27 +214,40 @@ class ScrapingService:
             return n.split()[-1] if n else ""
 
         per_team_by_surname: dict[int, dict[str, Player]] = {}
+        per_team_by_slug: dict[int, dict[str, Player]] = {}
         for team_id in (home_team_id, away_team_id):
-            lookup: dict[str, Player] = {}
+            surname_lookup: dict[str, Player] = {}
+            slug_lookup: dict[str, Player] = {}
             for player in players_by_team.get(team_id, []):
                 key = _surname_key(player.display_name)
                 if key:
                     # Last write wins; surname collisions on the same
                     # team are rare and a tie-break heuristic isn't worth
                     # the complexity for v1.
-                    lookup[key] = player
-            per_team_by_surname[team_id] = lookup
+                    surname_lookup[key] = player
+                if player.slug:
+                    slug_lookup[player.slug] = player
+            per_team_by_surname[team_id] = surname_lookup
+            per_team_by_slug[team_id] = slug_lookup
 
         processed = 0
         errors = 0
         error_details: list[str] = []
         for mp in parsed:
             team_id = home_team_id if mp.team_name == home_team_name else away_team_id
-            lookup = per_team_by_surname.get(team_id, {})
-            matched: Player | None = lookup.get(mp.surname_clean)
+            # Prefer slug match (the desglose row's player-page link is
+            # the safest key — coincides with players.slug 1:1). Fall
+            # back to surname when the desglose anchor is missing.
+            matched: Player | None = None
+            if mp.slug:
+                matched = per_team_by_slug.get(team_id, {}).get(mp.slug)
+            if matched is None:
+                matched = per_team_by_surname.get(team_id, {}).get(mp.surname_clean)
             if matched is None:
                 logger.debug(
-                    "scrape_matchday[match_page]: surname=%s team_id=%d not in roster, skipping",
+                    "scrape_matchday[match_page]: slug=%s surname=%s team_id=%d "
+                    "not in roster, skipping",
+                    mp.slug,
                     mp.surname_clean,
                     team_id,
                 )
