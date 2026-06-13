@@ -1901,7 +1901,18 @@ class ScrapingService:
                 if score >= threshold:
                     scored.append((p, score))
             scored.sort(key=lambda x: -x[1])
-            return scored
+            # Marca's cromo only prints players who took the pitch.
+            # If at least one candidate has minutes_played > 0,
+            # drop the bench (0 mins) candidates — they're almost
+            # certainly false positives. This resolves:
+            #   - "Gamarra" -> Galarza (fuzzy hit on a player who
+            #     didn't play): the bench candidate is gone, the
+            #     row falls through to unmatched.
+            #   - "Robinson" -> Antonee vs Miles ambiguity: Miles
+            #     (0 mins) drops out, Antonee (90 mins) is left
+            #     alone as the unique candidate.
+            played_scored = [item for item in scored if item[0].minutes_played > 0]
+            return played_scored if played_scored else scored
 
         stars_to_rating = {1: "★", 2: "★★", 3: "★★★", 4: "★★★★"}
 
@@ -1976,8 +1987,13 @@ class ScrapingService:
                 second_score = ranked[1][1] if len(ranked) > 1 else 0.0
                 if top_score >= 0.85 or (top_score >= 0.65 and (top_score - second_score) >= 0.10):
                     candidates = by_surname.get(top_key, [])
-                    if len(candidates) == 1:
-                        auto_match_player = candidates[0]
+                    # Same "only players who played" filter as the
+                    # token-set path — protects against fuzzy hits
+                    # like "Gamarra" -> "Galarza" when Galarza didn't
+                    # play.
+                    played_candidates = [c for c in candidates if c.minutes_played > 0]
+                    if len(played_candidates) == 1:
+                        auto_match_player = played_candidates[0]
 
             if auto_match_player is not None:
                 matches.append(
