@@ -91,6 +91,24 @@ export default function AdminMarcaPage() {
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [uploadBusy, setUploadBusy] = useState(false);
   const [preview, setPreview] = useState<MarcaPreviewResponse | null>(null);
+  // Bumped to remount the <input type="file">, sidestepping the
+  // browser behavior of NOT firing onChange when the same file is
+  // re-selected. Also bumped on match change so the previous file
+  // doesn't linger.
+  const [fileInputKey, setFileInputKey] = useState(0);
+
+  // Drop any in-memory image / OCR state. Called when the file is
+  // cleared, when the match changes, or after a fresh upload starts.
+  const clearImageState = useCallback(() => {
+    setImageFile(null);
+    setImagePreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setPreview(null);
+    setUploadBusy(false);
+    setFileInputKey((k) => k + 1);
+  }, []);
 
   // Fetch matchdays when the season changes.
   useEffect(() => {
@@ -125,15 +143,11 @@ export default function AdminMarcaPage() {
         setSelectedMatchId(null);
         setRoster(null);
         setEdits({});
-        setPreview(null);
-        setImageFile(null);
-        setImagePreviewUrl((prev) => {
-          if (prev) URL.revokeObjectURL(prev);
-          return null;
-        });
+        clearImageState();
+        setMessage(null);
       })
       .catch(() => setMatchdayDetail(null));
-  }, [selectedSeason, selectedMatchdayNumber]);
+  }, [selectedSeason, selectedMatchdayNumber, clearImageState]);
 
   // Load roster + current marca_rating when a match is picked.
   const fetchRoster = useCallback(async (matchId: number) => {
@@ -163,10 +177,18 @@ export default function AdminMarcaPage() {
   }, []);
 
   useEffect(() => {
+    // Always drop the previous match's image/preview when the picked
+    // match changes — otherwise the OCR result from match A sticks
+    // around while the admin is reviewing match B.
+    clearImageState();
+    setMessage(null);
     if (selectedMatchId !== null) {
       fetchRoster(selectedMatchId);
+    } else {
+      setRoster(null);
+      setEdits({});
     }
-  }, [selectedMatchId, fetchRoster]);
+  }, [selectedMatchId, fetchRoster, clearImageState]);
 
   // List of (player_id, new_marca) only when the dropdown differs from
   // the BD value — keeps the body small and avoids re-aggregations
@@ -223,6 +245,10 @@ export default function AdminMarcaPage() {
         `OCR: ${data.matches.length} jugador(es) identificado(s) automáticamente,` +
           ` ${data.unmatched.length} pendiente(s).`,
       );
+      // Remount the file input so the admin can re-pick the SAME
+      // image (e.g. after a manual tweak) without having to click
+      // "Quitar imagen" first.
+      setFileInputKey((k) => k + 1);
     } catch (err) {
       setMessage(
         `Error subiendo: ${err instanceof Error ? err.message : "desconocido"}`,
@@ -346,6 +372,10 @@ export default function AdminMarcaPage() {
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <input
+              // The key remounts the input after every successful upload
+              // or match change, sidestepping the browser quirk that
+              // suppresses onChange when the same file is picked twice.
+              key={fileInputKey}
               type="file"
               accept="image/png,image/jpeg,image/webp"
               onChange={(e) => {
@@ -355,7 +385,10 @@ export default function AdminMarcaPage() {
                   if (prev) URL.revokeObjectURL(prev);
                   return file ? URL.createObjectURL(file) : null;
                 });
+                // Stale OCR result must not linger after picking a new
+                // file — even if it's the same name as before.
                 setPreview(null);
+                setMessage(null);
               }}
               className="text-vpv-text"
             />
@@ -366,6 +399,16 @@ export default function AdminMarcaPage() {
             >
               {uploadBusy ? "Procesando…" : "Procesar imagen"}
             </button>
+            {(imageFile || preview) && (
+              <button
+                onClick={clearImageState}
+                disabled={uploadBusy}
+                className="rounded border border-vpv-border bg-vpv-bg px-3 py-1 text-xs text-vpv-text-muted hover:text-vpv-text disabled:opacity-40"
+                title="Descartar imagen y propuesta OCR"
+              >
+                Quitar imagen
+              </button>
+            )}
           </div>
 
           {imagePreviewUrl && (
