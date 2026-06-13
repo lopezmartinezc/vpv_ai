@@ -35,6 +35,13 @@ class Player(Base):
     source_url: Mapped[str | None] = mapped_column(String(500))
     is_available: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     owner_id: Mapped[int | None] = mapped_column(ForeignKey("season_participants.id"))
+    # Free-text aliases / known-as names, used by the Marca cromo
+    # matcher to recognise nickname/real-name pairs like
+    # "Kaku" <-> "Alejandro Romero Gamarra". The scrape NEVER writes
+    # to this column — admins fill it manually with one or several
+    # names, space- or comma-separated. The matcher splits on any
+    # non-letter / non-hyphen.
+    aliases: Mapped[str | None] = mapped_column(String(255))
 
     team: Mapped[Team] = relationship(back_populates="players")
     owner: Mapped[SeasonParticipant | None] = relationship(back_populates="players")

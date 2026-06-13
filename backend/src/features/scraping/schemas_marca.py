@@ -41,6 +41,10 @@ class MarcaPlayerRow(BaseModel):
     marca_rating: str | None
     minutes_played: int
     position: str  # "POR" / "DEF" / "MED" / "DEL" / ""
+    # Optional alternate names / nicknames the cromo matcher should
+    # consider in addition to display_name. Filled by hand on the
+    # players table — the scrape never overwrites it.
+    aliases: str | None = None
 
 
 class MarcaRosterResponse(BaseModel):

@@ -1690,6 +1690,7 @@ class ScrapingService:
                 marca_rating=existing.marca_rating if existing else None,
                 minutes_played=existing.minutes_played if existing else 0,
                 position=(existing.position if existing else player.position) or "",
+                aliases=player.aliases,
             )
 
         home_rows = [_row(p) for p in players if p.team_id == match.home_team_id]
@@ -1829,8 +1830,13 @@ class ScrapingService:
                             out.add(sub)
             return frozenset(out)
 
+        # Tokens include both display_name AND any aliases the admin
+        # filled in by hand. Critical for nicknames like "Kaku" whose
+        # real name is "Alejandro Romero Gamarra" — Marca's cromo
+        # prints "Gamarra", futbolfantasy returns "Kaku", and the
+        # alias bridges the two so the matcher resolves it on its own.
         roster_token_sets: dict[int, frozenset[str]] = {
-            p.player_id: _token_set(p.display_name) for p in all_roster
+            p.player_id: _token_set(f"{p.display_name} {p.aliases or ''}") for p in all_roster
         }
 
         # Multi-tier fuzzy: cuando no hay match exacto, puntuamos cada
