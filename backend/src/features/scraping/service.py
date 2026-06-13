@@ -4,6 +4,7 @@ import logging
 from typing import TYPE_CHECKING, ClassVar
 
 if TYPE_CHECKING:
+    from src.features.scraping.marca_image import ParsedMarcaRow
     from src.features.scraping.schemas_marca import (
         MarcaApplyRequest,
         MarcaPreviewResponse,
@@ -1789,7 +1790,21 @@ class ScrapingService:
         roster_keys = list(by_surname.keys())
         fuzzy_cutoff = 0.78
 
-        stars_to_rating = {0: "SC", 1: "★", 2: "★★", 3: "★★★", 4: "★★★★"}
+        stars_to_rating = {1: "★", 2: "★★", 3: "★★★", 4: "★★★★"}
+
+        def _resolve_rating(parsed_row: ParsedMarcaRow) -> str | None:
+            """Marker priority: explicit textual marker → stars → null.
+
+            Returns None when neither a marker nor a star was detected
+            so the UI dropdown stays in the "no jugó" state.
+            """
+            if parsed_row.explicit_marker == "sc":
+                return "SC"
+            if parsed_row.explicit_marker == "dash":
+                return "-"
+            if parsed_row.stars > 0:
+                return stars_to_rating[parsed_row.stars]
+            return None
 
         matches: list[MarcaPreviewMatch] = []
         unmatched: list[MarcaPreviewUnmatched] = []
@@ -1801,6 +1816,7 @@ class ScrapingService:
                 minute=parsed.minute,
                 raw_text=parsed.raw_text,
                 confidence=parsed.confidence,
+                explicit_marker=parsed.explicit_marker,
             )
             candidates = by_surname.get(parsed.surname_clean, [])
             if not candidates and parsed.surname_clean:
@@ -1817,7 +1833,7 @@ class ScrapingService:
                         row=preview_row,
                         player_id=player.player_id,
                         player_name=player.display_name,
-                        marca_rating=stars_to_rating.get(parsed.stars, "SC"),
+                        marca_rating=_resolve_rating(parsed),
                     )
                 )
             else:

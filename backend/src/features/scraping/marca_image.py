@@ -89,7 +89,18 @@ _MAX_DIVIDER_HEIGHT = 5
 
 @dataclass
 class ParsedMarcaRow:
-    """One player extracted from the cromo image."""
+    """One player extracted from the cromo image.
+
+    `explicit_marker` is the textual marker found on the right of the
+    row when there are no red stars to count. The two values it can
+    take come from Marca's print edition:
+
+    - "sc": "s/c" - sin calificar (jugó poco)
+    - "dash": Unicode minus sign - jugó mal
+
+    None means no marker was detected, so the row stays "null" (no
+    rating) when persisted.
+    """
 
     raw_text: str
     surname_clean: str
@@ -97,6 +108,7 @@ class ParsedMarcaRow:
     is_substitute: bool
     minute: int | None
     confidence: float
+    explicit_marker: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -330,6 +342,58 @@ def _find_top_divider_y(gray_img: Image.Image) -> int | None:
 # ---------------------------------------------------------------------------
 
 
+def _detect_right_marker(img_rgb: Image.Image) -> str | None:
+    """OCR the right portion of a row and detect the rating marker.
+
+    Used as a fallback when no red stars were counted: the row could
+    still carry an explicit textual marker like:
+
+    - ``s/c`` (red text, italic) - sin calificar
+    - A unicode minus / hyphen / em-dash (black or red) - jugó mal
+
+    Returns ``"sc"``, ``"dash"`` or ``None``.
+
+    A char whitelist + PSM 7 keeps Tesseract from inventing letters
+    when the cell is empty.
+    """
+    import pytesseract
+
+    if img_rgb.width == 0 or img_rgb.height == 0:
+        return None
+
+    # 2x upscale + autocontrast — the marker glyphs are tiny.
+    upsampled = img_rgb.resize(
+        (img_rgb.width * 2, img_rgb.height * 2),
+        Image.Resampling.LANCZOS,
+    )
+    gray = ImageOps.autocontrast(upsampled.convert("L"))
+
+    try:
+        text = pytesseract.image_to_string(
+            gray,
+            # Whitelist: letters s/c (both cases), slash, hyphen,
+            # em-dash, unicode minus. These are the only chars Marca
+            # uses in the marker column. noqa suppresses the
+            # ambiguous-character lint — the unicode glyphs are
+            # intentional.
+            config="--psm 7 -c tessedit_char_whitelist=sScC/-—−",  # noqa: RUF001
+        )
+    except Exception:
+        logger.exception("_detect_right_marker: tesseract failed")
+        return None
+
+    cleaned = (text or "").lower().strip()
+    if not cleaned:
+        return None
+    # The whitelist may leave stray "s" or "c" alone when Tesseract
+    # mis-reads noise; only accept the unambiguous combinations.
+    if "s/c" in cleaned or "sc" in cleaned:
+        return "sc"
+    if any(ch in cleaned for ch in ("-", "—", "−")):  # noqa: RUF001
+        return "dash"
+    return None
+
+
 def _ocr_single_line(img: Image.Image, lang: str = "spa") -> tuple[str, float]:
     """Run Tesseract on a single-line crop. Returns ``(text, confidence)``."""
     import pytesseract
@@ -382,12 +446,20 @@ def _process_column(column_rgb: Image.Image) -> list[ParsedMarcaRow]:
         crop_y1 = min(column_rgb.height, y1 + 2)
         full_row = column_rgb.crop((0, crop_y0, column_rgb.width, crop_y1))
 
-        # Stars region: the right slice (no OCR needed).
+        # Stars region: the right slice.
         star_x0 = int(column_rgb.width * (1 - _STARS_REGION_FRACTION))
         stars = _count_red_stars_in_bbox(
             column_rgb,
             (star_x0, crop_y0, column_rgb.width, crop_y1),
         )
+
+        # When no stars were counted, the row might still have an
+        # explicit textual marker (s/c or a dash). Tesseract on the
+        # right strip with a char whitelist is reliable enough.
+        explicit_marker: str | None = None
+        if stars == 0:
+            marker_crop = column_rgb.crop((star_x0, crop_y0, column_rgb.width, crop_y1))
+            explicit_marker = _detect_right_marker(marker_crop)
 
         # OCR the LEFT slice (the text part) at 2x scale.
         text_crop = full_row.crop((0, 0, star_x0, full_row.height))
@@ -414,6 +486,7 @@ def _process_column(column_rgb: Image.Image) -> list[ParsedMarcaRow]:
                 is_substitute=is_sub,
                 minute=minute,
                 confidence=conf,
+                explicit_marker=explicit_marker,
             )
         )
     return rows

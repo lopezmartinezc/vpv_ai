@@ -210,10 +210,12 @@ export default function AdminMarcaPage() {
       setPreview(data);
       // Auto-apply each successful match into the dropdown state so the
       // admin can review the whole roster and tweak before "Aplicar".
+      // marca_rating can be null when the parser found neither stars
+      // nor a textual marker — leave the dropdown at "no jugó".
       setEdits((prev) => {
         const next = { ...prev };
         for (const m of data.matches) {
-          next[m.player_id] = m.marca_rating as MarcaRatingValue;
+          next[m.player_id] = (m.marca_rating ?? null) as MarcaRatingValue;
         }
         return next;
       });
@@ -392,17 +394,27 @@ export default function AdminMarcaPage() {
                       {u.row.raw_text}
                     </span>
                     <span className="rounded bg-vpv-accent/20 px-1.5 py-0.5 text-[10px] text-vpv-accent">
-                      {u.row.stars > 0 ? "★".repeat(u.row.stars) : "SC"}
+                      {u.row.stars > 0
+                        ? "★".repeat(u.row.stars)
+                        : u.row.explicit_marker === "dash"
+                          ? "−"
+                          : u.row.explicit_marker === "sc"
+                            ? "SC"
+                            : "—"}
                     </span>
                     <select
                       defaultValue=""
                       onChange={(e) => {
                         const pid = Number(e.target.value);
                         if (!Number.isFinite(pid) || pid === 0) return;
-                        const newRating =
+                        const newRating: MarcaRatingValue =
                           u.row.stars > 0
                             ? ("★".repeat(u.row.stars) as MarcaRatingValue)
-                            : ("SC" as MarcaRatingValue);
+                            : u.row.explicit_marker === "dash"
+                              ? ("-" as MarcaRatingValue)
+                              : u.row.explicit_marker === "sc"
+                                ? ("SC" as MarcaRatingValue)
+                                : null;
                         setEdits((prev) => ({ ...prev, [pid]: newRating }));
                       }}
                       className="rounded border border-vpv-border bg-vpv-bg px-2 py-1 text-xs text-vpv-text"

@@ -83,6 +83,9 @@ class MarcaPreviewRow(BaseModel):
     minute: int | None
     raw_text: str
     confidence: float  # 0..1, Tesseract's confidence average
+    # "sc" / "dash" / None — set when no stars were counted but an
+    # explicit marker was detected on the right of the row.
+    explicit_marker: str | None = None
 
 
 class MarcaPreviewMatch(BaseModel):
@@ -92,8 +95,12 @@ class MarcaPreviewMatch(BaseModel):
     player_id: int
     player_name: str
     # Pre-translated to one of the dropdown values so the UI can render
-    # the suggestion directly: 0 → "SC", 1..4 → "★"..."★★★★".
-    marca_rating: str
+    # the suggestion directly. Priority: explicit_marker → stars → null.
+    # - "★"..."★★★★": star count
+    # - "SC": s/c detected on the right of the row
+    # - "-": dash detected on the right of the row
+    # - None: nothing detected, the dropdown stays empty ("no jugó")
+    marca_rating: str | None
 
 
 class MarcaPreviewUnmatched(BaseModel):

@@ -1354,13 +1354,19 @@ export interface MarcaPreviewRow {
   minute: number | null;
   raw_text: string;
   confidence: number;        // 0..1
+  /** "sc" / "dash" / null when stars=0 and a text marker was found. */
+  explicit_marker?: string | null;
 }
 
 export interface MarcaPreviewMatch {
   row: MarcaPreviewRow;
   player_id: number;
   player_name: string;
-  marca_rating: string;      // "SC" | "★"... | "★★★★"
+  /**
+   * Server-resolved suggestion. null = "no jugó" (no stars + no marker).
+   * Priority: explicit_marker (s/c → "SC", dash → "-") > stars > null.
+   */
+  marca_rating: string | null;
 }
 
 export interface MarcaPreviewUnmatched {

@@ -20,6 +20,7 @@ from PIL import Image, ImageDraw
 
 from src.features.scraping.marca_image import (
     _count_red_stars_in_bbox,
+    _detect_right_marker,
     _detect_text_rows,
     _find_red_bar_top_y,
     _find_top_divider_y,
@@ -356,3 +357,45 @@ class TestFindTopDividerY:
         draw = ImageDraw.Draw(img)
         draw.rectangle((0, 250, 199, 251), fill=0)
         assert _find_top_divider_y(img) is None
+
+
+# ---------------------------------------------------------------------------
+# Right-side marker OCR (s/c, dash)
+# ---------------------------------------------------------------------------
+
+
+class TestDetectRightMarker:
+    """The OCR call is mocked because CI has no Tesseract installed."""
+
+    def test_sc_text_returns_sc(self) -> None:
+        # The whitelist may give us a slash so the raw output is "s/c".
+        with patch("pytesseract.image_to_string", return_value="s/c\n"):
+            assert _detect_right_marker(Image.new("RGB", (40, 20), (255, 255, 255))) == "sc"
+
+    def test_uppercase_sc_is_normalised(self) -> None:
+        with patch("pytesseract.image_to_string", return_value="SC"):
+            assert _detect_right_marker(Image.new("RGB", (40, 20), (255, 255, 255))) == "sc"
+
+    def test_em_dash_returns_dash(self) -> None:
+        with patch("pytesseract.image_to_string", return_value="—\n"):
+            assert _detect_right_marker(Image.new("RGB", (40, 20), (255, 255, 255))) == "dash"
+
+    def test_minus_sign_returns_dash(self) -> None:
+        with patch("pytesseract.image_to_string", return_value="−"):  # noqa: RUF001
+            assert _detect_right_marker(Image.new("RGB", (40, 20), (255, 255, 255))) == "dash"
+
+    def test_hyphen_returns_dash(self) -> None:
+        with patch("pytesseract.image_to_string", return_value="- "):
+            assert _detect_right_marker(Image.new("RGB", (40, 20), (255, 255, 255))) == "dash"
+
+    def test_empty_ocr_returns_none(self) -> None:
+        with patch("pytesseract.image_to_string", return_value=""):
+            assert _detect_right_marker(Image.new("RGB", (40, 20), (255, 255, 255))) is None
+
+    def test_unknown_text_returns_none(self) -> None:
+        with patch("pytesseract.image_to_string", return_value="xyz"):
+            assert _detect_right_marker(Image.new("RGB", (40, 20), (255, 255, 255))) is None
+
+    def test_empty_image_short_circuits(self) -> None:
+        # An empty bbox would result in a 0x0 crop — must not call OCR.
+        assert _detect_right_marker(Image.new("RGB", (0, 0), (255, 255, 255))) is None
