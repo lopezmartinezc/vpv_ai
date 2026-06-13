@@ -1,12 +1,10 @@
 """Tests for the Marca cromo image parser.
 
-`_parse_row_text` and `_count_red_stars_in_bbox` are unit-tested
-directly — neither needs Tesseract running. `parse_marca_image` is
-exercised against a mocked `pytesseract.image_to_data` so CI doesn't
-need the system binary installed.
-
-A separate `test_marca_image_integration.py` uses a real fixture
-image when Tesseract is available locally.
+`_parse_row_text`, `_count_red_stars_in_bbox`, `_detect_text_rows`,
+and `_split_columns` are unit-tested directly — none need Tesseract
+running. `parse_marca_image` is exercised against a synthetic image
+with `_ocr_single_line` mocked so CI doesn't need the system binary
+installed.
 
 The fuzzy-fallback logic lives in `ScrapingService.marca_preview`
 and is covered by a difflib-based smoke test at the bottom.
@@ -22,7 +20,9 @@ from PIL import Image, ImageDraw
 
 from src.features.scraping.marca_image import (
     _count_red_stars_in_bbox,
+    _detect_text_rows,
     _parse_row_text,
+    _split_columns,
     parse_marca_image,
 )
 
@@ -33,8 +33,6 @@ from src.features.scraping.marca_image import (
 
 class TestParseRowText:
     def test_starter_with_stars_in_text(self) -> None:
-        # Tesseract sometimes emits the stars as actual characters.
-        # We must strip them so the surname isn't polluted.
         surname, is_sub, minute = _parse_row_text("10 Pulisic ★★★")
         assert surname == "pulisic"
         assert is_sub is False
@@ -47,27 +45,21 @@ class TestParseRowText:
         assert minute is None
 
     def test_starter_with_substitution_minute(self) -> None:
-        # "→ 7 Reyna 82'" — actually the arrow denotes substitution,
-        # the minute is when the player went off.
         surname, is_sub, minute = _parse_row_text("→ 7 Reyna 82'")
         assert surname == "reyna"
         assert is_sub is True
         assert minute == 82
 
     def test_arrow_ascii_fallback(self) -> None:
-        # If Tesseract OCRs the arrow as "->" we still detect the sub.
         surname, is_sub, _ = _parse_row_text("-> 14 Berhalter 45'")
         assert surname == "berhalter"
         assert is_sub is True
 
     def test_accents_are_folded(self) -> None:
         surname, _, _ = _parse_row_text("4 Cáceres")
-        # The lookup map in the service uses accent-folded lowercase
-        # keys; surname_clean must be ready to match.
         assert surname == "caceres"
 
     def test_compound_surname_keeps_last_token(self) -> None:
-        # "Brian Gutiérrez" → match by "gutierrez".
         surname, _, _ = _parse_row_text("17 Brian Gutiérrez 65'")
         assert surname == "gutierrez"
 
@@ -78,8 +70,6 @@ class TestParseRowText:
         assert minute is None
 
     def test_only_numbers_and_punct_returns_empty(self) -> None:
-        # If OCR gives us garbage, surname comes out empty and the
-        # caller can drop the row.
         surname, _, _ = _parse_row_text("12 5'")
         assert surname == ""
 
@@ -92,7 +82,6 @@ class TestParseRowText:
 def _make_image_with_red_blobs(
     width: int, height: int, blobs: list[tuple[int, int, int]]
 ) -> Image.Image:
-    """blobs = list of (cx, cy, radius)."""
     img = Image.new("RGB", (width, height), (255, 255, 255))
     draw = ImageDraw.Draw(img)
     for cx, cy, r in blobs:
@@ -110,14 +99,12 @@ class TestCountRedStars:
         assert _count_red_stars_in_bbox(img, (0, 0, 200, 40)) == 3
 
     def test_caps_at_four(self) -> None:
-        # Five distinct blobs — we should see 4 (Marca's max).
         img = _make_image_with_red_blobs(
             300, 40, [(40, 20, 6), (80, 20, 6), (120, 20, 6), (160, 20, 6), (200, 20, 6)]
         )
         assert _count_red_stars_in_bbox(img, (0, 0, 300, 40)) == 4
 
     def test_tiny_red_specks_are_ignored(self) -> None:
-        # Single-pixel red noise should NOT count as a star.
         img = Image.new("RGB", (200, 40), (255, 255, 255))
         img.putpixel((50, 20), (200, 30, 30))
         img.putpixel((100, 20), (200, 30, 30))
@@ -125,120 +112,156 @@ class TestCountRedStars:
 
     def test_bbox_outside_image_is_clipped(self) -> None:
         img = _make_image_with_red_blobs(200, 40, [(40, 20, 6)])
-        # bbox starts past the image bounds — return 0, not crash.
         assert _count_red_stars_in_bbox(img, (300, 0, 400, 40)) == 0
 
 
 # ---------------------------------------------------------------------------
-# End-to-end parse_marca_image with mocked Tesseract
+# Column splitter
 # ---------------------------------------------------------------------------
 
 
-def _make_mock_tesseract_output(rows: list[dict]) -> dict[str, list]:
-    """Build a fake `pytesseract.image_to_data` DICT result.
+class TestSplitColumns:
+    def test_halves_at_mid(self) -> None:
+        img = Image.new("RGB", (200, 100), (255, 255, 255))
+        left, right = _split_columns(img)
+        assert left.size == (100, 100)
+        assert right.size == (100, 100)
 
-    Each row dict needs keys: ``text`` (string), ``left``, ``top``,
-    ``width``, ``height``, ``line``. We split the text by spaces and
-    emit one word per token sharing the same (block, par, line) so
-    the parser groups them again.
+    def test_odd_width(self) -> None:
+        # 201 px wide → left should be 100, right should be 101.
+        img = Image.new("RGB", (201, 50), (255, 255, 255))
+        left, right = _split_columns(img)
+        assert left.size == (100, 50)
+        assert right.size == (101, 50)
+
+
+# ---------------------------------------------------------------------------
+# Row detector (horizontal density)
+# ---------------------------------------------------------------------------
+
+
+def _draw_text_band(img: Image.Image, y0: int, y1: int, dark_fraction: float = 0.5) -> None:
+    """Fill a horizontal band with dark pixels every ``1/dark_fraction``.
+
+    Uses a fill that matches the image mode (grayscale or RGB).
     """
-    out: dict[str, list] = {
-        "text": [],
-        "left": [],
-        "top": [],
-        "width": [],
-        "height": [],
-        "conf": [],
-        "block_num": [],
-        "par_num": [],
-        "line_num": [],
-    }
-    for row in rows:
-        tokens = row["text"].split()
-        x = row["left"]
-        for tok in tokens:
-            out["text"].append(tok)
-            out["left"].append(x)
-            out["top"].append(row["top"])
-            out["width"].append(len(tok) * 8)
-            out["height"].append(row["height"])
-            out["conf"].append(90)
-            out["block_num"].append(1)
-            out["par_num"].append(1)
-            out["line_num"].append(row["line"])
-            x += len(tok) * 8 + 5
-    return out
+    draw = ImageDraw.Draw(img)
+    step = max(1, int(1 / max(0.01, dark_fraction)))
+    fill = 40 if img.mode == "L" else (40, 40, 40)
+    for x in range(0, img.width, step):
+        draw.line((x, y0, x, y1 - 1), fill=fill)
 
 
-class TestParseMarcaImageWithMockedTesseract:
+class TestDetectTextRows:
+    def test_picks_up_three_bands(self) -> None:
+        img = Image.new("L", (200, 200), 255)
+        _draw_text_band(img, 30, 50, dark_fraction=0.3)
+        _draw_text_band(img, 80, 100, dark_fraction=0.3)
+        _draw_text_band(img, 130, 150, dark_fraction=0.3)
+        bands = _detect_text_rows(img)
+        assert len(bands) == 3
+        # Sanity-check the first band roughly matches what we drew.
+        y0, y1 = bands[0]
+        assert 28 <= y0 <= 32
+        assert 48 <= y1 <= 52
+
+    def test_filters_out_tall_header(self) -> None:
+        img = Image.new("L", (200, 300), 255)
+        # 100-pixel tall band (the title block) — should be discarded.
+        _draw_text_band(img, 10, 110, dark_fraction=0.3)
+        # And a normal row.
+        _draw_text_band(img, 150, 170, dark_fraction=0.3)
+        bands = _detect_text_rows(img)
+        assert len(bands) == 1
+        y0, _ = bands[0]
+        assert 148 <= y0 <= 152
+
+    def test_filters_out_micro_noise(self) -> None:
+        img = Image.new("L", (200, 100), 255)
+        # 2 px tall band — below _MIN_ROW_HEIGHT.
+        _draw_text_band(img, 30, 32, dark_fraction=0.3)
+        bands = _detect_text_rows(img)
+        assert bands == []
+
+    def test_empty_image(self) -> None:
+        img = Image.new("L", (200, 100), 255)
+        bands = _detect_text_rows(img)
+        assert bands == []
+
+
+# ---------------------------------------------------------------------------
+# End-to-end parse_marca_image with mocked single-line OCR
+# ---------------------------------------------------------------------------
+
+
+def _png_bytes_with_layout(
+    width: int, height: int, left_rows: list[tuple[int, int]], right_rows: list[tuple[int, int]]
+) -> bytes:
+    """Build a synthetic two-column cromo. rows = list of (y0, y1) bands.
+
+    Both columns get dark text bands; we don't bother drawing stars
+    here because the OCR is mocked.
+    """
+    img = Image.new("RGB", (width, height), (255, 255, 255))
+    mid = width // 2
+    for y0, y1 in left_rows:
+        draw = ImageDraw.Draw(img)
+        for x in range(0, mid, 3):
+            draw.line((x, y0, x, y1 - 1), fill=(40, 40, 40))
+    for y0, y1 in right_rows:
+        draw = ImageDraw.Draw(img)
+        for x in range(mid, width, 3):
+            draw.line((x, y0, x, y1 - 1), fill=(40, 40, 40))
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+class TestParseMarcaImageWithMockedOcr:
     def test_empty_bytes_returns_empty_list(self) -> None:
         assert parse_marca_image(b"") == []
 
-    def test_single_row_parses(self) -> None:
-        # Synth a 200x40 white image so the star counter sees zero blobs.
-        buf = BytesIO()
-        Image.new("RGB", (200, 40), (255, 255, 255)).save(buf, format="PNG")
-        png = buf.getvalue()
-
-        mock_data = _make_mock_tesseract_output(
-            [
-                {
-                    "text": "10 Pulisic",
-                    "left": 5,
-                    "top": 5,
-                    "height": 20,
-                    "line": 1,
-                },
-            ]
+    def test_two_columns_one_row_each(self) -> None:
+        png = _png_bytes_with_layout(
+            width=400,
+            height=200,
+            left_rows=[(40, 70)],
+            right_rows=[(40, 70)],
         )
+        # Mock returns one surname for left, another for right.
+        seq = iter([("10 Pulisic", 0.92), ("→ 7 Reyna 82'", 0.87)])
 
-        with patch("pytesseract.image_to_data", return_value=mock_data):
+        def fake_ocr(_img, lang: str = "spa") -> tuple[str, float]:
+            return next(seq)
+
+        with patch("src.features.scraping.marca_image._ocr_single_line", side_effect=fake_ocr):
             rows = parse_marca_image(png)
 
-        assert len(rows) == 1
+        assert len(rows) == 2
         assert rows[0].surname_clean == "pulisic"
         assert rows[0].is_substitute is False
-        assert rows[0].stars == 0
+        assert rows[1].surname_clean == "reyna"
+        assert rows[1].is_substitute is True
+        assert rows[1].minute == 82
 
-    def test_multiple_rows_grouped_by_line(self) -> None:
-        buf = BytesIO()
-        Image.new("RGB", (300, 200), (255, 255, 255)).save(buf, format="PNG")
-        png = buf.getvalue()
-
-        mock_data = _make_mock_tesseract_output(
-            [
-                {"text": "24 Freese", "left": 5, "top": 5, "height": 20, "line": 1},
-                {"text": "10 Pulisic", "left": 5, "top": 30, "height": 20, "line": 2},
-                {
-                    "text": "→ 7 Reyna 82'",
-                    "left": 5,
-                    "top": 55,
-                    "height": 20,
-                    "line": 3,
-                },
-            ]
+    def test_rows_without_surname_are_dropped(self) -> None:
+        png = _png_bytes_with_layout(
+            width=400,
+            height=200,
+            left_rows=[(40, 70)],
+            right_rows=[(40, 70)],
         )
-
-        with patch("pytesseract.image_to_data", return_value=mock_data):
-            rows = parse_marca_image(png)
-
-        assert [r.surname_clean for r in rows] == ["freese", "pulisic", "reyna"]
-        assert rows[2].is_substitute is True
-        assert rows[2].minute == 82
-
-    def test_garbage_rows_are_dropped(self) -> None:
-        buf = BytesIO()
-        Image.new("RGB", (200, 40), (255, 255, 255)).save(buf, format="PNG")
-        png = buf.getvalue()
-        mock_data = _make_mock_tesseract_output(
-            [
-                # Only numbers and a stray apostrophe → no parseable surname.
-                {"text": "12 5'", "left": 5, "top": 5, "height": 20, "line": 1},
-            ]
-        )
-        with patch("pytesseract.image_to_data", return_value=mock_data):
+        with patch(
+            "src.features.scraping.marca_image._ocr_single_line",
+            side_effect=[("12 5'", 0.3), ("", 0.0)],
+        ):
             rows = parse_marca_image(png)
         assert rows == []
+
+
+# ---------------------------------------------------------------------------
+# Fuzzy fallback (mirrors the contract used in ScrapingService.marca_preview)
+# ---------------------------------------------------------------------------
 
 
 _FUZZY_CUTOFF = 0.78
@@ -261,23 +284,14 @@ def _close_fuzzy(ocr: str) -> list[str]:
 
 
 class TestSurnameFuzzyFallback:
-    """The service does fuzzy-matching when an OCR'd surname doesn't
-    show up in the roster verbatim. We keep the difflib contract
-    pinned here so a future tweak to the cutoff is intentional."""
-
-    def _close(self, ocr: str) -> list[str]:
-        return _close_fuzzy(ocr)
-
     def test_one_letter_off_matches(self) -> None:
-        # Common Tesseract slip: missed letter, extra letter, swap.
-        assert self._close("plisic") == ["pulisic"]
-        assert self._close("balogn") == ["balogun"]
-        assert self._close("freesee") == ["freese"]
+        assert _close_fuzzy("plisic") == ["pulisic"]
+        assert _close_fuzzy("balogn") == ["balogun"]
+        assert _close_fuzzy("freesee") == ["freese"]
 
     def test_too_different_does_not_match(self) -> None:
-        # We do NOT want "messi" to be silently mapped to anything.
-        assert self._close("messi") == []
-        assert self._close("ronaldo") == []
+        assert _close_fuzzy("messi") == []
+        assert _close_fuzzy("ronaldo") == []
 
     def test_exact_match_still_returned(self) -> None:
-        assert self._close("pulisic") == ["pulisic"]
+        assert _close_fuzzy("pulisic") == ["pulisic"]
