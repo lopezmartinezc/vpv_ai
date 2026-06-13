@@ -241,13 +241,82 @@ ni `STATS`. Concedible desde `/admin/usuarios` → "Permisos".
   `player_stats.marca_rating`, recalcula `pts_marca`/`pts_total` y
   dispara `aggregate_matchday`. |
 | **Subir imagen** | Sube el cromo en `.png`/`.jpg`/`.webp`. El backend
-  corre Tesseract + análisis HSV para contar las estrellas rojas, y
-  matchea cada apellido contra el roster del partido. Los jugadores
-  matcheados prerellenan los desplegables; los no resueltos (apellido
-  mal OCR-eado, o homonimia) salen en un panel separado con un
-  dropdown para asignarlos a mano. Después "Aplicar". |
+  corre Tesseract + análisis de visión (OpenCV) para anclar las filas
+  por dorsal y contar las estrellas rojas como blobs HSV, y matchea
+  cada apellido contra el roster del partido (con fallback por
+  token-set para nombres asiáticos con orden invertido). Los
+  jugadores matcheados prerellenan los desplegables; los no resueltos
+  (apellido mal OCR-eado, o homonimia) salen en un panel separado con
+  un dropdown para asignarlos a mano. Después "Aplicar". |
+
+### Arquitectura del parser (`marca_image.py`)
+
+Pipeline al 100% en OpenCV — Tesseract solo para texto. Las
+estrellas y el "−" se cuentan/detectan como blobs por umbral HSV
+(rojo) o conectividad por brillo. La fila se ancla en los DORSALES
+(que OCR-ean mucho mejor que los nombres), se rellenan huecos por
+pitch mediano, se extiende arriba/abajo. Resultado: ninguna fila se
+pierde aunque el OCR del nombre falle.
+
+Validación: `backend/tests/features/test_marca_image_integration.py`
+corre el bench contra 3 fichas reales con ground truth verificado al
+píxel. **Debe dar 94/94 (100%)**. Cualquier regresión por encima de
+0 falla el suite.
 
 ### Dependencias del sistema (instalar en prod)
+
+#### Tesseract — ¿qué versión?
+
+El parser tiene un **fallback Otsu** que rescata nombres que el
+primer pase de OCR no consigue leer. Funciona razonablemente bien con
+Tesseract 5.3.x, pero **5.5.x reduce drásticamente los falsos
+negativos** (texto cromo-pequeño tipo "Millar" / "Sun" que en 5.3.x
+puede salir vacío).
+
+**Mínimo soportado**: Tesseract 5.3 + `eng`. El parser usa `lang=eng`
+(no `spa`) porque la referencia de calibración fue validada así.
+
+**Recomendado en prod**: Tesseract 5.5.x.
+
+#### Instalación recomendada — Linuxbrew (AlmaLinux 10)
+
+EPEL en AlmaLinux 10 trae Tesseract 5.3.4. Para 5.5.x sin tocar el
+sistema base, instalamos via Linuxbrew bajo el usuario `vpv`:
+
+```bash
+# 1. Instala brew (una vez por servidor)
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# 2. Carga brew en el PATH del usuario vpv
+echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.bashrc
+source ~/.bashrc
+
+# 3. Instala Tesseract + idiomas
+brew install tesseract tesseract-lang
+
+# 4. Verifica
+tesseract --version          # debe imprimir 5.5.x
+which tesseract              # /home/linuxbrew/.linuxbrew/bin/tesseract
+```
+
+`pytesseract` busca `tesseract` en el `PATH`. El servicio systemd del
+backend debe ver el binario de brew **antes** que `/usr/bin/tesseract`
+del sistema. Asegúralo con un drop-in:
+
+```bash
+sudo mkdir -p /etc/systemd/system/vpv-backend.service.d
+sudo tee /etc/systemd/system/vpv-backend.service.d/path.conf <<'EOF'
+[Service]
+Environment="PATH=/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin"
+EOF
+sudo systemctl daemon-reload
+sudo systemctl restart vpv-backend
+```
+
+#### Instalación mínima (sin upgrade)
+
+Si por lo que sea no quieres brew, vale con la versión EPEL —
+funciona, solo con más fallos esporádicos de OCR:
 
 ```bash
 # AlmaLinux / RHEL
@@ -256,15 +325,39 @@ sudo dnf install -y tesseract tesseract-langpack-spa
 sudo apt install -y tesseract-ocr tesseract-ocr-spa
 ```
 
-`pytesseract` y `python-multipart` ya están como dependencias Python
-en `pyproject.toml` — los recoge `pip install` durante el deploy.
+#### Dependencias Python
+
+`pyproject.toml` ya incluye:
+
+```
+opencv-python-headless>=4.10.0
+numpy>=2.0.0
+pytesseract>=0.3.13
+Pillow>=11.0.0
+python-multipart>=0.0.20
+```
+
+`pip install -e .` durante el deploy las recoge. `opencv-python-headless`
+NO requiere libs de GUI del sistema (a diferencia de `opencv-python`),
+por eso es la dependencia elegida para entornos server.
 
 ### Verificación
 
 ```bash
+# 1. Tesseract instalado y en PATH:
 tesseract --version
-# Si quieres comprobar el lenguaje:
-tesseract --list-langs | grep spa
+
+# 2. Bench end-to-end (debe dar 94/94):
+cd /opt/vpv/backend
+.venv/bin/python -m pytest tests/features/test_marca_image_integration.py -v
+
+# 3. Smoke test manual del parser con cualquier fixture:
+.venv/bin/python -c "
+from src.features.scraping.marca_image import parse_marca_image
+img = open('tests/fixtures/marca/img_a.jpeg', 'rb').read()
+for r in parse_marca_image(img):
+    print(r.dorsal, r.surname_clean, r.stars, r.explicit_marker)
+"
 ```
 
 En la UI: abre `/admin/marca` con usuario admin o con `Perm.MARCA`,
@@ -276,7 +369,7 @@ tabs. El backend NO debe pedirte tesseract para abrir la tab Manual.
 | Capa | Fichero | Responsabilidad |
 |---|---|---|
 | Permiso | `backend/src/shared/permissions.py` | `Perm.MARCA = 1024` |
-| Parser | `backend/src/features/scraping/marca_image.py` | `parse_marca_image()` — Tesseract + counter rojo |
+| Parser | `backend/src/features/scraping/marca_image.py` | `parse_marca_image()` — OpenCV + Tesseract (anclaje por dorsal, estrellas como blobs HSV, Otsu fallback) |
 | Service | `backend/src/features/scraping/service.py` | `marca_roster()`, `marca_preview()`, `marca_apply()` |
 | Endpoints | `backend/src/features/scraping/router.py` | `GET /admin/marca/match/{id}/roster`, `POST /admin/marca/preview`, `POST /admin/marca/apply` |
 | Schemas | `backend/src/features/scraping/schemas_marca.py` | Pydantic |
