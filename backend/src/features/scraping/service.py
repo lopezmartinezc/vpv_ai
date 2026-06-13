@@ -1933,40 +1933,35 @@ class ScrapingService:
             )
             exact = by_surname.get(parsed.surname_clean, [])
             ranked = _rank_roster(parsed.surname_clean)
+            token_ranked = _rank_roster_by_tokens(parsed.raw_text)
 
-            # Decide whether we have a confident enough match to
-            # auto-fill the dropdown. The surname path only fires
-            # when the candidate is UNIQUE — a roster with 5 "Lee"
-            # players would otherwise auto-pick the first one and
-            # silently mis-assign rows 2..5. When the surname is
-            # ambiguous we go straight to the token-set fallback,
-            # which uses the full display_name and resolves it.
+            # Match priority — highest confidence first:
+            #
+            # 1. Exact UNIQUE surname (a single player carries this
+            #    surname on the roster). Cheap, deterministic.
+            # 2. Token-set match. Validates against the FULL
+            #    display_name — way more reliable than fuzzy surname
+            #    because it catches:
+            #      - Asian names where the cromo is "Son Heung-min"
+            #        but the DB has "Heung-min Son" (or vice versa).
+            #      - Ambiguous surnames (5 Lees, 3 Kims): the full-
+            #        name overlap distinguishes them.
+            #      - Truncated OCR rows: "Eom" alone -> "Eom Ji-sung"
+            #        if it's the only roster player with that token.
+            #      - "+> 24Promise *" (OCR lost "David") -> Promise
+            #        David, NOT Ralph Priso (which fuzzy surname
+            #        would pick because difflib(promise, priso) = 0.67).
+            # 3. Fuzzy surname. Last resort — only fires if BOTH
+            #    above failed. The roster candidate must still be
+            #    unique to auto-match.
             auto_match_player = None
             if len(exact) == 1:
                 auto_match_player = exact[0]
-            elif not exact and ranked:
-                top_key, top_score = ranked[0]
-                second_score = ranked[1][1] if len(ranked) > 1 else 0.0
-                if top_score >= 0.85 or (top_score >= 0.65 and (top_score - second_score) >= 0.10):
-                    candidates = by_surname.get(top_key, [])
-                    # Same uniqueness rule on the fuzzy path.
-                    if len(candidates) == 1:
-                        auto_match_player = candidates[0]
 
-            # Token-set fallback on the full display_name. Catches:
-            #   - Asian names where the cromo is "Son Heung-min" but
-            #     the DB has "Heung-min Son" (or vice versa).
-            #   - Ambiguous surnames (5 Lees, 3 Kims): the full-name
-            #     overlap distinguishes them.
-            #   - Truncated OCR rows that lost most of the name,
-            #     e.g. "Eom" alone matches "Eom Ji-sung" when only
-            #     one roster player carries that token.
             if auto_match_player is None:
-                token_ranked = _rank_roster_by_tokens(parsed.raw_text)
                 if len(token_ranked) == 1:
                     # Only one roster player shares any distinctive
-                    # token with the OCR row → it's a confident hit
-                    # regardless of score.
+                    # token with the OCR row → confident hit.
                     auto_match_player = token_ranked[0][0]
                 elif token_ranked:
                     top_player, top_score = token_ranked[0]
@@ -1975,6 +1970,14 @@ class ScrapingService:
                         top_score >= 0.50 and (top_score - second_score) >= 0.20
                     ):
                         auto_match_player = top_player
+
+            if auto_match_player is None and not exact and ranked:
+                top_key, top_score = ranked[0]
+                second_score = ranked[1][1] if len(ranked) > 1 else 0.0
+                if top_score >= 0.85 or (top_score >= 0.65 and (top_score - second_score) >= 0.10):
+                    candidates = by_surname.get(top_key, [])
+                    if len(candidates) == 1:
+                        auto_match_player = candidates[0]
 
             if auto_match_player is not None:
                 matches.append(
