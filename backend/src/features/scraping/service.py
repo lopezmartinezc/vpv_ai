@@ -1647,10 +1647,21 @@ class ScrapingService:
         team_names = await self._team_names(team_ids)
         players = await self.repo.get_players_for_teams(matchday.season_id, team_ids)
 
+        from sqlalchemy import or_
         from sqlalchemy import select as sa_select
 
+        # Only read minutes/marca_rating from a PlayerStat that
+        # actually belongs to THIS match. A row whose match_id points
+        # to a different match in the same matchday (legacy data, or
+        # the scraping bug fixed previously) would otherwise leak its
+        # 90' into the wrong roster. ``match_id IS NULL`` is treated
+        # as "applies" because old Liga rows pre-date the column.
         stats_stmt = sa_select(PlayerStat).where(
             PlayerStat.matchday_id == match.matchday_id,
+            or_(
+                PlayerStat.match_id == match_id,
+                PlayerStat.match_id.is_(None),
+            ),
             PlayerStat.player_id.in_([p.id for p in players]),
         )
         stats_result = await self.session.execute(stats_stmt)
