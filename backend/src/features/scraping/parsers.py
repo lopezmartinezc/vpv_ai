@@ -1033,7 +1033,10 @@ def _infer_minutes_played(is_starter: bool, minutes_in_name: list[int]) -> int:
 
     Starters with no marker → 90 (played the full game).
     Starters with a marker → subbed off at minute N → played N minutes.
-    Subs with a marker → entered at minute N → played 90 - N minutes.
+    Subs with a marker → entered at minute N → played at least 90 - N
+        minutes, with a floor of 1 (entries at minute 90+ still play
+        the stoppage time, and Marca grades them "s/c" — they did
+        play, so 0 would mis-classify them as "no jugó").
     Subs without a marker → never played → 0.
     """
     if is_starter:
@@ -1042,7 +1045,7 @@ def _infer_minutes_played(is_starter: bool, minutes_in_name: list[int]) -> int:
         return minutes_in_name[0]
     if not minutes_in_name:
         return 0
-    return max(0, 90 - minutes_in_name[0])
+    return max(1, 90 - minutes_in_name[0])
 
 
 def _events_flags(events_td: Tag | None) -> dict[str, bool | int]:
