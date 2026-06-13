@@ -1616,7 +1616,7 @@ class ScrapingService:
     # ships everyone as "SC").
     # ==================================================================
 
-    async def marca_roster(self, match_id: int) -> "MarcaRosterResponse":
+    async def marca_roster(self, match_id: int) -> MarcaRosterResponse:
         """Return both teams' rosters with their current marca_rating.
 
         Used by the Manual tab of /admin/marca to render an editable
@@ -1685,7 +1685,7 @@ class ScrapingService:
             away=away_rows,
         )
 
-    async def marca_apply(self, request: "MarcaApplyRequest") -> dict[str, int]:
+    async def marca_apply(self, request: MarcaApplyRequest) -> dict[str, int]:
         """Persist marca_rating for each assignment, recompute pts and
         re-aggregate the matchday.
         """
@@ -1704,7 +1704,9 @@ class ScrapingService:
 
         updated = 0
         for a in request.assignments:
-            if a.marca_rating not in VALID_MARCA_VALUES:
+            # None == "no jugó" (NULL en BD, 0 pts). El resto debe ser
+            # alguno de los seis strings que el ScoringEngine conoce.
+            if a.marca_rating is not None and a.marca_rating not in VALID_MARCA_VALUES:
                 raise BusinessRuleError(
                     f"marca_rating inválido para player_id={a.player_id}: {a.marca_rating!r}"
                 )

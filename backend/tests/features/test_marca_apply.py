@@ -41,9 +41,22 @@ class TestMarcaAssignmentSchema:
         assert a.player_id == 42
         assert a.marca_rating == "★★"
 
-    def test_rejects_empty_rating(self) -> None:
+    def test_accepts_none_for_no_jugo(self) -> None:
+        # null == "no jugó" — la fila pasa al servicio y se persiste
+        # como NULL en player_stats.marca_rating.
+        a = MarcaAssignment(player_id=42, marca_rating=None)
+        assert a.marca_rating is None
+
+    def test_default_is_none(self) -> None:
+        a = MarcaAssignment(player_id=42)
+        assert a.marca_rating is None
+
+    def test_rejects_too_long_string(self) -> None:
+        # La validez semántica (debe estar en VALID_MARCA_VALUES) la
+        # comprueba el service. El schema sólo defiende la columna
+        # `String(10)` para que NUNCA llegue una string desbordada.
         with pytest.raises(ValidationError):
-            MarcaAssignment(player_id=42, marca_rating="")
+            MarcaAssignment(player_id=42, marca_rating="x" * 11)
 
 
 class TestMarcaApplyRequestShape:

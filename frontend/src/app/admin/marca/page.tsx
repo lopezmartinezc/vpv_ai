@@ -25,14 +25,27 @@ import type {
   SeasonSummary,
 } from "@/types";
 
-const MARCA_OPTIONS: { value: MarcaRatingValue; label: string }[] = [
-  { value: "SC", label: "SC (sin calificar)" },
-  { value: "★", label: "★" },
-  { value: "★★", label: "★★" },
-  { value: "★★★", label: "★★★" },
-  { value: "★★★★", label: "★★★★" },
-  { value: "-", label: "− (no jugó)" },
+// Sentinel para que <option value=""> represente "no jugó" (null en BD).
+const NO_PLAYED_SENTINEL = "";
+
+const MARCA_OPTIONS: { sentinel: string; value: MarcaRatingValue; label: string }[] = [
+  { sentinel: NO_PLAYED_SENTINEL, value: null, label: "— (no jugó)" },
+  { sentinel: "SC", value: "SC", label: "SC (jugó poco, no valorable)" },
+  { sentinel: "-", value: "-", label: "− (jugó mal)" },
+  { sentinel: "★", value: "★", label: "★" },
+  { sentinel: "★★", value: "★★", label: "★★" },
+  { sentinel: "★★★", value: "★★★", label: "★★★" },
+  { sentinel: "★★★★", value: "★★★★", label: "★★★★" },
 ];
+
+function sentinelFor(rating: MarcaRatingValue): string {
+  return rating === null ? NO_PLAYED_SENTINEL : rating;
+}
+
+function ratingFromSentinel(s: string): MarcaRatingValue {
+  if (s === NO_PLAYED_SENTINEL) return null;
+  return s as MarcaRatingValue;
+}
 
 interface MatchdaySummary {
   number: number;
@@ -115,13 +128,12 @@ export default function AdminMarcaPage() {
         `/scraping/admin/marca/match/${matchId}/roster`,
       );
       setRoster(r);
-      // Seed the dropdowns with whatever marca_rating is already in BD
-      // (or "SC" as a sane default for empty rows so submitting is safe).
+      // Seed the dropdowns with whatever marca_rating is already in BD.
+      // null en BD ⇒ "no jugó" en el dropdown (sentinel "").
       const seed: Record<number, MarcaRatingValue> = {};
       const allRows = [...r.home, ...r.away];
       for (const row of allRows) {
-        const current = (row.marca_rating ?? "SC") as MarcaRatingValue;
-        seed[row.player_id] = current;
+        seed[row.player_id] = (row.marca_rating ?? null) as MarcaRatingValue;
       }
       setEdits(seed);
     } catch (err) {
@@ -148,9 +160,11 @@ export default function AdminMarcaPage() {
     const allRows = [...roster.home, ...roster.away];
     const out: MarcaAssignment[] = [];
     for (const row of allRows) {
+      // edits puede contener null intencionalmente ("no jugó"), así
+      // que sólo descartamos cuando la entrada no existe en el dict.
+      if (!(row.player_id in edits)) continue;
       const next = edits[row.player_id];
-      if (!next) continue;
-      const current = row.marca_rating ?? "SC";
+      const current = (row.marca_rating ?? null) as MarcaRatingValue;
       if (next !== current) {
         out.push({ player_id: row.player_id, marca_rating: next });
       }
@@ -333,11 +347,11 @@ function TeamColumn({
       </div>
       <ul className="divide-y divide-vpv-card-border/40">
         {rows.map((row) => {
-          const current = edits[row.player_id] ?? "SC";
-          const stale = row.marca_rating ?? "SC";
+          const current = (edits[row.player_id] ?? null) as MarcaRatingValue;
+          const stale = (row.marca_rating ?? null) as MarcaRatingValue;
           const dirty = current !== stale;
-          // Players who didn't play get a softer style — the admin's
-          // natural default for them is "-" but we don't force it.
+          // Players who didn't play get a softer style — el default
+          // natural para ellos es "no jugó" pero no lo forzamos.
           const benched = row.minutes_played === 0;
           return (
             <li
@@ -354,16 +368,16 @@ function TeamColumn({
                 {row.minutes_played}'
               </span>
               <select
-                value={current}
+                value={sentinelFor(current)}
                 onChange={(e) =>
-                  onChange(row.player_id, e.target.value as MarcaRatingValue)
+                  onChange(row.player_id, ratingFromSentinel(e.target.value))
                 }
                 className={`rounded border bg-vpv-bg px-1.5 py-0.5 text-xs text-vpv-text ${
                   dirty ? "border-vpv-accent" : "border-vpv-border"
                 }`}
               >
                 {MARCA_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
+                  <option key={opt.sentinel} value={opt.sentinel}>
                     {opt.label}
                   </option>
                 ))}

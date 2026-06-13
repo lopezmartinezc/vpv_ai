@@ -10,14 +10,22 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 # Valid Marca rating strings — what the ScoringEngine knows how to
-# convert into points. The dropdown in the UI emits these exact values.
+# convert into points. The dropdown in the UI emits these exact values
+# OR null when the player didn't play at all (no row to score).
+#
+# Meaning (per Marca's print edition + ScoringEngine):
+#   "★"…"★★★★"  → cuantas más, mejor
+#   "SC"        → "sin calificar" — jugó poco, no se puede valorar
+#   "-"         → "jugó mal" — calificación negativa explícita
+#   None        → "no jugó" — la fila se persiste con marca_rating NULL
+#                  y pts_marca = 0
 VALID_MARCA_VALUES: tuple[str, ...] = (
-    "★",  # ★
-    "★★",  # ★★
-    "★★★",  # ★★★
-    "★★★★",  # ★★★★
-    "SC",  # sin calificar
-    "-",  # no jugó
+    "★",
+    "★★",
+    "★★★",
+    "★★★★",
+    "SC",
+    "-",
 )
 
 
@@ -46,11 +54,14 @@ class MarcaRosterResponse(BaseModel):
 
 
 class MarcaAssignment(BaseModel):
-    """One row of the admin's edit list."""
+    """One row of the admin's edit list.
+
+    ``marca_rating`` is None when the admin marks the player as
+    "no jugó" — the service will store NULL and pts_marca becomes 0.
+    """
 
     player_id: int
-    # We accept anything in VALID_MARCA_VALUES; the service validates.
-    marca_rating: str = Field(..., min_length=1, max_length=10)
+    marca_rating: str | None = Field(default=None, max_length=10)
 
 
 class MarcaApplyRequest(BaseModel):

@@ -1314,8 +1314,8 @@ export interface ParticipantIQResponse {
 // Marca-rating admin tool (/admin/marca). Backend: scraping/schemas_marca.py
 // ---------------------------------------------------------------------------
 
-/** Six values the dropdown emits — matches `VALID_MARCA_VALUES` in backend. */
-export type MarcaRatingValue = "★" | "★★" | "★★★" | "★★★★" | "SC" | "-";
+/** Values the dropdown emits. `null` ⇒ "no jugó" (BD NULL, 0 pts). */
+export type MarcaRatingValue = "★" | "★★" | "★★★" | "★★★★" | "SC" | "-" | null;
 
 export interface MarcaPlayerRow {
   player_id: number;
@@ -1338,6 +1338,7 @@ export interface MarcaRosterResponse {
 
 export interface MarcaAssignment {
   player_id: number;
+  /** `null` ⇒ "no jugó", persistido como NULL en player_stats. */
   marca_rating: MarcaRatingValue;
 }
 
