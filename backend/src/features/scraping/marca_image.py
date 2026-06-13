@@ -340,8 +340,35 @@ def _ocr_column_tokens(green_col: np.ndarray) -> list[dict]:
     return out
 
 
+def _has_letter_token(tokens: list[dict]) -> bool:
+    """True if the token list contains at least one token with ≥2 ASCII
+    letters in a row. We use this to decide if the first OCR pass is
+    good enough, or if we need a second pass with stronger pre-processing."""
+    for t in tokens:
+        text = t.get("text", "")
+        run = 0
+        for ch in text:
+            if ch.isalpha() and ord(ch) < 128:
+                run += 1
+                if run >= 2:
+                    return True
+            else:
+                run = 0
+    return False
+
+
 def _ocr_band_tokens(green_full: np.ndarray, yc: int, xa: int, xb: int, sc: float) -> list[dict]:
-    """OCR a single row band (PSM 7) at 3x scale."""
+    """OCR a single row band (PSM 7) at 3x scale.
+
+    Two-pass strategy. The first pass runs on the green-channel band
+    directly — fast and good enough on modern Tesseract builds. If
+    that pass returns ZERO tokens with at least 2 consecutive letters
+    (signalling that the row's name didn't OCR — typical on older
+    Tesseract builds like 5.3.x), a second pass runs after Otsu
+    binarisation, which dramatically improves contrast on Marca's
+    black-on-light text and recovers names that the raw green channel
+    couldn't read.
+    """
     if green_full.size == 0:
         return []
     hh = int(15 * sc)
@@ -349,20 +376,34 @@ def _ocr_band_tokens(green_full: np.ndarray, yc: int, xa: int, xb: int, sc: floa
     if band.size == 0:
         return []
     up = cv2.resize(band, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
-    texts, confs, lefts, _tops, _widths = _ocr_data(up, lang="eng", psm=7)
-    out: list[dict] = []
-    for i, raw_text in enumerate(texts):
-        t = (raw_text or "").strip()
-        if not t:
-            continue
-        try:
-            conf = int(confs[i])
-        except (TypeError, ValueError):
-            continue
-        if conf <= _OCR_CONF_MIN:
-            continue
-        out.append({"text": t, "x": lefts[i] // 3, "conf": conf})
-    return out
+
+    def _collect(img_in: np.ndarray) -> list[dict]:
+        texts, confs, lefts, _tops, _widths = _ocr_data(img_in, lang="eng", psm=7)
+        result: list[dict] = []
+        for i, raw_text in enumerate(texts):
+            t = (raw_text or "").strip()
+            if not t:
+                continue
+            try:
+                conf = int(confs[i])
+            except (TypeError, ValueError):
+                continue
+            if conf <= _OCR_CONF_MIN:
+                continue
+            result.append({"text": t, "x": lefts[i] // 3, "conf": conf})
+        return result
+
+    tokens = _collect(up)
+    if not _has_letter_token(tokens):
+        # Fallback: Otsu binarisation. Inverting the threshold so the
+        # text stays black (Tesseract is trained on dark text on light
+        # background; Marca's red sub text and antialiasing benefit
+        # the most from this).
+        _, binarised = cv2.threshold(up, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        tokens_pass2 = _collect(binarised)
+        if _has_letter_token(tokens_pass2):
+            tokens = tokens_pass2
+    return tokens
 
 
 # ---------------------------------------------------------------------------
