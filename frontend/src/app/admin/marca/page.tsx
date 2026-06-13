@@ -370,11 +370,12 @@ export default function AdminMarcaPage() {
             pestaña Manual con la propuesta. Después puedes corregir los que
             haga falta y pulsar &quot;Aplicar&quot;.
           </p>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Hidden native input + styled <label> that triggers it.
+                The label gets the same key bump as before so picking
+                the same file twice still works. */}
             <input
-              // The key remounts the input after every successful upload
-              // or match change, sidestepping the browser quirk that
-              // suppresses onChange when the same file is picked twice.
+              id={`marca-file-${fileInputKey}`}
               key={fileInputKey}
               type="file"
               accept="image/png,image/jpeg,image/webp"
@@ -385,17 +386,43 @@ export default function AdminMarcaPage() {
                   if (prev) URL.revokeObjectURL(prev);
                   return file ? URL.createObjectURL(file) : null;
                 });
-                // Stale OCR result must not linger after picking a new
-                // file — even if it's the same name as before.
                 setPreview(null);
                 setMessage(null);
               }}
-              className="text-vpv-text"
+              className="sr-only"
             />
+            <label
+              htmlFor={`marca-file-${fileInputKey}`}
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-vpv-border bg-vpv-bg px-3 py-1.5 text-xs font-medium text-vpv-text transition-colors hover:bg-vpv-card hover:border-vpv-accent/50"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                className="h-3.5 w-3.5"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M10 3a.75.75 0 01.75.75v6.5l1.95-1.95a.75.75 0 111.06 1.06l-3.23 3.22a.75.75 0 01-1.06 0L6.24 9.36a.75.75 0 011.06-1.06l1.95 1.95V3.75A.75.75 0 0110 3zM4.75 14a.75.75 0 01.75.75v.75c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-.75a.75.75 0 011.5 0v.75A2.25 2.25 0 0114.75 17h-8.5A2.25 2.25 0 014 14.75v-.75A.75.75 0 014.75 14z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              {imageFile ? "Cambiar imagen" : "Seleccionar imagen"}
+            </label>
+
+            {imageFile && (
+              <span
+                className="max-w-[220px] truncate text-xs text-vpv-text-muted"
+                title={imageFile.name}
+              >
+                {imageFile.name}
+              </span>
+            )}
+
             <button
               onClick={handleUpload}
               disabled={uploadBusy || !imageFile}
-              className="rounded bg-vpv-accent px-3 py-1 text-xs font-bold text-white disabled:opacity-40"
+              className="ml-auto rounded-md bg-vpv-accent px-3 py-1.5 text-xs font-bold text-white shadow-sm transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
             >
               {uploadBusy ? "Procesando…" : "Procesar imagen"}
             </button>
@@ -403,10 +430,10 @@ export default function AdminMarcaPage() {
               <button
                 onClick={clearImageState}
                 disabled={uploadBusy}
-                className="rounded border border-vpv-border bg-vpv-bg px-3 py-1 text-xs text-vpv-text-muted hover:text-vpv-text disabled:opacity-40"
+                className="rounded-md border border-vpv-border bg-vpv-bg px-3 py-1.5 text-xs text-vpv-text-muted transition-colors hover:text-vpv-text disabled:opacity-40"
                 title="Descartar imagen y propuesta OCR"
               >
-                Quitar imagen
+                Quitar
               </button>
             )}
           </div>
