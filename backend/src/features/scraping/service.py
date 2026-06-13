@@ -1867,15 +1867,24 @@ class ScrapingService:
             roster player's display_name as TOKEN SETS.
 
             Returns a sorted list of (player_row, score) with score
-            being |intersection| / max(|ocr|, |db|). Filters scores
-            below 0.40 — anything lower is coincidental shared tokens.
-            Skips intersections that only share length-2 tokens
-            (Oh, Li, etc.) — those alone are too common to be
-            distinctive.
+            being |intersection| / max(|ocr|, |db|). Skips intersections
+            that only share length-2 tokens (Oh, Li, etc.) — those
+            alone are too common to be distinctive.
+
+            Threshold is adaptive: 0.40 for OCR rows with ≥ 3 tokens
+            (the normal case), but a very permissive 0.20 when the row
+            has only 1-2 tokens. This rescues cases like "> 25 Eom 69'"
+            where the cromo truncated the name and only one
+            distinctive token reaches us — if the roster has a single
+            "Eom *" player, that's still a confident match.
             """
             ocr_tokens = _token_set(raw_text)
             if not ocr_tokens:
                 return []
+            # Distinctive tokens (≥ 3 chars). Common 2-letter Korean
+            # syllables like "Oh", "Li" don't count.
+            distinctive = {t for t in ocr_tokens if len(t) >= 3}
+            threshold = 0.40 if len(ocr_tokens) >= 3 else 0.20
             scored: list = []
             for p in all_roster:
                 db_tokens = roster_token_sets.get(p.player_id) or frozenset()
@@ -1884,11 +1893,12 @@ class ScrapingService:
                 inter = ocr_tokens & db_tokens
                 if not inter:
                     continue
-                # Require at least one ≥ 3-char distinctive overlap.
-                if not any(len(t) >= 3 for t in inter):
+                # Require at least one distinctive overlap with a
+                # ≥ 3-char shared token.
+                if not (inter & distinctive):
                     continue
                 score = len(inter) / max(len(ocr_tokens), len(db_tokens))
-                if score >= 0.40:
+                if score >= threshold:
                     scored.append((p, score))
             scored.sort(key=lambda x: -x[1])
             return scored
@@ -1925,26 +1935,40 @@ class ScrapingService:
             ranked = _rank_roster(parsed.surname_clean)
 
             # Decide whether we have a confident enough match to
-            # auto-fill the dropdown.
+            # auto-fill the dropdown. The surname path only fires
+            # when the candidate is UNIQUE — a roster with 5 "Lee"
+            # players would otherwise auto-pick the first one and
+            # silently mis-assign rows 2..5. When the surname is
+            # ambiguous we go straight to the token-set fallback,
+            # which uses the full display_name and resolves it.
             auto_match_player = None
             if len(exact) == 1:
                 auto_match_player = exact[0]
-            elif ranked:
+            elif not exact and ranked:
                 top_key, top_score = ranked[0]
                 second_score = ranked[1][1] if len(ranked) > 1 else 0.0
                 if top_score >= 0.85 or (top_score >= 0.65 and (top_score - second_score) >= 0.10):
                     candidates = by_surname.get(top_key, [])
-                    if candidates:
+                    # Same uniqueness rule on the fuzzy path.
+                    if len(candidates) == 1:
                         auto_match_player = candidates[0]
 
-            # Fallback: order-insensitive token overlap on the full
-            # display_name. Catches Korean / Japanese names where the
-            # cromo has "Son Heung-min" but the DB has "Heung-min Son"
-            # (or vice versa) — surname-only matching fails because
-            # the last token differs.
+            # Token-set fallback on the full display_name. Catches:
+            #   - Asian names where the cromo is "Son Heung-min" but
+            #     the DB has "Heung-min Son" (or vice versa).
+            #   - Ambiguous surnames (5 Lees, 3 Kims): the full-name
+            #     overlap distinguishes them.
+            #   - Truncated OCR rows that lost most of the name,
+            #     e.g. "Eom" alone matches "Eom Ji-sung" when only
+            #     one roster player carries that token.
             if auto_match_player is None:
                 token_ranked = _rank_roster_by_tokens(parsed.raw_text)
-                if token_ranked:
+                if len(token_ranked) == 1:
+                    # Only one roster player shares any distinctive
+                    # token with the OCR row → it's a confident hit
+                    # regardless of score.
+                    auto_match_player = token_ranked[0][0]
+                elif token_ranked:
                     top_player, top_score = token_ranked[0]
                     second_score = token_ranked[1][1] if len(token_ranked) > 1 else 0.0
                     if top_score >= 0.66 or (
