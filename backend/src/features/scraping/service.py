@@ -1780,15 +1780,34 @@ class ScrapingService:
             if key:
                 by_surname.setdefault(key, []).append(player_row)
 
-        # Fuzzy fallback: cuando el apellido OCR no matchea exacto,
-        # buscamos el más cercano del roster con difflib (stdlib).
-        # Tesseract típicamente se equivoca en 1-2 letras ("Plisic"
-        # → "Pulisic", "Vasquez" → con / sin tilde). Un cutoff alto
-        # evita falsos positivos.
+        # Multi-tier fuzzy: cuando no hay match exacto, puntuamos cada
+        # apellido del roster por similitud y decidimos.
+        #
+        # Auto-match cuando:
+        #   - score >= 0.85 (claramente cerca, p.ej. "Vasquez" vs "Vásquez")
+        #   - score >= 0.65 Y hay margen >= 0.10 con el segundo mejor
+        #     (resuelve "Ukon" → "Okon": 0.75 vs cero competidor)
+        #
+        # Si no, mandamos a `unmatched` pero con SOLO los top-5
+        # candidatos ordenados por similitud — no la plantilla entera —
+        # para que el admin elija de una shortlist relevante.
         import difflib
 
         roster_keys = list(by_surname.keys())
-        fuzzy_cutoff = 0.78
+
+        def _rank_roster(query: str) -> list[tuple[str, float]]:
+            """Return (key, score) for every roster key, sorted by score desc.
+
+            Filter out scores below 0.55 — esos ya son ruido.
+            """
+            if not query:
+                return []
+            scored = [
+                (key, difflib.SequenceMatcher(None, query, key).ratio()) for key in roster_keys
+            ]
+            scored = [(k, s) for k, s in scored if s >= 0.55]
+            scored.sort(key=lambda x: -x[1])
+            return scored
 
         stars_to_rating = {1: "★", 2: "★★", 3: "★★★", 4: "★★★★"}
 
@@ -1818,16 +1837,22 @@ class ScrapingService:
                 confidence=parsed.confidence,
                 explicit_marker=parsed.explicit_marker,
             )
-            candidates = by_surname.get(parsed.surname_clean, [])
-            if not candidates and parsed.surname_clean:
-                close = difflib.get_close_matches(
-                    parsed.surname_clean, roster_keys, n=1, cutoff=fuzzy_cutoff
-                )
-                if close:
-                    candidates = by_surname.get(close[0], [])
+            exact = by_surname.get(parsed.surname_clean, [])
+            ranked = _rank_roster(parsed.surname_clean)
 
-            if len(candidates) == 1:
-                player = candidates[0]
+            # Decide whether we have a confident enough match to
+            # auto-fill the dropdown.
+            auto_match_key: str | None = None
+            if len(exact) == 1:
+                auto_match_key = parsed.surname_clean
+            elif ranked:
+                top_key, top_score = ranked[0]
+                second_score = ranked[1][1] if len(ranked) > 1 else 0.0
+                if top_score >= 0.85 or (top_score >= 0.65 and (top_score - second_score) >= 0.10):
+                    auto_match_key = top_key
+
+            if auto_match_key is not None and by_surname.get(auto_match_key):
+                player = by_surname[auto_match_key][0]
                 matches.append(
                     MarcaPreviewMatch(
                         row=preview_row,
@@ -1836,12 +1861,22 @@ class ScrapingService:
                         marca_rating=_resolve_rating(parsed),
                     )
                 )
-            else:
-                # 0 candidates: surname mangled beyond fuzzy rescue.
-                # >1 candidates: ambiguous (same surname twice).
-                # Same outcome either way — render the candidates list.
-                shortlist = candidates if candidates else all_roster
-                unmatched.append(MarcaPreviewUnmatched(row=preview_row, candidates=shortlist))
+                continue
+
+            # Build a shortlist of the most plausible candidates so the
+            # admin picks from a sorted dropdown of ≤5 names instead of
+            # the full ~26-player roster.
+            shortlist: list = []
+            for key, _score in ranked:
+                for player in by_surname.get(key, []):
+                    shortlist.append(player)
+                    if len(shortlist) >= 5:
+                        break
+                if len(shortlist) >= 5:
+                    break
+            if not shortlist:
+                shortlist = all_roster
+            unmatched.append(MarcaPreviewUnmatched(row=preview_row, candidates=shortlist))
 
         return MarcaPreviewResponse(
             match_id=match_id,

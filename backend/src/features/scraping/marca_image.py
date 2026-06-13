@@ -42,7 +42,10 @@ logger = logging.getLogger(__name__)
 
 
 # Red-pixel thresholds (HSV-ish but in RGB to avoid the conversion).
-_RED_R_MIN = 140
+# Lowered R_MIN from 140 -> 120 after seeing a real-world cromo whose
+# red bar was rendered slightly darker (Marca print can drift between
+# ~#B40000 and ~#E00000). G/B stay strict so white doesn't qualify.
+_RED_R_MIN = 120
 _RED_G_MAX = 110
 _RED_B_MAX = 110
 
@@ -73,7 +76,18 @@ _MIN_DARK_DENSITY = 0.05
 # A red bar (SoFi Stadium line) is at least this fraction of the
 # image width red. Tuned to leave headroom against the title block's
 # small red decorations.
-_RED_BAR_FRACTION = 0.5
+# Lowered to 0.35 after real-world testing: Marca's bar has white
+# text "Estadio Azteca   70.492 esp." sprawled across, so the row's
+# red density dips toward 40-50% in some cromos.
+_RED_BAR_FRACTION = 0.35
+
+# Antialiasing / JPEG artifacts can dip 1-2 rows inside the bar
+# below threshold. Tolerate them before declaring the bar's top.
+_RED_BAR_MAX_MISS = 2
+
+# A 1-px "red" row could be print noise; require at least this many
+# contiguous red rows before treating it as the bar.
+_RED_BAR_MIN_HEIGHT = 6
 
 # A horizontal "divider" line (between the manager row and the first
 # player row) is at least this fraction of the column width black.
@@ -85,6 +99,30 @@ _DIVIDER_DENSITY = 0.85
 # normal text height (~20 px). We want to find the divider, not a
 # text band.
 _MAX_DIVIDER_HEIGHT = 5
+
+
+# Words that NEVER appear in a player row but show up in the bar /
+# footer (referee, cards, goals). Dropping rows whose raw text hits
+# any of these keeps the stadium block out of `unmatched` even when
+# the red-bar detector misses for some reason.
+_FOOTER_DENYLIST: frozenset[str] = frozenset(
+    (
+        "estadio",
+        "stadium",
+        "esp.",
+        "espectadores",
+        "arbitro",
+        "tarjetas",
+        "goles",
+        "gol anulado",
+        "gol",
+    )
+)
+
+# A row's raw text containing a number with more than 3 digits is
+# almost certainly an attendance figure ("70.492", "44 985"), not a
+# shirt number (1-2 digits) and not a sub minute (1-2 digits).
+_ATTENDANCE_NUMBER = re.compile(r"\d{4,}")
 
 
 @dataclass
@@ -261,12 +299,11 @@ def _split_columns(img_rgb: Image.Image) -> tuple[Image.Image, Image.Image]:
 def _find_red_bar_top_y(img_rgb: Image.Image) -> int | None:
     """Return the y-coordinate of the TOP of the red SoFi-Stadium bar.
 
-    Scans the image bottom-up looking for a contiguous block where
-    every scan-line has >= _RED_BAR_FRACTION of red pixels. The bar
-    spans the FULL width of the cromo, so this is robust against the
-    small red decorations (stars, vertical dividers) elsewhere.
-
-    Returns None if no such bar exists.
+    Scans the image bottom-up looking for a contiguous block of
+    "mostly red" scan-lines (>= _RED_BAR_FRACTION). Tolerates up to
+    _RED_BAR_MAX_MISS rows of dip (antialiasing / JPEG) and demands
+    at least _RED_BAR_MIN_HEIGHT rows of red before treating the block
+    as the bar. Returns None if no such bar exists.
     """
     pixels = img_rgb.load()
     if pixels is None:
@@ -276,7 +313,11 @@ def _find_red_bar_top_y(img_rgb: Image.Image) -> int | None:
         return None
     threshold_px = int(w * _RED_BAR_FRACTION)
 
+    in_bar = False
     bar_top: int | None = None
+    bar_bottom: int | None = None
+    miss_streak = 0
+
     for y in range(h - 1, -1, -1):
         cnt = 0
         for x in range(w):
@@ -286,11 +327,36 @@ def _find_red_bar_top_y(img_rgb: Image.Image) -> int | None:
             r, g, b = pixel[0], pixel[1], pixel[2]
             if r >= _RED_R_MIN and g <= _RED_G_MAX and b <= _RED_B_MAX:
                 cnt += 1
+
         if cnt >= threshold_px:
+            if not in_bar:
+                bar_bottom = y
+                in_bar = True
             bar_top = y
-        elif bar_top is not None:
-            return bar_top
-    return bar_top
+            miss_streak = 0
+        elif in_bar:
+            miss_streak += 1
+            if miss_streak > _RED_BAR_MAX_MISS:
+                if (
+                    bar_bottom is not None
+                    and bar_top is not None
+                    and (bar_bottom - bar_top + 1) >= _RED_BAR_MIN_HEIGHT
+                ):
+                    return bar_top
+                # False positive — reset and keep scanning up.
+                in_bar = False
+                bar_top = None
+                bar_bottom = None
+                miss_streak = 0
+
+    if (
+        in_bar
+        and bar_bottom is not None
+        and bar_top is not None
+        and (bar_bottom - bar_top + 1) >= _RED_BAR_MIN_HEIGHT
+    ):
+        return bar_top
+    return None
 
 
 def _find_top_divider_y(gray_img: Image.Image) -> int | None:
@@ -472,6 +538,16 @@ def _process_column(column_rgb: Image.Image) -> list[ParsedMarcaRow]:
         text_for_ocr = ImageOps.autocontrast(text_upsampled.convert("L"))
         text, conf = _ocr_single_line(text_for_ocr)
         if not text:
+            continue
+
+        # Footer / stadium guard: a row whose text contains a footer
+        # keyword or an attendance-like number (4+ digits) is decoration
+        # leaking through, not a player. Drop it.
+        # Accent-folded comparison so "Árbitro" / "Árbitro" both match.
+        text_normalized = _strip_accents_lower(text)
+        if any(kw in text_normalized for kw in _FOOTER_DENYLIST):
+            continue
+        if _ATTENDANCE_NUMBER.search(text):
             continue
 
         surname_clean, is_sub, minute = _parse_row_text(text)

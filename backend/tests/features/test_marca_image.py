@@ -399,3 +399,103 @@ class TestDetectRightMarker:
     def test_empty_image_short_circuits(self) -> None:
         # An empty bbox would result in a 0x0 crop — must not call OCR.
         assert _detect_right_marker(Image.new("RGB", (0, 0), (255, 255, 255))) is None
+
+
+# ---------------------------------------------------------------------------
+# Stadium / footer denylist (defensive — even if the red bar detector misses)
+# ---------------------------------------------------------------------------
+
+
+class TestStadiumRowsAreDropped:
+    """Belt-and-suspenders: when OCR sees footer-y text, drop the row.
+
+    These tests use the existing mocked _ocr_single_line plumbing.
+    """
+
+    def _png(self) -> bytes:
+        png = _png_bytes_with_layout(
+            width=400,
+            height=200,
+            left_rows=[(40, 70), (90, 120)],
+            right_rows=[(40, 70)],
+        )
+        return png
+
+    def test_estadio_text_dropped(self) -> None:
+        # First left row is the stadium ("Estadio Azteca"), second is
+        # a real player. Right column has a referee row ("Árbitro …").
+        responses = iter(
+            [
+                ("Estadio Azteca", 0.9),
+                ("10 Pulisic", 0.92),
+                ("Árbitro Tello", 0.8),
+            ]
+        )
+
+        def fake_ocr(_img, lang: str = "spa") -> tuple[str, float]:
+            return next(responses)
+
+        with patch("src.features.scraping.marca_image._ocr_single_line", side_effect=fake_ocr):
+            rows = parse_marca_image(self._png())
+        # Only Pulisic survives.
+        assert [r.surname_clean for r in rows] == ["pulisic"]
+
+    def test_attendance_number_dropped(self) -> None:
+        # "70.492 esp." has a 4+ digit number — even without the
+        # keyword the row should be discarded.
+        responses = iter(
+            [
+                ("70.492 esp.", 0.9),
+                ("24 Freese", 0.92),
+                ("8 McKennie", 0.85),
+            ]
+        )
+
+        def fake_ocr(_img, lang: str = "spa") -> tuple[str, float]:
+            return next(responses)
+
+        with patch("src.features.scraping.marca_image._ocr_single_line", side_effect=fake_ocr):
+            rows = parse_marca_image(self._png())
+        # Two players left, no attendance row.
+        assert sorted(r.surname_clean for r in rows) == ["freese", "mckennie"]
+
+    def test_goles_block_dropped(self) -> None:
+        responses = iter(
+            [
+                ("Goles 0-1 7 Bobadilla", 0.7),
+                ("10 Pulisic", 0.92),
+                ("Tarjetas 10 Cáceres", 0.7),
+            ]
+        )
+
+        def fake_ocr(_img, lang: str = "spa") -> tuple[str, float]:
+            return next(responses)
+
+        with patch("src.features.scraping.marca_image._ocr_single_line", side_effect=fake_ocr):
+            rows = parse_marca_image(self._png())
+        assert [r.surname_clean for r in rows] == ["pulisic"]
+
+
+# ---------------------------------------------------------------------------
+# Red bar detector: tolerate antialiasing
+# ---------------------------------------------------------------------------
+
+
+class TestRedBarTolerance:
+    def test_skips_dipped_rows_inside_bar(self) -> None:
+        """A 12-px tall bar with one antialiased row in the middle is
+        still detected as a single bar."""
+        img = Image.new("RGB", (200, 400), (255, 255, 255))
+        draw = ImageDraw.Draw(img)
+        # Two red sub-bars with a 1px white gap → should still count.
+        draw.rectangle((0, 300, 199, 305), fill=(220, 30, 30))
+        draw.rectangle((0, 307, 199, 314), fill=(220, 30, 30))
+        # Returns the topmost red y across the merged block.
+        assert _find_red_bar_top_y(img) == 300
+
+    def test_short_red_band_is_ignored(self) -> None:
+        # 3-px tall red band — below _RED_BAR_MIN_HEIGHT.
+        img = Image.new("RGB", (200, 400), (255, 255, 255))
+        draw = ImageDraw.Draw(img)
+        draw.rectangle((0, 300, 199, 302), fill=(220, 30, 30))
+        assert _find_red_bar_top_y(img) is None
