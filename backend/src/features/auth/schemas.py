@@ -4,6 +4,14 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from src.shared.permissions import Perm
+
+# All Perm bits OR-ed together — the largest value a valid bitmap
+# can take. Computed at import time so adding a new bit to Perm
+# automatically updates the schema's upper bound (no more "Notas
+# Marca = 1024 rejected because the schema is stuck at 1023").
+_PERMISSIONS_MAX = sum(p.value for p in Perm)
+
 
 class LoginRequest(BaseModel):
     username: str
@@ -65,7 +73,7 @@ class ChangePasswordRequest(BaseModel):
 
 
 class SetPermissionsRequest(BaseModel):
-    permissions: int = Field(ge=0, le=1023)
+    permissions: int = Field(ge=0, le=_PERMISSIONS_MAX)
 
 
 class AdminUserResponse(BaseModel):
