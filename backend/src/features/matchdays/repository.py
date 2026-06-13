@@ -475,6 +475,21 @@ class MatchdayRepository:
         )
 
         if matchday_number is not None:
+            # Historical ownership via ownership log. Some seasons —
+            # tournaments like Mundial 2026, plus any pre-log season —
+            # never wrote to player_ownership_log, so the JOIN below
+            # would return zero bench players. Probe the log first
+            # and fall back to Player.owner_id when it's empty.
+            log_check_stmt = (
+                select(PlayerOwnershipLog.id)
+                .where(PlayerOwnershipLog.season_id == season_id)
+                .limit(1)
+            )
+            log_has_rows = (await self.session.execute(log_check_stmt)).scalar()
+            if log_has_rows is None:
+                matchday_number = None
+
+        if matchday_number is not None:
             # Historical ownership via ownership log
             row_num = (
                 func.row_number()
