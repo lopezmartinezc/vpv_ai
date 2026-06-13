@@ -1806,6 +1806,33 @@ class ScrapingService:
             if key:
                 by_surname.setdefault(key, []).append(player_row)
 
+        # Token-set helper for order-insensitive matching. Korean names
+        # show up in the cromo as "Son Heung-min" (apellido primero)
+        # but the DB may have them in either order. Comparing as sets
+        # of tokens — including the halves of hyphenated names — makes
+        # the match independent of token order. We also keep the
+        # original surname-only fuzzy below for Western names.
+        def _token_set(text: str) -> frozenset[str]:
+            if not text:
+                return frozenset()
+            n = _ud.normalize("NFD", text)
+            n = "".join(c for c in n if not _ud.combining(c)).lower()
+            # Keep letters and hyphens; everything else becomes space.
+            n = "".join(c if c.isalpha() or c in "- " else " " for c in n)
+            out: set[str] = set()
+            for tok in n.split():
+                if len(tok) >= 2:
+                    out.add(tok)
+                    # Hyphenated halves: "heung-min" -> add "heung", "min".
+                    for sub in tok.split("-"):
+                        if len(sub) >= 2:
+                            out.add(sub)
+            return frozenset(out)
+
+        roster_token_sets: dict[int, frozenset[str]] = {
+            p.player_id: _token_set(p.display_name) for p in all_roster
+        }
+
         # Multi-tier fuzzy: cuando no hay match exacto, puntuamos cada
         # apellido del roster por similitud y decidimos.
         #
@@ -1832,6 +1859,37 @@ class ScrapingService:
                 (key, difflib.SequenceMatcher(None, query, key).ratio()) for key in roster_keys
             ]
             scored = [(k, s) for k, s in scored if s >= 0.55]
+            scored.sort(key=lambda x: -x[1])
+            return scored
+
+        def _rank_roster_by_tokens(raw_text: str) -> list:
+            """Order-insensitive match: parsed row's raw_text vs each
+            roster player's display_name as TOKEN SETS.
+
+            Returns a sorted list of (player_row, score) with score
+            being |intersection| / max(|ocr|, |db|). Filters scores
+            below 0.40 — anything lower is coincidental shared tokens.
+            Skips intersections that only share length-2 tokens
+            (Oh, Li, etc.) — those alone are too common to be
+            distinctive.
+            """
+            ocr_tokens = _token_set(raw_text)
+            if not ocr_tokens:
+                return []
+            scored: list = []
+            for p in all_roster:
+                db_tokens = roster_token_sets.get(p.player_id) or frozenset()
+                if not db_tokens:
+                    continue
+                inter = ocr_tokens & db_tokens
+                if not inter:
+                    continue
+                # Require at least one ≥ 3-char distinctive overlap.
+                if not any(len(t) >= 3 for t in inter):
+                    continue
+                score = len(inter) / max(len(ocr_tokens), len(db_tokens))
+                if score >= 0.40:
+                    scored.append((p, score))
             scored.sort(key=lambda x: -x[1])
             return scored
 
@@ -1868,22 +1926,38 @@ class ScrapingService:
 
             # Decide whether we have a confident enough match to
             # auto-fill the dropdown.
-            auto_match_key: str | None = None
+            auto_match_player = None
             if len(exact) == 1:
-                auto_match_key = parsed.surname_clean
+                auto_match_player = exact[0]
             elif ranked:
                 top_key, top_score = ranked[0]
                 second_score = ranked[1][1] if len(ranked) > 1 else 0.0
                 if top_score >= 0.85 or (top_score >= 0.65 and (top_score - second_score) >= 0.10):
-                    auto_match_key = top_key
+                    candidates = by_surname.get(top_key, [])
+                    if candidates:
+                        auto_match_player = candidates[0]
 
-            if auto_match_key is not None and by_surname.get(auto_match_key):
-                player = by_surname[auto_match_key][0]
+            # Fallback: order-insensitive token overlap on the full
+            # display_name. Catches Korean / Japanese names where the
+            # cromo has "Son Heung-min" but the DB has "Heung-min Son"
+            # (or vice versa) — surname-only matching fails because
+            # the last token differs.
+            if auto_match_player is None:
+                token_ranked = _rank_roster_by_tokens(parsed.raw_text)
+                if token_ranked:
+                    top_player, top_score = token_ranked[0]
+                    second_score = token_ranked[1][1] if len(token_ranked) > 1 else 0.0
+                    if top_score >= 0.66 or (
+                        top_score >= 0.50 and (top_score - second_score) >= 0.20
+                    ):
+                        auto_match_player = top_player
+
+            if auto_match_player is not None:
                 matches.append(
                     MarcaPreviewMatch(
                         row=preview_row,
-                        player_id=player.player_id,
-                        player_name=player.display_name,
+                        player_id=auto_match_player.player_id,
+                        player_name=auto_match_player.display_name,
                         marca_rating=_resolve_rating(parsed),
                     )
                 )
@@ -1891,15 +1965,26 @@ class ScrapingService:
 
             # Build a shortlist of the most plausible candidates so the
             # admin picks from a sorted dropdown of ≤5 names instead of
-            # the full ~26-player roster.
+            # the full ~26-player roster. Mix surname-ranked + token-
+            # ranked so order-flipped names show up too.
             shortlist: list = []
+            seen_ids: set[int] = set()
             for key, _score in ranked:
                 for player in by_surname.get(key, []):
-                    shortlist.append(player)
+                    if player.player_id not in seen_ids:
+                        shortlist.append(player)
+                        seen_ids.add(player.player_id)
                     if len(shortlist) >= 5:
                         break
                 if len(shortlist) >= 5:
                     break
+            if len(shortlist) < 5:
+                for player, _s in _rank_roster_by_tokens(parsed.raw_text):
+                    if player.player_id not in seen_ids:
+                        shortlist.append(player)
+                        seen_ids.add(player.player_id)
+                    if len(shortlist) >= 5:
+                        break
             if not shortlist:
                 shortlist = all_roster
             unmatched.append(MarcaPreviewUnmatched(row=preview_row, candidates=shortlist))
