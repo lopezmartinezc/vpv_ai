@@ -22,14 +22,13 @@ import type {
   MarcaPlayerRow,
   MarcaRatingValue,
   MarcaRosterResponse,
-  SeasonSummary,
 } from "@/types";
 
 // Sentinel para que <option value=""> represente "no jugó" (null en BD).
 const NO_PLAYED_SENTINEL = "";
 
 const MARCA_OPTIONS: { sentinel: string; value: MarcaRatingValue; label: string }[] = [
-  { sentinel: NO_PLAYED_SENTINEL, value: null, label: "— (no jugó)" },
+  { sentinel: NO_PLAYED_SENTINEL, value: null, label: "no jugó" },
   { sentinel: "SC", value: "SC", label: "SC (jugó poco, no valorable)" },
   { sentinel: "-", value: "-", label: "− (jugó mal)" },
   { sentinel: "★", value: "★", label: "★" },
@@ -365,7 +364,7 @@ function TeamColumn({
               </span>
               <span className="flex-1 truncate text-vpv-text">{row.display_name}</span>
               <span className="w-10 text-right text-[10px] tabular-nums text-vpv-text-muted">
-                {row.minutes_played}'
+                {row.minutes_played}&apos;
               </span>
               <select
                 value={sentinelFor(current)}
