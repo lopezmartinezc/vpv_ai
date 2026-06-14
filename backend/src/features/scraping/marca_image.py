@@ -126,6 +126,12 @@ class ParsedMarcaRow:
     confidence: float
     explicit_marker: str | None = None
     dorsal: int | None = None
+    # 0 = left column (home team), 1 = right column (away team).
+    # Lets the downstream matcher restrict candidates to the right
+    # team, killing cross-team false positives the fuzzy ranker
+    # would otherwise produce (e.g. "Al Manna" matching Manzambi
+    # from the other team).
+    column_index: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -569,7 +575,7 @@ def parse_marca_image(png_bytes: bytes) -> list[ParsedMarcaRow]:
     green_full = img_bgr[:, :, 1]  # red text becomes dark on the green channel
     rows: list[ParsedMarcaRow] = []
 
-    for cfg in columns:
+    for col_idx, cfg in enumerate(columns):
         xa, xb = cfg["box"]
         col_green = green_full[y0:y1, xa:xb]
         centers = _detect_row_centers(col_green, xb - xa, sc)
@@ -617,6 +623,7 @@ def parse_marca_image(png_bytes: bytes) -> list[ParsedMarcaRow]:
                     confidence=avg_conf,
                     explicit_marker=marker,
                     dorsal=num,
+                    column_index=col_idx,
                 )
             )
 

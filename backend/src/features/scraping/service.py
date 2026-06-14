@@ -1807,6 +1807,19 @@ class ScrapingService:
             if key:
                 by_surname.setdefault(key, []).append(player_row)
 
+        # Per-column rosters so the cromo's LEFT column only matches
+        # against the home team and the RIGHT column only against the
+        # away team. Without this, fuzzy can leak across teams (e.g.
+        # "Al Manna" — Catar — ends up tied with Manzambi — Suiza —
+        # because they share enough chars to confuse difflib).
+        rosters_by_column = [roster_resp.home, roster_resp.away]
+        by_surname_by_column: list[dict[str, list]] = [{}, {}]
+        for col_idx, col_roster in enumerate(rosters_by_column):
+            for p in col_roster:
+                key = _surname_key(p.display_name)
+                if key:
+                    by_surname_by_column[col_idx].setdefault(key, []).append(p)
+
         # Token-set helper for order-insensitive matching. Korean names
         # show up in the cromo as "Son Heung-min" (apellido primero)
         # but the DB may have them in either order. Comparing as sets
@@ -1852,9 +1865,7 @@ class ScrapingService:
         # para que el admin elija de una shortlist relevante.
         import difflib
 
-        roster_keys = list(by_surname.keys())
-
-        def _rank_roster(query: str) -> list[tuple[str, float]]:
+        def _rank_roster(query: str, surnames: list[str]) -> list[tuple[str, float]]:
             """Return (key, score) for every roster key, sorted by score desc.
 
             Filter out scores below 0.55 — esos ya son ruido.
@@ -1862,13 +1873,13 @@ class ScrapingService:
             if not query:
                 return []
             scored = [
-                (key, difflib.SequenceMatcher(None, query, key).ratio()) for key in roster_keys
+                (key, difflib.SequenceMatcher(None, query, key).ratio()) for key in surnames
             ]
             scored = [(k, s) for k, s in scored if s >= 0.55]
             scored.sort(key=lambda x: -x[1])
             return scored
 
-        def _rank_roster_by_tokens(raw_text: str) -> list:
+        def _rank_roster_by_tokens(raw_text: str, roster: list) -> list:
             """Order-insensitive match: parsed row's raw_text vs each
             roster player's display_name as TOKEN SETS.
 
@@ -1892,7 +1903,7 @@ class ScrapingService:
             distinctive = {t for t in ocr_tokens if len(t) >= 3}
             threshold = 0.40 if len(ocr_tokens) >= 3 else 0.20
             scored: list = []
-            for p in all_roster:
+            for p in roster:
                 db_tokens = roster_token_sets.get(p.player_id) or frozenset()
                 if not db_tokens:
                     continue
@@ -1948,9 +1959,18 @@ class ScrapingService:
                 confidence=parsed.confidence,
                 explicit_marker=parsed.explicit_marker,
             )
-            exact = by_surname.get(parsed.surname_clean, [])
-            ranked = _rank_roster(parsed.surname_clean)
-            token_ranked = _rank_roster_by_tokens(parsed.raw_text)
+            # Restrict the search space to the column's team. The
+            # cromo's left column carries the home roster, the right
+            # column the away one — no fuzzy/token candidate can ever
+            # legitimately span teams.
+            col_idx = parsed.column_index if parsed.column_index in (0, 1) else 0
+            col_roster = rosters_by_column[col_idx]
+            col_by_surname = by_surname_by_column[col_idx]
+            col_surname_keys = list(col_by_surname.keys())
+
+            exact = col_by_surname.get(parsed.surname_clean, [])
+            ranked = _rank_roster(parsed.surname_clean, col_surname_keys)
+            token_ranked = _rank_roster_by_tokens(parsed.raw_text, col_roster)
 
             # Match priority — highest confidence first:
             #
@@ -1992,7 +2012,7 @@ class ScrapingService:
                 top_key, top_score = ranked[0]
                 second_score = ranked[1][1] if len(ranked) > 1 else 0.0
                 if top_score >= 0.85 or (top_score >= 0.65 and (top_score - second_score) >= 0.10):
-                    candidates = by_surname.get(top_key, [])
+                    candidates = col_by_surname.get(top_key, [])
                     # Same "only players who played" filter as the
                     # token-set path — protects against fuzzy hits
                     # like "Gamarra" -> "Galarza" when Galarza didn't
@@ -2019,7 +2039,7 @@ class ScrapingService:
             shortlist: list = []
             seen_ids: set[int] = set()
             for key, _score in ranked:
-                for player in by_surname.get(key, []):
+                for player in col_by_surname.get(key, []):
                     if player.player_id not in seen_ids:
                         shortlist.append(player)
                         seen_ids.add(player.player_id)
@@ -2028,14 +2048,20 @@ class ScrapingService:
                 if len(shortlist) >= 5:
                     break
             if len(shortlist) < 5:
-                for player, _s in _rank_roster_by_tokens(parsed.raw_text):
+                for player, _s in _rank_roster_by_tokens(parsed.raw_text, col_roster):
                     if player.player_id not in seen_ids:
                         shortlist.append(player)
                         seen_ids.add(player.player_id)
                     if len(shortlist) >= 5:
                         break
             if not shortlist:
-                shortlist = all_roster
+                # Last-resort: the column's roster (only players who
+                # played, sorted by minutes) — better than dumping
+                # both teams at the admin.
+                shortlist = sorted(
+                    [p for p in col_roster if p.minutes_played > 0],
+                    key=lambda p: -p.minutes_played,
+                )[:5] or list(col_roster)[:5]
             unmatched.append(MarcaPreviewUnmatched(row=preview_row, candidates=shortlist))
 
         return MarcaPreviewResponse(
