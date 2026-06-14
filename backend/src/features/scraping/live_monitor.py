@@ -174,7 +174,7 @@ async def _check_live_matches(session: AsyncSession) -> None:
                     f"{owner_line}"
                 )
 
-                sent = await _send_telegram(session, msg)
+                sent = await _send_telegram(session, msg, season_id=season.id)
                 if sent:
                     seen.add(event.dedup_key)  # only mark sent on success
                     sends_this_tick += 1
@@ -224,22 +224,30 @@ async def _build_team_map(session: AsyncSession, season_id: int) -> dict[int, st
     return {r.id: r.short_name or r.name for r in result.all()}
 
 
-async def _send_telegram(session: AsyncSession, text: str) -> bool:
-    """Send a Telegram alert. Returns True on success."""
+async def _send_telegram(
+    session: AsyncSession, text: str, season_id: int | None = None
+) -> bool:
+    """Send a Telegram alert. Returns True on success.
+
+    Uses the same per-season alerts resolution as ``TelegramNotifier.send_alert``
+    so Mundial events land in the Mundial chat instead of leaking to the
+    global Liga channel.
+    """
     try:
         from src.features.telegram.client import TelegramClient
         from src.features.telegram.config import telegram_settings
+        from src.features.telegram.service import resolve_alerts_target
 
         if not telegram_settings.telegram_enabled:
             scraping_log("live_monitor", "Telegram desactivado", "warning")
             return False
 
-        from src.core.config import settings
-
-        chat_id = settings.telegram_alerts_chat_id or telegram_settings.telegram_chat_id
+        chat_id, thread_id = await resolve_alerts_target(session, season_id)
 
         async with TelegramClient() as client:
-            result = await client.send_message(chat_id=chat_id, text=text)
+            result = await client.send_message(
+                chat_id=chat_id, text=text, message_thread_id=thread_id
+            )
 
         if result.get("ok"):
             return True

@@ -41,6 +41,34 @@ async def resolve_chat_target(
     return telegram_settings.telegram_chat_id, None
 
 
+async def resolve_alerts_target(
+    session: AsyncSession, season_id: int | None = None
+) -> tuple[str, int | None]:
+    """Resolve (chat_id, thread_id) for ALERT messages (deadline
+    reminders, live-match events…).
+
+    Resolution order — first non-empty wins:
+      1. season.alerts_telegram_chat_id (+ alerts_telegram_thread_id)
+      2. season.telegram_chat_id (+ telegram_thread_id)
+      3. settings.telegram_alerts_chat_id (env-level dedicated alerts)
+      4. telegram_settings.telegram_chat_id (env-level global)
+
+    The (3) and (4) fallbacks return no thread because the env vars
+    don't carry thread metadata.
+    """
+    from src.core.config import settings
+
+    if season_id is not None:
+        season = await session.get(Season, season_id)
+        if season is not None:
+            if season.alerts_telegram_chat_id:
+                return season.alerts_telegram_chat_id, season.alerts_telegram_thread_id
+            if season.telegram_chat_id:
+                return season.telegram_chat_id, season.telegram_thread_id
+    chat_id = settings.telegram_alerts_chat_id or telegram_settings.telegram_chat_id
+    return chat_id, None
+
+
 _STATIC_DIR = Path(__file__).resolve().parents[3] / "static"
 _LINEUPS_DIR = _STATIC_DIR / "lineups"
 
@@ -153,31 +181,12 @@ class TelegramNotifier:
     async def send_alert(self, text: str, season_id: int | None = None) -> bool:
         """Send a message to the alerts chat (deadline reminders, etc.).
 
-        Resolution order:
-        1. season.alerts_telegram_chat_id (dedicated alerts channel for
-           this season — preferred to avoid spamming the general thread)
-        2. season.telegram_chat_id (general per-season chat with its
-           lineup thread, when no dedicated alerts channel set)
-        3. settings.telegram_alerts_chat_id (env-level alerts chat)
-        4. telegram_settings.telegram_chat_id (global default)
+        Resolution order is documented on :func:`resolve_alerts_target`.
         """
         if not telegram_settings.telegram_enabled:
             return False
 
-        from src.core.config import settings
-
-        thread_id: int | None = None
-        chat_id: str = ""
-        if season_id is not None:
-            season = await self.repo.session.get(Season, season_id)
-            if season is not None and season.alerts_telegram_chat_id:
-                chat_id = season.alerts_telegram_chat_id
-                thread_id = season.alerts_telegram_thread_id
-            elif season is not None and season.telegram_chat_id:
-                chat_id = season.telegram_chat_id
-                thread_id = season.telegram_thread_id
-        if not chat_id:
-            chat_id = settings.telegram_alerts_chat_id or telegram_settings.telegram_chat_id
+        chat_id, thread_id = await resolve_alerts_target(self.repo.session, season_id)
 
         try:
             async with TelegramClient() as client:
