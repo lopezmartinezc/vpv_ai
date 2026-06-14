@@ -59,6 +59,30 @@ def _absolute_match_url(href: str | None, base_url: str) -> str | None:
     return f"{base_url.rstrip('/')}/{href}"
 
 
+def _preserve_admin_marca(stats: object, existing: object | None) -> None:
+    """Keep a manually-set Marca rating across re-scrapes.
+
+    futbolfantasy doesn't expose Marca ratings for tournaments
+    (Mundial, Eurocopa…), so every re-scrape returns ``None`` /
+    ``"SC"`` for every player and would wipe whatever the admin
+    typed in ``/admin/marca`` or applied via SQL.
+
+    Rule: if the existing row already carries a real rating
+    (anything other than ``None`` or ``"SC"``), copy it onto
+    ``stats.marca_rating`` BEFORE we recompute points so the
+    downstream pts_marca / pts_total stay correct.
+    """
+    if existing is None:
+        return
+    current = getattr(existing, "marca_rating", None)
+    if current is None or current == "SC":
+        return
+    # Only mutate when the incoming value would clobber a real rating.
+    incoming = getattr(stats, "marca_rating", None)
+    if incoming is None or incoming == "SC":
+        stats.marca_rating = current  # type: ignore[attr-defined]
+
+
 def _resolve_season_year(season: object) -> int:
     """Extract the calendar year used in scraping URLs from a Season.
 
@@ -266,6 +290,8 @@ class ScrapingService:
             else:
                 position = matched.position
                 persisted_match_id = match_id
+
+            _preserve_admin_marca(mp.stats, existing)
 
             try:
                 breakdown = engine.calculate(mp.stats, position)
@@ -484,6 +510,7 @@ class ScrapingService:
                         position = player.position
                         persisted_match_id = match.id
 
+                    _preserve_admin_marca(stats, existing)
                     breakdown = engine.calculate(stats, position)
 
                     await self.repo.upsert_player_stat(
@@ -770,6 +797,7 @@ class ScrapingService:
                         position = player.position
                         persisted_match_id = match_id
 
+                    _preserve_admin_marca(stats, existing)
                     breakdown = engine.calculate(stats, position)
 
                     await self.repo.upsert_player_stat(
@@ -987,6 +1015,7 @@ class ScrapingService:
                         match = await self.repo.find_match_for_team(md.id, player.team_id)
                         match_id = match.id if match else None
 
+                    _preserve_admin_marca(stats, existing)
                     breakdown = engine.calculate(stats, position)
                     await self.repo.upsert_player_stat(
                         player_id=player.id,
