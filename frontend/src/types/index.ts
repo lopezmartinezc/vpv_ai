@@ -1314,8 +1314,10 @@ export interface ParticipantIQResponse {
 // Marca-rating admin tool (/admin/marca). Backend: scraping/schemas_marca.py
 // ---------------------------------------------------------------------------
 
-/** Values the dropdown emits. `null` ⇒ "no jugó" (BD NULL, 0 pts). */
-export type MarcaRatingValue = "★" | "★★" | "★★★" | "★★★★" | "SC" | "-" | null;
+/** Values the dropdown emits and the BD stores. The UI renders
+ *  "1"..."4" as ★...★★★★ via `starsForRating()` in
+ *  `src/lib/marca-rating.ts`. `null` ⇒ "no jugó" (BD NULL, 0 pts). */
+export type MarcaRatingValue = "1" | "2" | "3" | "4" | "SC" | "-" | null;
 
 export interface MarcaPlayerRow {
   player_id: number;

@@ -166,17 +166,12 @@ class StatsRepository:
                     ),
                     0,
                 ).label("red_cards"),
-                # Star ratings ("★"…"★★★★") + numeric back-compat
-                # ("1", "2.5"…) collapse to 1..4. "SC" and "-" do
-                # not enter the average — they're "no calificado"
-                # and "mal calificado" respectively, both outside
-                # the 1-4 star scale.
+                # Average over numeric ratings only ("1"…"4" plus any
+                # decimal Liga rows like "2.5"). "SC" and "-" stay out
+                # — they're "no calificado" / "mal calificado", neither
+                # of which is a 1-4 score.
                 func.avg(
                     case(
-                        (PlayerStat.marca_rating == "★", 1.0),
-                        (PlayerStat.marca_rating == "★★", 2.0),
-                        (PlayerStat.marca_rating == "★★★", 3.0),
-                        (PlayerStat.marca_rating == "★★★★", 4.0),
                         (
                             PlayerStat.marca_rating.op("~")(literal(r"^\d+(\.\d+)?$")),
                             func.cast(PlayerStat.marca_rating, Float),
@@ -186,10 +181,6 @@ class StatsRepository:
                 ).label("avg_marca"),
                 func.avg(
                     case(
-                        (PlayerStat.as_picas == "★", 1.0),
-                        (PlayerStat.as_picas == "★★", 2.0),
-                        (PlayerStat.as_picas == "★★★", 3.0),
-                        (PlayerStat.as_picas == "★★★★", 4.0),
                         (
                             PlayerStat.as_picas.op("~")(literal(r"^\d+(\.\d+)?$")),
                             func.cast(PlayerStat.as_picas, Float),

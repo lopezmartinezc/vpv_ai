@@ -25,10 +25,10 @@ class TestValidValuesContract:
         assert len(VALID_MARCA_VALUES) == 6
 
     def test_includes_one_to_four_stars(self) -> None:
-        assert "★" in VALID_MARCA_VALUES
-        assert "★★" in VALID_MARCA_VALUES
-        assert "★★★" in VALID_MARCA_VALUES
-        assert "★★★★" in VALID_MARCA_VALUES
+        assert "1" in VALID_MARCA_VALUES
+        assert "2" in VALID_MARCA_VALUES
+        assert "3" in VALID_MARCA_VALUES
+        assert "4" in VALID_MARCA_VALUES
 
     def test_includes_sc_and_dash(self) -> None:
         assert "SC" in VALID_MARCA_VALUES
@@ -37,9 +37,9 @@ class TestValidValuesContract:
 
 class TestMarcaAssignmentSchema:
     def test_accepts_valid_rating(self) -> None:
-        a = MarcaAssignment(player_id=42, marca_rating="★★")
+        a = MarcaAssignment(player_id=42, marca_rating="2")
         assert a.player_id == 42
-        assert a.marca_rating == "★★"
+        assert a.marca_rating == "2"
 
     def test_accepts_none_for_no_jugo(self) -> None:
         # null == "no jugó" — la fila pasa al servicio y se persiste
@@ -64,7 +64,7 @@ class TestMarcaApplyRequestShape:
         req = MarcaApplyRequest(
             match_id=100,
             assignments=[
-                MarcaAssignment(player_id=1, marca_rating="★"),
+                MarcaAssignment(player_id=1, marca_rating="1"),
                 MarcaAssignment(player_id=2, marca_rating="-"),
                 MarcaAssignment(player_id=3, marca_rating="SC"),
             ],
@@ -90,14 +90,14 @@ class TestMarcaRosterResponseShape:
                     display_name="Pulisic",
                     team_id=5,
                     team_name="Estados Unidos",
-                    marca_rating="★★★",
+                    marca_rating="3",
                     minutes_played=90,
                     position="MED",
                 )
             ],
             away=[],
         )
-        assert resp.home[0].marca_rating == "★★★"
+        assert resp.home[0].marca_rating == "3"
         assert resp.away == []
 
     def test_marca_rating_can_be_none_when_no_player_stats(self) -> None:

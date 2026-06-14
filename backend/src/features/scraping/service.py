@@ -1958,7 +1958,9 @@ class ScrapingService:
             played_scored = [item for item in scored if item[0].minutes_played > 0]
             return played_scored if played_scored else scored
 
-        stars_to_rating = {1: "★", 2: "★★", 3: "★★★", 4: "★★★★"}
+        # Star count -> stored value (DB and API exchange the numeric
+        # string). The frontend re-renders these as ★/★★/… in the UI.
+        stars_to_rating = {1: "1", 2: "2", 3: "3", 4: "4"}
 
         def _resolve_rating(parsed_row: ParsedMarcaRow) -> str | None:
             """Marker priority: explicit textual marker → stars → null.

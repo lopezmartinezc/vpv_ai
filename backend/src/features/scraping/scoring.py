@@ -339,25 +339,25 @@ class ScoringEngine:
     def _calc_marca(self, marca_rating: str | None) -> int:
         """Convert raw Marca rating string to integer points.
 
-        Mapping (all values from DB):
-        - "★"    → ptos_marca_1
-        - "★★"   → ptos_marca_2
-        - "★★★"  → ptos_marca_3
-        - "★★★★" → ptos_marca_4
-        - "-"    → ptos_marca_no_jugo
-        - "SC"   → ptos_marca_sc
-        - None   → 0
+        Mapping (all values from DB, unified to numeric strings):
+        - "1"  -> ptos_marca_1
+        - "2"  -> ptos_marca_2
+        - "3"  -> ptos_marca_3
+        - "4"  -> ptos_marca_4
+        - "-"  -> ptos_marca_no_jugo
+        - "SC" -> ptos_marca_sc
+        - None -> 0
         """
         if marca_rating is None:
             return 0
-        star_map = {
-            "\u2605": "ptos_marca_1",
-            "\u2605\u2605": "ptos_marca_2",
-            "\u2605\u2605\u2605": "ptos_marca_3",
-            "\u2605\u2605\u2605\u2605": "ptos_marca_4",
+        rating_map = {
+            "1": "ptos_marca_1",
+            "2": "ptos_marca_2",
+            "3": "ptos_marca_3",
+            "4": "ptos_marca_4",
         }
-        if marca_rating in star_map:
-            return self._get(star_map[marca_rating])
+        if marca_rating in rating_map:
+            return self._get(rating_map[marca_rating])
         if marca_rating == "-":
             return self._get("ptos_marca_no_jugo")
         if marca_rating == "SC":

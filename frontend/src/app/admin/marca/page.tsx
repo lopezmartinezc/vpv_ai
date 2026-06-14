@@ -33,14 +33,16 @@ type ModeTab = "manual" | "image";
 // Sentinel para que <option value=""> represente "no jugó" (null en BD).
 const NO_PLAYED_SENTINEL = "";
 
+// `value` is what the BD / API store. `label` is what the user sees
+// in the dropdown — the star levels render as ★/★★/… for clarity.
 const MARCA_OPTIONS: { sentinel: string; value: MarcaRatingValue; label: string }[] = [
   { sentinel: NO_PLAYED_SENTINEL, value: null, label: "no jugó" },
   { sentinel: "SC", value: "SC", label: "SC (jugó poco, no valorable)" },
   { sentinel: "-", value: "-", label: "− (jugó mal)" },
-  { sentinel: "★", value: "★", label: "★" },
-  { sentinel: "★★", value: "★★", label: "★★" },
-  { sentinel: "★★★", value: "★★★", label: "★★★" },
-  { sentinel: "★★★★", value: "★★★★", label: "★★★★" },
+  { sentinel: "1", value: "1", label: "★" },
+  { sentinel: "2", value: "2", label: "★★" },
+  { sentinel: "3", value: "3", label: "★★★" },
+  { sentinel: "4", value: "4", label: "★★★★" },
 ];
 
 function sentinelFor(rating: MarcaRatingValue): string {
@@ -479,7 +481,7 @@ export default function AdminMarcaPage() {
                         if (!Number.isFinite(pid) || pid === 0) return;
                         const newRating: MarcaRatingValue =
                           u.row.stars > 0
-                            ? ("★".repeat(u.row.stars) as MarcaRatingValue)
+                            ? (String(u.row.stars) as MarcaRatingValue)
                             : u.row.explicit_marker === "dash"
                               ? ("-" as MarcaRatingValue)
                               : u.row.explicit_marker === "sc"

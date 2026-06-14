@@ -10,20 +10,22 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 # Valid Marca rating strings — what the ScoringEngine knows how to
-# convert into points. The dropdown in the UI emits these exact values
-# OR null when the player didn't play at all (no row to score).
+# convert into points. The DB and API exchange these exact strings;
+# the frontend's dropdown renders them as ★/★★/… visually but the
+# value submitted is the numeric string.
 #
 # Meaning (per Marca's print edition + ScoringEngine):
-#   "★"…"★★★★"  → cuantas más, mejor
-#   "SC"        → "sin calificar" — jugó poco, no se puede valorar
-#   "-"         → "jugó mal" — calificación negativa explícita
-#   None        → "no jugó" — la fila se persiste con marca_rating NULL
-#                  y pts_marca = 0
+#   "1"…"4"  → estrellas (cuantas más, mejor) — formato unificado
+#              con Liga histórica, evita CASE Unicode en queries.
+#   "SC"     → "sin calificar" — jugó poco, no se puede valorar.
+#   "-"      → "jugó mal" — calificación negativa explícita.
+#   None     → "no jugó" — la fila se persiste con marca_rating NULL
+#               y pts_marca = 0.
 VALID_MARCA_VALUES: tuple[str, ...] = (
-    "★",
-    "★★",
-    "★★★",
-    "★★★★",
+    "1",
+    "2",
+    "3",
+    "4",
     "SC",
     "-",
 )
@@ -100,7 +102,7 @@ class MarcaPreviewMatch(BaseModel):
     player_name: str
     # Pre-translated to one of the dropdown values so the UI can render
     # the suggestion directly. Priority: explicit_marker → stars → null.
-    # - "★"..."★★★★": star count
+    # - "1".."4": star count (UI renders as ★/★★/★★★/★★★★)
     # - "SC": s/c detected on the right of the row
     # - "-": dash detected on the right of the row
     # - None: nothing detected, the dropdown stays empty ("no jugó")
