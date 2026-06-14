@@ -4,6 +4,7 @@ Usage::
 
     python -m src.features.scraping.cli scrape-matchday <season_id> <matchday_number>
     python -m src.features.scraping.cli scrape-match <season_id> <matchday_number> <match_id>
+    python -m src.features.scraping.cli aggregate-matchday <season_id> <matchday_number>
     python -m src.features.scraping.cli check-updates
     python -m src.features.scraping.cli update-calendar <season_id>
     python -m src.features.scraping.cli scrape-current
@@ -22,11 +23,14 @@ import logging
 import sys
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import AsyncSessionLocal
 from src.core.logging import setup_logging
+from src.features.scraping.aggregation import ScoreAggregator
 from src.features.scraping.service import ScrapingService
+from src.shared.models.matchday import Matchday
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +79,34 @@ async def cmd_scrape_match(season_id: int, matchday_number: int, match_id: int) 
     async def _run(session: AsyncSession) -> dict:
         service = ScrapingService(session)
         return await service.scrape_match_players(season_id, matchday_number, match_id)
+
+    await _run_with_session(_run)
+
+
+async def cmd_aggregate_matchday(season_id: int, matchday_number: int) -> None:
+    """Recompute lineup_players.points, lineups.total_points,
+    participant_matchday_scores and rankings for one matchday.
+
+    Useful after manual UPDATE/INSERTs to player_stats — those bypass
+    the scrape pipeline and leave the aggregated tables stale. Safe
+    to run multiple times.
+    """
+
+    async def _run(session: AsyncSession) -> dict:
+        stmt = select(Matchday.id).where(
+            Matchday.season_id == season_id,
+            Matchday.number == matchday_number,
+        )
+        matchday_id = (await session.execute(stmt)).scalar_one_or_none()
+        if matchday_id is None:
+            return {"error": f"matchday {matchday_number} not found in season {season_id}"}
+        await ScoreAggregator(session).aggregate_matchday(matchday_id)
+        return {
+            "season_id": season_id,
+            "matchday_number": matchday_number,
+            "matchday_id": matchday_id,
+            "aggregated": True,
+        }
 
     await _run_with_session(_run)
 
@@ -372,6 +404,14 @@ def _build_parser() -> argparse.ArgumentParser:
     p_match.add_argument("matchday_number", type=int, help="Matchday number (1-38)")
     p_match.add_argument("match_id", type=int, help="Match primary-key ID")
 
+    # aggregate-matchday
+    p_agg = sub.add_parser(
+        "aggregate-matchday",
+        help="Recompute lineup/participant points after manual SQL changes",
+    )
+    p_agg.add_argument("season_id", type=int, help="Season primary-key ID")
+    p_agg.add_argument("matchday_number", type=int, help="Matchday number (1-38)")
+
     # check-updates
     sub.add_parser("check-updates", help="Check homepage CRC for new stats")
 
@@ -522,6 +562,9 @@ def main() -> None:
 
     elif command == "scrape-match":
         asyncio.run(cmd_scrape_match(args.season_id, args.matchday_number, args.match_id))
+
+    elif command == "aggregate-matchday":
+        asyncio.run(cmd_aggregate_matchday(args.season_id, args.matchday_number))
 
     elif command == "check-updates":
         asyncio.run(cmd_check_updates())
