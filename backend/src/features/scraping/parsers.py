@@ -1136,7 +1136,7 @@ def _build_match_page_stats(
     home_score: int,
     away_score: int,
     is_home_player: bool,
-    picas: int,
+    as_picas: str | None,
     marca_rating: str | None,
     event_flags: dict[str, bool | int],
     desglose_counts: dict[str, int],
@@ -1188,7 +1188,7 @@ def _build_match_page_stats(
         red_card=bool(event_flags.get("red_card")),
         penalties_committed=0,
         marca_rating=marca_rating,
-        as_picas=str(picas) if picas else None,
+        as_picas=as_picas,
     )
 
 
@@ -1268,11 +1268,12 @@ def parse_match_page_players(
             raw_name = name_td.get_text(" ", strip=True)
             surname_raw, minutes_in_name = _surname_from_raw(raw_name)
             surname_clean = _strip_accents_lower(surname_raw)
-            picas = _picas_count(row.find("td", class_="picas"))
-            marca_td = row.find("td", class_="marca")
-            marca_raw = _tag_text(marca_td) if isinstance(marca_td, Tag) else ""
-            # Treat "SC" (sin calificar) and "-" as absence; preserve real values.
-            marca_rating = marca_raw if marca_raw and marca_raw not in {"SC", "-"} else None
+            # Marca and AS-picas: keep the raw value the page renders.
+            # "SC" (sin calificar) and "-" (mal calificado) ARE valid
+            # ratings — they have their own scoring rules — so we
+            # do NOT collapse them to None as an earlier version did.
+            marca_rating = _parse_marca(row)
+            as_picas = _parse_as_picas(row)
             event_flags = _events_flags(row.find("td", class_="events"))
 
             # The desglose row immediately follows the plegado row.
@@ -1291,7 +1292,7 @@ def parse_match_page_players(
                 home_score=home_score,
                 away_score=away_score,
                 is_home_player=is_home,
-                picas=picas,
+                as_picas=as_picas,
                 marca_rating=marca_rating,
                 event_flags=event_flags,
                 desglose_counts=desglose_counts,
