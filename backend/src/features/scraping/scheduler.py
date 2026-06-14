@@ -251,6 +251,24 @@ async def _run_tick() -> None:
                 except Exception as exc:
                     _log("scraping_tick", f"Error scraping match {match_id}: {exc}", "error")
 
+            # Defensive aggregate: scrape_match_players runs aggregate
+            # internally, but if it raised before reaching that line
+            # (parser error, upsert hiccup) the player_stats updates
+            # made before the failure get committed at end-of-tick
+            # while lineup_players.points stays stale. Re-aggregating
+            # each affected matchday once here is idempotent and
+            # closes that window.
+            affected_matchdays: set[int] = {md_id for _, md_id, _ in matches_to_scrape}
+            for md_id in affected_matchdays:
+                try:
+                    await service._aggregator.aggregate_matchday(md_id)
+                except Exception as exc:
+                    _log(
+                        "scraping_tick",
+                        f"Error aggregate matchday_id={md_id}: {exc}",
+                        "error",
+                    )
+
             await session.commit()
             _log("scraping_tick", "Tick completado, cambios guardados")
 
