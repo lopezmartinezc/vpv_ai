@@ -1990,7 +1990,21 @@ class ScrapingService:
             #    above failed. The roster candidate must still be
             #    unique to auto-match.
             auto_match_player = None
-            if len(exact) == 1:
+            # Apply the bench filter to exact-surname matches too.
+            # surname_key takes the LAST token, so "Vinicius Junior"
+            # is keyed as "junior" and "Wesley Vinicius" as "vinicius".
+            # An OCR "Vinicius" alone hits Wesley as a unique exact
+            # match — but Wesley didn't play this game. We auto-match
+            # only when the unique exact candidate played; otherwise
+            # we fall through to the token-set path which will see
+            # Vinicius Junior (90') and pick him correctly.
+            played_exact = [c for c in exact if c.minutes_played > 0]
+            if len(played_exact) == 1:
+                auto_match_player = played_exact[0]
+            elif not played_exact and len(exact) == 1:
+                # The single exact candidate is bench — skip.
+                pass
+            elif len(exact) == 1:
                 auto_match_player = exact[0]
 
             if auto_match_player is None:

@@ -597,12 +597,18 @@ def parse_marca_image(png_bytes: bytes) -> list[ParsedMarcaRow]:
             # (last in the column, dorsal not OCR-ed) or "11 Ndoye"
             # (sandwiched between two anchors).
             #
+            # When the dorsal collides with one we already saw, the
+            # OCR likely mis-read a different number (Igor Thiago
+            # shows up with the same digit as Raphinha; El Mourabet
+            # picks up "8" from El Khannouss). Drop the dorsal but
+            # keep the row — the surname matcher will sort it out.
+            #
             # When there's no dorsal we also demand the last token
             # be a credible surname (≥ 3 ASCII letters, letters only),
             # to drop manager-row scraps the upward extension picks up
             # in the header strip.
             if num is not None and num in seen:
-                continue
+                num = None
             if num is None:
                 tokens = name.split() if name else []
                 tail = tokens[-1] if tokens else ""
