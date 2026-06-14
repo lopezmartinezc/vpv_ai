@@ -1133,6 +1133,7 @@ def _build_match_page_stats(
     matchday_number: int,
     is_starter: bool,
     minutes_played: int,
+    sub_minute: int | None,
     home_score: int,
     away_score: int,
     is_home_player: bool,
@@ -1166,10 +1167,21 @@ def _build_match_page_stats(
         result=result,
         goals_for=goals_for,
         goals_against=goals_against,
-        # Substitution event is approximate — match page doesn't say
-        # whether the player came on or went off, only the minute(s).
-        event=None,
-        event_minute=None,
+        # event tells the ScoringEngine whether the player started:
+        #   "Salida"  -> starter who was subbed off at sub_minute
+        #   "Entrada" -> sub who came on at sub_minute (NOT a starter)
+        #   None      -> starter who played the full 90 minutes
+        # Without this, the engine treats every player with event=None
+        # as a starter and awards the "Titular" bonus to subs who came
+        # on (e.g. Christie 74' getting +1 starter pts wrongly).
+        event=(
+            "Salida"
+            if (is_starter and sub_minute is not None)
+            else "Entrada"
+            if (not is_starter and sub_minute is not None)
+            else None
+        ),
+        event_minute=sub_minute,
         minutes_played=minutes_played,
         goals=goals,
         # Match page doesn't differentiate penalty goals — assume 0
@@ -1285,10 +1297,12 @@ def parse_match_page_players(
                 slug = _extract_player_slug(desglose_row)
 
             minutes_played = _infer_minutes_played(is_starter, minutes_in_name)
+            sub_minute = minutes_in_name[0] if minutes_in_name else None
             stats = _build_match_page_stats(
                 matchday_number=matchday_number,
                 is_starter=is_starter,
                 minutes_played=minutes_played,
+                sub_minute=sub_minute,
                 home_score=home_score,
                 away_score=away_score,
                 is_home_player=is_home,
