@@ -224,9 +224,7 @@ async def _build_team_map(session: AsyncSession, season_id: int) -> dict[int, st
     return {r.id: r.short_name or r.name for r in result.all()}
 
 
-async def _send_telegram(
-    session: AsyncSession, text: str, season_id: int | None = None
-) -> bool:
+async def _send_telegram(session: AsyncSession, text: str, season_id: int | None = None) -> bool:
     """Send a Telegram alert. Returns True on success.
 
     Uses the same per-season alerts resolution as ``TelegramNotifier.send_alert``
