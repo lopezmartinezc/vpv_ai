@@ -308,10 +308,20 @@ class DraftValueService:
                        AVG(ps.pts_total) as avg_pts,
                        SUM(ps.pts_total) as total_pts,
                        COALESCE(STDDEV(ps.pts_total), 0) as std_pts,
-                       AVG(CASE WHEN ps.marca_rating ~ '^[1-4]$'
-                           THEN CAST(ps.marca_rating AS INTEGER) END) as marca_avg,
-                       AVG(CASE WHEN ps.as_picas ~ '^[0-9]+$'
-                           THEN CAST(ps.as_picas AS INTEGER) END) as as_avg,
+                       AVG(CASE
+                           WHEN ps.marca_rating = '★' THEN 1
+                           WHEN ps.marca_rating = '★★' THEN 2
+                           WHEN ps.marca_rating = '★★★' THEN 3
+                           WHEN ps.marca_rating = '★★★★' THEN 4
+                           WHEN ps.marca_rating ~ '^[1-4]$' THEN CAST(ps.marca_rating AS INTEGER)
+                       END) as marca_avg,
+                       AVG(CASE
+                           WHEN ps.as_picas = '★' THEN 1
+                           WHEN ps.as_picas = '★★' THEN 2
+                           WHEN ps.as_picas = '★★★' THEN 3
+                           WHEN ps.as_picas = '★★★★' THEN 4
+                           WHEN ps.as_picas ~ '^[0-9]+$' THEN CAST(ps.as_picas AS INTEGER)
+                       END) as as_avg,
                        COALESCE(SUM(ps.goals + ps.penalty_goals), 0) as goals,
                        COALESCE(SUM(ps.penalty_goals), 0) as penalty_goals,
                        COALESCE(SUM(ps.penalties_missed), 0) as penalties_missed,
