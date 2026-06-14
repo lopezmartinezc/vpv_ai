@@ -1872,9 +1872,7 @@ class ScrapingService:
             """
             if not query:
                 return []
-            scored = [
-                (key, difflib.SequenceMatcher(None, query, key).ratio()) for key in surnames
-            ]
+            scored = [(key, difflib.SequenceMatcher(None, query, key).ratio()) for key in surnames]
             scored = [(k, s) for k, s in scored if s >= 0.55]
             scored.sort(key=lambda x: -x[1])
             return scored
@@ -2058,10 +2056,13 @@ class ScrapingService:
                 # Last-resort: the column's roster (only players who
                 # played, sorted by minutes) — better than dumping
                 # both teams at the admin.
-                shortlist = sorted(
-                    [p for p in col_roster if p.minutes_played > 0],
-                    key=lambda p: -p.minutes_played,
-                )[:5] or list(col_roster)[:5]
+                shortlist = (
+                    sorted(
+                        [p for p in col_roster if p.minutes_played > 0],
+                        key=lambda p: -p.minutes_played,
+                    )[:5]
+                    or list(col_roster)[:5]
+                )
             unmatched.append(MarcaPreviewUnmatched(row=preview_row, candidates=shortlist))
 
         return MarcaPreviewResponse(
