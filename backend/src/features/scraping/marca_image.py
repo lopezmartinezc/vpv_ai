@@ -589,8 +589,33 @@ def parse_marca_image(png_bytes: bytes) -> list[ParsedMarcaRow]:
                 # pass is much more reliable on digits than the band's
                 # PSM 7 which has to deal with arrow+number+name fused.
                 num = anchor_num
-            if num is None or num in seen:
+            # Dedup against confirmed dorsals only; a None dorsal
+            # (gap-fill row whose band OCR also missed the number)
+            # is still worth keeping if the band extracted a real
+            # name — the surname matcher handles the row from there.
+            # Without this we silently lost rows like "11 Afif"
+            # (last in the column, dorsal not OCR-ed) or "11 Ndoye"
+            # (sandwiched between two anchors).
+            #
+            # When there's no dorsal we also demand the last token
+            # be a credible surname (≥ 3 ASCII letters, letters only),
+            # to drop manager-row scraps the upward extension picks up
+            # in the header strip.
+            if num is not None and num in seen:
                 continue
+            if num is None:
+                tokens = name.split() if name else []
+                tail = tokens[-1] if tokens else ""
+                if not (len(tail) >= 3 and tail.replace("-", "").isalpha()):
+                    continue
+                # Marca prints player surnames in Title Case; an
+                # all-uppercase token is almost always the bold
+                # manager subtitle (e.g. "M. YAKIN") that the
+                # upward gap-fill picked up in the header strip.
+                if tail.isupper():
+                    continue
+            if num is not None:
+                seen.add(num)
             if not is_sub and _is_sub_arrow(red, yc, xa, sc):
                 is_sub = True
 
@@ -609,7 +634,6 @@ def parse_marca_image(png_bytes: bytes) -> list[ParsedMarcaRow]:
                     # they played, but Marca didn't grade them: SC.
                     marker = "sc"
 
-            seen.add(num)
             raw_text = " ".join(t["text"] for t in toks)
             tokens = name.split() if name else []
             surname_token = tokens[-1] if tokens else ""
