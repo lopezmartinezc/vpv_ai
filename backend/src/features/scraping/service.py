@@ -719,6 +719,12 @@ class ScrapingService:
                     f"Fin [match_page]: procesados={processed}, errores={errors}",
                 )
             )
+            # The player-page branch below runs aggregate_matchday at
+            # its tail; the match_page branch needs the same step so
+            # the admin's "scrape single match" button keeps
+            # lineup_players.points and participant_matchday_scores in
+            # sync. Idempotent — safe to re-run after every batch.
+            await self._aggregator.aggregate_matchday(matchday_id)
             return {
                 "processed": processed,
                 "skipped": 0,
