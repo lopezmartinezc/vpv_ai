@@ -1151,20 +1151,28 @@ def _build_match_page_stats(
     else:
         result = 0
 
-    goals = desglose_counts.get("Goles", 0)
-    # Penalty goals are a separate desglose entry on the match page —
-    # the player-page parser reads the equivalent <img alt="Gol de
-    # penalti"> events as a distinct count, so we treat them as
-    # additive here (NOT bundled into "Goles").
-    penalty_goals = desglose_counts.get("Goles de penalti", 0) or desglose_counts.get(
-        "Gol de penalti", 0
-    )
-    assists = desglose_counts.get("Asistencias", 0)
-    woodwork = desglose_counts.get("Tiros al palo", 0)
+    # The match-page desglose row exposes every event the player-page
+    # event icons cover. Read each penalty-related count the same way
+    # we read goals — futbolfantasy uses both singular and plural
+    # forms across pages, so try both when looking up.
+    def _desg(*keys: str) -> int:
+        for k in keys:
+            if k in desglose_counts:
+                return desglose_counts[k]
+        return 0
+
+    goals = _desg("Goles", "Gol")
+    penalty_goals = _desg("Goles de penalti", "Gol de penalti")
+    assists = _desg("Asistencias", "Asistencia")
+    woodwork = _desg("Tiros al palo", "Tiro al palo")
+    penalties_won = _desg("Penaltis forzados", "Penalti forzado")
+    penalties_missed = _desg("Penaltis fallados", "Penalti fallado")
+    penalties_committed = _desg("Penaltis cometidos", "Penalti cometido")
     # Penalty saves are NOT taken from "Paradas" — that's total saves,
-    # and VPV scoring only credits penalty saves. Leave at 0 until we
-    # find a reliable signal on the match page.
-    penalties_saved = 0
+    # and VPV scoring only credits penalty saves. The desglose row may
+    # eventually expose them as their own entry; until we confirm the
+    # exact key, leave at 0.
+    penalties_saved = _desg("Penaltis parados", "Penalti parado")
 
     return PlayerMatchdayStats(
         matchday_number=matchday_number,
@@ -1195,14 +1203,14 @@ def _build_match_page_stats(
         assists=assists,
         penalties_saved=penalties_saved,
         woodwork=woodwork,
-        penalties_won=0,
-        penalties_missed=0,
+        penalties_won=penalties_won,
+        penalties_missed=penalties_missed,
         own_goals=int(event_flags.get("own_goals") or 0),
         yellow_card=bool(event_flags.get("yellow_card")),
         yellow_removed=False,
         double_yellow=bool(event_flags.get("double_yellow")),
         red_card=bool(event_flags.get("red_card")),
-        penalties_committed=0,
+        penalties_committed=penalties_committed,
         marca_rating=marca_rating,
         as_picas=as_picas,
     )
