@@ -1152,6 +1152,13 @@ def _build_match_page_stats(
         result = 0
 
     goals = desglose_counts.get("Goles", 0)
+    # Penalty goals are a separate desglose entry on the match page —
+    # the player-page parser reads the equivalent <img alt="Gol de
+    # penalti"> events as a distinct count, so we treat them as
+    # additive here (NOT bundled into "Goles").
+    penalty_goals = desglose_counts.get("Goles de penalti", 0) or desglose_counts.get(
+        "Gol de penalti", 0
+    )
     assists = desglose_counts.get("Asistencias", 0)
     woodwork = desglose_counts.get("Tiros al palo", 0)
     # Penalty saves are NOT taken from "Paradas" — that's total saves,
@@ -1184,10 +1191,7 @@ def _build_match_page_stats(
         event_minute=sub_minute,
         minutes_played=minutes_played,
         goals=goals,
-        # Match page doesn't differentiate penalty goals — assume 0
-        # and let the admin annotate later if needed. Tournaments
-        # rarely have penalty-from-spot frequency that breaks scoring.
-        penalty_goals=0,
+        penalty_goals=penalty_goals,
         assists=assists,
         penalties_saved=penalties_saved,
         woodwork=woodwork,
