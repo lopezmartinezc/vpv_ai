@@ -102,8 +102,16 @@ def parse_live_events(html: str) -> list[LiveEvent]:
 
         player_name = player_link.get_text(strip=True)
         href = str(player_link.get("href", ""))
-        # href like: https://www.futbolfantasy.com/jugadores/ronald-araujo
-        player_slug = href.rsplit("/", 1)[-1] if "/" in href else ""
+        # href shapes seen in production:
+        #   .../jugadores/ronald-araujo
+        #   .../jugadores/granit-xhaka/world-cup-2026   <- tournament URLs
+        #     append the season slug; a naive rsplit("/") here pulled
+        #     "world-cup-2026" and nothing matched players.slug, so
+        #     the alert went out without "Propietario: ...".
+        import re as _re
+
+        m = _re.search(r"/jugadores/([a-z0-9-]+)(?:/|$)", href)
+        player_slug = m.group(1) if m else ""
         if not player_slug:
             continue
 
