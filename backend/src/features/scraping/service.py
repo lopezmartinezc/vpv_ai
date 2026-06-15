@@ -1958,6 +1958,42 @@ class ScrapingService:
             played_scored = [item for item in scored if item[0].minutes_played > 0]
             return played_scored if played_scored else scored
 
+        # When several roster players share the same surname (and the
+        # cromo row alone doesn't pick one), try two cheap signals
+        # before giving up:
+        #   1) Initial of the first name. Marca prints "Y. Fofana" vs
+        #      "S. Fofana" to disambiguate brothers / namesakes — if
+        #      the OCR preserved the dot-initial, use it.
+        #   2) Role + minutes spread. A sub row should pick the
+        #      candidate with fewer minutes; a starter row the one
+        #      with more. Only fires when the gap is >= 20 min so
+        #      a close split (Yahia 90' vs Seko 76') doesn't trick
+        #      us into the wrong call.
+        import re as _re
+
+        def _tiebreak(parsed_row: ParsedMarcaRow, candidates: list):  # type: ignore[no-untyped-def]
+            if len(candidates) < 2:
+                return candidates[0] if candidates else None
+
+            init_match = _re.search(r"\b([A-Za-z])\s*\.", parsed_row.raw_text or "")
+            if init_match:
+                initial = init_match.group(1).lower()
+                by_initial = [
+                    c
+                    for c in candidates
+                    if (c.display_name or "").strip()
+                    and c.display_name.strip()[0].lower() == initial
+                ]
+                if len(by_initial) == 1:
+                    return by_initial[0]
+
+            sorted_mins = sorted(candidates, key=lambda c: c.minutes_played)
+            lo, hi = sorted_mins[0], sorted_mins[-1]
+            if hi.minutes_played - lo.minutes_played >= 20:
+                return lo if parsed_row.is_substitute else hi
+
+            return None
+
         # Star count -> stored value (DB and API exchange the numeric
         # string). The frontend re-renders these as ★/★★/… in the UI.
         stars_to_rating = {1: "1", 2: "2", 3: "3", 4: "4"}
@@ -2032,6 +2068,12 @@ class ScrapingService:
             played_exact = [c for c in exact if c.minutes_played > 0]
             if len(played_exact) == 1:
                 auto_match_player = played_exact[0]
+            elif len(played_exact) >= 2:
+                # Two roster players share the surname AND both played
+                # (Yahia / Seko Fofana, Hiroki / Junya Ito, …). Try the
+                # initial- and role-based tiebreakers before falling
+                # through to token-set / fuzzy.
+                auto_match_player = _tiebreak(parsed, played_exact)
             elif not played_exact and len(exact) == 1:
                 # The single exact candidate is bench — skip.
                 pass
@@ -2050,6 +2092,11 @@ class ScrapingService:
                         top_score >= 0.50 and (top_score - second_score) >= 0.20
                     ):
                         auto_match_player = top_player
+                    elif top_score >= 0.40 and abs(top_score - second_score) < 1e-9:
+                        # All candidates tied on token-set score — try
+                        # initial / role tiebreakers before bailing.
+                        tied = [p for p, s in token_ranked if abs(s - top_score) < 1e-9]
+                        auto_match_player = _tiebreak(parsed, tied)
 
             if auto_match_player is None and not exact and ranked:
                 top_key, top_score = ranked[0]

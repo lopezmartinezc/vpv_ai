@@ -80,8 +80,12 @@ _MIN_RE = re.compile(r"^\d{1,3}['ʼ`]$")  # noqa: RUF001
 # Pure leading digits = jersey number.
 _NUM_RE = re.compile(r"^(\d{1,2})")
 
-# Glued "21Osorio" / "7_Eustaquio" - OCR sometimes fuses number + name.
-_GLUE_RE = re.compile(r"^(\d{1,2})[_\W0]?([A-Za-zÁÉÍÓÚÑáéíóúñ][A-Za-zÁÉÍÓÚÑáéíóúñ\-]+)$")
+# Glued "21Osorio" / "7_Eustaquio" / "25).Porozo" — OCR sometimes
+# fuses the jersey number with the surname through one or more
+# stray glyphs ('_', '.', ')', '0'). Up to 3 separator chars are
+# tolerated so cases like ").Porozo" (the closing paren of an
+# adjacent token leaking left) still resolve.
+_GLUE_RE = re.compile(r"^(\d{1,2})[_\W0]{0,3}([A-Za-zÁÉÍÓÚÑáéíóúñ][A-Za-zÁÉÍÓÚÑáéíóúñ\-]+)$")
 
 # Tokens that look like a botched star sequence - drop them so they
 # don't pollute names. The character class contains intentionally
