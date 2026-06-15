@@ -1384,3 +1384,28 @@ export interface MarcaPreviewResponse {
   matches: MarcaPreviewMatch[];
   unmatched: MarcaPreviewUnmatched[];
 }
+
+// ---------------------------------------------------------------------------
+// 🍔 Burger Ranking (/burger-ranking). Backend: burger_ranking/schemas.py
+// ---------------------------------------------------------------------------
+
+/** One goal that contributed to a participant's burger total. */
+export interface BurgerGoal {
+  matchday_number: number;
+  player_id: number;
+  player_name: string;
+  team_name: string;
+  goals: number; // 1, 2, … goals from that player that matchday
+}
+
+export interface BurgerEntry {
+  participant_id: number;
+  display_name: string;
+  total: number;
+  goals: BurgerGoal[];
+}
+
+export interface BurgerRankingResponse {
+  season_id: number;
+  entries: BurgerEntry[];
+}

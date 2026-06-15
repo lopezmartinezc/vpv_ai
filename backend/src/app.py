@@ -90,6 +90,7 @@ def create_app() -> FastAPI:
     from src.features.achievements.router import router as achievements_router
     from src.features.auth.router import router as auth_router
     from src.features.backup.router import router as backup_router
+    from src.features.burger_ranking.router import router as burger_ranking_router
     from src.features.competitions.router import router as competitions_router
     from src.features.copa.router import router as copa_router
     from src.features.dashboard.router import router as dashboard_router
@@ -113,6 +114,7 @@ def create_app() -> FastAPI:
     app.include_router(achievements_router, prefix="/api")
     app.include_router(backup_router, prefix="/api")
     app.include_router(auth_router, prefix="/api")
+    app.include_router(burger_ranking_router, prefix="/api")
     app.include_router(competitions_router, prefix="/api")
     app.include_router(copa_router, prefix="/api")
     app.include_router(dashboard_router, prefix="/api")

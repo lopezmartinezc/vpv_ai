@@ -30,6 +30,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Inicio", icon: "home" },
   { href: "/clasificacion", label: "Clasificacion", icon: "trophy" },
   { href: "/acierto", label: "Acierto", icon: "clipboard" },
+  { href: "/burger-ranking", label: "🍔 Burger Ranking", icon: "medal" },
   // Liga-only
   { href: "/palmares", label: "Palmares", icon: "medal", appliesTo: "league" },
   { href: "/copa", label: "Copa", icon: "shield", appliesTo: "league" },
