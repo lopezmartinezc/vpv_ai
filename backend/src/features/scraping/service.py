@@ -232,10 +232,20 @@ class ScrapingService:
         # LAST whitespace-separated token of `display_name`, lowercased
         # with diacritics stripped — keeps matching robust to encoding
         # variants ("Sánchez" vs "Sanchez").
+        #
+        # The last token is further split on hyphens and the trailing
+        # part wins: "Al-Dawsari" -> "dawsari", "Fernandez-Pardo" ->
+        # "pardo". Marca's cromo prints "Al Dawsari" (no hyphen) while
+        # futbolfantasy stores "Al-Dawsari" — without this normalisation
+        # the two never collide on the key and a sibling "Salem Al
+        # Dawsari" (no hyphen in his name) would silently absorb every
+        # "N. Al Dawsari" row meant for Nasser.
         def _surname_key(name: str) -> str:
             n = _ud.normalize("NFD", name or "")
             n = "".join(c for c in n if not _ud.combining(c)).lower().strip()
-            return n.split()[-1] if n else ""
+            if not n:
+                return ""
+            return n.split()[-1].split("-")[-1]
 
         per_team_by_surname: dict[int, dict[str, Player]] = {}
         per_team_by_slug: dict[int, dict[str, Player]] = {}
@@ -1830,10 +1840,18 @@ class ScrapingService:
 
         # Build surname → MarcaPlayerRow lookup per team. Last write
         # wins on collisions (same logic as _process_match_via_match_page).
+        # Hyphenated last names collapse to their trailing component
+        # ("Al-Dawsari" -> "dawsari", "Fernandez-Pardo" -> "pardo") so
+        # the cromo's hyphenless form ("Al Dawsari") still hits the
+        # same bucket. Without this, "N. Al Dawsari" silently latched
+        # onto Salem Al Dawsari because Nasser's hyphenated key
+        # ("al-dawsari") lived in a different bucket.
         def _surname_key(name: str) -> str:
             n = _ud.normalize("NFD", name or "")
             n = "".join(c for c in n if not _ud.combining(c)).lower().strip()
-            return n.split()[-1] if n else ""
+            if not n:
+                return ""
+            return n.split()[-1].split("-")[-1]
 
         all_roster = roster_resp.home + roster_resp.away
         by_surname: dict[str, list] = {}
