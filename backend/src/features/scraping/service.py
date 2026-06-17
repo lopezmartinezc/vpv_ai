@@ -211,11 +211,21 @@ class ScrapingService:
             return (0, 1, [msg])
 
         try:
+            # Pass the existing matches-row score as a fallback so the
+            # parser doesn't silently regress to 0-0 (and corrupt every
+            # player's pts_result / pts_clean_sheet) when the
+            # `.resultado` div is briefly unparseable.
+            fallback_score = (
+                (match.home_score, match.away_score)
+                if match.home_score is not None and match.away_score is not None
+                else None
+            )
             parsed = parse_match_page_players(
                 html,
                 matchday_number=matchday_number,
                 home_team_name=home_team_name,
                 away_team_name=away_team_name,
+                fallback_score=fallback_score,
             )
         except Exception as exc:
             logger.exception(
@@ -329,22 +339,39 @@ class ScrapingService:
         # pre-match 0-0 placeholder), and pts_result / pts_clean_sheet
         # for every player remain wrong even after we've fixed their
         # individual goals counts.
+        #
+        # IMPORTANT GUARD: never downgrade a known-good score back to
+        # 0-0. _parse_match_score falls back to (0, 0) when the
+        # `.resultado` div isn't where we expect (HTML hiccup, partial
+        # response, network blip mid-scrape). Without the guard, the
+        # second scrape of any match would silently overwrite the real
+        # final score with the placeholder.
         if parsed:
             first_stats = parsed[0].stats
             new_home = first_stats.home_score
             new_away = first_stats.away_score
+            existing_total = (match.home_score or 0) + (match.away_score or 0)
             if (new_home, new_away) != (match.home_score, match.away_score):
-                await self.repo.update_match_score(
-                    match_id, new_home, new_away, f"{new_home}-{new_away}"
-                )
-                logger.info(
-                    "scrape_matchday[match_page]: match_id=%d score %d-%d -> %d-%d",
-                    match_id,
-                    match.home_score,
-                    match.away_score,
-                    new_home,
-                    new_away,
-                )
+                if new_home == 0 and new_away == 0 and existing_total > 0:
+                    logger.warning(
+                        "scrape_matchday[match_page]: refusing to downgrade match_id=%d "
+                        "from %d-%d to 0-0 (parser likely fell back to default)",
+                        match_id,
+                        match.home_score,
+                        match.away_score,
+                    )
+                else:
+                    await self.repo.update_match_score(
+                        match_id, new_home, new_away, f"{new_home}-{new_away}"
+                    )
+                    logger.info(
+                        "scrape_matchday[match_page]: match_id=%d score %d-%d -> %d-%d",
+                        match_id,
+                        match.home_score,
+                        match.away_score,
+                        new_home,
+                        new_away,
+                    )
 
         logger.info(
             "scrape_matchday[match_page]: match_id=%d processed=%d errors=%d",

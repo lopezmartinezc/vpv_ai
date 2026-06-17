@@ -1264,6 +1264,7 @@ def parse_match_page_players(
     matchday_number: int,
     home_team_name: str,
     away_team_name: str,
+    fallback_score: tuple[int, int] | None = None,
 ) -> list[MatchPagePlayer]:
     """Parse all players' stats from a single match page.
 
@@ -1276,19 +1277,29 @@ def parse_match_page_players(
     didn't actually play (subs with no minute marker, 0 minutes
     inferred) are still returned so the caller can decide to skip them
     when persisting.
+
+    ``fallback_score`` is used when the page's ``.resultado`` block
+    doesn't expose the score (HTML hiccup, partial response, etc.).
+    Callers should pass the matches-row score so we don't silently
+    overwrite a known final score with the 0-0 default.
     """
     soup = _soup(html)
     score = _parse_match_score(soup)
     if score is None:
-        # A missing score zeroes out goals_for / goals_against for every
-        # player, which corrupts pts_result and pts_clean_sheet. Surface
-        # it loudly so admins notice and re-scrape once the score is
-        # published.
-        logger.warning(
-            "parse_match_page_players: no score found on match page, defaulting to 0-0 — "
-            "result and imbatibilidad will be WRONG until re-scraped"
-        )
-        score = (0, 0)
+        if fallback_score is not None:
+            logger.warning(
+                "parse_match_page_players: no score on match page, using "
+                "fallback %d-%d from caller (matches row)",
+                fallback_score[0],
+                fallback_score[1],
+            )
+            score = fallback_score
+        else:
+            logger.warning(
+                "parse_match_page_players: no score found on match page, defaulting "
+                "to 0-0 — result and imbatibilidad will be WRONG until re-scraped"
+            )
+            score = (0, 0)
     home_score, away_score = score
 
     tables = soup.find_all("table", class_="tablestats")
