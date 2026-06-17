@@ -1208,13 +1208,27 @@ class ScrapingService:
                     continue
 
                 if db_match.home_score != home_score or db_match.away_score != away_score:
-                    await self.repo.update_match_score(
-                        match_id=db_match.id,
-                        home_score=home_score,
-                        away_score=away_score,
-                        result=cal_match.result,
-                    )
-                    scores_updated += 1
+                    # Same no-downgrade guard as the match_page flow:
+                    # never roll a real recorded score back to 0-0
+                    # just because the calendar page returned a stale
+                    # placeholder.
+                    existing_total = (db_match.home_score or 0) + (db_match.away_score or 0)
+                    if home_score == 0 and away_score == 0 and existing_total > 0:
+                        logger.warning(
+                            "scrape_calendar: refusing to downgrade match_id=%d "
+                            "from %d-%d to 0-0 (calendar likely stale)",
+                            db_match.id,
+                            db_match.home_score,
+                            db_match.away_score,
+                        )
+                    else:
+                        await self.repo.update_match_score(
+                            match_id=db_match.id,
+                            home_score=home_score,
+                            away_score=away_score,
+                            result=cal_match.result,
+                        )
+                        scores_updated += 1
 
         # Recalculate matchday first_match_at if any dates changed.
         if dates_updated:
