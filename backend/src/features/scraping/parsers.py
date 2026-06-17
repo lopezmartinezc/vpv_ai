@@ -1221,14 +1221,37 @@ def _parse_match_score(soup: BeautifulSoup) -> tuple[int, int] | None:
 
     Returns ``(home_score, away_score)`` or None when the score isn't
     yet published (early matchday).
+
+    Preferred path: read `div.local.score` and `div.visitante.score`
+    explicitly — futbolfantasy renders them inside `.resultado` for
+    every published score. Fall back to a regex over the whole block
+    only when the explicit divs aren't there (older layouts).
     """
     el = soup.find(class_="resultado")
     if not isinstance(el, Tag):
         return None
+
+    def _node_int(node: Tag | None) -> int | None:
+        if node is None:
+            return None
+        txt = node.get_text(strip=True)
+        try:
+            return int(txt)
+        except ValueError:
+            return None
+
+    local = el.select_one("div.local.score")
+    visitante = el.select_one("div.visitante.score")
+    h = _node_int(local if isinstance(local, Tag) else None)
+    a = _node_int(visitante if isinstance(visitante, Tag) else None)
+    if h is not None and a is not None:
+        return (h, a)
+
+    # Fallback: scan integers in the block text. Lossy when team names
+    # contain digits, but rescues older HTML where the explicit divs
+    # weren't there.
     import re as _re
 
-    # The block reads like "México 2 0 Sudáfrica" — two integers split
-    # by whitespace, surrounded by team names.
     nums = _re.findall(r"\b(\d+)\b", el.get_text(" ", strip=True))
     if len(nums) < 2:
         return None
@@ -1257,7 +1280,14 @@ def parse_match_page_players(
     soup = _soup(html)
     score = _parse_match_score(soup)
     if score is None:
-        logger.debug("parse_match_page_players: no score found, defaulting to 0-0")
+        # A missing score zeroes out goals_for / goals_against for every
+        # player, which corrupts pts_result and pts_clean_sheet. Surface
+        # it loudly so admins notice and re-scrape once the score is
+        # published.
+        logger.warning(
+            "parse_match_page_players: no score found on match page, defaulting to 0-0 — "
+            "result and imbatibilidad will be WRONG until re-scraped"
+        )
         score = (0, 0)
     home_score, away_score = score
 
