@@ -323,6 +323,29 @@ class ScrapingService:
             )
             processed += 1
 
+        # Sync matches.home_score / matches.away_score from what the
+        # match-page parser actually saw. Otherwise the matches row
+        # stays at whatever the calendar scrape put there (often the
+        # pre-match 0-0 placeholder), and pts_result / pts_clean_sheet
+        # for every player remain wrong even after we've fixed their
+        # individual goals counts.
+        if parsed:
+            first_stats = parsed[0].stats
+            new_home = first_stats.home_score
+            new_away = first_stats.away_score
+            if (new_home, new_away) != (match.home_score, match.away_score):
+                await self.repo.update_match_score(
+                    match_id, new_home, new_away, f"{new_home}-{new_away}"
+                )
+                logger.info(
+                    "scrape_matchday[match_page]: match_id=%d score %d-%d -> %d-%d",
+                    match_id,
+                    match.home_score,
+                    match.away_score,
+                    new_home,
+                    new_away,
+                )
+
         logger.info(
             "scrape_matchday[match_page]: match_id=%d processed=%d errors=%d",
             match_id,
