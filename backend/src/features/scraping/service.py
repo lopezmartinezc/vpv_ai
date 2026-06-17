@@ -2022,9 +2022,13 @@ class ScrapingService:
             if len(candidates) < 2:
                 return candidates[0] if candidates else None
 
-            init_match = _re.search(r"\b([A-Za-z])\s*\.", parsed_row.raw_text or "")
+            # The pipe `|` is the canonical OCR misread for uppercase
+            # `I` — pixel-identical at most resolutions. So `| Gueye`
+            # in the cromo is really `I. Gueye` (Idrissa Gana Gueye).
+            init_match = _re.search(r"([A-Za-z|])\s*\.", parsed_row.raw_text or "")
             if init_match:
-                initial = init_match.group(1).lower()
+                raw = init_match.group(1)
+                initial = "i" if raw == "|" else raw.lower()
                 by_initial = [
                     c
                     for c in candidates
@@ -2037,7 +2041,18 @@ class ScrapingService:
             sorted_mins = sorted(candidates, key=lambda c: c.minutes_played)
             lo, hi = sorted_mins[0], sorted_mins[-1]
             if hi.minutes_played - lo.minutes_played >= 20:
-                return lo if parsed_row.is_substitute else hi
+                # Picking the extremum only makes sense when ONE
+                # candidate sits at that extreme. If two players are
+                # tied at the chosen end (e.g. 3 Martínez — Emiliano,
+                # Lisandro, Lautaro: 90'/90'/54' for a starter row),
+                # returning either is silently arbitrary and was
+                # producing false positives. Let the caller fall
+                # through to token-set / fuzzy instead.
+                target = lo.minutes_played if parsed_row.is_substitute else hi.minutes_played
+                at_extreme = [c for c in candidates if c.minutes_played == target]
+                if len(at_extreme) == 1:
+                    return at_extreme[0]
+                return None
 
             return None
 
@@ -2159,6 +2174,7 @@ class ScrapingService:
 
                 if auto_match_player is None and not exact and ranked:
                     top_key, top_score = ranked[0]
+                    second_key = ranked[1][0] if len(ranked) > 1 else None
                     second_score = ranked[1][1] if len(ranked) > 1 else 0.0
                     if top_score >= 0.85 or (
                         top_score >= 0.65 and (top_score - second_score) >= 0.10
@@ -2171,6 +2187,26 @@ class ScrapingService:
                         played_candidates = [c for c in candidates if c.minutes_played > 0]
                         if len(played_candidates) == 1:
                             auto_match_player = played_candidates[0]
+                    elif (
+                        second_key is not None
+                        and top_score >= 0.65
+                        and (top_score - second_score) <= 0.20
+                    ):
+                        # Top and second are close enough that fuzzy
+                        # alone is unsafe (e.g. "Bere" vs both "Berge"
+                        # and "Berg" — 0.888 vs 0.75). When the cromo
+                        # row carries a clear sub/starter signal AND
+                        # the two surname buckets disagree on minutes,
+                        # use rol+minutos to break the tie. Catches
+                        # Patrick Berg (10' sub) vs Sander Berge (90'
+                        # starter) when OCR drops the trailing letter.
+                        pool = [
+                            c
+                            for c in col_by_surname.get(top_key, [])
+                            + col_by_surname.get(second_key, [])
+                            if c.minutes_played > 0
+                        ]
+                        auto_match_player = _tiebreak(parsed, pool)
 
                 if auto_match_player is not None:
                     matches.append(
