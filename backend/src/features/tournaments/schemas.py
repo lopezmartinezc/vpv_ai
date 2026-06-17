@@ -50,6 +50,18 @@ class BracketMatch(BaseModel):
     home_placeholder: str | None = None
     away_placeholder: str | None = None
     label: str | None = None
+    # Provisional assignment: when the official match row doesn't yet
+    # exist (group stage still in progress), resolve the placeholder
+    # against CURRENT group standings + already-played knockout
+    # matches so the bracket fills in as the tournament unfolds. The
+    # frontend renders these in italics to make the provisional
+    # status visible.
+    home_provisional_team_id: int | None = None
+    home_provisional_team_name: str | None = None
+    home_provisional_logo: str | None = None
+    away_provisional_team_id: int | None = None
+    away_provisional_team_name: str | None = None
+    away_provisional_logo: str | None = None
 
 
 class BracketRound(BaseModel):

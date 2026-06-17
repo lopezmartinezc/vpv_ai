@@ -1144,6 +1144,12 @@ export interface BracketMatch {
   home_placeholder?: string | null;
   away_placeholder?: string | null;
   label?: string | null;
+  home_provisional_team_id?: number | null;
+  home_provisional_team_name?: string | null;
+  home_provisional_logo?: string | null;
+  away_provisional_team_id?: number | null;
+  away_provisional_team_name?: string | null;
+  away_provisional_logo?: string | null;
 }
 
 export interface BracketRound {

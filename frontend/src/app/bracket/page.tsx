@@ -301,6 +301,8 @@ function CompactMatchCard({ match }: { match: BracketMatch }) {
         score={match.home_score}
         played={match.played}
         placeholder={match.home_placeholder}
+        provisionalName={match.home_provisional_team_name}
+        provisionalLogo={match.home_provisional_logo}
         won={homeWon}
       />
       <div className="border-t border-vpv-border/30" />
@@ -310,6 +312,8 @@ function CompactMatchCard({ match }: { match: BracketMatch }) {
         score={match.away_score}
         played={match.played}
         placeholder={match.away_placeholder}
+        provisionalName={match.away_provisional_team_name}
+        provisionalLogo={match.away_provisional_logo}
         won={awayWon}
       />
     </div>
@@ -357,6 +361,8 @@ function CompactMatchCardBody({ match }: { match: BracketMatch }) {
         score={match.home_score}
         played={match.played}
         placeholder={match.home_placeholder}
+        provisionalName={match.home_provisional_team_name}
+        provisionalLogo={match.home_provisional_logo}
         won={homeWon}
       />
       <div className="my-0.5 border-t border-vpv-border/30" />
@@ -366,6 +372,8 @@ function CompactMatchCardBody({ match }: { match: BracketMatch }) {
         score={match.away_score}
         played={match.played}
         placeholder={match.away_placeholder}
+        provisionalName={match.away_provisional_team_name}
+        provisionalLogo={match.away_provisional_logo}
         won={awayWon}
       />
     </>
@@ -378,6 +386,8 @@ function CompactTeamRow({
   score,
   played,
   placeholder,
+  provisionalName,
+  provisionalLogo,
   won,
 }: {
   name: string | null;
@@ -385,20 +395,26 @@ function CompactTeamRow({
   score: number | null;
   played: boolean;
   placeholder?: string | null;
+  provisionalName?: string | null;
+  provisionalLogo?: string | null;
   won?: boolean;
 }) {
-  const label = name ?? placeholderLabel(placeholder);
-  const isPlaceholder = !name;
+  // Priority: official team → provisional team (italic) → placeholder text
+  const displayName = name ?? provisionalName ?? null;
+  const displayLogo = name ? logo : provisionalLogo ?? null;
+  const isProvisional = !name && !!provisionalName;
+  const label = displayName ?? placeholderLabel(placeholder);
+  const isPlaceholder = !displayName;
   return (
     <div
       className={`flex items-center gap-1.5 px-2 py-1 text-xs ${
         played && !won ? "opacity-50" : ""
       }`}
     >
-      {name ? (
+      {displayName ? (
         <CountryFlag
-          teamName={name}
-          fallbackLogo={logo}
+          teamName={displayName}
+          fallbackLogo={displayLogo}
           size={16}
           className="!rounded-[2px]"
         />
@@ -407,8 +423,13 @@ function CompactTeamRow({
       )}
       <span
         className={`min-w-0 flex-1 truncate ${
-          isPlaceholder ? "italic text-vpv-text-muted" : "text-vpv-text"
+          isPlaceholder
+            ? "italic text-vpv-text-muted"
+            : isProvisional
+              ? "italic text-vpv-text-muted/90"
+              : "text-vpv-text"
         } ${won ? "font-bold text-green-500" : ""}`}
+        title={isProvisional ? `Provisional · ${placeholderLabel(placeholder)}` : undefined}
       >
         {label}
       </span>

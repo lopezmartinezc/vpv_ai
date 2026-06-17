@@ -196,7 +196,16 @@ class TournamentService:
     # ------------------------------------------------------------------
 
     async def get_bracket(self, season_id: int) -> BracketResponse:
-        """Build the knockout bracket from tournament_config + matches."""
+        """Build the knockout bracket from tournament_config + matches.
+
+        Where the official match row for a knockout slot doesn't yet
+        exist, we resolve its placeholders (``1A``, ``2C``, ``3:ABC...``,
+        ``W12``, ``L12``) against the CURRENT group standings and any
+        knockout matches already played. The resulting team goes into
+        ``home_provisional_*``/``away_provisional_*`` so the frontend
+        can render it in italics — official teams keep using the
+        ``home_team_id``/``away_team_id`` channel.
+        """
         season = await self._get_tournament_season(season_id)
         config = season.tournament_config or {}
         knockout: dict[str, Any] = config.get("knockout", {}) if isinstance(config, dict) else {}
@@ -213,6 +222,20 @@ class TournamentService:
         teams_stmt = select(Team).where(Team.season_id == season_id)
         teams_result = await self.session.execute(teams_stmt)
         teams_by_id = {t.id: t for t in teams_result.scalars().all()}
+
+        # Build current group standings so we can resolve "1A", "2C",
+        # "3:ABCEFI..." placeholders.
+        groups_resp = await self.get_groups(season_id)
+        group_standings: dict[str, list[TeamGroupStanding]] = {
+            g.name: g.teams for g in groups_resp.groups
+        }
+        third_place_assignments = self._compute_best_third_assignments(group_standings)
+
+        # Build match_code -> winner/loser team id for any KO match
+        # already played (W12, L12 placeholders).
+        winner_by_code, loser_by_code = await self._compute_knockout_outcomes(
+            season_id, rounds_cfg, teams_by_id
+        )
 
         bracket_rounds: list[BracketRound] = []
         for round_cfg in rounds_cfg:
@@ -261,8 +284,30 @@ class TournamentService:
                         )
                     )
             else:
-                # No matches yet: render placeholders from tournament_config pairings
+                # No matches yet: render placeholders from tournament_config
+                # pairings and try to resolve each one against current group
+                # standings or already-played knockout matches.
                 for pairing in pairings:
+                    home_ph = pairing.get("home")
+                    away_ph = pairing.get("away")
+                    home_team = self._resolve_placeholder(
+                        home_ph,
+                        group_standings=group_standings,
+                        third_place_assignments=third_place_assignments,
+                        winner_by_code=winner_by_code,
+                        loser_by_code=loser_by_code,
+                        teams_by_id=teams_by_id,
+                        match_code=pairing.get("code"),
+                    )
+                    away_team = self._resolve_placeholder(
+                        away_ph,
+                        group_standings=group_standings,
+                        third_place_assignments=third_place_assignments,
+                        winner_by_code=winner_by_code,
+                        loser_by_code=loser_by_code,
+                        teams_by_id=teams_by_id,
+                        match_code=pairing.get("code"),
+                    )
                     bm_list.append(
                         BracketMatch(
                             match_id=None,
@@ -276,9 +321,15 @@ class TournamentService:
                             away_score=None,
                             played=False,
                             match_code=pairing.get("code"),
-                            home_placeholder=pairing.get("home"),
-                            away_placeholder=pairing.get("away"),
+                            home_placeholder=home_ph,
+                            away_placeholder=away_ph,
                             label=pairing.get("label"),
+                            home_provisional_team_id=home_team.id if home_team else None,
+                            home_provisional_team_name=home_team.name if home_team else None,
+                            home_provisional_logo=home_team.logo_path if home_team else None,
+                            away_provisional_team_id=away_team.id if away_team else None,
+                            away_provisional_team_name=away_team.name if away_team else None,
+                            away_provisional_logo=away_team.logo_path if away_team else None,
                         )
                     )
             bracket_rounds.append(
@@ -290,6 +341,141 @@ class TournamentService:
             season_name=season.name,
             rounds=bracket_rounds,
         )
+
+    def _compute_best_third_assignments(
+        self, group_standings: dict[str, list[TeamGroupStanding]]
+    ) -> dict[str, str]:
+        """For Mundial-style brackets, decide which 8 of the 12 third-placed
+        teams advance and return a ``match_code -> "3X"`` mapping.
+
+        Uses ``resolve_third_place_assignments`` (Annexe C) on whatever
+        third-placed group letters look best by current points / GD / GF.
+        Returns ``{}`` if no 8-letter combination resolves (not enough
+        groups finished, lookup miss, etc.).
+        """
+        from src.features.tournaments.data.third_place_lookup import (
+            resolve_third_place_assignments,
+        )
+
+        if len(group_standings) < 8:
+            return {}
+
+        # Pick the 8 best 3rd-placed teams across all groups.
+        thirds: list[tuple[str, TeamGroupStanding]] = []
+        for group_name, teams in group_standings.items():
+            if len(teams) < 3:
+                continue
+            thirds.append((group_name, teams[2]))
+        if len(thirds) < 8:
+            return {}
+        thirds.sort(
+            key=lambda gt: (-gt[1].points, -gt[1].goal_diff, -gt[1].goals_for, gt[1].team_name)
+        )
+        qualifying = {g for g, _ in thirds[:8]}
+        return resolve_third_place_assignments(qualifying) or {}
+
+    async def _compute_knockout_outcomes(
+        self,
+        season_id: int,
+        rounds_cfg: list[dict[str, Any]],
+        teams_by_id: dict[int, Team],
+    ) -> tuple[dict[str, int], dict[str, int]]:
+        """Resolve W12/L12 placeholders from already-played KO matches.
+
+        Walks each round's pairings, finds the matching ``matches`` row
+        for that matchday by index (same pairing-order assumption used
+        in ``get_bracket``), and records winner / loser team_ids keyed
+        by the pairing's match_code.
+        """
+        winners: dict[str, int] = {}
+        losers: dict[str, int] = {}
+        for round_cfg in rounds_cfg:
+            md_number = int(round_cfg.get("matchday", 0))
+            pairings = round_cfg.get("pairings", []) or []
+            if not pairings:
+                continue
+            matches_stmt = (
+                select(Match)
+                .join(Matchday, Match.matchday_id == Matchday.id)
+                .where(
+                    Matchday.season_id == season_id,
+                    Matchday.number == md_number,
+                )
+                .order_by(Match.played_at.asc().nulls_last(), Match.id)
+            )
+            res = await self.session.execute(matches_stmt)
+            matches = list(res.scalars().all())
+            for idx, m in enumerate(matches):
+                if idx >= len(pairings):
+                    break
+                code = pairings[idx].get("code")
+                if not code or m.home_score is None or m.away_score is None:
+                    continue
+                if m.home_team_id not in teams_by_id or m.away_team_id not in teams_by_id:
+                    continue
+                if m.home_score > m.away_score:
+                    winners[code] = m.home_team_id
+                    losers[code] = m.away_team_id
+                elif m.away_score > m.home_score:
+                    winners[code] = m.away_team_id
+                    losers[code] = m.home_team_id
+                # Ties: no winner recorded (KO matches generally avoid
+                # this with extra time / penalties, but if the row says
+                # 0-0 we just don't propagate yet).
+        return winners, losers
+
+    def _resolve_placeholder(
+        self,
+        placeholder: str | None,
+        *,
+        group_standings: dict[str, list[TeamGroupStanding]],
+        third_place_assignments: dict[str, str],
+        winner_by_code: dict[str, int],
+        loser_by_code: dict[str, int],
+        teams_by_id: dict[int, Team],
+        match_code: str | None,
+    ) -> Team | None:
+        """Translate a placeholder like '1A' / '2C' / '3:ABCEFI' / 'W12'
+        into the concrete Team it provisionally represents, using current
+        standings and any KO outcomes already known.
+
+        Returns None when the placeholder can't be resolved yet (group
+        stage hasn't decided, best-thirds table has no match for the
+        current standings, parent match still pending, …).
+        """
+        if not placeholder:
+            return None
+        p = placeholder.strip()
+
+        # "1A", "2A": positional within a group
+        if len(p) == 2 and p[0] in "1234" and p[1].isalpha():
+            pos = int(p[0]) - 1
+            group_name = p[1].upper()
+            teams = group_standings.get(group_name) or []
+            if pos < len(teams) and teams[pos].played > 0:
+                return teams_by_id.get(teams[pos].team_id)
+            return None
+
+        # "3:ABCEFI..." — best third destined for THIS match_code
+        if p.startswith("3:"):
+            assigned = third_place_assignments.get(match_code or "")
+            if not assigned or len(assigned) != 2 or assigned[0] != "3":
+                return None
+            group_name = assigned[1].upper()
+            teams = group_standings.get(group_name) or []
+            if len(teams) >= 3 and teams[2].played > 0:
+                return teams_by_id.get(teams[2].team_id)
+            return None
+
+        # "Wxx" / "Lxx" — winner / loser of an earlier KO match
+        if p.startswith("W") or p.startswith("L"):
+            code = f"M{p[1:]}"
+            team_id = (winner_by_code if p.startswith("W") else loser_by_code).get(code)
+            if team_id is None:
+                return None
+            return teams_by_id.get(team_id)
+
+        return None
 
     # ------------------------------------------------------------------
     # Predictions
