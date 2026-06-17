@@ -2059,150 +2059,188 @@ class ScrapingService:
                 return stars_to_rating[parsed_row.stars]
             return None
 
-        matches: list[MarcaPreviewMatch] = []
-        unmatched: list[MarcaPreviewUnmatched] = []
-        for parsed in rows:
-            preview_row = MarcaPreviewRow(
-                surname_clean=parsed.surname_clean,
-                stars=parsed.stars,
-                is_substitute=parsed.is_substitute,
-                minute=parsed.minute,
-                raw_text=parsed.raw_text,
-                confidence=parsed.confidence,
-                explicit_marker=parsed.explicit_marker,
-            )
-            # Restrict the search space to the column's team. The
-            # cromo's left column carries the home roster, the right
-            # column the away one — no fuzzy/token candidate can ever
-            # legitimately span teams.
-            col_idx = parsed.column_index if parsed.column_index in (0, 1) else 0
-            col_roster = rosters_by_column[col_idx]
-            col_by_surname = by_surname_by_column[col_idx]
-            col_surname_keys = list(col_by_surname.keys())
+        def _run_matching(
+            rosters_by_col: list,
+            by_surname_by_col: list,
+        ) -> tuple[list[MarcaPreviewMatch], list[MarcaPreviewUnmatched]]:
+            """Run the full per-row matching loop against the given
+            per-column rosters and surname lookups.
 
-            exact = col_by_surname.get(parsed.surname_clean, [])
-            ranked = _rank_roster(parsed.surname_clean, col_surname_keys)
-            token_ranked = _rank_roster_by_tokens(parsed.raw_text, col_roster)
+            Factored out so we can run it twice — once with the natural
+            home/away assignment and again with columns swapped — when
+            we suspect Marca printed the cromo with the columns flipped
+            (the away team on the left instead of the home one).
+            """
+            matches: list[MarcaPreviewMatch] = []
+            unmatched: list[MarcaPreviewUnmatched] = []
+            for parsed in rows:
+                preview_row = MarcaPreviewRow(
+                    surname_clean=parsed.surname_clean,
+                    stars=parsed.stars,
+                    is_substitute=parsed.is_substitute,
+                    minute=parsed.minute,
+                    raw_text=parsed.raw_text,
+                    confidence=parsed.confidence,
+                    explicit_marker=parsed.explicit_marker,
+                )
+                # Restrict the search space to the column's team. The
+                # cromo's left column carries the home roster, the right
+                # column the away one — no fuzzy/token candidate can ever
+                # legitimately span teams.
+                col_idx = parsed.column_index if parsed.column_index in (0, 1) else 0
+                col_roster = rosters_by_col[col_idx]
+                col_by_surname = by_surname_by_col[col_idx]
+                col_surname_keys = list(col_by_surname.keys())
 
-            # Match priority — highest confidence first:
-            #
-            # 1. Exact UNIQUE surname (a single player carries this
-            #    surname on the roster). Cheap, deterministic.
-            # 2. Token-set match. Validates against the FULL
-            #    display_name — way more reliable than fuzzy surname
-            #    because it catches:
-            #      - Asian names where the cromo is "Son Heung-min"
-            #        but the DB has "Heung-min Son" (or vice versa).
-            #      - Ambiguous surnames (5 Lees, 3 Kims): the full-
-            #        name overlap distinguishes them.
-            #      - Truncated OCR rows: "Eom" alone -> "Eom Ji-sung"
-            #        if it's the only roster player with that token.
-            #      - "+> 24Promise *" (OCR lost "David") -> Promise
-            #        David, NOT Ralph Priso (which fuzzy surname
-            #        would pick because difflib(promise, priso) = 0.67).
-            # 3. Fuzzy surname. Last resort — only fires if BOTH
-            #    above failed. The roster candidate must still be
-            #    unique to auto-match.
-            auto_match_player = None
-            # Apply the bench filter to exact-surname matches too.
-            # surname_key takes the LAST token, so "Vinicius Junior"
-            # is keyed as "junior" and "Wesley Vinicius" as "vinicius".
-            # An OCR "Vinicius" alone hits Wesley as a unique exact
-            # match — but Wesley didn't play this game. We auto-match
-            # only when the unique exact candidate played; otherwise
-            # we fall through to the token-set path which will see
-            # Vinicius Junior (90') and pick him correctly.
-            played_exact = [c for c in exact if c.minutes_played > 0]
-            if len(played_exact) == 1:
-                auto_match_player = played_exact[0]
-            elif len(played_exact) >= 2:
-                # Two roster players share the surname AND both played
-                # (Yahia / Seko Fofana, Hiroki / Junya Ito, …). Try the
-                # initial- and role-based tiebreakers before falling
-                # through to token-set / fuzzy.
-                auto_match_player = _tiebreak(parsed, played_exact)
-            elif not played_exact and len(exact) == 1:
-                # The single exact candidate is bench — skip.
-                pass
-            elif len(exact) == 1:
-                auto_match_player = exact[0]
+                exact = col_by_surname.get(parsed.surname_clean, [])
+                ranked = _rank_roster(parsed.surname_clean, col_surname_keys)
+                token_ranked = _rank_roster_by_tokens(parsed.raw_text, col_roster)
 
-            if auto_match_player is None:
-                if len(token_ranked) == 1:
-                    # Only one roster player shares any distinctive
-                    # token with the OCR row → confident hit.
-                    auto_match_player = token_ranked[0][0]
-                elif token_ranked:
-                    top_player, top_score = token_ranked[0]
-                    second_score = token_ranked[1][1] if len(token_ranked) > 1 else 0.0
-                    if top_score >= 0.66 or (
-                        top_score >= 0.50 and (top_score - second_score) >= 0.20
+                # Match priority — highest confidence first:
+                #
+                # 1. Exact UNIQUE surname (a single player carries this
+                #    surname on the roster). Cheap, deterministic.
+                # 2. Token-set match. Validates against the FULL
+                #    display_name — way more reliable than fuzzy surname
+                #    because it catches:
+                #      - Asian names where the cromo is "Son Heung-min"
+                #        but the DB has "Heung-min Son" (or vice versa).
+                #      - Ambiguous surnames (5 Lees, 3 Kims): the full-
+                #        name overlap distinguishes them.
+                #      - Truncated OCR rows: "Eom" alone -> "Eom Ji-sung"
+                #        if it's the only roster player with that token.
+                #      - "+> 24Promise *" (OCR lost "David") -> Promise
+                #        David, NOT Ralph Priso (which fuzzy surname
+                #        would pick because difflib(promise, priso) = 0.67).
+                # 3. Fuzzy surname. Last resort — only fires if BOTH
+                #    above failed. The roster candidate must still be
+                #    unique to auto-match.
+                auto_match_player = None
+                # Apply the bench filter to exact-surname matches too.
+                # surname_key takes the LAST token, so "Vinicius Junior"
+                # is keyed as "junior" and "Wesley Vinicius" as "vinicius".
+                # An OCR "Vinicius" alone hits Wesley as a unique exact
+                # match — but Wesley didn't play this game. We auto-match
+                # only when the unique exact candidate played; otherwise
+                # we fall through to the token-set path which will see
+                # Vinicius Junior (90') and pick him correctly.
+                played_exact = [c for c in exact if c.minutes_played > 0]
+                if len(played_exact) == 1:
+                    auto_match_player = played_exact[0]
+                elif len(played_exact) >= 2:
+                    # Two roster players share the surname AND both played
+                    # (Yahia / Seko Fofana, Hiroki / Junya Ito, …). Try the
+                    # initial- and role-based tiebreakers before falling
+                    # through to token-set / fuzzy.
+                    auto_match_player = _tiebreak(parsed, played_exact)
+                elif not played_exact and len(exact) == 1:
+                    # The single exact candidate is bench — skip.
+                    pass
+                elif len(exact) == 1:
+                    auto_match_player = exact[0]
+
+                if auto_match_player is None:
+                    if len(token_ranked) == 1:
+                        # Only one roster player shares any distinctive
+                        # token with the OCR row → confident hit.
+                        auto_match_player = token_ranked[0][0]
+                    elif token_ranked:
+                        top_player, top_score = token_ranked[0]
+                        second_score = token_ranked[1][1] if len(token_ranked) > 1 else 0.0
+                        if top_score >= 0.66 or (
+                            top_score >= 0.50 and (top_score - second_score) >= 0.20
+                        ):
+                            auto_match_player = top_player
+                        elif top_score >= 0.40 and abs(top_score - second_score) < 1e-9:
+                            # All candidates tied on token-set score — try
+                            # initial / role tiebreakers before bailing.
+                            tied = [p for p, s in token_ranked if abs(s - top_score) < 1e-9]
+                            auto_match_player = _tiebreak(parsed, tied)
+
+                if auto_match_player is None and not exact and ranked:
+                    top_key, top_score = ranked[0]
+                    second_score = ranked[1][1] if len(ranked) > 1 else 0.0
+                    if top_score >= 0.85 or (
+                        top_score >= 0.65 and (top_score - second_score) >= 0.10
                     ):
-                        auto_match_player = top_player
-                    elif top_score >= 0.40 and abs(top_score - second_score) < 1e-9:
-                        # All candidates tied on token-set score — try
-                        # initial / role tiebreakers before bailing.
-                        tied = [p for p, s in token_ranked if abs(s - top_score) < 1e-9]
-                        auto_match_player = _tiebreak(parsed, tied)
+                        candidates = col_by_surname.get(top_key, [])
+                        # Same "only players who played" filter as the
+                        # token-set path — protects against fuzzy hits
+                        # like "Gamarra" -> "Galarza" when Galarza didn't
+                        # play.
+                        played_candidates = [c for c in candidates if c.minutes_played > 0]
+                        if len(played_candidates) == 1:
+                            auto_match_player = played_candidates[0]
 
-            if auto_match_player is None and not exact and ranked:
-                top_key, top_score = ranked[0]
-                second_score = ranked[1][1] if len(ranked) > 1 else 0.0
-                if top_score >= 0.85 or (top_score >= 0.65 and (top_score - second_score) >= 0.10):
-                    candidates = col_by_surname.get(top_key, [])
-                    # Same "only players who played" filter as the
-                    # token-set path — protects against fuzzy hits
-                    # like "Gamarra" -> "Galarza" when Galarza didn't
-                    # play.
-                    played_candidates = [c for c in candidates if c.minutes_played > 0]
-                    if len(played_candidates) == 1:
-                        auto_match_player = played_candidates[0]
-
-            if auto_match_player is not None:
-                matches.append(
-                    MarcaPreviewMatch(
-                        row=preview_row,
-                        player_id=auto_match_player.player_id,
-                        player_name=auto_match_player.display_name,
-                        marca_rating=_resolve_rating(parsed),
+                if auto_match_player is not None:
+                    matches.append(
+                        MarcaPreviewMatch(
+                            row=preview_row,
+                            player_id=auto_match_player.player_id,
+                            player_name=auto_match_player.display_name,
+                            marca_rating=_resolve_rating(parsed),
+                        )
                     )
-                )
-                continue
+                    continue
 
-            # Build a shortlist of the most plausible candidates so the
-            # admin picks from a sorted dropdown of ≤5 names instead of
-            # the full ~26-player roster. Mix surname-ranked + token-
-            # ranked so order-flipped names show up too.
-            shortlist: list = []
-            seen_ids: set[int] = set()
-            for key, _score in ranked:
-                for player in col_by_surname.get(key, []):
-                    if player.player_id not in seen_ids:
-                        shortlist.append(player)
-                        seen_ids.add(player.player_id)
+                # Build a shortlist of the most plausible candidates so the
+                # admin picks from a sorted dropdown of ≤5 names instead of
+                # the full ~26-player roster. Mix surname-ranked + token-
+                # ranked so order-flipped names show up too.
+                shortlist: list = []
+                seen_ids: set[int] = set()
+                for key, _score in ranked:
+                    for player in col_by_surname.get(key, []):
+                        if player.player_id not in seen_ids:
+                            shortlist.append(player)
+                            seen_ids.add(player.player_id)
+                        if len(shortlist) >= 5:
+                            break
                     if len(shortlist) >= 5:
                         break
-                if len(shortlist) >= 5:
-                    break
-            if len(shortlist) < 5:
-                for player, _s in _rank_roster_by_tokens(parsed.raw_text, col_roster):
-                    if player.player_id not in seen_ids:
-                        shortlist.append(player)
-                        seen_ids.add(player.player_id)
-                    if len(shortlist) >= 5:
-                        break
-            if not shortlist:
-                # Last-resort: the column's roster (only players who
-                # played, sorted by minutes) — better than dumping
-                # both teams at the admin.
-                shortlist = (
-                    sorted(
-                        [p for p in col_roster if p.minutes_played > 0],
-                        key=lambda p: -p.minutes_played,
-                    )[:5]
-                    or list(col_roster)[:5]
+                if len(shortlist) < 5:
+                    for player, _s in _rank_roster_by_tokens(parsed.raw_text, col_roster):
+                        if player.player_id not in seen_ids:
+                            shortlist.append(player)
+                            seen_ids.add(player.player_id)
+                        if len(shortlist) >= 5:
+                            break
+                if not shortlist:
+                    # Last-resort: the column's roster (only players who
+                    # played, sorted by minutes) — better than dumping
+                    # both teams at the admin.
+                    shortlist = (
+                        sorted(
+                            [p for p in col_roster if p.minutes_played > 0],
+                            key=lambda p: -p.minutes_played,
+                        )[:5]
+                        or list(col_roster)[:5]
+                    )
+                unmatched.append(MarcaPreviewUnmatched(row=preview_row, candidates=shortlist))
+
+            return matches, unmatched
+
+        matches, unmatched = _run_matching(rosters_by_column, by_surname_by_column)
+
+        # Marca occasionally prints the cromo with the columns flipped —
+        # the away team on the LEFT instead of the home one. When that
+        # happens every row hits the wrong roster and the match rate
+        # collapses (Austria-Jordania ended up with 1/31 because the
+        # team assignment was upside-down). If we ended below 30% on a
+        # cromo with at least 5 rows, retry with columns swapped and
+        # keep whichever attempt produced more matches.
+        if len(rows) >= 5 and len(matches) / len(rows) < 0.30:
+            swapped_rosters = [rosters_by_column[1], rosters_by_column[0]]
+            swapped_by_surname = [by_surname_by_column[1], by_surname_by_column[0]]
+            m2, u2 = _run_matching(swapped_rosters, swapped_by_surname)
+            if len(m2) > len(matches):
+                logger.info(
+                    "marca_preview: column-swap recovered matches (%d -> %d / %d rows)",
+                    len(matches),
+                    len(m2),
+                    len(rows),
                 )
-            unmatched.append(MarcaPreviewUnmatched(row=preview_row, candidates=shortlist))
+                matches, unmatched = m2, u2
 
         return MarcaPreviewResponse(
             match_id=match_id,
