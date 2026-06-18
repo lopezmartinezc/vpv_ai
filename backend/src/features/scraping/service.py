@@ -257,6 +257,14 @@ class ScrapingService:
                 return ""
             return n.split()[-1].split("-")[-1]
 
+        # players.slug may have been seeded with mixed case / accented
+        # chars depending on what futbolfantasy emitted at the time of
+        # the roster scrape (e.g. "Davinson-Sánchez"). The match-page
+        # extractor normalises hrefs to URL-decoded lowercase-ascii via
+        # `_normalize_player_slug`, so we mirror that here to keep both
+        # sides of the lookup in the same canonical form.
+        from src.features.scraping.parsers import _normalize_player_slug
+
         per_team_by_surname: dict[int, dict[str, Player]] = {}
         per_team_by_slug: dict[int, dict[str, Player]] = {}
         for team_id in (home_team_id, away_team_id):
@@ -270,7 +278,7 @@ class ScrapingService:
                     # the complexity for v1.
                     surname_lookup[key] = player
                 if player.slug:
-                    slug_lookup[player.slug] = player
+                    slug_lookup[_normalize_player_slug(player.slug)] = player
             per_team_by_surname[team_id] = surname_lookup
             per_team_by_slug[team_id] = slug_lookup
 

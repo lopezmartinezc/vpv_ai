@@ -986,6 +986,25 @@ def _strip_accents_lower(value: str) -> str:
     return no_marks.lower().strip()
 
 
+def _normalize_player_slug(slug: str) -> str:
+    """Canonicalise a player slug to ascii-lower-hyphen form.
+
+    futbolfantasy is inconsistent: some hrefs come URL-encoded
+    (`Davinson-S%C3%A1nchez`), some preserve mixed case
+    (`Davinson-Sánchez`), some are already lowercase ascii
+    (`davinson-sanchez`). The roster scraper may have saved any of
+    those into ``players.slug``, so we normalise on BOTH sides of the
+    lookup — extract-time and roster-build-time — to the same
+    canonical form: URL-decoded, NFD-stripped, lowercased.
+    """
+    from urllib.parse import unquote
+
+    decoded = unquote(slug)
+    normalized = unicodedata.normalize("NFD", decoded)
+    no_marks = "".join(c for c in normalized if not unicodedata.combining(c))
+    return no_marks.lower()
+
+
 def _extract_player_slug(desglose_row: Tag) -> str | None:
     """Pull the futbolfantasy player slug from the desglose row.
 
@@ -995,15 +1014,20 @@ def _extract_player_slug(desglose_row: Tag) -> str | None:
     safest match key — much better than the plegado row's text, which
     can truncate names ("Armando G." for "Armando González") and break
     the surname-based match.
+
+    The regex tolerates URL-encoded chars (`%C3%A1`) and mixed case
+    (`Davinson-Sánchez`); the result is run through
+    ``_normalize_player_slug`` so the caller can compare against an
+    equally-normalised roster slug.
     """
     import re as _re
 
     for a in desglose_row.find_all("a", href=True):
         href_raw = a.get("href")
         href = href_raw if isinstance(href_raw, str) else ""
-        m = _re.search(r"/jugadores/([a-z0-9-]+)(?:/|$)", href)
+        m = _re.search(r"/jugadores/([A-Za-z0-9%-]+)(?:/|$)", href)
         if m:
-            return m.group(1)
+            return _normalize_player_slug(m.group(1))
     return None
 
 
