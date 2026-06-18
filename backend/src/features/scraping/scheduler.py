@@ -86,6 +86,36 @@ async def _run_tick() -> None:
                 _log("scraping_tick", "matchday_current=0, omitiendo")
                 return
 
+            # Early advance: in tournaments where matchdays overlap
+            # (Mundial 2026: J1 still has late Marca/AS pending while
+            # J2 has already kicked off), matchday_current was stuck
+            # at J1 because the regular advance only fires when ALL
+            # J1's counting matches are stats_ok. Roll forward as
+            # soon as the NEXT matchday's first match has actually
+            # started — the previous matchday is still scraped (the
+            # prev_md branch below covers it) and home / deadline
+            # math gets the right pointer.
+            now_utc = datetime.now(UTC)
+            md_end = season.matchday_end or 38
+            while md_current < md_end:
+                next_md = await repo.get_matchday(season_id, md_current + 1)
+                if next_md is None or next_md.first_match_at is None:
+                    break
+                first = next_md.first_match_at
+                if first.tzinfo is None:
+                    first = first.replace(tzinfo=UTC)
+                if first > now_utc:
+                    break
+                await repo.update_season_matchday_current(season_id, md_current + 1)
+                _log(
+                    "scraping_tick",
+                    f"matchday_current avanzado {md_current} -> {md_current + 1} "
+                    f"(primer partido J{md_current + 1} ya empezó)",
+                )
+                md_current += 1
+                season.matchday_current = md_current
+            await session.commit()
+
             # 2. Update calendar first — populates match scores and dates.
             try:
                 cal_result = await service.scrape_calendar(season_id)
@@ -118,7 +148,6 @@ async def _run_tick() -> None:
             matches_to_scrape: list[tuple[int, int, int]] = []  # (match_id, md_id, md_number)
             pending_crcs: dict[int, str] = {}
             buffer_minutes = scraping_settings.scraping_buffer_minutes
-            now_utc = datetime.now(UTC)
 
             async with ScrapingClient() as client:
                 for md_id, md_number in matchdays_to_check:
