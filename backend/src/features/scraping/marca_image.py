@@ -87,6 +87,18 @@ _NUM_RE = re.compile(r"^(\d{1,2})")
 # adjacent token leaking left) still resolve.
 _GLUE_RE = re.compile(r"^(\d{1,2})[_\W0]{0,3}([A-Za-zÁÉÍÓÚÑáéíóúñ][A-Za-zÁÉÍÓÚÑáéíóúñ\-]+)$")
 
+# Initial pegada al apellido sin espacio: "D.Gómez", "J.Smith". The
+# OCR collapses the space so we end up with a single token whose
+# surname is unreachable. Split into two: the initial keeps the dot
+# so the matcher's tiebreaker still sees "D." for desambiguation.
+_INITIAL_STUCK_RE = re.compile(r"^([A-Z])\.([A-Za-zÁÉÍÓÚÑáéíóúñ][A-Za-zÁÉÍÓÚÑáéíóúñ\-]+)$")
+
+# "Mc" / "Mac" prefix that OCR sometimes reads as a separate token
+# (e.g. "Mc Ginn" instead of "McGinn"). When the next name token
+# starts with an uppercase, we glue them back before they reach the
+# surname extractor.
+_MC_PREFIX_RE = re.compile(r"^(Mc|Mac)$")
+
 # Tokens that look like a botched star sequence - drop them so they
 # don't pollute names. The character class contains intentionally
 # ambiguous unicode glyphs Tesseract emits for the ★ symbol.
@@ -526,7 +538,36 @@ def _parse_row_tokens(
             and not _STAR_JUNK.match(txt)
             and not _SC_RE.match(txt)
         ):
-            name_parts.append(txt)
+            # Split a glued initial ("D.Gómez" -> "D.", "Gómez") so
+            # the surname extractor sees "Gómez" as its own token AND
+            # the matcher's regex still finds "D." for tiebreaking.
+            m_init = _INITIAL_STUCK_RE.match(txt)
+            if m_init:
+                name_parts.append(f"{m_init.group(1)}.")
+                name_parts.append(m_init.group(2))
+            else:
+                name_parts.append(txt)
+
+    # Glue back "Mc" / "Mac" prefix tokens that OCR split from the
+    # following name token. "Mc Ginn" -> "McGinn", "Mac Allister"
+    # -> "MacAllister". We only fuse when the next token starts with
+    # an uppercase letter, otherwise we'd corrupt unrelated names.
+    fused: list[str] = []
+    i = 0
+    while i < len(name_parts):
+        tok = name_parts[i]
+        if (
+            _MC_PREFIX_RE.match(tok)
+            and i + 1 < len(name_parts)
+            and name_parts[i + 1]
+            and name_parts[i + 1][0].isupper()
+        ):
+            fused.append(tok + name_parts[i + 1])
+            i += 2
+        else:
+            fused.append(tok)
+            i += 1
+    name_parts = fused
 
     name = _clean_name(name_parts)
     avg_conf = (sum(confs) / len(confs) / 100.0) if confs else 0.0

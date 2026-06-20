@@ -2236,7 +2236,19 @@ class ScrapingService:
                         played_candidates = [c for c in candidates if c.minutes_played > 0]
                         if len(played_candidates) == 1:
                             auto_match_player = played_candidates[0]
-                    elif (
+                    elif top_score >= 0.55:
+                        # Lower-confidence fuzzy can still be safe when
+                        # the top key resolves to EXACTLY ONE candidate
+                        # who actually played, and there's no other
+                        # close key (gap >= 0.10 keeps us out of true
+                        # ties). Catches OCR garbage like "RoDmMSON"
+                        # (fuzzy 0.62 vs "Robinson") where the only
+                        # played Robinson is the obvious answer.
+                        candidates = col_by_surname.get(top_key, [])
+                        played_candidates = [c for c in candidates if c.minutes_played > 0]
+                        if len(played_candidates) == 1 and (top_score - second_score) >= 0.10:
+                            auto_match_player = played_candidates[0]
+                    if auto_match_player is None and (
                         second_key is not None
                         and top_score >= 0.65
                         and (top_score - second_score) <= 0.20
