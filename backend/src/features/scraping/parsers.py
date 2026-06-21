@@ -1094,8 +1094,16 @@ def _events_flags(events_td: Tag | None) -> dict[str, bool | int]:
             flags["red_card"] = True
         if "amarilla" in alt:
             yellow_count += 1
-        if "error" in alt and "gol en contra" in alt:
-            # Increment in case there's more than one (unlikely).
+        # Only true own goals — NOT defensive errors that led to a goal.
+        # futbolfantasy emits three related alts:
+        #   "Gol en propia meta"                — autogol real (cuenta).
+        #   "Error garrafal en gol"             — error que llevó a gol (NO autogol).
+        #   "Error garrafal en gol en contra"   — error que llevó a gol del rival (NO autogol).
+        # The old `"error" in alt and "gol en contra" in alt` test caught
+        # the third one too, marking defensive errors as autogoles and
+        # subtracting points incorrectly. Match the unambiguous phrase
+        # "propia" (covers "meta" / "puerta" / future variants) instead.
+        if "propia" in alt:
             assert isinstance(flags["own_goals"], int)
             flags["own_goals"] = flags["own_goals"] + 1
     if yellow_count == 1:

@@ -132,9 +132,14 @@ class TestStatExtraction:
         assert montes.stats.red_card is True
 
     def test_sithole_own_goal_error(self, players: list[MatchPagePlayer]) -> None:
-        # "Error garrafal en gol en contra" img — count toward own_goals.
+        # "Error garrafal en gol en contra" is a defensive error (the
+        # player gave away a goal for the rival team), NOT an own goal.
+        # It must NOT increment own_goals — that's reserved for the
+        # "Gol en propia meta" icon, where the player literally scored
+        # into their own net. The red card is a separate event Sithole
+        # also got and should still be detected.
         sithole = next(p for p in players if "Sithole" in p.player_name_raw)
-        assert sithole.stats.own_goals >= 1
+        assert sithole.stats.own_goals == 0
         assert sithole.stats.red_card is True
 
     def test_yellow_card_detection(self, players: list[MatchPagePlayer]) -> None:
