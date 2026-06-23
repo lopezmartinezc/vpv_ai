@@ -574,55 +574,57 @@ class LineupService:
     ) -> list[MissedCall]:
         """Find swaps the manager should have made (top 3, 1:1 matching).
 
-        A "missed call" pairs ONE benched player (in optimal but not in
-        the actual XI) with ONE lined-up player at the same position
-        who isn't in the optimal XI. Each lined-up player can only be
-        swapped out ONCE — picking the matchup with the biggest point
-        gain first and consuming both sides, so the UI never shows two
-        rows saying "replace the same lined-up player with two
-        different bench guys" (which is physically impossible).
-        """
-        benched_by_pos: dict[str, list[dict]] = {}
-        for s in squad_stats:
-            pid = s["player_id"]
-            if pid in optimal_ids and pid not in lined_up_ids:
-                benched_by_pos.setdefault(s["position"], []).append(s)
+        A "missed call" pairs ONE leaver (player in actual XI but not in
+        optimal) with ONE entrant (player in optimal but not in actual).
+        Each side can only be consumed once.
 
-        lined_by_pos: dict[str, list[dict]] = {}
+        Cross-position pairs are allowed because the optimal XI may use
+        a different formation than the actual one — e.g. a 4-4-2 actual
+        vs a 3-5-2 optimal needs one DEF swapped out for an extra MED,
+        and filtering by position would silently hide that swap. The
+        optimal XI is already a valid formation, so any pairing that
+        equalises the two XIs is by construction a legal sequence of
+        moves.
+        """
+        leavers: list[dict] = []
+        entrants: list[dict] = []
         for s in squad_stats:
             pid = s["player_id"]
             if pid in lined_up_ids and pid not in optimal_ids:
-                lined_by_pos.setdefault(s["position"], []).append(s)
+                leavers.append(s)
+            elif pid in optimal_ids and pid not in lined_up_ids:
+                entrants.append(s)
 
-        # Enumerate every viable (benched, lined-up) pair within each
-        # position, then sort by the gain it would produce. Walk the
-        # list once, taking each pair whose endpoints haven't been
-        # consumed yet — classic greedy 1:1 matching, optimal here
-        # because the gain ordering dominates any positional dependency.
+        # Enumerate every (leaver, entrant) pair, sort by gain, then
+        # walk the list consuming both endpoints with used_* sets —
+        # classic greedy 1:1 matching, optimal because the gain
+        # ordering dominates and all pairs are independent once the
+        # position filter is dropped.
         candidates: list[tuple[int, dict, dict]] = []
-        for pos, benched_list in benched_by_pos.items():
-            for benched in benched_list:
-                for lined in lined_by_pos.get(pos, []):
-                    gain = benched["pts"] - lined["pts"]
-                    if gain > 0:
-                        candidates.append((gain, benched, lined))
+        for leaver in leavers:
+            for entrant in entrants:
+                gain = entrant["pts"] - leaver["pts"]
+                if gain > 0:
+                    candidates.append((gain, leaver, entrant))
         candidates.sort(key=lambda t: t[0], reverse=True)
 
-        used_benched: set[int] = set()
-        used_lined: set[int] = set()
+        used_leaver: set[int] = set()
+        used_entrant: set[int] = set()
         diffs: list[MissedCall] = []
-        for _gain, benched, lined in candidates:
-            if benched["player_id"] in used_benched or lined["player_id"] in used_lined:
+        for _gain, leaver, entrant in candidates:
+            if leaver["player_id"] in used_leaver or entrant["player_id"] in used_entrant:
                 continue
-            used_benched.add(benched["player_id"])
-            used_lined.add(lined["player_id"])
+            used_leaver.add(leaver["player_id"])
+            used_entrant.add(entrant["player_id"])
             diffs.append(
                 MissedCall(
-                    position=benched["position"],
-                    benched_name=benched["name"],
-                    benched_points=benched["pts"],
-                    lined_up_name=lined["name"],
-                    lined_up_points=lined["pts"],
+                    position=leaver["position"],  # legacy field
+                    benched_name=entrant["name"],
+                    benched_points=entrant["pts"],
+                    benched_position=entrant["position"],
+                    lined_up_name=leaver["name"],
+                    lined_up_points=leaver["pts"],
+                    lined_up_position=leaver["position"],
                 )
             )
             if len(diffs) >= 3:

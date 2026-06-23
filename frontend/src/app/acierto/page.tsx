@@ -127,23 +127,33 @@ function MatchdayDetail({ entry }: { entry: AccuracyMatchdayRankingEntry }) {
           <p className="text-[10px] font-semibold uppercase text-vpv-text-muted">
             Cambios que debiste hacer
           </p>
-          {entry.missed_calls.map((mc, i) => (
-            <div key={i} className="flex items-center gap-1.5 text-[11px]">
-              <span className={`text-[9px] font-bold ${POS_COLORS[mc.position] ?? ""}`}>
-                {mc.position}
-              </span>
-              <span className="text-red-400">
-                {mc.lined_up_name} ({mc.lined_up_points})
-              </span>
-              <span className="text-vpv-text-muted">→</span>
-              <span className="text-emerald-400">
-                {mc.benched_name} ({mc.benched_points})
-              </span>
-              <span className="text-vpv-text-muted">
-                +{mc.benched_points - mc.lined_up_points}
-              </span>
-            </div>
-          ))}
+          {entry.missed_calls.map((mc, i) => {
+            const leaverPos = mc.lined_up_position ?? mc.position;
+            const entrantPos = mc.benched_position ?? mc.position;
+            const isCrossPos = leaverPos !== entrantPos;
+            return (
+              <div key={i} className="flex items-center gap-1.5 text-[11px]">
+                <span className={`text-[9px] font-bold ${POS_COLORS[leaverPos] ?? ""}`}>
+                  {leaverPos}
+                </span>
+                <span className="text-red-400">
+                  {mc.lined_up_name} ({mc.lined_up_points})
+                </span>
+                <span className="text-vpv-text-muted">→</span>
+                {isCrossPos && (
+                  <span className={`text-[9px] font-bold ${POS_COLORS[entrantPos] ?? ""}`}>
+                    {entrantPos}
+                  </span>
+                )}
+                <span className="text-emerald-400">
+                  {mc.benched_name} ({mc.benched_points})
+                </span>
+                <span className="text-vpv-text-muted">
+                  +{mc.benched_points - mc.lined_up_points}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

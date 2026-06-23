@@ -123,11 +123,13 @@ class LineupHistoryResponse(BaseModel):
 
 
 class MissedCall(BaseModel):
-    position: str
+    position: str  # legacy field — equals lined_up_position for back-compat
     benched_name: str
     benched_points: int
+    benched_position: str
     lined_up_name: str
     lined_up_points: int
+    lined_up_position: str
 
 
 class MatchdayAccuracy(BaseModel):

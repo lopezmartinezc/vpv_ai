@@ -613,8 +613,10 @@ export interface MissedCall {
   position: string;
   benched_name: string;
   benched_points: number;
+  benched_position?: string;
   lined_up_name: string;
   lined_up_points: number;
+  lined_up_position?: string;
 }
 
 export interface MatchdayAccuracy {
