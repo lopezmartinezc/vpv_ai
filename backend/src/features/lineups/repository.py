@@ -582,6 +582,18 @@ class LineupRepository:
         if not lineups:
             return []
 
+        # Probe the ownership log. Tournaments (Mundial 2026) and any
+        # pre-log season never wrote to player_ownership_log, so the
+        # per-matchday ownership join below would resolve to zero
+        # squad players and /acierto would render empty XIs. When the
+        # log is empty for this season, fall back to the canonical
+        # Player.owner_id (current ownership). Same fallback pattern
+        # as get_bench_players in matchdays/repository.py.
+        log_check_stmt = (
+            select(PlayerOwnershipLog.id).where(PlayerOwnershipLog.season_id == season_id).limit(1)
+        )
+        ownership_log_has_rows = (await self.session.execute(log_check_stmt)).scalar() is not None
+
         # 3. Get lined-up player IDs per lineup
         lineup_ids = [r.lineup_id for r in lineups.values()]
         lp_stmt = select(LineupPlayer.lineup_id, LineupPlayer.player_id).where(
@@ -601,51 +613,73 @@ class LineupRepository:
 
             md_number = md_id_to_number[md.id]
 
-            # Ownership subquery for this matchday
-            row_num = (
-                func.row_number()
-                .over(
-                    partition_by=PlayerOwnershipLog.player_id,
-                    order_by=PlayerOwnershipLog.from_matchday.desc(),
+            if ownership_log_has_rows:
+                # Historical ownership via the log: pick the most
+                # recent ownership row at or before this matchday.
+                row_num = (
+                    func.row_number()
+                    .over(
+                        partition_by=PlayerOwnershipLog.player_id,
+                        order_by=PlayerOwnershipLog.from_matchday.desc(),
+                    )
+                    .label("rn")
                 )
-                .label("rn")
-            )
-            ownership_inner = (
-                select(
-                    PlayerOwnershipLog.player_id,
-                    PlayerOwnershipLog.participant_id,
-                    row_num,
+                ownership_inner = (
+                    select(
+                        PlayerOwnershipLog.player_id,
+                        PlayerOwnershipLog.participant_id,
+                        row_num,
+                    )
+                    .where(
+                        PlayerOwnershipLog.season_id == season_id,
+                        PlayerOwnershipLog.from_matchday <= md_number,
+                    )
+                    .subquery()
                 )
-                .where(
-                    PlayerOwnershipLog.season_id == season_id,
-                    PlayerOwnershipLog.from_matchday <= md_number,
+                ownership = (
+                    select(ownership_inner.c.player_id, ownership_inner.c.participant_id)
+                    .where(ownership_inner.c.rn == 1)
+                    .subquery()
                 )
-                .subquery()
-            )
-            ownership = (
-                select(ownership_inner.c.player_id, ownership_inner.c.participant_id)
-                .where(ownership_inner.c.rn == 1)
-                .subquery()
-            )
 
-            # Get stats for owned players, respecting match.counts
-            stats_stmt = (
-                select(
-                    PlayerStat.player_id,
-                    PlayerStat.position,
-                    PlayerStat.pts_total,
-                    PlayerStat.played,
-                    Player.display_name,
+                stats_stmt = (
+                    select(
+                        PlayerStat.player_id,
+                        PlayerStat.position,
+                        PlayerStat.pts_total,
+                        PlayerStat.played,
+                        Player.display_name,
+                    )
+                    .join(Player, PlayerStat.player_id == Player.id)
+                    .join(ownership, ownership.c.player_id == PlayerStat.player_id)
+                    .outerjoin(Match, PlayerStat.match_id == Match.id)
+                    .where(
+                        ownership.c.participant_id == participant_id,
+                        PlayerStat.matchday_id == md.id,
+                        func.coalesce(Match.counts, literal(True)).is_(True),
+                    )
                 )
-                .join(Player, PlayerStat.player_id == Player.id)
-                .join(ownership, ownership.c.player_id == PlayerStat.player_id)
-                .outerjoin(Match, PlayerStat.match_id == Match.id)
-                .where(
-                    ownership.c.participant_id == participant_id,
-                    PlayerStat.matchday_id == md.id,
-                    func.coalesce(Match.counts, literal(True)).is_(True),
+            else:
+                # Fallback for tournaments / pre-log seasons: use the
+                # canonical Player.owner_id directly. Accurate as long
+                # as ownership hasn't churned mid-tournament (Mundial
+                # 2026 squads are fixed for the whole event).
+                stats_stmt = (
+                    select(
+                        PlayerStat.player_id,
+                        PlayerStat.position,
+                        PlayerStat.pts_total,
+                        PlayerStat.played,
+                        Player.display_name,
+                    )
+                    .join(Player, PlayerStat.player_id == Player.id)
+                    .outerjoin(Match, PlayerStat.match_id == Match.id)
+                    .where(
+                        Player.owner_id == participant_id,
+                        PlayerStat.matchday_id == md.id,
+                        func.coalesce(Match.counts, literal(True)).is_(True),
+                    )
                 )
-            )
             stats_result = await self.session.execute(stats_stmt)
             squad_stats = [
                 {
