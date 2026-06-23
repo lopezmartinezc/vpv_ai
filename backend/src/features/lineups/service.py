@@ -572,40 +572,62 @@ class LineupService:
         lined_up_ids: set[int],
         optimal_ids: set[int],
     ) -> list[MissedCall]:
-        """Find players who should have been lined up but weren't (top 3)."""
-        # Players in optimal but NOT in actual lineup
-        should_have = {s["player_id"]: s for s in squad_stats if s["player_id"] in optimal_ids}
-        actually_lined = {s["player_id"]: s for s in squad_stats if s["player_id"] in lined_up_ids}
+        """Find swaps the manager should have made (top 3, 1:1 matching).
 
+        A "missed call" pairs ONE benched player (in optimal but not in
+        the actual XI) with ONE lined-up player at the same position
+        who isn't in the optimal XI. Each lined-up player can only be
+        swapped out ONCE — picking the matchup with the biggest point
+        gain first and consuming both sides, so the UI never shows two
+        rows saying "replace the same lined-up player with two
+        different bench guys" (which is physically impossible).
+        """
+        benched_by_pos: dict[str, list[dict]] = {}
+        for s in squad_stats:
+            pid = s["player_id"]
+            if pid in optimal_ids and pid not in lined_up_ids:
+                benched_by_pos.setdefault(s["position"], []).append(s)
+
+        lined_by_pos: dict[str, list[dict]] = {}
+        for s in squad_stats:
+            pid = s["player_id"]
+            if pid in lined_up_ids and pid not in optimal_ids:
+                lined_by_pos.setdefault(s["position"], []).append(s)
+
+        # Enumerate every viable (benched, lined-up) pair within each
+        # position, then sort by the gain it would produce. Walk the
+        # list once, taking each pair whose endpoints haven't been
+        # consumed yet — classic greedy 1:1 matching, optimal here
+        # because the gain ordering dominates any positional dependency.
+        candidates: list[tuple[int, dict, dict]] = []
+        for pos, benched_list in benched_by_pos.items():
+            for benched in benched_list:
+                for lined in lined_by_pos.get(pos, []):
+                    gain = benched["pts"] - lined["pts"]
+                    if gain > 0:
+                        candidates.append((gain, benched, lined))
+        candidates.sort(key=lambda t: t[0], reverse=True)
+
+        used_benched: set[int] = set()
+        used_lined: set[int] = set()
         diffs: list[MissedCall] = []
-        for pid, benched in should_have.items():
-            if pid in lined_up_ids:
-                continue  # Correctly lined up
-            # Find the worst lined-up player in the same position
-            pos = benched["position"]
-            worst_in_pos = None
-            for lid, lined in actually_lined.items():
-                if (
-                    lined["position"] == pos
-                    and lid not in optimal_ids
-                    and (worst_in_pos is None or lined["pts"] < worst_in_pos["pts"])
-                ):
-                    worst_in_pos = lined
-
-            if worst_in_pos and benched["pts"] > worst_in_pos["pts"]:
-                diffs.append(
-                    MissedCall(
-                        position=pos,
-                        benched_name=benched["name"],
-                        benched_points=benched["pts"],
-                        lined_up_name=worst_in_pos["name"],
-                        lined_up_points=worst_in_pos["pts"],
-                    )
+        for _gain, benched, lined in candidates:
+            if benched["player_id"] in used_benched or lined["player_id"] in used_lined:
+                continue
+            used_benched.add(benched["player_id"])
+            used_lined.add(lined["player_id"])
+            diffs.append(
+                MissedCall(
+                    position=benched["position"],
+                    benched_name=benched["name"],
+                    benched_points=benched["pts"],
+                    lined_up_name=lined["name"],
+                    lined_up_points=lined["pts"],
                 )
-
-        # Sort by biggest diff, return top 3
-        diffs.sort(key=lambda d: d.benched_points - d.lined_up_points, reverse=True)
-        return diffs[:3]
+            )
+            if len(diffs) >= 3:
+                break
+        return diffs
 
     async def _validate_deadline(self, matchday: object, season_id: int) -> None:
         """Check that the deadline hasn't passed."""
