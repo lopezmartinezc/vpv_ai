@@ -624,8 +624,12 @@ class LineupService:
         pool = _greedy_pairs(por_leavers, por_entrants) + _greedy_pairs(out_leavers, out_entrants)
         pool.sort(key=lambda t: t[0], reverse=True)
 
+        # Show every swap with positive gain — clipping to 3 used to
+        # hide the missing points (e.g. a 5-swap optimal vs actual
+        # collapse where rows 4+5 each contribute +2 to the deficit
+        # the user could see in the totals but not in the panel).
         diffs: list[MissedCall] = []
-        for _gain, leaver, entrant in pool[:3]:
+        for _gain, leaver, entrant in pool:
             diffs.append(
                 MissedCall(
                     position=leaver["position"],  # legacy field
