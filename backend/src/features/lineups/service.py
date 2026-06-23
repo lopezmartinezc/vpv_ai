@@ -574,48 +574,58 @@ class LineupService:
     ) -> list[MissedCall]:
         """Find swaps the manager should have made (top 3, 1:1 matching).
 
-        A "missed call" pairs ONE leaver (player in actual XI but not in
-        optimal) with ONE entrant (player in optimal but not in actual).
-        Each side can only be consumed once.
+        Splits the swap space into two pools that can never mix:
+        - POR: a goalkeeper can only ever be swapped for another
+          goalkeeper. Every formation has exactly one POR slot.
+        - Outfield (DEF/MED/DEL): freely interchangeable, because the
+          optimal XI's formation determines the legal mix of the three
+          outfield positions and any pairing across them is part of a
+          legal route to that XI.
 
-        Cross-position pairs are allowed because the optimal XI may use
-        a different formation than the actual one — e.g. a 4-4-2 actual
-        vs a 3-5-2 optimal needs one DEF swapped out for an extra MED,
-        and filtering by position would silently hide that swap. The
-        optimal XI is already a valid formation, so any pairing that
-        equalises the two XIs is by construction a legal sequence of
-        moves.
+        Each pool runs its own greedy 1:1 match (by point gain). We
+        then merge both pools, sort again by gain, and return the top
+        three. This is what blocks the previous regression that paired
+        a POR leaver with a DEL entrant — physically impossible without
+        leaving the manager with zero goalkeepers.
         """
-        leavers: list[dict] = []
-        entrants: list[dict] = []
+        por_leavers: list[dict] = []
+        por_entrants: list[dict] = []
+        out_leavers: list[dict] = []
+        out_entrants: list[dict] = []
         for s in squad_stats:
             pid = s["player_id"]
+            is_por = s["position"] == "POR"
             if pid in lined_up_ids and pid not in optimal_ids:
-                leavers.append(s)
+                (por_leavers if is_por else out_leavers).append(s)
             elif pid in optimal_ids and pid not in lined_up_ids:
-                entrants.append(s)
+                (por_entrants if is_por else out_entrants).append(s)
 
-        # Enumerate every (leaver, entrant) pair, sort by gain, then
-        # walk the list consuming both endpoints with used_* sets —
-        # classic greedy 1:1 matching, optimal because the gain
-        # ordering dominates and all pairs are independent once the
-        # position filter is dropped.
-        candidates: list[tuple[int, dict, dict]] = []
-        for leaver in leavers:
-            for entrant in entrants:
-                gain = entrant["pts"] - leaver["pts"]
-                if gain > 0:
-                    candidates.append((gain, leaver, entrant))
-        candidates.sort(key=lambda t: t[0], reverse=True)
+        def _greedy_pairs(
+            leavers: list[dict], entrants: list[dict]
+        ) -> list[tuple[int, dict, dict]]:
+            candidates: list[tuple[int, dict, dict]] = []
+            for leaver in leavers:
+                for entrant in entrants:
+                    gain = entrant["pts"] - leaver["pts"]
+                    if gain > 0:
+                        candidates.append((gain, leaver, entrant))
+            candidates.sort(key=lambda t: t[0], reverse=True)
+            used_l: set[int] = set()
+            used_e: set[int] = set()
+            picked: list[tuple[int, dict, dict]] = []
+            for gain, leaver, entrant in candidates:
+                if leaver["player_id"] in used_l or entrant["player_id"] in used_e:
+                    continue
+                used_l.add(leaver["player_id"])
+                used_e.add(entrant["player_id"])
+                picked.append((gain, leaver, entrant))
+            return picked
 
-        used_leaver: set[int] = set()
-        used_entrant: set[int] = set()
+        pool = _greedy_pairs(por_leavers, por_entrants) + _greedy_pairs(out_leavers, out_entrants)
+        pool.sort(key=lambda t: t[0], reverse=True)
+
         diffs: list[MissedCall] = []
-        for _gain, leaver, entrant in candidates:
-            if leaver["player_id"] in used_leaver or entrant["player_id"] in used_entrant:
-                continue
-            used_leaver.add(leaver["player_id"])
-            used_entrant.add(entrant["player_id"])
+        for _gain, leaver, entrant in pool[:3]:
             diffs.append(
                 MissedCall(
                     position=leaver["position"],  # legacy field
@@ -627,8 +637,6 @@ class LineupService:
                     lined_up_position=leaver["position"],
                 )
             )
-            if len(diffs) >= 3:
-                break
         return diffs
 
     async def _validate_deadline(self, matchday: object, season_id: int) -> None:
