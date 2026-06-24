@@ -699,7 +699,9 @@ function TeamColumn({
               <span className="w-7 text-center text-[10px] font-mono text-vpv-text-muted">
                 {row.position || "—"}
               </span>
-              <span className="flex-1 truncate text-vpv-text">{row.display_name}</span>
+              <span className="flex-1 break-words leading-tight text-vpv-text">
+                {row.display_name}
+              </span>
               <span className="w-10 text-right text-[10px] tabular-nums text-vpv-text-muted">
                 {row.minutes_played}&apos;
               </span>
