@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 
-from sqlalchemy import and_, case, func, select, true
+from sqlalchemy import and_, case, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -124,7 +124,19 @@ class MatchdayRepository:
             Matchday.first_match_at,
         ).where(Matchday.season_id == season_id)
         if stats_ok_only:
-            stmt = stmt.where(Matchday.stats_ok.is_(True))
+            # Show matchdays that have actually kicked off (or are
+            # already finalised), NOT just the ones with stats_ok=TRUE.
+            # In overlapping tournaments (Mundial 2026) J2/J3 stay at
+            # stats_ok=FALSE for days while late Marca/AS scrapes
+            # trickle in for J1's pending matches, so the old filter
+            # silently hid every matchday after J1 from /jornadas.
+            now = datetime.now(UTC)
+            stmt = stmt.where(
+                or_(
+                    Matchday.stats_ok.is_(True),
+                    Matchday.first_match_at.isnot(None) & (Matchday.first_match_at <= now),
+                )
+            )
         stmt = stmt.order_by(Matchday.number.asc())
 
         result = await self.session.execute(stmt)
