@@ -285,6 +285,7 @@ from src.features.scraping.schemas_marca import (  # noqa: E402  (placed after r
     MarcaApplyRequest,
     MarcaPreviewResponse,
     MarcaRosterResponse,
+    PicasApplyRequest,
 )
 
 
@@ -316,6 +317,22 @@ async def marca_apply(
     per assignment, then re-aggregate the matchday so participant
     scores reflect the new marca points immediately."""
     return await service.marca_apply(request)
+
+
+@router.post(
+    "/admin/marca/apply-picas",
+    summary="Persist as_picas (sticky) for the players of a single match",
+)
+async def picas_apply(
+    request: PicasApplyRequest,
+    _admin: dict = Depends(require_perm(Perm.MARCA)),
+    service: ScrapingService = Depends(_get_service),
+) -> dict:
+    """Update player_stats.as_picas + pts_as/pts_marca_as/pts_total per
+    assignment, mark as_picas_admin_set=TRUE so subsequent scrapes
+    won't overwrite the manual value, then re-aggregate the matchday.
+    """
+    return await service.picas_apply(request)
 
 
 @router.post(

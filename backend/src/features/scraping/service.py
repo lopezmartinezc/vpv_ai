@@ -9,6 +9,7 @@ if TYPE_CHECKING:
         MarcaApplyRequest,
         MarcaPreviewResponse,
         MarcaRosterResponse,
+        PicasApplyRequest,
     )
 
 import httpx
@@ -60,27 +61,35 @@ def _absolute_match_url(href: str | None, base_url: str) -> str | None:
 
 
 def _preserve_admin_marca(stats: object, existing: object | None) -> None:
-    """Keep a manually-set Marca rating across re-scrapes.
+    """Keep manually-set Marca rating and AS picas across re-scrapes.
 
-    futbolfantasy doesn't expose Marca ratings for tournaments
-    (Mundial, Eurocopa…), so every re-scrape returns ``None`` /
-    ``"SC"`` for every player and would wipe whatever the admin
-    typed in ``/admin/marca`` or applied via SQL.
+    Two independent rules, both writing back onto ``stats`` BEFORE
+    the ScoringEngine runs so points stay coherent:
 
-    Rule: if the existing row already carries a real rating
-    (anything other than ``None`` or ``"SC"``), copy it onto
-    ``stats.marca_rating`` BEFORE we recompute points so the
-    downstream pts_marca / pts_total stay correct.
+    - **marca_rating**: futbolfantasy doesn't expose Marca ratings
+      for tournaments, so every re-scrape returns ``None`` / ``"SC"``
+      for every player. If the existing row already carries a real
+      rating, copy it back on top of the (None/SC) incoming value.
+
+    - **as_picas**: the AS feed can publish wrong or empty picas for
+      a match. We mark `as_picas_admin_set=True` whenever an admin
+      types a value in `/admin/marca`, and from then on we always
+      preserve `existing.as_picas` regardless of what the scrape
+      returned — sticky-bit semantics. This is the only safe rule
+      because the scrape can return BOTH valid picas and empty ones
+      from the same upstream.
     """
     if existing is None:
         return
-    current = getattr(existing, "marca_rating", None)
-    if current is None or current == "SC":
-        return
-    # Only mutate when the incoming value would clobber a real rating.
-    incoming = getattr(stats, "marca_rating", None)
-    if incoming is None or incoming == "SC":
-        stats.marca_rating = current  # type: ignore[attr-defined]
+
+    current_marca = getattr(existing, "marca_rating", None)
+    if current_marca is not None and current_marca != "SC":
+        incoming_marca = getattr(stats, "marca_rating", None)
+        if incoming_marca is None or incoming_marca == "SC":
+            stats.marca_rating = current_marca  # type: ignore[attr-defined]
+
+    if getattr(existing, "as_picas_admin_set", False):
+        stats.as_picas = getattr(existing, "as_picas", None)  # type: ignore[attr-defined]
 
 
 def _resolve_season_year(season: object) -> int:
@@ -1805,6 +1814,8 @@ class ScrapingService:
                 team_id=player.team_id,
                 team_name=team_names.get(player.team_id, ""),
                 marca_rating=existing.marca_rating if existing else None,
+                as_picas=existing.as_picas if existing else None,
+                as_picas_admin_set=(existing.as_picas_admin_set if existing else False),
                 minutes_played=existing.minutes_played if existing else 0,
                 position=(existing.position if existing else player.position) or "",
                 aliases=player.aliases,
@@ -1878,6 +1889,57 @@ class ScrapingService:
             new_pts_marca_as = new_pts_marca + existing.pts_as
             existing.marca_rating = a.marca_rating
             existing.pts_marca = new_pts_marca
+            existing.pts_marca_as = new_pts_marca_as
+            existing.pts_total = existing.pts_total - old_marca_as + new_pts_marca_as
+            updated += 1
+
+        await self.session.flush()
+        if updated:
+            await self._aggregator.aggregate_matchday(match.matchday_id)
+        return {"updated": updated, "matchday_id": match.matchday_id}
+
+    async def picas_apply(self, request: PicasApplyRequest) -> dict[str, int]:
+        """Persist as_picas for each assignment (sticky), recompute pts
+        and re-aggregate the matchday.
+
+        Setting as_picas via this endpoint flips the
+        `as_picas_admin_set` sticky bit, so subsequent scrapes won't
+        overwrite the value even if the AS feed starts publishing a
+        different number for the same player+matchday.
+        """
+        from src.core.exceptions import BusinessRuleError, NotFoundError
+        from src.features.scraping.schemas_marca import VALID_PICAS_VALUES
+        from src.shared.models.matchday import Match, Matchday
+
+        match = await self.session.get(Match, request.match_id)
+        if match is None:
+            raise NotFoundError("Match", request.match_id)
+        matchday = await self.session.get(Matchday, match.matchday_id)
+        if matchday is None:
+            raise NotFoundError("Matchday", match.matchday_id)
+        rules = await self.repo.get_scoring_rules(matchday.season_id)
+        engine = ScoringEngine(rules)
+
+        updated = 0
+        for a in request.assignments:
+            if a.as_picas is not None and a.as_picas not in VALID_PICAS_VALUES:
+                raise BusinessRuleError(
+                    f"as_picas inválido para player_id={a.player_id}: {a.as_picas!r}"
+                )
+            existing = await self.repo.get_player_stat(a.player_id, match.matchday_id)
+            if existing is None:
+                logger.info(
+                    "picas_apply: no player_stats row for player_id=%d matchday_id=%d, skipping",
+                    a.player_id,
+                    match.matchday_id,
+                )
+                continue
+            old_marca_as = existing.pts_marca_as
+            new_pts_as = engine._calc_as(a.as_picas)
+            new_pts_marca_as = existing.pts_marca + new_pts_as
+            existing.as_picas = a.as_picas
+            existing.as_picas_admin_set = True
+            existing.pts_as = new_pts_as
             existing.pts_marca_as = new_pts_marca_as
             existing.pts_total = existing.pts_total - old_marca_as + new_pts_marca_as
             updated += 1

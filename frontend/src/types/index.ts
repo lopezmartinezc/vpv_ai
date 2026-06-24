@@ -1334,8 +1334,12 @@ export interface MarcaPlayerRow {
   team_name: string;
   /** Estado actual en BD. `null` = sin player_stats todavía. */
   marca_rating: string | null;
+  as_picas?: string | null;
+  /** Cuando es true, el scrape no machaca as_picas. */
+  as_picas_admin_set?: boolean;
   minutes_played: number;
   position: string;
+  aliases?: string | null;
 }
 
 export interface MarcaRosterResponse {
@@ -1355,6 +1359,18 @@ export interface MarcaAssignment {
 export interface MarcaApplyRequest {
   match_id: number;
   assignments: MarcaAssignment[];
+}
+
+export type PicasValue = "0" | "1" | "2" | "3" | "SC" | "-" | null;
+
+export interface PicasAssignment {
+  player_id: number;
+  as_picas: PicasValue;
+}
+
+export interface PicasApplyRequest {
+  match_id: number;
+  assignments: PicasAssignment[];
 }
 
 export interface MarcaPreviewRow {

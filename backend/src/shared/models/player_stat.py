@@ -62,6 +62,10 @@ class PlayerStat(Base):
     # Valoracion mediatica
     marca_rating: Mapped[str | None] = mapped_column(String(10))
     as_picas: Mapped[str | None] = mapped_column(String(10))
+    # Sticky bit: when TRUE an admin edited as_picas via /admin/marca
+    # and the scrape must not overwrite it. See migration
+    # 2026_06_24_player_stats_as_picas_admin_set.sql.
+    as_picas_admin_set: Mapped[bool] = mapped_column(default=False)
 
     # Puntos calculados
     pts_play: Mapped[int] = mapped_column(SmallInteger, default=0)

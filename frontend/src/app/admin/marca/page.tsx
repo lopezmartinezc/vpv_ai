@@ -23,6 +23,9 @@ import type {
   MarcaPreviewResponse,
   MarcaRatingValue,
   MarcaRosterResponse,
+  PicasApplyRequest,
+  PicasAssignment,
+  PicasValue,
 } from "@/types";
 
 const API_BASE_URL =
@@ -52,6 +55,26 @@ function sentinelFor(rating: MarcaRatingValue): string {
 function ratingFromSentinel(s: string): MarcaRatingValue {
   if (s === NO_PLAYED_SENTINEL) return null;
   return s as MarcaRatingValue;
+}
+
+const PICAS_OPTIONS: { sentinel: string; value: PicasValue; label: string }[] = [
+  { sentinel: NO_PLAYED_SENTINEL, value: null, label: "no jugó" },
+  { sentinel: "SC", value: "SC", label: "SC" },
+  { sentinel: "-", value: "-", label: "−" },
+  { sentinel: "0", value: "0", label: "0" },
+  { sentinel: "1", value: "1", label: "1 pica" },
+  { sentinel: "2", value: "2", label: "2 picas" },
+  { sentinel: "3", value: "3", label: "3 picas" },
+];
+
+function picasSentinelFor(v: PicasValue | string | null | undefined): string {
+  if (v === null || v === undefined) return NO_PLAYED_SENTINEL;
+  return v;
+}
+
+function picasFromSentinel(s: string): PicasValue {
+  if (s === NO_PLAYED_SENTINEL) return null;
+  return s as PicasValue;
 }
 
 interface MatchdaySummary {
@@ -85,6 +108,7 @@ export default function AdminMarcaPage() {
   const [selectedMatchId, setSelectedMatchId] = useState<number | null>(null);
   const [roster, setRoster] = useState<MarcaRosterResponse | null>(null);
   const [edits, setEdits] = useState<Record<number, MarcaRatingValue>>({});
+  const [picasEdits, setPicasEdits] = useState<Record<number, PicasValue>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -145,6 +169,7 @@ export default function AdminMarcaPage() {
         setSelectedMatchId(null);
         setRoster(null);
         setEdits({});
+        setPicasEdits({});
         clearImageState();
         setMessage(null);
       })
@@ -163,11 +188,14 @@ export default function AdminMarcaPage() {
       // Seed the dropdowns with whatever marca_rating is already in BD.
       // null en BD ⇒ "no jugó" en el dropdown (sentinel "").
       const seed: Record<number, MarcaRatingValue> = {};
+      const seedPicas: Record<number, PicasValue> = {};
       const allRows = [...r.home, ...r.away];
       for (const row of allRows) {
         seed[row.player_id] = (row.marca_rating ?? null) as MarcaRatingValue;
+        seedPicas[row.player_id] = (row.as_picas ?? null) as PicasValue;
       }
       setEdits(seed);
+      setPicasEdits(seedPicas);
     } catch (err) {
       setMessage(
         `Error cargando roster: ${err instanceof Error ? err.message : "desconocido"}`,
@@ -189,6 +217,7 @@ export default function AdminMarcaPage() {
     } else {
       setRoster(null);
       setEdits({});
+      setPicasEdits({});
     }
   }, [selectedMatchId, fetchRoster, clearImageState]);
 
@@ -211,6 +240,21 @@ export default function AdminMarcaPage() {
     }
     return out;
   }, [roster, edits]);
+
+  const dirtyPicasAssignments = useMemo<PicasAssignment[]>(() => {
+    if (!roster) return [];
+    const allRows = [...roster.home, ...roster.away];
+    const out: PicasAssignment[] = [];
+    for (const row of allRows) {
+      if (!(row.player_id in picasEdits)) continue;
+      const next = picasEdits[row.player_id];
+      const current = (row.as_picas ?? null) as PicasValue;
+      if (next !== current) {
+        out.push({ player_id: row.player_id, as_picas: next });
+      }
+    }
+    return out;
+  }, [roster, picasEdits]);
 
   const handleUpload = useCallback(async () => {
     if (!selectedMatchId || !imageFile) return;
@@ -261,20 +305,40 @@ export default function AdminMarcaPage() {
   }, [selectedMatchId, imageFile]);
 
   const handleApply = useCallback(async () => {
-    if (!roster || dirtyAssignments.length === 0) return;
+    if (!roster) return;
+    if (dirtyAssignments.length === 0 && dirtyPicasAssignments.length === 0) return;
     setSaving(true);
     setMessage(null);
     try {
-      const body: MarcaApplyRequest = {
-        match_id: roster.match_id,
-        assignments: dirtyAssignments,
-      };
-      const result = await apiClient.post<{ updated: number }>(
-        "/scraping/admin/marca/apply",
-        body,
-      );
+      let marcaUpdated = 0;
+      let picasUpdated = 0;
+      if (dirtyAssignments.length > 0) {
+        const body: MarcaApplyRequest = {
+          match_id: roster.match_id,
+          assignments: dirtyAssignments,
+        };
+        const result = await apiClient.post<{ updated: number }>(
+          "/scraping/admin/marca/apply",
+          body,
+        );
+        marcaUpdated = result.updated;
+      }
+      if (dirtyPicasAssignments.length > 0) {
+        const body: PicasApplyRequest = {
+          match_id: roster.match_id,
+          assignments: dirtyPicasAssignments,
+        };
+        const result = await apiClient.post<{ updated: number }>(
+          "/scraping/admin/marca/apply-picas",
+          body,
+        );
+        picasUpdated = result.updated;
+      }
+      const bits: string[] = [];
+      if (marcaUpdated) bits.push(`${marcaUpdated} Marca`);
+      if (picasUpdated) bits.push(`${picasUpdated} Picas`);
       setMessage(
-        `Actualizados ${result.updated} jugadores. Recálculo de jornada disparado.`,
+        `Actualizados ${bits.join(" + ")}. Recálculo de jornada disparado.`,
       );
       // Re-fetch to reflect the new "current" values.
       await fetchRoster(roster.match_id);
@@ -285,7 +349,7 @@ export default function AdminMarcaPage() {
     } finally {
       setSaving(false);
     }
-  }, [roster, dirtyAssignments, fetchRoster]);
+  }, [roster, dirtyAssignments, dirtyPicasAssignments, fetchRoster]);
 
   if (!selectedSeason) {
     return (
@@ -533,29 +597,43 @@ export default function AdminMarcaPage() {
               title={`Local — ${teamLabel(roster.home)}`}
               rows={roster.home}
               edits={edits}
+              picasEdits={picasEdits}
               onChange={(playerId, value) =>
                 setEdits((prev) => ({ ...prev, [playerId]: value }))
+              }
+              onChangePicas={(playerId, value) =>
+                setPicasEdits((prev) => ({ ...prev, [playerId]: value }))
               }
             />
             <TeamColumn
               title={`Visitante — ${teamLabel(roster.away)}`}
               rows={roster.away}
               edits={edits}
+              picasEdits={picasEdits}
               onChange={(playerId, value) =>
                 setEdits((prev) => ({ ...prev, [playerId]: value }))
+              }
+              onChangePicas={(playerId, value) =>
+                setPicasEdits((prev) => ({ ...prev, [playerId]: value }))
               }
             />
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-vpv-card-border bg-vpv-card p-3">
             <p className="text-xs text-vpv-text-muted">
-              {dirtyAssignments.length === 0
+              {dirtyAssignments.length === 0 && dirtyPicasAssignments.length === 0
                 ? "Sin cambios pendientes."
-                : `${dirtyAssignments.length} cambio(s) listo(s) para aplicar.`}
+                : `${dirtyAssignments.length + dirtyPicasAssignments.length} cambio(s) listo(s) para aplicar` +
+                  (dirtyAssignments.length && dirtyPicasAssignments.length
+                    ? ` (${dirtyAssignments.length} Marca · ${dirtyPicasAssignments.length} Picas).`
+                    : ".")}
             </p>
             <button
               onClick={handleApply}
-              disabled={saving || dirtyAssignments.length === 0}
+              disabled={
+                saving ||
+                (dirtyAssignments.length === 0 && dirtyPicasAssignments.length === 0)
+              }
               className="rounded bg-vpv-accent px-4 py-1.5 text-xs font-bold text-white disabled:opacity-40"
             >
               {saving ? "Aplicando…" : "Aplicar"}
@@ -581,12 +659,16 @@ function TeamColumn({
   title,
   rows,
   edits,
+  picasEdits,
   onChange,
+  onChangePicas,
 }: {
   title: string;
   rows: MarcaPlayerRow[];
   edits: Record<number, MarcaRatingValue>;
+  picasEdits: Record<number, PicasValue>;
   onChange: (playerId: number, value: MarcaRatingValue) => void;
+  onChangePicas: (playerId: number, value: PicasValue) => void;
 }) {
   return (
     <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
@@ -598,6 +680,9 @@ function TeamColumn({
           const current = (edits[row.player_id] ?? null) as MarcaRatingValue;
           const stale = (row.marca_rating ?? null) as MarcaRatingValue;
           const dirty = current !== stale;
+          const currentPicas = (picasEdits[row.player_id] ?? null) as PicasValue;
+          const stalePicas = (row.as_picas ?? null) as PicasValue;
+          const dirtyPicas = currentPicas !== stalePicas;
           // Players who didn't play get a softer style — el default
           // natural para ellos es "no jugó" pero no lo forzamos.
           const benched = row.minutes_played === 0;
@@ -623,8 +708,33 @@ function TeamColumn({
                 className={`rounded border bg-vpv-bg px-1.5 py-0.5 text-xs text-vpv-text ${
                   dirty ? "border-vpv-accent" : "border-vpv-border"
                 }`}
+                title="Marca"
               >
                 {MARCA_OPTIONS.map((opt) => (
+                  <option key={opt.sentinel} value={opt.sentinel}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={picasSentinelFor(currentPicas)}
+                onChange={(e) =>
+                  onChangePicas(row.player_id, picasFromSentinel(e.target.value))
+                }
+                className={`rounded border bg-vpv-bg px-1.5 py-0.5 text-xs ${
+                  dirtyPicas
+                    ? "border-vpv-accent text-vpv-text"
+                    : row.as_picas_admin_set
+                      ? "border-amber-500/60 text-vpv-text"
+                      : "border-vpv-border text-vpv-text"
+                }`}
+                title={
+                  row.as_picas_admin_set
+                    ? "AS picas (editado manualmente — el scrape ya no lo machaca)"
+                    : "AS picas"
+                }
+              >
+                {PICAS_OPTIONS.map((opt) => (
                   <option key={opt.sentinel} value={opt.sentinel}>
                     {opt.label}
                   </option>

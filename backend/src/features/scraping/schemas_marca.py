@@ -41,6 +41,11 @@ class MarcaPlayerRow(BaseModel):
     # NULL = no stats row yet for this (player, matchday). The UI shows
     # an empty dropdown then; saving with `-` marks "no jugó" explicitly.
     marca_rating: str | None
+    as_picas: str | None = None
+    # TRUE once an admin has typed an as_picas value; the scraper will
+    # not overwrite it from then on. Surfaced to the UI so the row
+    # can show a small lock icon.
+    as_picas_admin_set: bool = False
     minutes_played: int
     position: str  # "POR" / "DEF" / "MED" / "DEL" / ""
     # Optional alternate names / nicknames the cromo matcher should
@@ -75,6 +80,37 @@ class MarcaApplyRequest(BaseModel):
 
     match_id: int
     assignments: list[MarcaAssignment]
+
+
+# AS picas (admin override) -------------------------------------------
+
+
+# Valid AS-picas strings — what the ScoringEngine knows how to score
+# (mirror VALID_MARCA_VALUES but with the digit set the picas table
+# supports). The frontend still renders these as glyphs/dashes but
+# the value submitted is the canonical string.
+VALID_PICAS_VALUES: tuple[str, ...] = (
+    "0",
+    "1",
+    "2",
+    "3",
+    "SC",
+    "-",
+)
+
+
+class PicasAssignment(BaseModel):
+    """One row of the admin's picas-edit list."""
+
+    player_id: int
+    as_picas: str | None = Field(default=None, max_length=10)
+
+
+class PicasApplyRequest(BaseModel):
+    """Body of POST /scraping/admin/marca/apply-picas."""
+
+    match_id: int
+    assignments: list[PicasAssignment]
 
 
 # Image preview --------------------------------------------------------
