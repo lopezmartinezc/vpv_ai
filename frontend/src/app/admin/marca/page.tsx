@@ -59,12 +59,12 @@ function ratingFromSentinel(s: string): MarcaRatingValue {
 
 // Picas as visual glyphs (bullets), mirroring the star style of the
 // marca dropdown so the row reads "★★ ●●" at a glance instead of
-// "2 estrellas / 2 picas".
+// "2 estrellas / 2 picas". No "0 picas" option — "did not earn
+// any" is what SC already means in the AS print edition.
 const PICAS_OPTIONS: { sentinel: string; value: PicasValue; label: string }[] = [
   { sentinel: NO_PLAYED_SENTINEL, value: null, label: "no jugó" },
   { sentinel: "SC", value: "SC", label: "SC (sin calificar)" },
   { sentinel: "-", value: "-", label: "− (jugó mal)" },
-  { sentinel: "0", value: "0", label: "○ (jugó, sin picas)" },
   { sentinel: "1", value: "1", label: "●" },
   { sentinel: "2", value: "2", label: "●●" },
   { sentinel: "3", value: "3", label: "●●●" },

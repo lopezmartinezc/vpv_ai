@@ -85,12 +85,10 @@ class MarcaApplyRequest(BaseModel):
 # AS picas (admin override) -------------------------------------------
 
 
-# Valid AS-picas strings — what the ScoringEngine knows how to score
-# (mirror VALID_MARCA_VALUES but with the digit set the picas table
-# supports). The frontend still renders these as glyphs/dashes but
-# the value submitted is the canonical string.
+# Valid AS-picas strings — what the ScoringEngine knows how to score.
+# Mirrors VALID_MARCA_VALUES. "0 picas" is intentionally NOT here:
+# in the AS print edition "did not earn any" is what SC means.
 VALID_PICAS_VALUES: tuple[str, ...] = (
-    "0",
     "1",
     "2",
     "3",

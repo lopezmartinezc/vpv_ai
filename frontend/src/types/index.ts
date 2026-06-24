@@ -1361,7 +1361,7 @@ export interface MarcaApplyRequest {
   assignments: MarcaAssignment[];
 }
 
-export type PicasValue = "0" | "1" | "2" | "3" | "SC" | "-" | null;
+export type PicasValue = "1" | "2" | "3" | "SC" | "-" | null;
 
 export interface PicasAssignment {
   player_id: number;
