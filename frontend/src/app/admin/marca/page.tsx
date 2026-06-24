@@ -57,14 +57,17 @@ function ratingFromSentinel(s: string): MarcaRatingValue {
   return s as MarcaRatingValue;
 }
 
+// Picas as visual glyphs (bullets), mirroring the star style of the
+// marca dropdown so the row reads "★★ ●●" at a glance instead of
+// "2 estrellas / 2 picas".
 const PICAS_OPTIONS: { sentinel: string; value: PicasValue; label: string }[] = [
   { sentinel: NO_PLAYED_SENTINEL, value: null, label: "no jugó" },
-  { sentinel: "SC", value: "SC", label: "SC" },
-  { sentinel: "-", value: "-", label: "−" },
-  { sentinel: "0", value: "0", label: "0" },
-  { sentinel: "1", value: "1", label: "1 pica" },
-  { sentinel: "2", value: "2", label: "2 picas" },
-  { sentinel: "3", value: "3", label: "3 picas" },
+  { sentinel: "SC", value: "SC", label: "SC (sin calificar)" },
+  { sentinel: "-", value: "-", label: "− (jugó mal)" },
+  { sentinel: "0", value: "0", label: "○ (jugó, sin picas)" },
+  { sentinel: "1", value: "1", label: "●" },
+  { sentinel: "2", value: "2", label: "●●" },
+  { sentinel: "3", value: "3", label: "●●●" },
 ];
 
 function picasSentinelFor(v: PicasValue | string | null | undefined): string {
@@ -721,12 +724,16 @@ function TeamColumn({
                 onChange={(e) =>
                   onChangePicas(row.player_id, picasFromSentinel(e.target.value))
                 }
-                className={`rounded border bg-vpv-bg px-1.5 py-0.5 text-xs ${
+                className={`rounded border bg-vpv-bg px-1.5 py-0.5 text-xs font-bold ${
                   dirtyPicas
-                    ? "border-vpv-accent text-vpv-text"
+                    ? "border-vpv-accent"
                     : row.as_picas_admin_set
-                      ? "border-amber-500/60 text-vpv-text"
-                      : "border-vpv-border text-vpv-text"
+                      ? "border-amber-500/60"
+                      : "border-vpv-border"
+                } ${
+                  currentPicas === "1" || currentPicas === "2" || currentPicas === "3"
+                    ? "text-red-500"
+                    : "text-vpv-text"
                 }`}
                 title={
                   row.as_picas_admin_set
