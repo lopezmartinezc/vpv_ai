@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Notas Marca — admin tool.
+ * Notas Periódicos — admin tool.
  *
  * Two tabs over the same backing endpoint:
  *   1. "Entrada manual": render a dropdown per player and write the
@@ -365,7 +365,7 @@ export default function AdminMarcaPage() {
   return (
     <div className="space-y-4">
       <header className="space-y-1">
-        <h1 className="text-2xl font-bold text-vpv-text">Notas Marca</h1>
+        <h1 className="text-2xl font-bold text-vpv-text">Notas Periódicos</h1>
         <p className="text-xs text-vpv-text-muted">
           {selectedSeason.name} — escribe las puntuaciones a mano por
           partido y se recalculan los puntos de la jornada automáticamente.

@@ -79,7 +79,7 @@ const PER_SEASON_ADMIN_ITEMS: { href: string; label: string; appliesTo?: "league
   { href: "/admin/grupos", label: "Grupos", appliesTo: "tournament" },
   { href: "/admin/logros", label: "Logros", appliesTo: "league" },
   { href: "/admin/predicciones", label: "Predicciones" },
-  { href: "/admin/marca", label: "Notas Marca" },
+  { href: "/admin/marca", label: "Notas Periódicos" },
 ];
 
 /** Items global (no scoped por temporada). */

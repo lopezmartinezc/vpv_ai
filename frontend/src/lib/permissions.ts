@@ -27,7 +27,7 @@ export const PERM_LABELS: Record<PermKey, string> = {
   PLAYERS: "Jugadores",
   LINEUPS_ADMIN: "Alineaciones admin",
   PARTICIPANTS: "Participantes",
-  MARCA: "Notas Marca",
+  MARCA: "Notas Periódicos",
 };
 
 /** Check if a permissions bitmap includes a specific permission */

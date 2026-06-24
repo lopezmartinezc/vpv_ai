@@ -51,7 +51,7 @@ const ADMIN_NAV = [
     group: "Operaciones",
     items: [
       { href: "/admin/scraping", label: "Scraping" },
-      { href: "/admin/marca", label: "Notas Marca" },
+      { href: "/admin/marca", label: "Notas Periódicos" },
       { href: "/admin/telegram", label: "Telegram" },
       { href: "/admin/backup", label: "Backup" },
       { href: "/admin/logros", label: "Logros" },
