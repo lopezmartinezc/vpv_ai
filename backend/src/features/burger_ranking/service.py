@@ -213,11 +213,22 @@ _BENCH_SQL = text(
     JOIN       lineup_players lp     ON lp.lineup_id = l.id
     JOIN       players p             ON p.id = lp.player_id
     JOIN       teams t               ON t.id = p.team_id
+    -- Match this player should have played in (his team's fixture
+    -- on this matchday). The two filters below ensure we only
+    -- count him when that fixture actually happened AND counts:
+    --   m.counts   = FALSE -> postponed / friendly: skip.
+    --   m.stats_ok = FALSE -> not yet played (or stats pending):
+    --                        the manager hasn't been "burned" yet.
+    JOIN       matches m
+        ON m.matchday_id = l.matchday_id
+       AND (m.home_team_id = p.team_id OR m.away_team_id = p.team_id)
     LEFT JOIN  player_stats ps
         ON ps.player_id   = lp.player_id
        AND ps.matchday_id = l.matchday_id
     WHERE      sp.season_id   = :season_id
       AND      md.counts      = TRUE
+      AND      m.counts       = TRUE
+      AND      m.stats_ok     = TRUE
       AND      COALESCE(ps.minutes_played, 0) = 0
     ORDER BY   sp.id, md.number, p.display_name
     """
