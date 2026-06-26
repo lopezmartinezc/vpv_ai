@@ -1,11 +1,16 @@
 """Compute the 🍔 Burger Ranking for a season.
 
 For each participant we count the goals (open play + penalty) scored by a
-player they OWN (players.owner_id == participant.id) on matchdays where
-that player was NOT in their lineup_players. Own goals don't count.
+player they OWNED ON THAT MATCHDAY (read from player_ownership_log so
+mid-season ownership changes — winter draft — are respected) but did
+NOT include in their lineup_players. Own goals don't count.
 
 Counting matchdays only (matchdays.counts = TRUE); cancelled / friendly
 slots that don't score for the season-wide standings are excluded too.
+
+Tournaments (Mundial, …) never wrote to player_ownership_log so we
+fall back to the canonical players.owner_id — ownership is fixed for
+the whole event there anyway, so it's accurate.
 
 Participants without any unburned goals still appear with total = 0 so
 the UI can show the whole roster.
@@ -27,7 +32,60 @@ from src.features.burger_ranking.schemas import (
     BurgerRankingResponse,
 )
 
-_RANKING_SQL = text(
+# Historical-ownership variant: pick the participant who owned the
+# player at md.number via the log. A LATERAL subquery returns the
+# latest from_matchday <= md.number for each (player, matchday) pair.
+# Used when player_ownership_log has entries for the season (Liga).
+_RANKING_SQL_LOG = text(
+    """
+    WITH lineup_pids AS (
+        SELECT
+            l.participant_id,
+            l.matchday_id,
+            lp.player_id
+        FROM   lineups l
+        JOIN   lineup_players lp ON lp.lineup_id = l.id
+    )
+    SELECT
+        sp.id                            AS participant_id,
+        u.display_name                   AS display_name,
+        md.number                        AS matchday_number,
+        p.id                             AS player_id,
+        p.display_name                   AS player_name,
+        t.name                           AS team_name,
+        (ps.goals + ps.penalty_goals)    AS goals
+    FROM       player_stats ps
+    JOIN       matchdays md ON md.id = ps.matchday_id
+    JOIN       players p    ON p.id = ps.player_id
+    JOIN       teams t      ON t.id = p.team_id
+    JOIN LATERAL (
+        SELECT pol.participant_id
+        FROM   player_ownership_log pol
+        WHERE  pol.player_id     = p.id
+          AND  pol.season_id     = :season_id
+          AND  pol.from_matchday <= md.number
+        ORDER BY pol.from_matchday DESC
+        LIMIT 1
+    ) own ON TRUE
+    JOIN       season_participants sp ON sp.id = own.participant_id
+    JOIN       users u                ON u.id  = sp.user_id
+    LEFT JOIN  lineup_pids lp
+        ON lp.participant_id = sp.id
+       AND lp.matchday_id    = md.id
+       AND lp.player_id      = p.id
+    WHERE      md.season_id = :season_id
+      AND      sp.season_id = :season_id
+      AND      md.counts             = TRUE
+      AND      (ps.goals + ps.penalty_goals) > 0
+      AND      lp.player_id IS NULL          -- not lineup'd this matchday
+    ORDER BY   sp.id, md.number, p.display_name
+    """
+)
+
+# Fallback for seasons with no ownership log (Mundial 2026 and any
+# pre-log season). Same shape as the LOG variant but joining against
+# Player.owner_id directly.
+_RANKING_SQL_OWNER = text(
     """
     WITH lineup_pids AS (
         SELECT
@@ -58,10 +116,12 @@ _RANKING_SQL = text(
     WHERE      sp.season_id         = :season_id
       AND      md.counts             = TRUE
       AND      (ps.goals + ps.penalty_goals) > 0
-      AND      lp.player_id IS NULL          -- not lineup'd this matchday
+      AND      lp.player_id IS NULL
     ORDER BY   sp.id, md.number, p.display_name
     """
 )
+
+_LOG_PROBE_SQL = text("SELECT 1 FROM player_ownership_log WHERE season_id = :season_id LIMIT 1")
 
 
 _PARTICIPANTS_SQL = text(
@@ -95,7 +155,15 @@ class BurgerRankingService:
                 goals=[],
             )
 
-        result = await self.session.execute(_RANKING_SQL, {"season_id": season_id})
+        # Pick the ownership query based on whether the log has any
+        # row for this season. Liga seasons use the log; tournaments
+        # fall back to the current owner_id (ownership is static for
+        # those, so it's accurate).
+        log_has_rows = (
+            await self.session.execute(_LOG_PROBE_SQL, {"season_id": season_id})
+        ).scalar() is not None
+        ranking_sql = _RANKING_SQL_LOG if log_has_rows else _RANKING_SQL_OWNER
+        result = await self.session.execute(ranking_sql, {"season_id": season_id})
         for row in result.mappings():
             pid = int(row["participant_id"])
             entry = entries.get(pid)
