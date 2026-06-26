@@ -34,3 +34,42 @@ class BurgerRankingResponse(BaseModel):
 
     season_id: int
     entries: list[BurgerEntry]
+
+
+# Bench ranking ------------------------------------------------------
+
+
+class BenchedPlayer(BaseModel):
+    """A single matchday-and-player record where the manager lined the
+    player up but they played 0 minutes (not called, late injury, …)."""
+
+    matchday_number: int
+    player_id: int
+    player_name: str
+    team_name: str
+    position: str
+
+
+class BenchEntry(BaseModel):
+    """One participant's bench-ranking row + breakdown."""
+
+    participant_id: int
+    display_name: str
+    total: int  # count of (matchday, player) pairs in players[]
+    players: list[BenchedPlayer]
+
+
+class BenchRankingResponse(BaseModel):
+    season_id: int
+    entries: list[BenchEntry]
+
+
+# Combined endpoint --------------------------------------------------
+
+
+class RankingsResponse(BaseModel):
+    """Two rankings in one round-trip for the /ranking page."""
+
+    season_id: int
+    burger: BurgerRankingResponse
+    bench: BenchRankingResponse

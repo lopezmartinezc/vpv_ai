@@ -1433,3 +1433,33 @@ export interface BurgerRankingResponse {
   season_id: number;
   entries: BurgerEntry[];
 }
+
+// Bench Ranking — players lined up that played 0 minutes.
+
+export interface BenchedPlayer {
+  matchday_number: number;
+  player_id: number;
+  player_name: string;
+  team_name: string;
+  position: string;
+}
+
+export interface BenchEntry {
+  participant_id: number;
+  display_name: string;
+  total: number;
+  players: BenchedPlayer[];
+}
+
+export interface BenchRankingResponse {
+  season_id: number;
+  entries: BenchEntry[];
+}
+
+// Combined response for the /ranking page.
+
+export interface RankingsResponse {
+  season_id: number;
+  burger: BurgerRankingResponse;
+  bench: BenchRankingResponse;
+}
