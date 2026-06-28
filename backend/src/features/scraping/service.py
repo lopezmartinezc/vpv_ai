@@ -1184,14 +1184,60 @@ class ScrapingService:
 
         scores_updated = 0
         dates_updated = 0
-
         urls_updated = 0
+        matches_created = 0
+
+        # Lookups for CREATING matches that appear in the calendar after the
+        # initial import — e.g. tournament knockout fixtures, whose teams are
+        # only known once the group stage ends. Historically scrape_calendar
+        # only UPDATED existing matches and skipped unknown source_ids, so
+        # those fixtures never got a Match row and the squad/lineup view had
+        # no opponent to show.
+        from src.shared.models.matchday import Matchday
+
+        existing_teams = await self.repo.get_teams_by_season(season_id)
+        team_name_to_id = {t.name: t.id for t in existing_teams}
+        md_stmt = select(Matchday.id, Matchday.number).where(Matchday.season_id == season_id)
+        md_result = await self.session.execute(md_stmt)
+        md_number_to_id = {row.number: row.id for row in md_result.all()}
+
         for cal_match in calendar_matches:
             db_match = await self.repo.get_match_by_source_id(cal_match.source_id)
             if db_match is None:
-                logger.debug(
-                    "scrape_calendar: source_id=%d not in DB, skipping",
+                # Not in DB yet — create it when we can resolve both teams
+                # and its matchday (handles KO fixtures published after the
+                # initial import). Skip quietly otherwise.
+                matchday_id = md_number_to_id.get(cal_match.matchday_number)
+                home_id = team_name_to_id.get(cal_match.home_team_name)
+                away_id = team_name_to_id.get(cal_match.away_team_name)
+                if matchday_id is None or home_id is None or away_id is None:
+                    logger.debug(
+                        "scrape_calendar: cannot create match source_id=%d "
+                        "(md=%s home=%r away=%r) — missing matchday/team",
+                        cal_match.source_id,
+                        cal_match.matchday_number,
+                        cal_match.home_team_name,
+                        cal_match.away_team_name,
+                    )
+                    continue
+                created_played_at = (
+                    _dt.fromisoformat(cal_match.played_at) if cal_match.played_at else None
+                )
+                await self.repo.create_match(
+                    matchday_id=matchday_id,
+                    home_team_id=home_id,
+                    away_team_id=away_id,
+                    source_id=cal_match.source_id,
+                    source_url=_absolute_match_url(cal_match.source_url, base_url),
+                    played_at=created_played_at,
+                )
+                matches_created += 1
+                logger.info(
+                    "scrape_calendar: created match source_id=%d (J%s) %s vs %s",
                     cal_match.source_id,
+                    cal_match.matchday_number,
+                    cal_match.home_team_name,
+                    cal_match.away_team_name,
                 )
                 continue
 
@@ -1247,8 +1293,12 @@ class ScrapingService:
                         )
                         scores_updated += 1
 
-        # Recalculate matchday first_match_at if any dates changed.
-        if dates_updated:
+        # Recalculate matchday first_match_at if any dates changed or new
+        # matches were created (a brand-new matchday only becomes visible in
+        # /jornadas once it has a first_match_at).
+        if matches_created:
+            await self.session.flush()
+        if dates_updated or matches_created:
             await self.repo.sync_matchday_first_match_at(season_id)
 
         # Fallback: for matches that should have ended but calendar has no
@@ -1294,15 +1344,18 @@ class ScrapingService:
                     )
 
         logger.info(
-            "scrape_calendar: scores_updated=%d dates_updated=%d urls_updated=%d",
+            "scrape_calendar: scores_updated=%d dates_updated=%d urls_updated=%d "
+            "matches_created=%d",
             scores_updated,
             dates_updated,
             urls_updated,
+            matches_created,
         )
         return {
             "scores_updated": scores_updated,
             "dates_updated": dates_updated,
             "urls_updated": urls_updated,
+            "matches_created": matches_created,
         }
 
     async def check_for_updates(self) -> list[int]:
