@@ -234,7 +234,11 @@ class TournamentService:
         # Build match_code -> winner/loser team id for any KO match
         # already played (W12, L12 placeholders).
         winner_by_code, loser_by_code = await self._compute_knockout_outcomes(
-            season_id, rounds_cfg, teams_by_id
+            season_id,
+            rounds_cfg,
+            teams_by_id,
+            group_standings=group_standings,
+            third_place_assignments=third_place_assignments,
         )
 
         bracket_rounds: list[BracketRound] = []
@@ -258,13 +262,35 @@ class TournamentService:
             bm_list: list[BracketMatch] = []
 
             if matches:
-                # Real matches exist: render them in order
+                # Real matches exist. Attach each to its config pairing by
+                # the TEAMS involved, not by list position: the DB orders
+                # matches chronologically (played_at) while pairings follow
+                # bracket order (M73, M74, …), so an index match would wire
+                # e.g. M74's real fixture into M75's bracket slot and scramble
+                # the whole tree. Fall back to index only when a match's teams
+                # don't resolve to any pairing.
+                pairing_by_teamset: dict[frozenset[int], dict[str, Any]] = {}
+                for pairing in pairings:
+                    ts = self._pairing_expected_team_ids(
+                        pairing,
+                        group_standings=group_standings,
+                        third_place_assignments=third_place_assignments,
+                        winner_by_code=winner_by_code,
+                        loser_by_code=loser_by_code,
+                        teams_by_id=teams_by_id,
+                    )
+                    if ts is not None:
+                        pairing_by_teamset[ts] = pairing
+
                 for idx, m in enumerate(matches):
                     home = teams_by_id.get(m.home_team_id)
                     away = teams_by_id.get(m.away_team_id)
                     played = m.home_score is not None and m.away_score is not None
-                    # Best-effort pairing match by index
-                    pairing = pairings[idx] if idx < len(pairings) else {}
+                    pairing = pairing_by_teamset.get(
+                        frozenset({m.home_team_id, m.away_team_id})
+                    )
+                    if pairing is None:
+                        pairing = pairings[idx] if idx < len(pairings) else {}
                     bm_list.append(
                         BracketMatch(
                             match_id=m.id,
@@ -374,18 +400,63 @@ class TournamentService:
         qualifying = {g for g, _ in thirds[:8]}
         return resolve_third_place_assignments(qualifying) or {}
 
+    def _pairing_expected_team_ids(
+        self,
+        pairing: dict[str, Any],
+        *,
+        group_standings: dict[str, list[TeamGroupStanding]],
+        third_place_assignments: dict[str, str],
+        winner_by_code: dict[str, int],
+        loser_by_code: dict[str, int],
+        teams_by_id: dict[int, Team],
+    ) -> frozenset[int] | None:
+        """The set of the two team ids a pairing currently resolves to.
+
+        Resolves both placeholders (``1A`` / ``2C`` / ``3:…`` / ``Wxx`` /
+        ``Lxx``) against the standings and known KO outcomes. Returns a
+        2-element frozenset, or ``None`` if either side can't be resolved
+        yet — used to attach real ``matches`` rows to their bracket slot by
+        identity instead of by chronological position.
+        """
+        home = self._resolve_placeholder(
+            pairing.get("home"),
+            group_standings=group_standings,
+            third_place_assignments=third_place_assignments,
+            winner_by_code=winner_by_code,
+            loser_by_code=loser_by_code,
+            teams_by_id=teams_by_id,
+            match_code=pairing.get("code"),
+        )
+        away = self._resolve_placeholder(
+            pairing.get("away"),
+            group_standings=group_standings,
+            third_place_assignments=third_place_assignments,
+            winner_by_code=winner_by_code,
+            loser_by_code=loser_by_code,
+            teams_by_id=teams_by_id,
+            match_code=pairing.get("code"),
+        )
+        if home is None or away is None or home.id == away.id:
+            return None
+        return frozenset({home.id, away.id})
+
     async def _compute_knockout_outcomes(
         self,
         season_id: int,
         rounds_cfg: list[dict[str, Any]],
         teams_by_id: dict[int, Team],
+        *,
+        group_standings: dict[str, list[TeamGroupStanding]],
+        third_place_assignments: dict[str, str],
     ) -> tuple[dict[str, int], dict[str, int]]:
         """Resolve W12/L12 placeholders from already-played KO matches.
 
-        Walks each round's pairings, finds the matching ``matches`` row
-        for that matchday by index (same pairing-order assumption used
-        in ``get_bracket``), and records winner / loser team_ids keyed
-        by the pairing's match_code.
+        Walks the rounds in config order (so each round's W/L outcomes are
+        available when resolving the next), attaches every played ``matches``
+        row to its pairing by the TEAMS involved — never by list position,
+        since the DB orders matches chronologically while pairings follow
+        bracket order — and records winner / loser team_ids keyed by the
+        pairing's match_code.
         """
         winners: dict[str, int] = {}
         losers: dict[str, int] = {}
@@ -405,13 +476,35 @@ class TournamentService:
             )
             res = await self.session.execute(matches_stmt)
             matches = list(res.scalars().all())
+
+            # Expected team-set -> match_code for this round, using outcomes
+            # resolved so far (earlier rounds already populated winners/losers).
+            code_by_teamset: dict[frozenset[int], str] = {}
+            for pairing in pairings:
+                code = pairing.get("code")
+                if not code:
+                    continue
+                ts = self._pairing_expected_team_ids(
+                    pairing,
+                    group_standings=group_standings,
+                    third_place_assignments=third_place_assignments,
+                    winner_by_code=winners,
+                    loser_by_code=losers,
+                    teams_by_id=teams_by_id,
+                )
+                if ts is not None:
+                    code_by_teamset[ts] = code
+
             for idx, m in enumerate(matches):
-                if idx >= len(pairings):
-                    break
-                code = pairings[idx].get("code")
-                if not code or m.home_score is None or m.away_score is None:
+                if m.home_score is None or m.away_score is None:
                     continue
                 if m.home_team_id not in teams_by_id or m.away_team_id not in teams_by_id:
+                    continue
+                code = code_by_teamset.get(frozenset({m.home_team_id, m.away_team_id}))
+                if code is None:
+                    # Fallback: positional pairing when teams don't resolve.
+                    code = pairings[idx].get("code") if idx < len(pairings) else None
+                if not code:
                     continue
                 if m.home_score > m.away_score:
                     winners[code] = m.home_team_id
