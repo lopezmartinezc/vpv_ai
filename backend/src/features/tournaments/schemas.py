@@ -34,6 +34,14 @@ class GroupsResponse(BaseModel):
     groups: list[GroupResponse]
 
 
+class TeamStatus(BaseModel):
+    """Which teams are still alive vs eliminated in a tournament."""
+
+    alive_team_ids: list[int]
+    eliminated_team_ids: list[int]
+    group_stage_done: bool
+
+
 class BracketMatch(BaseModel):
     match_id: int | None
     home_team_id: int | None

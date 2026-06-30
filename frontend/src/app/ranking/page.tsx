@@ -10,9 +10,11 @@ import type {
   BurgerEntry,
   BurgerGoal,
   RankingsResponse,
+  SurvivorEntry,
+  SurvivorPlayer,
 } from "@/types";
 
-type Tab = "burger" | "bench";
+type Tab = "burger" | "bench" | "survivors";
 
 const TAB_CONFIG: Record<Tab, { label: string; emoji: string; subtitle: string; emptyMsg: string }> =
   {
@@ -27,6 +29,12 @@ const TAB_CONFIG: Record<Tab, { label: string; emoji: string; subtitle: string; 
       emoji: "🪑",
       subtitle: "Jugadores que pusiste en el XI pero no jugaron ni un minuto.",
       emptyMsg: "Aún no hay banquillazos registrados.",
+    },
+    survivors: {
+      label: "Supervivientes",
+      emoji: "🛡️",
+      subtitle: "Cuántos de tus jugadores siguen vivos en el torneo.",
+      emptyMsg: "Aún no hay jugadores en plantilla.",
     },
   };
 
@@ -54,7 +62,13 @@ export default function RankingPage() {
     );
   }
 
-  const cfg = TAB_CONFIG[tab];
+  // Survivors only applies to tournaments (the API sends it as null for leagues).
+  const survivors = data.survivors ?? null;
+  const availableTabs: Tab[] = survivors
+    ? ["burger", "bench", "survivors"]
+    : ["burger", "bench"];
+  const activeTab: Tab = availableTabs.includes(tab) ? tab : "burger";
+  const cfg = TAB_CONFIG[activeTab];
 
   return (
     <div className="space-y-6">
@@ -68,8 +82,8 @@ export default function RankingPage() {
         aria-label="Ranking"
         className="inline-flex rounded-lg border border-vpv-card-border bg-vpv-card p-1"
       >
-        {(Object.keys(TAB_CONFIG) as Tab[]).map((key) => {
-          const isActive = key === tab;
+        {availableTabs.map((key) => {
+          const isActive = key === activeTab;
           const opt = TAB_CONFIG[key];
           return (
             <button
@@ -91,10 +105,18 @@ export default function RankingPage() {
         })}
       </div>
 
-      {tab === "burger" ? (
+      {activeTab === "burger" && (
         <BurgerSection entries={data.burger.entries} emptyMsg={TAB_CONFIG.burger.emptyMsg} />
-      ) : (
+      )}
+      {activeTab === "bench" && (
         <BenchSection entries={data.bench.entries} emptyMsg={TAB_CONFIG.bench.emptyMsg} />
+      )}
+      {activeTab === "survivors" && survivors && (
+        <SurvivorsSection
+          entries={survivors.entries}
+          groupStageDone={survivors.group_stage_done}
+          emptyMsg={TAB_CONFIG.survivors.emptyMsg}
+        />
       )}
     </div>
   );
@@ -279,6 +301,111 @@ function BenchDetail({ players }: { players: BenchedPlayer[] }) {
           </ul>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Survivors section (tournaments only).
+// ---------------------------------------------------------------------------
+
+function SurvivorsSection({
+  entries,
+  groupStageDone,
+  emptyMsg,
+}: {
+  entries: SurvivorEntry[];
+  groupStageDone: boolean;
+  emptyMsg: string;
+}) {
+  const hasAny = entries.some((e) => e.total > 0);
+  if (!hasAny) {
+    return (
+      <div className="rounded-lg border border-vpv-card-border bg-vpv-card p-8 text-center">
+        <p className="text-vpv-text-muted">{emptyMsg}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3">
+      {!groupStageDone && (
+        <div className="rounded-lg border border-vpv-card-border bg-vpv-card px-4 py-2 text-sm text-vpv-text-muted">
+          La fase de grupos sigue en juego — nadie eliminado todavía.
+        </div>
+      )}
+      <div className="overflow-hidden rounded-lg border border-vpv-card-border bg-vpv-card">
+        <ul className="divide-y divide-vpv-border">
+          {entries.map((entry, idx) => (
+            <SurvivorRow key={entry.participant_id} entry={entry} rank={idx + 1} />
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function SurvivorRow({ entry, rank }: { entry: SurvivorEntry; rank: number }) {
+  const [open, setOpen] = useState(false);
+  const isLeader = rank === 1 && entry.total > 0;
+  const hasPlayers = entry.players.length > 0;
+  const pct = entry.total > 0 ? Math.round((entry.alive_count / entry.total) * 100) : 0;
+  return (
+    <li className={open ? "bg-vpv-bg/40" : ""}>
+      <button
+        type="button"
+        onClick={() => hasPlayers && setOpen((p) => !p)}
+        disabled={!hasPlayers}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-vpv-bg/60 disabled:cursor-default disabled:opacity-70 disabled:hover:bg-transparent"
+      >
+        <RankBadge rank={rank} highlight={isLeader} />
+        <div className="min-w-0 flex-1">
+          <span
+            className={`block truncate font-medium ${
+              isLeader ? "text-vpv-accent" : "text-vpv-text"
+            }`}
+          >
+            {entry.display_name}
+          </span>
+          <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-vpv-border">
+            <div className="h-full rounded-full bg-green-500/70" style={{ width: `${pct}%` }} />
+          </div>
+        </div>
+        <span className="shrink-0 font-mono text-sm tabular-nums text-vpv-text-muted">
+          <span className="text-green-400">{entry.alive_count}</span>
+          <span className="mx-1">/</span>
+          <span className="text-vpv-text-muted">{entry.total}</span>
+        </span>
+        {hasPlayers && <Chevron open={open} />}
+      </button>
+      {open && hasPlayers && <SurvivorDetail players={entry.players} />}
+    </li>
+  );
+}
+
+function SurvivorDetail({ players }: { players: SurvivorPlayer[] }) {
+  return (
+    <div className="border-t border-vpv-border bg-vpv-bg/30 px-4 py-3 text-sm">
+      <ul className="space-y-1">
+        {players.map((p) => (
+          <li
+            key={p.player_id}
+            className={`flex items-center justify-between gap-2 rounded px-2 py-1 ${
+              p.alive ? "bg-vpv-card/60" : "bg-vpv-card/30 opacity-60"
+            }`}
+          >
+            <span className="min-w-0 truncate text-vpv-text">
+              <span className="mr-1 inline-block w-7 text-[10px] font-mono text-vpv-text-muted">
+                {p.position || "—"}
+              </span>
+              <span className={p.alive ? "" : "line-through"}>{p.player_name}</span>
+              <span className="text-vpv-text-muted"> · {p.team_name}</span>
+            </span>
+            <span className="shrink-0 font-mono tabular-nums">
+              {p.alive ? "🟢" : "⚰️"}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

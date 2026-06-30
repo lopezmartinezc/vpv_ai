@@ -67,9 +67,48 @@ class BenchRankingResponse(BaseModel):
 # Combined endpoint --------------------------------------------------
 
 
+# Survivors ranking (tournaments only) ------------------------------
+
+
+class SurvivorPlayer(BaseModel):
+    """One owned player and whether their national team is still in."""
+
+    player_id: int
+    player_name: str
+    team_name: str
+    position: str
+    alive: bool
+
+
+class SurvivorEntry(BaseModel):
+    """One participant's survivors row + per-player breakdown."""
+
+    participant_id: int
+    display_name: str
+    alive_count: int
+    eliminated_count: int
+    total: int
+    players: list[SurvivorPlayer]
+
+
+class SurvivorsResponse(BaseModel):
+    season_id: int
+    # False while the group stage is undecided (everyone still alive).
+    group_stage_done: bool
+    entries: list[SurvivorEntry]
+
+
+# Combined endpoint --------------------------------------------------
+
+
 class RankingsResponse(BaseModel):
-    """Two rankings in one round-trip for the /ranking page."""
+    """Two (or three) rankings in one round-trip for the /ranking page.
+
+    ``survivors`` is populated only for tournament seasons; it stays ``None``
+    for leagues, where elimination has no meaning.
+    """
 
     season_id: int
     burger: BurgerRankingResponse
     bench: BenchRankingResponse
+    survivors: SurvivorsResponse | None = None

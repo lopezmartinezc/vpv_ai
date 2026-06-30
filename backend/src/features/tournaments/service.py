@@ -25,6 +25,7 @@ from src.features.tournaments.schemas import (
     TeamGroupBatchUpdate,
     TeamGroupStanding,
     TeamOption,
+    TeamStatus,
 )
 from src.shared.models.matchday import Match, Matchday
 from src.shared.models.player import Player
@@ -189,6 +190,66 @@ class TournamentService:
             season_name=season.name,
             tournament_type=season.tournament_type,
             groups=group_responses,
+        )
+
+    async def get_team_status(self, season_id: int) -> TeamStatus:
+        """Classify every team as alive or eliminated for a tournament.
+
+        A team is ELIMINATED when either:
+        - the group stage is decided and it didn't qualify (not top 2 of its
+          group and not one of the 8 best third-placed teams), or
+        - it lost a knockout tie (penalty losers included via ``ko_winner``).
+
+        Everything else is ALIVE — "alive until it actually falls": while the
+        group stage is undecided no team is eliminated yet. ``group_stage_done``
+        flags whether group eliminations have kicked in.
+        """
+        season = await self._get_tournament_season(season_id)
+        config = season.tournament_config or {}
+        knockout: dict[str, Any] = config.get("knockout", {}) if isinstance(config, dict) else {}
+        rounds_cfg: list[dict[str, Any]] = knockout.get("rounds", []) or []
+
+        teams_result = await self.session.execute(
+            select(Team).where(Team.season_id == season_id)
+        )
+        teams_by_id = {t.id: t for t in teams_result.scalars().all()}
+
+        groups_resp = await self.get_groups(season_id)
+        group_standings: dict[str, list[TeamGroupStanding]] = {
+            g.name: g.teams for g in groups_resp.groups
+        }
+        third_assignments = self._compute_best_third_assignments(group_standings)
+        group_stage_done = bool(third_assignments)
+
+        eliminated: set[int] = set()
+        if group_stage_done:
+            qualifying_third_groups = {v[1] for v in third_assignments.values()}
+            qualified: set[int] = set()
+            for gname, standings in group_standings.items():
+                if len(standings) >= 2:
+                    qualified.add(standings[0].team_id)
+                    qualified.add(standings[1].team_id)
+                if len(standings) >= 3 and gname in qualifying_third_groups:
+                    qualified.add(standings[2].team_id)
+            for standings in group_standings.values():
+                for st in standings:
+                    if st.team_id not in qualified:
+                        eliminated.add(st.team_id)
+
+        _winners, losers = await self._compute_knockout_outcomes(
+            season_id,
+            rounds_cfg,
+            teams_by_id,
+            group_standings=group_standings,
+            third_place_assignments=third_assignments,
+        )
+        eliminated.update(losers.values())
+
+        alive = {tid for tid in teams_by_id if tid not in eliminated}
+        return TeamStatus(
+            alive_team_ids=sorted(alive),
+            eliminated_team_ids=sorted(eliminated),
+            group_stage_done=group_stage_done,
         )
 
     # ------------------------------------------------------------------

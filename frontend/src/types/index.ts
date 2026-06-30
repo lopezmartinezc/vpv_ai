@@ -1460,10 +1460,37 @@ export interface BenchRankingResponse {
   entries: BenchEntry[];
 }
 
+// Survivors Ranking — tournaments only: how many owned players are still in.
+
+export interface SurvivorPlayer {
+  player_id: number;
+  player_name: string;
+  team_name: string;
+  position: string;
+  alive: boolean;
+}
+
+export interface SurvivorEntry {
+  participant_id: number;
+  display_name: string;
+  alive_count: number;
+  eliminated_count: number;
+  total: number;
+  players: SurvivorPlayer[];
+}
+
+export interface SurvivorsResponse {
+  season_id: number;
+  group_stage_done: boolean;
+  entries: SurvivorEntry[];
+}
+
 // Combined response for the /ranking page.
 
 export interface RankingsResponse {
   season_id: number;
   burger: BurgerRankingResponse;
   bench: BenchRankingResponse;
+  /** Tournaments only; null for leagues. */
+  survivors?: SurvivorsResponse | null;
 }

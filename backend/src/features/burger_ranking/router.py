@@ -14,6 +14,7 @@ from src.features.burger_ranking.service import (
     BenchRankingService,
     BurgerRankingService,
 )
+from src.features.burger_ranking.survivors import SurvivorsService
 from src.shared.dependencies import get_db
 
 router = APIRouter(prefix="/burger-ranking", tags=["rankings"])
@@ -25,6 +26,10 @@ def _get_burger(session: AsyncSession = Depends(get_db)) -> BurgerRankingService
 
 def _get_bench(session: AsyncSession = Depends(get_db)) -> BenchRankingService:
     return BenchRankingService(session)
+
+
+def _get_survivors(session: AsyncSession = Depends(get_db)) -> SurvivorsService:
+    return SurvivorsService(session)
 
 
 @router.get("/{season_id}", response_model=BurgerRankingResponse)
@@ -44,11 +49,13 @@ async def get_all_rankings(
     season_id: int,
     burger: BurgerRankingService = Depends(_get_burger),
     bench: BenchRankingService = Depends(_get_bench),
+    survivors: SurvivorsService = Depends(_get_survivors),
 ) -> RankingsResponse:
     return RankingsResponse(
         season_id=season_id,
         burger=await burger.get_ranking(season_id),
         bench=await bench.get_ranking(season_id),
+        survivors=await survivors.get_ranking(season_id),
     )
 
 
