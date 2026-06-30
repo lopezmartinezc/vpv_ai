@@ -37,6 +37,9 @@ class MatchRow:
     counts: bool
     stats_ok: bool
     played_at: datetime | None
+    home_team_id: int = 0
+    away_team_id: int = 0
+    ko_winner_team_id: int | None = None
 
 
 @dataclass
@@ -171,11 +174,14 @@ class MatchdayRepository:
                 Match.id,
                 home_team.name.label("home_team_name"),
                 away_team.name.label("away_team_name"),
+                Match.home_team_id,
+                Match.away_team_id,
                 Match.home_score,
                 Match.away_score,
                 Match.counts,
                 Match.stats_ok,
                 Match.played_at,
+                Match.ko_winner_team_id,
             )
             .join(home_team, Match.home_team_id == home_team.id)
             .join(away_team, Match.away_team_id == away_team.id)
@@ -188,11 +194,14 @@ class MatchdayRepository:
                 id=row.id,
                 home_team_name=row.home_team_name,
                 away_team_name=row.away_team_name,
+                home_team_id=row.home_team_id,
+                away_team_id=row.away_team_id,
                 home_score=row.home_score,
                 away_score=row.away_score,
                 counts=row.counts,
                 stats_ok=row.stats_ok,
                 played_at=row.played_at,
+                ko_winner_team_id=row.ko_winner_team_id,
             )
             for row in result.all()
         ]

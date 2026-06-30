@@ -170,10 +170,14 @@ export interface MatchEntry {
   id: number;
   home_team: string;
   away_team: string;
+  home_team_id: number;
+  away_team_id: number;
   home_score: number | null;
   away_score: number | null;
   counts: boolean;
   played_at: string | null;
+  /** Knockout penalty-shootout winner (bracket progression only). */
+  ko_winner_team_id?: number | null;
 }
 
 export interface ParticipantScore {

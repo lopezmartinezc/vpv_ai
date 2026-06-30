@@ -506,15 +506,22 @@ class TournamentService:
                     code = pairings[idx].get("code") if idx < len(pairings) else None
                 if not code:
                     continue
-                if m.home_score > m.away_score:
+                # Penalty-shootout override: a KO tie decided on penalties is
+                # level on the pitch, so the admin records who advanced in
+                # ko_winner_team_id. It wins regardless of the score.
+                ko_winner = getattr(m, "ko_winner_team_id", None)
+                if ko_winner in (m.home_team_id, m.away_team_id):
+                    winners[code] = ko_winner
+                    losers[code] = (
+                        m.away_team_id if ko_winner == m.home_team_id else m.home_team_id
+                    )
+                elif m.home_score > m.away_score:
                     winners[code] = m.home_team_id
                     losers[code] = m.away_team_id
                 elif m.away_score > m.home_score:
                     winners[code] = m.away_team_id
                     losers[code] = m.home_team_id
-                # Ties: no winner recorded (KO matches generally avoid
-                # this with extra time / penalties, but if the row says
-                # 0-0 we just don't propagate yet).
+                # Ties with no recorded penalty winner: don't propagate yet.
         return winners, losers
 
     def _resolve_placeholder(

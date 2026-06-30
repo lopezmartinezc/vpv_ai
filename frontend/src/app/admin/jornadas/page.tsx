@@ -23,10 +23,13 @@ interface MatchEntry {
   id: number;
   home_team: string;
   away_team: string;
+  home_team_id: number;
+  away_team_id: number;
   home_score: number | null;
   away_score: number | null;
   counts: boolean;
   played_at: string | null;
+  ko_winner_team_id?: number | null;
 }
 
 interface MatchdayDetailData {
@@ -151,6 +154,32 @@ export default function AdminJornadasPage() {
       showMessage(`Partido ${matchId}: counts = ${!currentCounts}`);
     } catch {
       showMessage("Error al actualizar partido");
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function handleSetKoWinner(matchId: number, teamId: number) {
+    if (!selectedSeasonId || !expandedMd) return;
+    setActionLoading(`ko-${matchId}`);
+    try {
+      const updated = await apiClient.put<MatchEntry>(
+        `/matchdays/admin/${selectedSeasonId}/${expandedMd}/match/${matchId}`,
+        { ko_winner_team_id: teamId },
+      );
+      if (matchdayDetail) {
+        setMatchdayDetail({
+          ...matchdayDetail,
+          matches: matchdayDetail.matches.map((m) =>
+            m.id === matchId
+              ? { ...m, ko_winner_team_id: updated.ko_winner_team_id }
+              : m,
+          ),
+        });
+      }
+      showMessage(`Partido ${matchId}: ganador por penaltis actualizado`);
+    } catch {
+      showMessage("Error al actualizar el ganador");
     } finally {
       setActionLoading(null);
     }
@@ -331,6 +360,7 @@ export default function AdminJornadasPage() {
                         <tr className="text-left text-xs text-vpv-text-muted">
                           <th className="py-1">Partido</th>
                           <th className="py-1 text-center">Resultado</th>
+                          <th className="py-1 text-center">Gana (pen.)</th>
                           <th className="py-1 text-center">Fecha</th>
                           <th className="py-1 text-right">Computa</th>
                         </tr>
@@ -348,6 +378,35 @@ export default function AdminJornadasPage() {
                               {match.home_score !== null
                                 ? `${match.home_score} - ${match.away_score}`
                                 : "\u2014"}
+                            </td>
+                            <td className="py-1.5 text-center">
+                              {match.home_score !== null &&
+                              match.home_score === match.away_score ? (
+                                <select
+                                  value={match.ko_winner_team_id ?? ""}
+                                  onChange={(e) =>
+                                    e.target.value &&
+                                    handleSetKoWinner(
+                                      match.id,
+                                      Number(e.target.value),
+                                    )
+                                  }
+                                  disabled={actionLoading === `ko-${match.id}`}
+                                  className="rounded border border-vpv-border bg-vpv-bg px-1 py-0.5 text-xs text-vpv-text disabled:opacity-50"
+                                >
+                                  <option value="">{"\u2014"}</option>
+                                  <option value={match.home_team_id}>
+                                    {match.home_team}
+                                  </option>
+                                  <option value={match.away_team_id}>
+                                    {match.away_team}
+                                  </option>
+                                </select>
+                              ) : (
+                                <span className="text-xs text-vpv-text-muted">
+                                  {"\u2014"}
+                                </span>
+                              )}
                             </td>
                             <td className="py-1.5 text-center text-xs text-vpv-text-muted">
                               {formatDate(match.played_at)}

@@ -22,11 +22,14 @@ class MatchEntry(BaseModel):
     id: int
     home_team: str
     away_team: str
+    home_team_id: int
+    away_team_id: int
     home_score: int | None
     away_score: int | None
     counts: bool
     stats_ok: bool
     played_at: datetime | None
+    ko_winner_team_id: int | None = None
 
 
 class ParticipantScore(BaseModel):
@@ -150,6 +153,9 @@ class MatchUpdateRequest(BaseModel):
     counts: bool | None = None
     home_score: int | None = None
     away_score: int | None = None
+    # Knockout penalty-shootout winner (must be one of the two teams). Bracket
+    # progression only — does not affect player scoring.
+    ko_winner_team_id: int | None = None
 
 
 class AdminMatchdayResponse(BaseModel):
@@ -165,8 +171,11 @@ class AdminMatchResponse(BaseModel):
     id: int
     home_team: str
     away_team: str
+    home_team_id: int
+    away_team_id: int
     home_score: int | None
     away_score: int | None
     counts: bool
     stats_ok: bool
     played_at: datetime | None
+    ko_winner_team_id: int | None = None

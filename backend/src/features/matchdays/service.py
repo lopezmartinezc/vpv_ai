@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.exceptions import NotFoundError
+from src.core.exceptions import BusinessRuleError, NotFoundError
 from src.features.matchdays.repository import MatchdayRepository
 from src.features.matchdays.schemas import (
     AdminMatchdayResponse,
@@ -90,11 +90,14 @@ class MatchdayService:
                     id=m.id,
                     home_team=m.home_team_name,
                     away_team=m.away_team_name,
+                    home_team_id=m.home_team_id,
+                    away_team_id=m.away_team_id,
                     home_score=m.home_score,
                     away_score=m.away_score,
                     counts=m.counts,
                     stats_ok=m.stats_ok,
                     played_at=m.played_at,
+                    ko_winner_team_id=m.ko_winner_team_id,
                 )
                 for m in match_rows
             ],
@@ -260,6 +263,15 @@ class MatchdayService:
         match = await self.repo.update_match(match_id, **kwargs)
         if match is None:
             raise NotFoundError("Match", match_id)
+        # A knockout winner must be one of the two teams that played.
+        ko_winner = kwargs.get("ko_winner_team_id")
+        if ko_winner is not None and ko_winner not in (
+            match.home_team_id,
+            match.away_team_id,
+        ):
+            raise BusinessRuleError(
+                "ko_winner_team_id debe ser uno de los dos equipos del partido"
+            )
         # Need team names for response
         await self.repo.session.commit()
 
@@ -276,11 +288,14 @@ class MatchdayService:
                     id=m.id,
                     home_team=m.home_team_name,
                     away_team=m.away_team_name,
+                    home_team_id=m.home_team_id,
+                    away_team_id=m.away_team_id,
                     home_score=m.home_score,
                     away_score=m.away_score,
                     counts=m.counts,
                     stats_ok=m.stats_ok,
                     played_at=m.played_at,
+                    ko_winner_team_id=m.ko_winner_team_id,
                 )
         raise NotFoundError("Match", match_id)
 

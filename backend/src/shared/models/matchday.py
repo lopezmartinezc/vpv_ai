@@ -62,6 +62,9 @@ class Match(Base):
     source_url: Mapped[str | None] = mapped_column(String(200))
     played_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     stats_crc: Mapped[str | None] = mapped_column(String(20))
+    # Knockout penalty-shootout winner. Set only for KO ties that finish level
+    # and are decided on penalties; drives bracket progression, NOT scoring.
+    ko_winner_team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"))
 
     matchday: Mapped[Matchday] = relationship(back_populates="matches")
     home_team: Mapped[Team] = relationship(

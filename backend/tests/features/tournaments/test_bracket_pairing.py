@@ -132,3 +132,32 @@ async def test_winners_propagate_to_correct_final_slot(db_session) -> None:
     # Final = W1 vs W2 = winner(M1)=A1  vs  winner(M2)=B1.
     assert m3.home_provisional_team_name == "A1"
     assert m3.away_provisional_team_name == "B1"
+
+
+@pytest.mark.asyncio
+async def test_penalty_winner_advances_on_a_draw(db_session) -> None:
+    """A KO tie level on the pitch advances the recorded penalty winner."""
+    from sqlalchemy import select
+
+    season_id, t = await _seed(db_session)
+
+    # Turn M1 (A1 vs B2) into a 1-1 draw decided on penalties by B2.
+    m1 = (
+        await db_session.execute(
+            select(Match).where(
+                Match.home_team_id == t["A1"].id, Match.away_team_id == t["B2"].id
+            )
+        )
+    ).scalar_one()
+    m1.home_score = 1
+    m1.away_score = 1
+    m1.ko_winner_team_id = t["B2"].id
+    await db_session.flush()
+
+    bracket = await TournamentService(db_session).get_bracket(season_id)
+
+    final = next(r for r in bracket.rounds if r.name == "Final")
+    m3 = final.matches[0]
+    # Without the penalty winner M1 would propagate nobody; now W1 = B2.
+    assert m3.home_provisional_team_name == "B2"
+    assert m3.away_provisional_team_name == "B1"
