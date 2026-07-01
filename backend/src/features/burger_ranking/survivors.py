@@ -51,9 +51,7 @@ class SurvivorsService:
 
     async def get_ranking(self, season_id: int) -> SurvivorsResponse | None:
         """Return the survivors ranking, or ``None`` for non-tournament seasons."""
-        kind = (
-            await self.session.execute(_SEASON_KIND_SQL, {"season_id": season_id})
-        ).scalar()
+        kind = (await self.session.execute(_SEASON_KIND_SQL, {"season_id": season_id})).scalar()
         if kind != "tournament":
             return None
 

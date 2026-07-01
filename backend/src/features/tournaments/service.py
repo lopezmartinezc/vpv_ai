@@ -209,9 +209,7 @@ class TournamentService:
         knockout: dict[str, Any] = config.get("knockout", {}) if isinstance(config, dict) else {}
         rounds_cfg: list[dict[str, Any]] = knockout.get("rounds", []) or []
 
-        teams_result = await self.session.execute(
-            select(Team).where(Team.season_id == season_id)
-        )
+        teams_result = await self.session.execute(select(Team).where(Team.season_id == season_id))
         teams_by_id = {t.id: t for t in teams_result.scalars().all()}
 
         groups_resp = await self.get_groups(season_id)
@@ -347,11 +345,12 @@ class TournamentService:
                     home = teams_by_id.get(m.home_team_id)
                     away = teams_by_id.get(m.away_team_id)
                     played = m.home_score is not None and m.away_score is not None
-                    pairing = pairing_by_teamset.get(
-                        frozenset({m.home_team_id, m.away_team_id})
+                    matched = pairing_by_teamset.get(frozenset({m.home_team_id, m.away_team_id}))
+                    pairing = (
+                        matched
+                        if matched is not None
+                        else (pairings[idx] if idx < len(pairings) else {})
                     )
-                    if pairing is None:
-                        pairing = pairings[idx] if idx < len(pairings) else {}
                     bm_list.append(
                         BracketMatch(
                             match_id=m.id,
