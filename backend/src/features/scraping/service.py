@@ -681,6 +681,31 @@ class ScrapingService:
         logger.info("scrape_matchday: done — matchday_id=%d summary=%s", matchday_id, summary)
         return summary
 
+    @staticmethod
+    def _expected_ko_pairings(season: object, matchday_number: int) -> int | None:
+        """Number of knockout pairings the tournament config declares for
+        ``matchday_number``, or ``None`` when it's not a tournament KO
+        matchday (leagues, group-stage matchdays, missing config).
+
+        Used to avoid advancing ``matchday_current`` past a knockout round
+        whose fixtures aren't all in the DB yet.
+        """
+        if getattr(season, "kind", None) != "tournament":
+            return None
+        config = getattr(season, "tournament_config", None)
+        if not isinstance(config, dict):
+            return None
+        knockout = config.get("knockout")
+        if not isinstance(knockout, dict):
+            return None
+        for round_cfg in knockout.get("rounds", []):
+            if not isinstance(round_cfg, dict):
+                continue
+            if int(round_cfg.get("matchday", 0)) == matchday_number:
+                pairings = round_cfg.get("pairings") or []
+                return len(pairings) if pairings else None
+        return None
+
     async def scrape_match_players(
         self, season_id: int, matchday_number: int, match_id: int
     ) -> dict[str, object]:
@@ -961,7 +986,23 @@ class ScrapingService:
                 season = await self.repo.get_season(season_id)
                 if season and matchday_number == season.matchday_current:
                     next_md = matchday_number + 1
-                    if next_md <= (season.matchday_end or 38):
+                    # Don't skip a knockout matchday whose fixtures aren't
+                    # all materialised yet: a pending semi/final may still
+                    # be missing its Match row (e.g. published on the source
+                    # calendar under a "1/2"/"Final" round label). Advancing
+                    # on the lone played fixture would jump the home view
+                    # straight to an empty next matchday.
+                    expected = self._expected_ko_pairings(season, matchday_number)
+                    fully_materialised = expected is None or len(counting) >= expected
+                    if not fully_materialised:
+                        logger.info(
+                            "scrape_match_players: NOT advancing past J%d — "
+                            "only %d/%d knockout fixtures materialised",
+                            matchday_number,
+                            len(counting),
+                            expected,
+                        )
+                    elif next_md <= (season.matchday_end or 38):
                         await self.repo.update_season_matchday_current(season_id, next_md)
                         logger.info(
                             "scrape_match_players: advanced matchday_current %d -> %d",
@@ -1179,7 +1220,13 @@ class ScrapingService:
                 logger.error("scrape_calendar: fetch failed: %s", exc)
                 return {"scores_updated": 0, "dates_updated": 0, "urls_updated": 0}
 
-        calendar_matches = parse_calendar(html, season_year=season_year)
+        # Tournaments label PENDING knockout fixtures with bracket-round
+        # notation ("1/2", "Final") instead of "Jornada N"; give the parser
+        # the final matchday so it can map those back to real matchdays.
+        ko_final_md = season.matchday_end if season.kind == "tournament" else None
+        calendar_matches = parse_calendar(
+            html, season_year=season_year, knockout_final_matchday=ko_final_md
+        )
         logger.info("scrape_calendar: parsed %d matches from calendar", len(calendar_matches))
 
         scores_updated = 0

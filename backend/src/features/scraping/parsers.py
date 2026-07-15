@@ -347,7 +347,60 @@ def _parse_calendar_date(date_text: str, season_year: int) -> str | None:
         return None
 
 
-def parse_calendar(html: str, season_year: int = 0) -> list[CalendarMatchData]:
+def _matchday_number_from_fase(fase_text: str, knockout_final_matchday: int | None) -> int:
+    """Map a calendar ``div.fase`` label to a matchday number.
+
+    League fixtures label the round ``"Jornada N"`` whether played or
+    not. Tournament knockout fixtures, however, only carry ``"Jornada N"``
+    once they've been PLAYED — while pending they show the bracket-round
+    notation instead: ``"1/16"`` (round of 32), ``"1/8"``, ``"1/4"``,
+    ``"1/2"`` (semis) and ``"Final"`` / 3rd-place. Those map onto the tail
+    matchdays counting back from the final::
+
+        Final       -> knockout_final_matchday
+        1/2 (semis) -> knockout_final_matchday - 1
+        1/4         -> knockout_final_matchday - 2
+        1/8         -> knockout_final_matchday - 3
+        1/16        -> knockout_final_matchday - 4
+
+    i.e. ``final - log2(denominator)``. ``knockout_final_matchday`` is
+    ``None`` for leagues, so their labels never get coerced. Returns
+    ``0`` when the label can't be resolved (caller skips such fixtures).
+    """
+    text = fase_text.strip()
+    parts = text.split()
+    # "Jornada 24" -> 24 (also tolerates any "<word> <int>" shape).
+    if len(parts) >= 2:
+        try:
+            return int(parts[1])
+        except ValueError:
+            pass
+
+    if knockout_final_matchday is None:
+        return 0
+
+    low = text.lower()
+    # Final and 3rd/4th-place playoff both sit on the last matchday.
+    if low == "final" or "puesto" in low or "tercer" in low:
+        return knockout_final_matchday
+    # "1/N" bracket notation, N a power of two.
+    if text.startswith("1/"):
+        try:
+            denom = int(text[2:])
+        except ValueError:
+            return 0
+        if denom >= 1 and (denom & (denom - 1)) == 0:  # power of two
+            step = denom.bit_length() - 1  # log2(denom)
+            md = knockout_final_matchday - step
+            return md if md >= 1 else 0
+    return 0
+
+
+def parse_calendar(
+    html: str,
+    season_year: int = 0,
+    knockout_final_matchday: int | None = None,
+) -> list[CalendarMatchData]:
     """Extract match data from the La Liga calendar page.
 
     Looks for ``section.lista`` > ``a.partido`` elements.  Each match
@@ -419,12 +472,11 @@ def parse_calendar(html: str, season_year: int = 0) -> list[CalendarMatchData]:
                     date_text = date_div.get_text(" ", strip=True)
                     played_at = _parse_calendar_date(date_text, season_year)
 
-                # Matchday number
+                # Matchday number — "Jornada 24" → 24, or a knockout
+                # round label ("1/2", "Final") mapped back from the final.
                 fase_div = anchor.find("div", class_="fase")
                 fase_text = _tag_text(fase_div if isinstance(fase_div, Tag) else None)
-                # "Jornada 24" → 24
-                fase_parts = fase_text.split()
-                matchday_number = int(fase_parts[1]) if len(fase_parts) >= 2 else 0
+                matchday_number = _matchday_number_from_fase(fase_text, knockout_final_matchday)
 
                 matches.append(
                     CalendarMatchData(

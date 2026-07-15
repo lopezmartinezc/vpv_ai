@@ -318,106 +318,63 @@ class TournamentService:
             matches_result = await self.session.execute(matches_stmt)
             matches = list(matches_result.scalars().all())
 
+            # Attach real matches to their config pairing by the TEAMS
+            # involved, not by list position: the DB orders matches
+            # chronologically (played_at) while pairings follow bracket order
+            # (M73, M74, …), so an index match would wire e.g. M74's real
+            # fixture into M75's slot and scramble the tree. Any pairing
+            # WITHOUT a real match is rendered as a provisional placeholder —
+            # even when its round is only half-materialised (one semi played,
+            # the other still a pending fixture). Rendering only the real
+            # matches used to make the pending sibling vanish from the bracket.
+            pairing_idx_by_teamset: dict[frozenset[int], int] = {}
+            for i, pairing in enumerate(pairings):
+                ts = self._pairing_expected_team_ids(
+                    pairing,
+                    group_standings=group_standings,
+                    third_place_assignments=third_place_assignments,
+                    winner_by_code=winner_by_code,
+                    loser_by_code=loser_by_code,
+                    teams_by_id=teams_by_id,
+                )
+                if ts is not None:
+                    pairing_idx_by_teamset[ts] = i
+
+            real_by_pairing_idx: dict[int, Match] = {}
+            leftover: list[Match] = []
+            for match in matches:
+                key = frozenset({match.home_team_id, match.away_team_id})
+                slot = pairing_idx_by_teamset.get(key)
+                if slot is not None and slot not in real_by_pairing_idx:
+                    real_by_pairing_idx[slot] = match
+                else:
+                    # Teams didn't resolve to a pairing — keep for index
+                    # fallback so the match is never silently dropped.
+                    leftover.append(match)
+
             bm_list: list[BracketMatch] = []
-
-            if matches:
-                # Real matches exist. Attach each to its config pairing by
-                # the TEAMS involved, not by list position: the DB orders
-                # matches chronologically (played_at) while pairings follow
-                # bracket order (M73, M74, …), so an index match would wire
-                # e.g. M74's real fixture into M75's bracket slot and scramble
-                # the whole tree. Fall back to index only when a match's teams
-                # don't resolve to any pairing.
-                pairing_by_teamset: dict[frozenset[int], dict[str, Any]] = {}
-                for pairing in pairings:
-                    ts = self._pairing_expected_team_ids(
-                        pairing,
-                        group_standings=group_standings,
-                        third_place_assignments=third_place_assignments,
-                        winner_by_code=winner_by_code,
-                        loser_by_code=loser_by_code,
-                        teams_by_id=teams_by_id,
-                    )
-                    if ts is not None:
-                        pairing_by_teamset[ts] = pairing
-
-                for idx, m in enumerate(matches):
-                    home = teams_by_id.get(m.home_team_id)
-                    away = teams_by_id.get(m.away_team_id)
-                    played = m.home_score is not None and m.away_score is not None
-                    matched = pairing_by_teamset.get(frozenset({m.home_team_id, m.away_team_id}))
-                    pairing = (
-                        matched
-                        if matched is not None
-                        else (pairings[idx] if idx < len(pairings) else {})
-                    )
+            for i, pairing in enumerate(pairings):
+                real = real_by_pairing_idx.get(i)
+                if real is None and leftover:
+                    real = leftover.pop(0)
+                if real is not None:
+                    bm_list.append(self._real_bracket_match(real, pairing, teams_by_id))
+                else:
                     bm_list.append(
-                        BracketMatch(
-                            match_id=m.id,
-                            home_team_id=m.home_team_id,
-                            home_team_name=home.name if home else None,
-                            home_logo=home.logo_path if home else None,
-                            home_score=m.home_score,
-                            away_team_id=m.away_team_id,
-                            away_team_name=away.name if away else None,
-                            away_logo=away.logo_path if away else None,
-                            away_score=m.away_score,
-                            played=played,
-                            match_code=pairing.get("code"),
-                            home_placeholder=pairing.get("home"),
-                            away_placeholder=pairing.get("away"),
-                            label=pairing.get("label"),
+                        self._provisional_bracket_match(
+                            pairing,
+                            group_standings=group_standings,
+                            third_place_assignments=third_place_assignments,
+                            winner_by_code=winner_by_code,
+                            loser_by_code=loser_by_code,
+                            teams_by_id=teams_by_id,
                         )
                     )
-            else:
-                # No matches yet: render placeholders from tournament_config
-                # pairings and try to resolve each one against current group
-                # standings or already-played knockout matches.
-                for pairing in pairings:
-                    home_ph = pairing.get("home")
-                    away_ph = pairing.get("away")
-                    home_team = self._resolve_placeholder(
-                        home_ph,
-                        group_standings=group_standings,
-                        third_place_assignments=third_place_assignments,
-                        winner_by_code=winner_by_code,
-                        loser_by_code=loser_by_code,
-                        teams_by_id=teams_by_id,
-                        match_code=pairing.get("code"),
-                    )
-                    away_team = self._resolve_placeholder(
-                        away_ph,
-                        group_standings=group_standings,
-                        third_place_assignments=third_place_assignments,
-                        winner_by_code=winner_by_code,
-                        loser_by_code=loser_by_code,
-                        teams_by_id=teams_by_id,
-                        match_code=pairing.get("code"),
-                    )
-                    bm_list.append(
-                        BracketMatch(
-                            match_id=None,
-                            home_team_id=None,
-                            home_team_name=None,
-                            home_logo=None,
-                            home_score=None,
-                            away_team_id=None,
-                            away_team_name=None,
-                            away_logo=None,
-                            away_score=None,
-                            played=False,
-                            match_code=pairing.get("code"),
-                            home_placeholder=home_ph,
-                            away_placeholder=away_ph,
-                            label=pairing.get("label"),
-                            home_provisional_team_id=home_team.id if home_team else None,
-                            home_provisional_team_name=home_team.name if home_team else None,
-                            home_provisional_logo=home_team.logo_path if home_team else None,
-                            away_provisional_team_id=away_team.id if away_team else None,
-                            away_provisional_team_name=away_team.name if away_team else None,
-                            away_provisional_logo=away_team.logo_path if away_team else None,
-                        )
-                    )
+            # No pairings configured for this round but matches exist — show
+            # them anyway rather than dropping the round to empty.
+            for match in leftover:
+                bm_list.append(self._real_bracket_match(match, {}, teams_by_id))
+
             bracket_rounds.append(
                 BracketRound(name=round_name, matchday=md_number, matches=bm_list)
             )
@@ -426,6 +383,89 @@ class TournamentService:
             season_id=season_id,
             season_name=season.name,
             rounds=bracket_rounds,
+        )
+
+    def _real_bracket_match(
+        self,
+        m: Match,
+        pairing: dict[str, Any],
+        teams_by_id: dict[int, Team],
+    ) -> BracketMatch:
+        """Build a bracket entry backed by a real Match row."""
+        home = teams_by_id.get(m.home_team_id)
+        away = teams_by_id.get(m.away_team_id)
+        played = m.home_score is not None and m.away_score is not None
+        return BracketMatch(
+            match_id=m.id,
+            home_team_id=m.home_team_id,
+            home_team_name=home.name if home else None,
+            home_logo=home.logo_path if home else None,
+            home_score=m.home_score,
+            away_team_id=m.away_team_id,
+            away_team_name=away.name if away else None,
+            away_logo=away.logo_path if away else None,
+            away_score=m.away_score,
+            played=played,
+            match_code=pairing.get("code"),
+            home_placeholder=pairing.get("home"),
+            away_placeholder=pairing.get("away"),
+            label=pairing.get("label"),
+        )
+
+    def _provisional_bracket_match(
+        self,
+        pairing: dict[str, Any],
+        *,
+        group_standings: dict[str, list[TeamGroupStanding]],
+        third_place_assignments: dict[str, str],
+        winner_by_code: dict[str, int],
+        loser_by_code: dict[str, int],
+        teams_by_id: dict[int, Team],
+    ) -> BracketMatch:
+        """Build a bracket entry from an un-materialised config pairing,
+        resolving its placeholders (``1A``, ``3:ABC…``, ``W12``, ``L12``)
+        against the current standings / already-played knockout matches."""
+        home_ph = pairing.get("home")
+        away_ph = pairing.get("away")
+        home_team = self._resolve_placeholder(
+            home_ph,
+            group_standings=group_standings,
+            third_place_assignments=third_place_assignments,
+            winner_by_code=winner_by_code,
+            loser_by_code=loser_by_code,
+            teams_by_id=teams_by_id,
+            match_code=pairing.get("code"),
+        )
+        away_team = self._resolve_placeholder(
+            away_ph,
+            group_standings=group_standings,
+            third_place_assignments=third_place_assignments,
+            winner_by_code=winner_by_code,
+            loser_by_code=loser_by_code,
+            teams_by_id=teams_by_id,
+            match_code=pairing.get("code"),
+        )
+        return BracketMatch(
+            match_id=None,
+            home_team_id=None,
+            home_team_name=None,
+            home_logo=None,
+            home_score=None,
+            away_team_id=None,
+            away_team_name=None,
+            away_logo=None,
+            away_score=None,
+            played=False,
+            match_code=pairing.get("code"),
+            home_placeholder=home_ph,
+            away_placeholder=away_ph,
+            label=pairing.get("label"),
+            home_provisional_team_id=home_team.id if home_team else None,
+            home_provisional_team_name=home_team.name if home_team else None,
+            home_provisional_logo=home_team.logo_path if home_team else None,
+            away_provisional_team_id=away_team.id if away_team else None,
+            away_provisional_team_name=away_team.name if away_team else None,
+            away_provisional_logo=away_team.logo_path if away_team else None,
         )
 
     def _compute_best_third_assignments(
