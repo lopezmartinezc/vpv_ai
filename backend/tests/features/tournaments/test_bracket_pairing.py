@@ -135,6 +135,44 @@ async def test_winners_propagate_to_correct_final_slot(db_session) -> None:
 
 
 @pytest.mark.asyncio
+async def test_partial_ko_round_keeps_pending_pairing_as_provisional(db_session) -> None:
+    """A half-played KO round must still show the pending fixture.
+
+    Regression: when a round had ≥1 real match, get_bracket rendered ONLY
+    the real matches and dropped config pairings without a row — so the
+    still-to-be-played semifinal vanished from the bracket entirely (the
+    Mundial 2026 J7 case: Francia-Espana played, Inglaterra-Argentina had
+    no Match row yet).
+    """
+    from sqlalchemy import select
+
+    season_id, t = await _seed(db_session)
+
+    # Remove the M2 fixture ({B1,A2}); only M1 ({A1,B2}) stays materialised.
+    m2 = (
+        await db_session.execute(
+            select(Match).where(
+                Match.home_team_id == t["B1"].id, Match.away_team_id == t["A2"].id
+            )
+        )
+    ).scalar_one()
+    await db_session.delete(m2)
+    await db_session.flush()
+
+    bracket = await TournamentService(db_session).get_bracket(season_id)
+    semis = next(r for r in bracket.rounds if r.name == "Semis")
+    by_code = {m.match_code: m for m in semis.matches}
+
+    # Both pairings present: M1 real, M2 provisional (resolved 1B=B1, 2A=A2).
+    assert set(by_code) == {"M1", "M2"}
+    assert by_code["M1"].match_id is not None
+    assert {by_code["M1"].home_team_name, by_code["M1"].away_team_name} == {"A1", "B2"}
+    assert by_code["M2"].match_id is None
+    assert by_code["M2"].home_provisional_team_name == "B1"
+    assert by_code["M2"].away_provisional_team_name == "A2"
+
+
+@pytest.mark.asyncio
 async def test_penalty_winner_advances_on_a_draw(db_session) -> None:
     """A KO tie level on the pitch advances the recorded penalty winner."""
     from sqlalchemy import select
