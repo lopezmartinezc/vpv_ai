@@ -26,6 +26,7 @@ def _ps(season_id: int, avg: float, games: int, minutes: int | None = None) -> _
         avg_pts=avg,
         total_pts=avg * games,
         std_pts=1.0,
+        media_pts=0.0,
         marca_avg=None,
         as_avg=None,
         goals=0,

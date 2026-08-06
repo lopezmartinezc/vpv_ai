@@ -1099,6 +1099,10 @@ export interface DraftValuePlayer {
   vorp?: number | null;
   replacement_level?: number | null;
   position_rank?: number | null;
+  // F2: reliability + durability.
+  event_share?: number | null;
+  exp_games_remaining?: number | null;
+  proj_rest_points?: number | null;
 }
 
 export interface DraftValueResponse {
