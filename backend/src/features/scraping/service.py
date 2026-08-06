@@ -347,6 +347,7 @@ class ScrapingService:
                 position=position,
                 stats=mp.stats,
                 breakdown=breakdown,
+                team_id=team_id,
             )
             processed += 1
 
@@ -597,6 +598,7 @@ class ScrapingService:
                         position=position,
                         stats=stats,
                         breakdown=breakdown,
+                        team_id=player.team_id,
                     )
                     total_processed += 1
                     match_processed += 1
@@ -915,6 +917,7 @@ class ScrapingService:
                         position=position,
                         stats=stats,
                         breakdown=breakdown,
+                        team_id=player.team_id,
                     )
                     total_processed += 1
                     await _wlog(
@@ -1148,6 +1151,7 @@ class ScrapingService:
                         position=position,
                         stats=stats,
                         breakdown=breakdown,
+                        team_id=player.team_id,
                     )
                     player_rows += 1
                     affected_md_ids.add(md.id)

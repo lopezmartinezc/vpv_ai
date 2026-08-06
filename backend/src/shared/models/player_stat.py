@@ -18,12 +18,18 @@ class PlayerStat(Base):
         UniqueConstraint("player_id", "matchday_id", name="uq_player_matchday"),
         Index("idx_player_stats_matchday", "matchday_id"),
         Index("idx_player_stats_player", "player_id"),
+        Index("idx_player_stats_team", "team_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), nullable=False)
     matchday_id: Mapped[int] = mapped_column(ForeignKey("matchdays.id"), nullable=False)
     match_id: Mapped[int | None] = mapped_column(ForeignKey("matches.id"))
+    # The team the player played for THIS matchday. Pinned at scrape time so a
+    # later transfer (which updates players.team_id) never rewrites history.
+    # NULL for pre-migration rows not yet backfilled — callers fall back to
+    # players.team_id.
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"))
 
     # Estado
     processed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

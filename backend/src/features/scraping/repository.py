@@ -4,7 +4,7 @@ import logging
 from decimal import Decimal
 from pathlib import Path
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -238,6 +238,7 @@ class ScrapingRepository:
         position: str,
         stats: PlayerMatchdayStats,
         breakdown: PointsBreakdown,
+        team_id: int | None = None,
     ) -> None:
         """INSERT or UPDATE a ``player_stats`` row via PostgreSQL ON CONFLICT.
 
@@ -248,6 +249,7 @@ class ScrapingRepository:
             "player_id": player_id,
             "matchday_id": matchday_id,
             "match_id": match_id,
+            "team_id": team_id,
             "processed": True,
             "position": position,
             "played": stats.played,
@@ -297,15 +299,18 @@ class ScrapingRepository:
 
         # Build the set_ dict for the update clause (all columns except the
         # natural key columns player_id / matchday_id).
-        set_cols = {k: v for k, v in values.items() if k not in ("player_id", "matchday_id")}
+        set_cols = {
+            k: v for k, v in values.items() if k not in ("player_id", "matchday_id", "team_id")
+        }
 
-        stmt = (
-            pg_insert(PlayerStat)
-            .values(**values)
-            .on_conflict_do_update(
-                index_elements=["player_id", "matchday_id"],
-                set_=set_cols,
-            )
+        insert_stmt = pg_insert(PlayerStat).values(**values)
+        # Pin team_id to the FIRST scrape of this matchday: keep the stored
+        # value and only fill it when still NULL. A later transfer re-scrape
+        # must not overwrite the team the player actually played for.
+        set_cols["team_id"] = func.coalesce(PlayerStat.team_id, insert_stmt.excluded.team_id)
+        stmt = insert_stmt.on_conflict_do_update(
+            index_elements=["player_id", "matchday_id"],
+            set_=set_cols,
         )
         await self.session.execute(stmt)
         logger.debug(
