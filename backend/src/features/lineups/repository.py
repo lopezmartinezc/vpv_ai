@@ -380,8 +380,16 @@ class LineupRepository:
         md_numbers = [md.number for md in recent_mds]
 
         # 2. Fetch player stats for these matchdays (including non-played via LEFT JOIN)
+        # Home/away is a per-matchday fact: use the team the player actually
+        # played for that matchday (player_stats.team_id), falling back to the
+        # current team only for old rows not yet backfilled. Deriving it from
+        # the mutable players.team_id would mislabel a transferred player's
+        # earlier matchdays.
         is_home = case(
-            (Player.team_id == Match.home_team_id, True),
+            (
+                func.coalesce(PlayerStat.team_id, Player.team_id) == Match.home_team_id,
+                True,
+            ),
             else_=False,
         ).label("is_home")
 

@@ -500,8 +500,13 @@ class AdvancedStatsRepository:
 
     async def get_player_splits(self, season_id: int, player_id: int) -> list[PlayerSplitRow]:
         """Home/away split stats for a single player in a season."""
+        # Per-matchday team (falls back to current team for un-backfilled rows)
+        # so a transferred player's earlier matchdays keep the right location.
         location = case(
-            (Match.home_team_id == Player.team_id, "home"),
+            (
+                Match.home_team_id == func.coalesce(PlayerStat.team_id, Player.team_id),
+                "home",
+            ),
             else_="away",
         )
 
@@ -787,12 +792,15 @@ class AdvancedStatsRepository:
         Uses player's current team_id to determine home/away from matches.
         Only counting matchdays and played stats are considered.
         """
+        # Per-matchday team (fallback to current) so transfers don't relabel
+        # a player's earlier home/away points.
+        played_team = func.coalesce(PlayerStat.team_id, Player.team_id)
         home_pts = case(
-            (Match.home_team_id == Player.team_id, func.cast(PlayerStat.pts_total, Float)),
+            (Match.home_team_id == played_team, func.cast(PlayerStat.pts_total, Float)),
             else_=None,
         )
         away_pts = case(
-            (Match.away_team_id == Player.team_id, func.cast(PlayerStat.pts_total, Float)),
+            (Match.away_team_id == played_team, func.cast(PlayerStat.pts_total, Float)),
             else_=None,
         )
 
