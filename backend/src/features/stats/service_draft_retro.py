@@ -48,9 +48,15 @@ from src.features.stats.schemas_draft_retro import (
     RetroPick,
     SignalBucket,
 )
-from src.features.stats.service_draft import VALID_SEASON_IDS, DraftValueService
+from src.features.stats.service_draft import DraftValueService
 
 logger = logging.getLogger(__name__)
+
+# Fixed historical cohort for the retrospective / backtest analytics: the
+# four complete La Liga seasons with full draft + stats data. This is a
+# deliberate backtest cohort (unlike the live model, which resolves prior
+# league seasons dynamically).
+VALID_SEASON_IDS = [5, 6, 7, 8]
 
 
 # ---------------------------------------------------------------------------

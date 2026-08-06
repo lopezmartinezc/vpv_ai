@@ -60,6 +60,10 @@ class DraftValuePlayer(BaseModel):
     signal: str  # "strong_buy" | "buy" | "hold" | "avoid"
     signal_reasons: list[str]  # ["Ensemble top 15%", "Trending up +18%", ...]
 
+    # How much the current (partial) season weighed in the blend for this
+    # player: n_current / (n_current + k). 1.0 = no history, pure current.
+    weight_current: float | None = None
+
 
 class DraftValueResponse(BaseModel):
     season_id: int

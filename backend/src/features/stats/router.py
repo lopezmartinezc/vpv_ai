@@ -64,7 +64,7 @@ router = APIRouter(prefix="/stats", tags=["stats"])
 @router.get("/{season_id}/players/draft-value", response_model=DraftValueResponse)
 async def get_draft_values(
     season_id: int,
-    min_games: int = Query(default=10, ge=1, le=30),
+    min_games: int = Query(default=2, ge=1, le=30),
     admin: dict = Depends(require_perm(Perm.STATS)),
     db: AsyncSession = Depends(get_db),
 ) -> DraftValueResponse:
