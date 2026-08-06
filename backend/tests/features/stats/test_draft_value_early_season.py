@@ -39,9 +39,7 @@ async def test_draft_values_blend_at_six_matchdays(db_session) -> None:
     prior = Season(name="2024-2025", matchday_start=1, matchday_current=38, kind="league")
     current = Season(name="2025-2026", matchday_start=1, matchday_current=7, kind="league")
     # A tournament season that must NOT be used as league history.
-    tourney = Season(
-        name="Mundial 2026", matchday_start=1, matchday_current=8, kind="tournament"
-    )
+    tourney = Season(name="Mundial 2026", matchday_start=1, matchday_current=8, kind="tournament")
     db_session.add_all([prior, current, tourney])
     await db_session.flush()
 

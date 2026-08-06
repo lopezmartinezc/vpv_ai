@@ -214,9 +214,7 @@ class DraftValueService:
         # Candidates: current-season players with enough games to carry a
         # signal. The historical prior (via shrinkage) covers the small
         # 4-8 game sample — that's the whole point of this model.
-        targets = [
-            slug for slug, ps in current_map.items() if ps.games >= min_games
-        ]
+        targets = [slug for slug, ps in current_map.items() if ps.games >= min_games]
 
         results: list[DraftValuePlayer] = []
 
@@ -247,12 +245,12 @@ class DraftValueService:
 
             # Prefer the fresh current-season media ratings, fall back to
             # last season's when the player has no current rating yet.
-            marca = ps.marca_avg if ps.marca_avg is not None else (
-                hist[-1].marca_avg if hist else None
+            marca = (
+                ps.marca_avg
+                if ps.marca_avg is not None
+                else (hist[-1].marca_avg if hist else None)
             )
-            as_val = ps.as_avg if ps.as_avg is not None else (
-                hist[-1].as_avg if hist else None
-            )
+            as_val = ps.as_avg if ps.as_avg is not None else (hist[-1].as_avg if hist else None)
 
             # === Draft signal ===
             signal, reasons = self._compute_signal(

@@ -48,7 +48,8 @@ for slug, season, md, pos, mins, pts, ga, _asis in rows:
 def agg(records, md_min=None, md_max=None):
     """Aggregate a player's rows in a matchday window."""
     sel = [
-        r for r in records
+        r
+        for r in records
         if (md_min is None or r[0] >= md_min) and (md_max is None or r[0] <= md_max)
     ]
     if not sel:
@@ -69,7 +70,8 @@ def agg(records, md_min=None, md_max=None):
         "pos": statistics.mode(positions),
         "sh_avg": (
             statistics.mean([r[2] for r in sel if r[0] > 19])
-            if any(r[0] > 19 for r in sel) else 0.0
+            if any(r[0] > 19 for r in sel)
+            else 0.0
         ),
     }
 
@@ -202,9 +204,7 @@ for T in COMPLETE:
 # ---- Report ----
 label = {0: "current-only", 999: "history-only(baseline)"}
 print("Spearman(pred, rest-of-season pts), mean over complete test seasons\n")
-header = "K(md)  N/season  " + "  ".join(
-    f"{label.get(k, f'k={k}'):>16}" for k in K_SHRINK
-)
+header = "K(md)  N/season  " + "  ".join(f"{label.get(k, f'k={k}'):>16}" for k in K_SHRINK)
 print(header)
 for K in K_VALUES:
     navg = int(statistics.mean(counts[K]))
