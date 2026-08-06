@@ -1885,6 +1885,8 @@ type DraftSortKey = keyof DraftValuePlayer;
 
 const DRAFT_COLS: { key: DraftSortKey; label: string; title: string; w: string }[] = [
   { key: "vorp", label: "VORP", title: "Valor sobre reemplazo posicional: valor proyectado por encima del jugador de reemplazo en su posición. Compara DEF/MED/DEL/POR en un solo eje — la columna maestra del tablero.", w: "w-14" },
+  { key: "proj_rest_points", label: "PtsRes", title: "Puntos proyectados resto de temporada = valor proyectado × partidos esperados restantes (jornadas restantes × disponibilidad).", w: "w-16" },
+  { key: "event_share", label: "Fiab", title: "Fiabilidad: % de puntos por eventos concretos (goles, asistencias, portería a cero...) vs nota mediática Marca/AS. Alto = más repetible.", w: "w-12" },
   { key: "ensemble_score", label: "Ens", title: "Ensemble: valor proyectado (histórico + actual, shrinkage k=4)", w: "w-14" },
   { key: "simple_avg", label: "Avg", title: "Media simple: pts/partido temporada anterior (baseline)", w: "w-14" },
   { key: "second_half_score", label: "Form", title: "Forma 2a mitad: rendimiento J20-J38 (predice siguiente temporada)", w: "w-14" },
@@ -2110,7 +2112,7 @@ function DraftValueTab({ seasonId }: { seasonId: number }) {
                           </span>
                         );
                       }
-                      if (col.key === "availability" || col.key === "consistency") {
+                      if (col.key === "availability" || col.key === "consistency" || col.key === "event_share") {
                         const n = (val as number) ?? 0;
                         return (
                           <span key={col.key} className={`${col.w} text-right text-xs tabular-nums ${isActive ? "font-bold text-vpv-accent" : "text-vpv-text-muted"}`}>

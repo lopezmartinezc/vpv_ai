@@ -72,6 +72,15 @@ class DraftValuePlayer(BaseModel):
     replacement_level: float | None = None
     position_rank: int | None = None
 
+    # F2 — points reliability + durability.
+    # event_share: fraction of points from concrete events (goals, assists,
+    #   clean sheets, ...) vs subjective Marca/AS ratings — higher = more
+    #   repeatable. exp_games_remaining: matchdays left * availability.
+    #   proj_rest_points: projected points for the rest of the season.
+    event_share: float | None = None
+    exp_games_remaining: float | None = None
+    proj_rest_points: float | None = None
+
 
 class DraftValueResponse(BaseModel):
     season_id: int

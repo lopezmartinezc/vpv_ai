@@ -160,6 +160,7 @@ class _PlayerSeason:
     avg_pts: float
     total_pts: float
     std_pts: float
+    media_pts: float  # points from Marca/AS ratings (pts_marca_as sum)
     marca_avg: float | None
     as_avg: float | None
     goals: int  # open-play + penalty
@@ -216,6 +217,10 @@ class DraftValueService:
         md_played = season_info["matchday_current"] - season_info["matchday_start"]
         is_winter = md_played >= 19  # informational label only; blend always applies
 
+        # Matchdays left in the season — for durability-adjusted projections.
+        md_end = season_info.get("matchday_end")
+        remaining_md = max(0, int(md_end) - int(season_info["matchday_current"])) if md_end else 0
+
         # Candidates: current-season players with enough games to carry a
         # signal. The historical prior (via shrinkage) covers the small
         # 4-8 game sample — that's the whole point of this model.
@@ -245,6 +250,21 @@ class DraftValueService:
 
             # === Signals ===
             availability = ps.games_45min / max(ps.games, 1)
+
+            # === F2: points reliability (event vs media rating) ===
+            # Media points (Marca/AS) are noisier/subjective; a high event
+            # share (goals, assists, clean sheets, ...) is more repeatable.
+            career_total = ps.total_pts + sum(h.total_pts for h in hist)
+            career_media = ps.media_pts + sum(h.media_pts for h in hist)
+            event_share = (
+                max(0.0, min(1.0, (career_total - career_media) / career_total))
+                if career_total > 0
+                else None
+            )
+
+            # === F2: durability — expected games + rest-of-season points ===
+            exp_games_remaining = round(remaining_md * availability, 1)
+            proj_rest_points = round(ensemble_score * exp_games_remaining, 1)
             cv = ps.std_pts / ps.avg_pts if ps.avg_pts > 0 else 1.0
             consistency = max(0, 1 - cv)
 
@@ -296,6 +316,9 @@ class DraftValueService:
                     signal=signal,
                     signal_reasons=reasons,
                     weight_current=round(weight_current, 2),
+                    event_share=round(event_share, 2) if event_share is not None else None,
+                    exp_games_remaining=exp_games_remaining,
+                    proj_rest_points=proj_rest_points,
                 )
             )
 
@@ -395,7 +418,10 @@ class DraftValueService:
 
     async def _get_season_info(self, season_id: int) -> dict:
         result = await self.session.execute(
-            text("SELECT name, matchday_start, matchday_current FROM seasons WHERE id = :id"),
+            text(
+                "SELECT name, matchday_start, matchday_current, matchday_end "
+                "FROM seasons WHERE id = :id"
+            ),
             {"id": season_id},
         )
         row = result.one()
@@ -403,6 +429,7 @@ class DraftValueService:
             "name": row.name,
             "matchday_start": row.matchday_start,
             "matchday_current": row.matchday_current,
+            "matchday_end": row.matchday_end,
         }
 
     async def _resolve_season_ids(self, current_season_id: int, n_history: int) -> list[int]:
@@ -435,6 +462,7 @@ class DraftValueService:
                        AVG(ps.pts_total) as avg_pts,
                        SUM(ps.pts_total) as total_pts,
                        COALESCE(STDDEV(ps.pts_total), 0) as std_pts,
+                       COALESCE(SUM(ps.pts_marca_as), 0) as media_pts,
                        AVG(CASE WHEN ps.marca_rating ~ '^[1-4]$'
                            THEN CAST(ps.marca_rating AS INTEGER) END) as marca_avg,
                        AVG(CASE WHEN ps.as_picas ~ '^[0-9]+$'
@@ -474,6 +502,7 @@ class DraftValueService:
                 avg_pts=float(r.avg_pts or 0),
                 total_pts=float(r.total_pts or 0),
                 std_pts=float(r.std_pts or 0),
+                media_pts=float(r.media_pts or 0),
                 marca_avg=float(r.marca_avg) if r.marca_avg is not None else None,
                 as_avg=float(r.as_avg) if r.as_avg is not None else None,
                 goals=int(r.goals or 0),

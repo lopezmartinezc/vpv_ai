@@ -19,7 +19,7 @@ from src.shared.models.season import Season
 from src.shared.models.team import Team
 
 
-async def _add_stats(db, player, matchdays, pts, minutes=90):
+async def _add_stats(db, player, matchdays, pts, minutes=90, media=0):
     for md in matchdays:
         db.add(
             PlayerStat(
@@ -29,6 +29,7 @@ async def _add_stats(db, player, matchdays, pts, minutes=90):
                 played=True,
                 minutes_played=minutes,
                 pts_total=pts,
+                pts_marca_as=media,
             )
         )
 
@@ -37,7 +38,9 @@ async def _add_stats(db, player, matchdays, pts, minutes=90):
 async def test_draft_values_blend_at_six_matchdays(db_session) -> None:
     # Prior league season (history) + current league season at md 6.
     prior = Season(name="2024-2025", matchday_start=1, matchday_current=38, kind="league")
-    current = Season(name="2025-2026", matchday_start=1, matchday_current=7, kind="league")
+    current = Season(
+        name="2025-2026", matchday_start=1, matchday_current=7, matchday_end=38, kind="league"
+    )
     # A tournament season that must NOT be used as league history.
     tourney = Season(name="Mundial 2026", matchday_start=1, matchday_current=8, kind="tournament")
     db_session.add_all([prior, current, tourney])
@@ -80,7 +83,7 @@ async def test_draft_values_blend_at_six_matchdays(db_session) -> None:
     await db_session.flush()
 
     await _add_stats(db_session, star_prev, prior_mds, pts=8)
-    await _add_stats(db_session, star_cur, cur_mds, pts=2)
+    await _add_stats(db_session, star_cur, cur_mds, pts=2, media=1)  # half from Marca/AS
     await _add_stats(db_session, rookie, cur_mds[:4], pts=5)
     await _add_stats(db_session, fringe, cur_mds[:1], pts=9)
     await db_session.flush()
@@ -116,3 +119,12 @@ async def test_draft_values_blend_at_six_matchdays(db_session) -> None:
     med = [p for p in resp.players if p.position == "MED"]
     assert min(p.vorp for p in med) == pytest.approx(0.0)
     assert max(p.vorp for p in med) > 0
+
+    # F2 — reliability: rookie is pure events (event_share 1.0); star has some
+    # Marca/AS points, so its share is below 1.
+    assert rookie_row.event_share == pytest.approx(1.0)
+    assert star.event_share is not None and star.event_share < 1.0
+    # F2 — durability: 38 - 7 = 31 matchdays left, availability 1.0 (all
+    # starts), so ~31 expected games and a positive rest-of-season projection.
+    assert star.exp_games_remaining == pytest.approx(31.0)
+    assert star.proj_rest_points == pytest.approx(star.ensemble_score * 31.0, abs=0.2)
