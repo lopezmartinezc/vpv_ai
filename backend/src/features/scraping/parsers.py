@@ -117,6 +117,23 @@ def _tag_text(tag: Tag | None) -> str:
     return tag.get_text(strip=True)
 
 
+def _strip_shirt_number(text: str) -> str:
+    """Remove a leading shirt-number prefix from a roster name.
+
+    futbolfantasy prefixes the shirt number to numbered players, e.g.
+    ``"1. Antonio Sivera"`` or ``"25. Wojciech Szczesny"``; without this the
+    number would be stored as part of the player's name. Names without a
+    number ("Jesús Owono") are returned unchanged.
+    """
+    s = text.strip()
+    i = 0
+    while i < len(s) and s[i].isdigit():
+        i += 1
+    if 0 < i < len(s) and s[i] == ".":
+        return s[i + 1 :].strip()
+    return s
+
+
 # ---------------------------------------------------------------------------
 # Parser: teams from homepage
 # ---------------------------------------------------------------------------
@@ -207,7 +224,7 @@ def parse_roster(html: str) -> list[PlayerUrlData]:
                 continue
             seen_slugs.add(slug)
 
-            display_name = _tag_text(anchor) or slug.replace("-", " ").title()
+            display_name = _strip_shirt_number(_tag_text(anchor)) or slug.replace("-", " ").title()
             players.append(
                 PlayerUrlData(
                     slug=slug,
