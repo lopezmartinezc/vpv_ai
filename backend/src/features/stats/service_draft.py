@@ -29,8 +29,118 @@ from src.features.stats.schemas_draft import DraftValuePlayer, DraftValueRespons
 
 logger = logging.getLogger(__name__)
 
-VALID_SEASON_IDS = [5, 6, 7, 8]
 MIN_GAMES = 10
+
+# --- Early-season blend (Liga draft happens at 4-8 matchdays) -------------
+# Empirical-Bayes shrinkage of the current-season average toward the
+# historical prior. Weight on the current signal = n / (n + k). k=4 was
+# picked by an offline backtest over 6 complete seasons (real data): it
+# lifted Spearman vs rest-of-season points from ~0.76 (history-only, the
+# previous behaviour) to ~0.83 at K=4..8 matchdays, beating both the
+# history-only and current-only extremes. The optimum is a flat plateau
+# over k in [2, 6].
+DRAFT_SHRINKAGE_K = 4
+# A current-season player needs at least this many games to be a candidate
+# (below it the 4-8 game sample is pure noise).
+CURRENT_MIN_GAMES = 2
+# A prior season needs at least this many games to be used as a stable prior.
+HISTORY_MIN_GAMES = 3
+# How many prior league seasons to pull as history (plus the current one).
+N_HISTORY_SEASONS = 4
+
+
+@dataclass
+class _Projection:
+    ensemble_score: float
+    career_ensemble: float
+    weight_current: float
+    simple_avg: float
+    second_half_score: float | None
+    productivity_score: float
+    stability_score: float
+    trend_score: float | None
+    career_trend_pct: float | None
+
+
+def project_value(
+    *,
+    hist: list[_PlayerSeason],
+    current: _PlayerSeason,
+    k: float = DRAFT_SHRINKAGE_K,
+) -> _Projection:
+    """Blend the historical ensemble prediction with the current-season
+    (partial) average using empirical-Bayes shrinkage.
+
+    ``hist`` is the player's prior seasons oldest->newest; ``current`` is
+    the current partial season. Returns the blended ``ensemble_score`` plus
+    the pre-blend ``career_ensemble``, the shrinkage ``weight_current`` and
+    the informational component scores (unchanged in meaning). With no
+    history the projection is the current average (weight 1.0).
+    """
+    # --- Component models from history (informational + career ensemble) ---
+    simple_avg_career = hist[-1].avg_pts if hist else current.avg_pts
+
+    second_half_score: float | None = None
+    if hist and hist[-1].second_half_avg > 0:
+        second_half_score = hist[-1].second_half_avg * 0.6 + hist[-1].avg_pts * 0.4
+    elif hist:
+        second_half_score = hist[-1].avg_pts
+
+    prod_ref = hist[-1] if hist else current
+    productivity_score = prod_ref.avg_pts
+    if prod_ref.minutes > 500:
+        ga_per90 = ((prod_ref.goals + prod_ref.assists) / prod_ref.minutes) * 90
+        if ga_per90 > 0.5:
+            productivity_score = prod_ref.avg_pts * (1 + (ga_per90 - 0.5) * 0.3)
+
+    if hist:
+        starter_rates = [s.games_45min / max(s.games, 1) for s in hist]
+        career_avg = statistics.mean(s.avg_pts for s in hist)
+        stability_score = career_avg * (0.8 + statistics.mean(starter_rates) * 0.4)
+    else:
+        stability_score = current.avg_pts * (
+            0.8 + (current.games_45min / max(current.games, 1)) * 0.4
+        )
+
+    trend_score: float | None = None
+    career_trend_pct: float | None = None
+    if len(hist) >= 2 and hist[-2].avg_pts > 0:
+        career_trend_pct = (hist[-1].avg_pts - hist[-2].avg_pts) / hist[-2].avg_pts
+        trend_score = statistics.mean(s.avg_pts for s in hist) * (1 + career_trend_pct * 0.5)
+    elif hist:
+        trend_score = hist[-1].avg_pts
+
+    components = [simple_avg_career, stability_score]
+    if trend_score is not None:
+        components.append(trend_score)
+    if second_half_score is not None:
+        components.append(second_half_score)
+    career_ensemble = statistics.mean(components)
+
+    # --- Shrinkage blend with the current partial season ---
+    n_cur = current.games
+    if not hist:
+        weight_current = 1.0
+        ensemble_score = current.avg_pts
+        blended_simple = current.avg_pts
+    else:
+        weight_current = n_cur / (n_cur + k) if (n_cur + k) > 0 else 0.0
+        ensemble_score = career_ensemble * (1 - weight_current) + current.avg_pts * weight_current
+        blended_simple = (
+            simple_avg_career * (1 - weight_current) + current.avg_pts * weight_current
+        )
+
+    return _Projection(
+        ensemble_score=ensemble_score,
+        career_ensemble=career_ensemble,
+        weight_current=weight_current,
+        simple_avg=blended_simple,
+        second_half_score=second_half_score,
+        productivity_score=productivity_score,
+        stability_score=stability_score,
+        trend_score=trend_score,
+        career_trend_pct=career_trend_pct,
+    )
 
 
 @dataclass
@@ -67,13 +177,19 @@ class DraftValueService:
     async def get_draft_values(
         self,
         season_id: int,
-        min_games: int = MIN_GAMES,
+        min_games: int = CURRENT_MIN_GAMES,
     ) -> DraftValueResponse:
-        """Compute draft value predictions for all players."""
+        """Compute draft value predictions for all players.
 
-        # Load data
+        ``min_games`` is the minimum current-season games for a player to be
+        a draft candidate (the historical prior covers the small sample via
+        shrinkage). Defaults to the draft-window floor, not the old ``10``.
+        """
+
+        # Load data (SQL load floor kept at 1 so the current partial season
+        # is included; candidate/history filtering happens below).
         season_info = await self._get_season_info(season_id)
-        all_data = await self._load_seasons(season_id, min_games)
+        all_data = await self._load_seasons(season_id, min_games=1)
         current_data = [ps for ps in all_data if ps.season_id == season_id]
         history_data = [ps for ps in all_data if ps.season_id != season_id]
 
@@ -92,87 +208,51 @@ class DraftValueService:
         for ps in current_data:
             current_map[ps.slug] = ps
 
-        # Determine draft type
         md_played = season_info["matchday_current"] - season_info["matchday_start"]
-        is_winter = md_played >= 10
-        peso_actual = min(0.9, md_played / 40) if md_played > 0 else 0.0
-        peso_hist = 1 - peso_actual
+        is_winter = md_played >= 19  # informational label only; blend always applies
 
-        # All players to evaluate (current season roster)
-        targets = set(current_map.keys())
+        # Candidates: current-season players with enough games to carry a
+        # signal. The historical prior (via shrinkage) covers the small
+        # 4-8 game sample — that's the whole point of this model.
+        targets = [
+            slug for slug, ps in current_map.items() if ps.games >= min_games
+        ]
 
-        # Compute each model
         results: list[DraftValuePlayer] = []
 
         for slug in targets:
             ps = current_map[slug]
-            hist = history.get(slug, [])
+            # Only reasonably-sampled prior seasons make a stable prior.
+            hist = [h for h in history.get(slug, []) if h.games >= HISTORY_MIN_GAMES]
             seasons_played = len(hist) + 1
 
-            # === Model A: Simple average ===
-            simple_avg = hist[-1].avg_pts if hist else ps.avg_pts
+            proj = project_value(hist=hist, current=ps, k=DRAFT_SHRINKAGE_K)
+            ensemble_score = proj.ensemble_score
+            simple_avg = proj.simple_avg
+            second_half_score = proj.second_half_score
+            productivity_score = proj.productivity_score
+            stability_score = proj.stability_score
+            trend_score = proj.trend_score
+            career_trend_pct = proj.career_trend_pct
+            weight_current = proj.weight_current
 
-            # === Model H: Second half weighted ===
-            second_half_score = None
-            second_half_avg = None
-            if hist and hist[-1].second_half_avg > 0:
-                second_half_avg = hist[-1].second_half_avg
-                second_half_score = hist[-1].second_half_avg * 0.6 + hist[-1].avg_pts * 0.4
-            elif hist:
-                second_half_score = hist[-1].avg_pts
-
-            # === Model I: Productivity ===
-            prod_base = hist[-1].avg_pts if hist else ps.avg_pts
-            ref = hist[-1] if hist else ps
-            if ref.minutes > 500:
-                ga_per90 = ((ref.goals + ref.assists) / ref.minutes) * 90
-                if ga_per90 > 0.5:
-                    prod_base *= 1 + (ga_per90 - 0.5) * 0.3
-            productivity_score = prod_base
-
-            # === Model K: Minutes stability ===
-            if hist:
-                starter_rates = [s.games_45min / max(s.games, 1) for s in hist]
-                avg_starter = statistics.mean(starter_rates)
-                career_avg_k = statistics.mean(s.avg_pts for s in hist)
-                stability_score = career_avg_k * (0.8 + avg_starter * 0.4)
-            else:
-                stability_score = ps.avg_pts * (0.8 + (ps.games_45min / max(ps.games, 1)) * 0.4)
-
-            # === Model C: Career trend ===
-            trend_score = None
-            career_trend_pct = None
-            if len(hist) >= 2 and hist[-2].avg_pts > 0:
-                career_trend_pct = (hist[-1].avg_pts - hist[-2].avg_pts) / hist[-2].avg_pts
-                career_avg_c = statistics.mean(s.avg_pts for s in hist)
-                trend_score = career_avg_c * (1 + career_trend_pct * 0.5)
-            elif hist:
-                trend_score = hist[-1].avg_pts
-
-            # === Model V: Ensemble diverso (WINNER) ===
-            components = [simple_avg, stability_score]
-            if trend_score is not None:
-                components.append(trend_score)
-            if second_half_score is not None:
-                components.append(second_half_score)
-            ensemble_score = statistics.mean(components)
-
-            # Winter blend: mix career prediction with current season
-            if is_winter and peso_actual > 0:
-                career_pred = ensemble_score
-                current_avg = ps.avg_pts
-                ensemble_score = career_pred * peso_hist + current_avg * peso_actual
-                simple_avg = (
-                    hist[-1].avg_pts if hist else 0
-                ) * peso_hist + current_avg * peso_actual
+            second_half_avg = (
+                hist[-1].second_half_avg if (hist and hist[-1].second_half_avg > 0) else None
+            )
 
             # === Signals ===
             availability = ps.games_45min / max(ps.games, 1)
             cv = ps.std_pts / ps.avg_pts if ps.avg_pts > 0 else 1.0
             consistency = max(0, 1 - cv)
 
-            marca = ps.marca_avg if is_winter else (hist[-1].marca_avg if hist else None)
-            as_val = ps.as_avg if is_winter else (hist[-1].as_avg if hist else None)
+            # Prefer the fresh current-season media ratings, fall back to
+            # last season's when the player has no current rating yet.
+            marca = ps.marca_avg if ps.marca_avg is not None else (
+                hist[-1].marca_avg if hist else None
+            )
+            as_val = ps.as_avg if ps.as_avg is not None else (
+                hist[-1].as_avg if hist else None
+            )
 
             # === Draft signal ===
             signal, reasons = self._compute_signal(
@@ -212,24 +292,32 @@ class DraftValueService:
                     assists=ps.assists,
                     signal=signal,
                     signal_reasons=reasons,
+                    weight_current=round(weight_current, 2),
                 )
             )
 
         # Sort by ensemble score
         results.sort(key=lambda p: p.ensemble_score, reverse=True)
 
+        # Season-level summary of how much the current partial season weighs
+        # for a typical full-window candidate (n = md_played).
+        typical_w = md_played / (md_played + DRAFT_SHRINKAGE_K) if md_played > 0 else 0.0
+
         return DraftValueResponse(
             season_id=season_id,
             season_name=season_info["name"],
             matchdays_played=md_played,
             draft_type="winter" if is_winter else "preseason",
-            peso_historico=round(peso_hist, 2),
+            peso_historico=round(1 - typical_w, 2),
             model_info={
-                "ensemble_score": "Ensemble diverso (Spearman 0.718) — MEJOR ranking general",
-                "simple_avg": "Media temporada anterior (Spearman 0.711) — baseline",
-                "second_half_score": "Forma 2a mitad (Spearman 0.712) — momentum",
-                "productivity_score": "G+A per 90 (Spearman 0.712) — productividad ofensiva",
-                "stability_score": "Minutos estables (Bust 10%) — seguridad",
+                "ensemble_score": (
+                    f"Ensemble + blend actual (shrinkage k={DRAFT_SHRINKAGE_K}, "
+                    "Spearman ~0.83 a 4-8 jornadas) — MEJOR ranking"
+                ),
+                "simple_avg": "Media (histórico ⊕ actual, ponderada por muestra)",
+                "second_half_score": "Forma 2a mitad (momentum)",
+                "productivity_score": "G+A per 90 — productividad ofensiva",
+                "stability_score": "Minutos estables — seguridad",
                 "trend_score": "Tendencia interanual — mejora o empeora",
             },
             players=results,
@@ -295,9 +383,26 @@ class DraftValueService:
             "matchday_current": row.matchday_current,
         }
 
+    async def _resolve_season_ids(self, current_season_id: int, n_history: int) -> list[int]:
+        """The current season + up to ``n_history`` prior LEAGUE seasons.
+
+        Tournament seasons (Mundial, Eurocopa) are excluded — the draft-value
+        model is league-only. Replaces the old hardcoded ``[5, 6, 7, 8]``."""
+        result = await self.session.execute(
+            text(
+                "SELECT id FROM seasons "
+                "WHERE kind = 'league' AND id <= :cur "
+                "ORDER BY id DESC LIMIT :lim"
+            ),
+            {"cur": current_season_id, "lim": n_history + 1},
+        )
+        return [row.id for row in result.all()]
+
     async def _load_seasons(self, current_season_id: int, min_games: int) -> list[_PlayerSeason]:
-        # Include current + historical seasons
-        season_ids = [s for s in VALID_SEASON_IDS if s <= current_season_id]
+        # Current + prior league seasons. ``min_games`` is the LOAD floor
+        # (kept low so the current partial season's 4-8 games are included);
+        # candidate/history thresholds are applied later in Python.
+        season_ids = await self._resolve_season_ids(current_season_id, N_HISTORY_SEASONS)
 
         result = await self.session.execute(
             text("""
