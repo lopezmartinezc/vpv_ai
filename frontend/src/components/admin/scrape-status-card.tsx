@@ -157,6 +157,23 @@ export function ScrapeStatusCard({ seasonId }: { seasonId: number }) {
     }
   }
 
+  async function syncRosters() {
+    setBusy("sync");
+    setNote(null);
+    setError(null);
+    try {
+      await apiClient.post(`/seasons/admin/${seasonId}/sync-rosters`, {});
+      setNote(
+        "Sincronización lanzada: fichajes nuevos, cambios de equipo, altas/bajas. " +
+          "Pulsa Actualizar en unos segundos.",
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error sincronizando plantillas");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function clean(part: string, label: string) {
     if (
       !confirm(
@@ -297,6 +314,14 @@ export function ScrapeStatusCard({ seasonId }: { seasonId: number }) {
               className="rounded bg-vpv-bg px-3 py-1.5 text-xs font-medium text-vpv-text transition-colors hover:bg-vpv-border disabled:opacity-50"
             >
               {busy === "calendar" ? "…" : "Calendario"}
+            </button>
+            <button
+              onClick={syncRosters}
+              disabled={busy !== null}
+              title="Fichajes nuevos, cambios de equipo, altas y bajas"
+              className="rounded bg-vpv-bg px-3 py-1.5 text-xs font-medium text-vpv-text transition-colors hover:bg-vpv-border disabled:opacity-50"
+            >
+              {busy === "sync" ? "…" : "Sincronizar plantillas"}
             </button>
           </div>
         </div>

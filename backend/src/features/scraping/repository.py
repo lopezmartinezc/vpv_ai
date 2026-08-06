@@ -436,6 +436,13 @@ class ScrapingRepository:
         await self.session.execute(stmt)
         return len(player_ids)
 
+    async def update_player_team(self, player_id: int, team_id: int) -> None:
+        """Move a player to a new team (real transfer). Only touches the
+        CURRENT team; historical player_stats.team_id stays pinned."""
+        await self.session.execute(
+            update(Player).where(Player.id == player_id).values(team_id=team_id)
+        )
+
     async def get_players_to_enrich(self, season_id: int) -> list[Player]:
         """Return players for *season_id* missing either ``photo_path`` or ``position``.
 

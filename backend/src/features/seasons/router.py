@@ -208,6 +208,20 @@ async def scrape_rosters_only(
     return {"rosters_started": True}
 
 
+@router.post("/admin/{season_id}/sync-rosters", response_model=dict)
+async def sync_rosters(
+    season_id: int,
+    background_tasks: BackgroundTasks,
+    _admin: dict = Depends(get_current_admin),
+    _writable: dict = Depends(require_season_writable),
+) -> dict:
+    """Reconcile rosters with the live source: add new signings, MOVE
+    transferred players to their new team, reactivate returners and
+    soft-deactivate players cut from every squad. Runs in the background."""
+    background_tasks.add_task(_background_sync_rosters, season_id)
+    return {"sync_started": True}
+
+
 @router.post("/admin/{season_id}/clean", response_model=dict)
 async def clean_scraped(
     season_id: int,
@@ -383,6 +397,21 @@ async def _background_rosters(season_id: int) -> None:
         except Exception:
             await session.rollback()
             logger.exception("background_rosters: season_id=%d failed", season_id)
+
+
+async def _background_sync_rosters(season_id: int) -> None:
+    """Reconcile rosters (add/move/reactivate/deactivate) in a fresh session."""
+    from src.core.database import AsyncSessionLocal
+    from src.features.scraping.service import ScrapingService
+
+    async with AsyncSessionLocal() as session:
+        try:
+            result = await ScrapingService(session).sync_rosters(season_id)
+            await session.commit()
+            logger.info("background_sync_rosters: season_id=%d — %s", season_id, result)
+        except Exception:
+            await session.rollback()
+            logger.exception("background_sync_rosters: season_id=%d failed", season_id)
 
 
 async def _background_import_teams(season_id: int, scraping_slug: str) -> None:
