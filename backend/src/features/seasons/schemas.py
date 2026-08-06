@@ -195,6 +195,10 @@ class PhotoDownloadResponse(BaseModel):
     restored: int
 
 
+class SeasonCleanRequest(BaseModel):
+    part: str  # "all" | "calendar" | "rosters" | "teams"
+
+
 class SeasonScrapeStatusResponse(BaseModel):
     """What has been scraped for a season, and the last import result.
 

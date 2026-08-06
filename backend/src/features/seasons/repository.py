@@ -396,6 +396,96 @@ class SeasonRepository(BaseRepository[Season]):
         )
         return (result or 0) > 0
 
+    async def count_game_data(self, season_id: int) -> dict[str, int]:
+        """Count game data that would be orphaned by deleting scraped rows —
+        the safety gate for the clean operation."""
+        from src.shared.models.draft import Draft
+        from src.shared.models.lineup import Lineup
+        from src.shared.models.player_stat import PlayerStat
+
+        stats = await self.session.scalar(
+            select(func.count())
+            .select_from(PlayerStat)
+            .join(Matchday, PlayerStat.matchday_id == Matchday.id)
+            .where(Matchday.season_id == season_id)
+        )
+        lineups = await self.session.scalar(
+            select(func.count())
+            .select_from(Lineup)
+            .join(Matchday, Lineup.matchday_id == Matchday.id)
+            .where(Matchday.season_id == season_id)
+        )
+        drafts = await self.session.scalar(
+            select(func.count()).select_from(Draft).where(Draft.season_id == season_id)
+        )
+        return {
+            "player_stats": stats or 0,
+            "lineups": lineups or 0,
+            "drafts": drafts or 0,
+        }
+
+    async def delete_matches(self, season_id: int) -> int:
+        """Delete all Match rows of a season and clear matchday first_match_at."""
+        from sqlalchemy import delete
+
+        from src.shared.models.matchday import Match
+
+        md_ids = select(Matchday.id).where(Matchday.season_id == season_id)
+        result = await self.session.execute(delete(Match).where(Match.matchday_id.in_(md_ids)))
+        await self.session.execute(
+            update(Matchday).where(Matchday.season_id == season_id).values(first_match_at=None)
+        )
+        return getattr(result, "rowcount", 0) or 0
+
+    async def delete_players(self, season_id: int) -> int:
+        from sqlalchemy import delete
+
+        from src.shared.models.player import Player
+
+        result = await self.session.execute(delete(Player).where(Player.season_id == season_id))
+        return getattr(result, "rowcount", 0) or 0
+
+    async def delete_teams(self, season_id: int) -> int:
+        from sqlalchemy import delete
+
+        from src.shared.models.team import Team
+
+        result = await self.session.execute(delete(Team).where(Team.season_id == season_id))
+        return getattr(result, "rowcount", 0) or 0
+
+    async def count_teams(self, season_id: int) -> int:
+        from src.shared.models.team import Team
+
+        return (
+            await self.session.scalar(
+                select(func.count()).select_from(Team).where(Team.season_id == season_id)
+            )
+            or 0
+        )
+
+    async def count_players(self, season_id: int) -> int:
+        from src.shared.models.player import Player
+
+        return (
+            await self.session.scalar(
+                select(func.count()).select_from(Player).where(Player.season_id == season_id)
+            )
+            or 0
+        )
+
+    async def count_matches(self, season_id: int) -> int:
+        from src.shared.models.matchday import Match
+
+        return (
+            await self.session.scalar(
+                select(func.count())
+                .select_from(Match)
+                .join(Matchday, Match.matchday_id == Matchday.id)
+                .where(Matchday.season_id == season_id)
+            )
+            or 0
+        )
+
     async def get_scrape_status_counts(self, season_id: int) -> dict[str, Any]:
         """Live counts of what has been imported/scraped for a season."""
         from src.shared.models.matchday import Match

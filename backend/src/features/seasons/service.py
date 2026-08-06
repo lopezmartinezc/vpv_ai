@@ -349,6 +349,46 @@ class SeasonService:
             last_import_detail=(last_import or {}).get("detail"),
         )
 
+    async def clean_scraped(self, season_id: int, part: str) -> dict[str, int]:
+        """Delete scraped rows for a season so it can be re-imported cleanly.
+
+        ``part`` ∈ {"all", "calendar", "rosters", "teams"}. Guarded twice:
+        the season must be in ``setup``, and it must have no game data
+        (player_stats / lineups / drafts) that a delete would orphan.
+        """
+        if part not in ("all", "calendar", "rosters", "teams"):
+            raise BusinessRuleError(f"Parte desconocida: {part}")
+
+        season = await self.get_season(season_id)
+        if season.status != "setup":
+            raise BusinessRuleError("Solo se puede limpiar una temporada en estado 'setup'.")
+        game = await self.repo.count_game_data(season_id)
+        if any(game.values()):
+            raise BusinessRuleError(
+                "No se puede limpiar: la temporada ya tiene datos de juego "
+                f"({game['player_stats']} stats, {game['lineups']} alineaciones, "
+                f"{game['drafts']} drafts). Bórralos antes si de verdad quieres resetear."
+            )
+
+        deleted = {"matches": 0, "players": 0, "teams": 0}
+        if part in ("calendar", "all"):
+            deleted["matches"] = await self.repo.delete_matches(season_id)
+        if part in ("rosters", "all"):
+            deleted["players"] = await self.repo.delete_players(season_id)
+        if part in ("teams", "all"):
+            # Teams are referenced by players and matches — those must be gone.
+            if part == "teams" and (
+                await self.repo.count_players(season_id)
+                or await self.repo.count_matches(season_id)
+            ):
+                raise BusinessRuleError(
+                    "Limpia primero el calendario y las plantillas antes que los equipos."
+                )
+            deleted["teams"] = await self.repo.delete_teams(season_id)
+
+        await self.repo.session.commit()
+        return deleted
+
     async def download_photos(self, season_id: int) -> dict[str, int]:
         """Download player photos for a season."""
         await self.get_season(season_id)
