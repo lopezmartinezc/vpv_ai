@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "@/lib/api-client";
 import { PlayoffsCard } from "@/components/admin/playoffs-card";
+import { ScrapeStatusCard } from "@/components/admin/scrape-status-card";
 
 interface Season {
   id: number;
@@ -1426,6 +1427,9 @@ export default function AdminTemporadasPage() {
               )}
             </div>
           </div>
+
+          {/* What has been scraped for this season + last import result */}
+          <ScrapeStatusCard seasonId={season.id} />
 
           {/* Playoffs — torneo = 1 playoff. Liga = Apertura + Clausura */}
           {season.kind === "tournament" && (

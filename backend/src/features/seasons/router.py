@@ -20,6 +20,7 @@ from src.features.seasons.schemas import (
     SeasonInitializeResponse,
     SeasonParticipantResponse,
     SeasonPaymentResponse,
+    SeasonScrapeStatusResponse,
     SeasonSummary,
     SeasonUpdateRequest,
     ValidFormationResponse,
@@ -148,6 +149,35 @@ async def initialize_season(
     result.scraping_started = True
 
     return result
+
+
+@router.get("/admin/{season_id}/scrape-status", response_model=SeasonScrapeStatusResponse)
+async def get_scrape_status(
+    season_id: int,
+    service: SeasonService = Depends(_get_service),
+    _admin: dict = Depends(get_current_admin),
+) -> SeasonScrapeStatusResponse:
+    """What has been scraped for this season (teams/players/calendar/photos)
+    and the result of the last team import."""
+    return await service.get_scrape_status(season_id)
+
+
+@router.post("/admin/{season_id}/reimport", response_model=dict)
+async def reimport_teams(
+    season_id: int,
+    background_tasks: BackgroundTasks,
+    service: SeasonService = Depends(_get_service),
+    _admin: dict = Depends(get_current_admin),
+    _writable: dict = Depends(require_season_writable),
+) -> dict:
+    """Re-run the team/player/calendar import for an existing season.
+
+    Idempotent: create_team/create_player skip rows that already exist via
+    their unique constraints. Runs in the background; poll scrape-status."""
+    season = await service.get_season(season_id)
+    slug = season.scraping_slug or ""
+    background_tasks.add_task(_background_import_teams, season_id, slug)
+    return {"reimport_started": True}
 
 
 @router.put("/admin/{season_id}", response_model=SeasonDetail)
@@ -299,8 +329,10 @@ async def set_edit_unlock(
 
 
 async def _background_import_teams(season_id: int, scraping_slug: str) -> None:
-    """Run team/player/calendar import in a fresh DB session."""
+    """Run team/player/calendar import in a fresh DB session, then persist a
+    ``import_setup`` scraping-log row so the admin can see the result."""
     from src.core.database import AsyncSessionLocal
+    from src.features.scraping.log_repository import ScrapingLogRepository
     from src.features.scraping.service import ScrapingService
 
     async with AsyncSessionLocal() as session:
@@ -313,6 +345,26 @@ async def _background_import_teams(season_id: int, scraping_slug: str) -> None:
                 season_id,
                 result,
             )
-        except Exception:
+            await ScrapingLogRepository.write_log(
+                {
+                    "season_id": season_id,
+                    "job_type": "import_setup",
+                    "status": "ok",
+                    "message": (
+                        f"{result['teams']} equipos, {result['players']} jugadores, "
+                        f"{result['matches']} partidos"
+                    ),
+                    "detail": result,
+                }
+            )
+        except Exception as exc:
             await session.rollback()
             logger.exception("background_import_teams: season_id=%d failed", season_id)
+            await ScrapingLogRepository.write_log(
+                {
+                    "season_id": season_id,
+                    "job_type": "import_setup",
+                    "status": "error",
+                    "message": f"Import falló: {exc}",
+                }
+            )

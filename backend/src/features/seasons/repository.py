@@ -395,3 +395,60 @@ class SeasonRepository(BaseRepository[Season]):
             select(func.count()).select_from(Season).where(Season.name == name)
         )
         return (result or 0) > 0
+
+    async def get_scrape_status_counts(self, season_id: int) -> dict[str, Any]:
+        """Live counts of what has been imported/scraped for a season."""
+        from src.shared.models.matchday import Match
+        from src.shared.models.player import Player
+        from src.shared.models.team import Team
+
+        teams = await self.session.scalar(
+            select(func.count()).select_from(Team).where(Team.season_id == season_id)
+        )
+
+        players_row = (
+            await self.session.execute(
+                select(
+                    func.count(Player.id),
+                    func.count(Player.id).filter(Player.position != ""),
+                    func.count(Player.id).filter(Player.photo_path.isnot(None)),
+                ).where(Player.season_id == season_id)
+            )
+        ).one()
+
+        md_row = (
+            await self.session.execute(
+                select(
+                    func.count(Matchday.id),
+                    func.count(Matchday.id).filter(Matchday.counts.is_(True)),
+                    func.count(Matchday.id).filter(Matchday.first_match_at.isnot(None)),
+                ).where(Matchday.season_id == season_id)
+            )
+        ).one()
+
+        match_row = (
+            await self.session.execute(
+                select(
+                    func.count(Match.id),
+                    func.count(Match.id).filter(Match.home_score.isnot(None)),
+                    func.min(Match.played_at),
+                    func.max(Match.played_at),
+                )
+                .join(Matchday, Match.matchday_id == Matchday.id)
+                .where(Matchday.season_id == season_id)
+            )
+        ).one()
+
+        return {
+            "teams": teams or 0,
+            "players_total": players_row[0],
+            "players_with_position": players_row[1],
+            "players_with_photo": players_row[2],
+            "matchdays_total": md_row[0],
+            "matchdays_counting": md_row[1],
+            "matchdays_with_fixtures": md_row[2],
+            "matches_total": match_row[0],
+            "matches_with_result": match_row[1],
+            "first_match_at": match_row[2],
+            "last_match_at": match_row[3],
+        }
