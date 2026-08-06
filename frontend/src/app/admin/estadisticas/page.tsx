@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiClient } from "@/lib/api-client";
 import { DraftRetroTab } from "@/components/admin/draft-retro-tab";
+import { StatsGuide } from "@/components/admin/stats-guide";
 import type {
   PlayerStatRow,
   PlayerStatsResponse,
@@ -57,6 +58,7 @@ const STAT_TABS = [
   { key: "avanzado", label: "Avanzado" },
   { key: "draft", label: "Draft Valor" },
   { key: "retro", label: "Draft Retro" },
+  { key: "guia", label: "📖 Guía" },
 ] as const;
 
 type StatTab = (typeof STAT_TABS)[number]["key"];
@@ -2431,6 +2433,7 @@ export default function AdminEstadisticasPage() {
           {activeTab === "retro" && (
             <DraftRetroTab seasons={seasons} defaultSeasonId={selectedSeasonId} />
           )}
+          {activeTab === "guia" && <StatsGuide />}
           {activeTab === "avanzado" && (
             <div className="space-y-4">
               {/* Advanced sub-tabs */}
