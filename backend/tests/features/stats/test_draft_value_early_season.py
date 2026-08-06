@@ -107,3 +107,12 @@ async def test_draft_values_blend_at_six_matchdays(db_session) -> None:
     assert rookie_row.seasons_played == 1
 
     assert resp.matchdays_played == 6
+
+    # Draft board: every player gets a VORP + position rank, and the board is
+    # sorted by VORP (cross-position). Both candidates are MED, so replacement
+    # is the weaker one -> its VORP is 0 and the stronger one's is positive.
+    assert all(p.vorp is not None and p.position_rank is not None for p in resp.players)
+    assert resp.players == sorted(resp.players, key=lambda p: p.vorp, reverse=True)
+    med = [p for p in resp.players if p.position == "MED"]
+    assert min(p.vorp for p in med) == pytest.approx(0.0)
+    assert max(p.vorp for p in med) > 0

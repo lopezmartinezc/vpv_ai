@@ -64,6 +64,14 @@ class DraftValuePlayer(BaseModel):
     # player: n_current / (n_current + k). 1.0 = no history, pure current.
     weight_current: float | None = None
 
+    # Draft board (VORP): projected value above the positional replacement
+    # level, so DEF/MED/DEL/POR are comparable on a single cross-position
+    # axis — the master sort of the draft board. position_rank is 1-based
+    # within the player's position.
+    vorp: float | None = None
+    replacement_level: float | None = None
+    position_rank: int | None = None
+
 
 class DraftValueResponse(BaseModel):
     season_id: int

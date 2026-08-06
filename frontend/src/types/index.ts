@@ -1094,6 +1094,11 @@ export interface DraftValuePlayer {
   assists: number;
   signal: string;
   signal_reasons: string[];
+  weight_current?: number | null;
+  // Draft board: value over positional replacement (cross-position axis).
+  vorp?: number | null;
+  replacement_level?: number | null;
+  position_rank?: number | null;
 }
 
 export interface DraftValueResponse {
