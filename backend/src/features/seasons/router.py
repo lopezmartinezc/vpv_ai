@@ -14,6 +14,7 @@ from src.features.seasons.schemas import (
     PhotoDownloadResponse,
     ScoringRuleResponse,
     ScoringRulesBatchUpdate,
+    SeasonCleanRequest,
     SeasonDetail,
     SeasonFinalizeResponse,
     SeasonInitializeRequest,
@@ -180,6 +181,47 @@ async def reimport_teams(
     return {"reimport_started": True}
 
 
+@router.post("/admin/{season_id}/scrape/teams", response_model=dict)
+async def scrape_teams_only(
+    season_id: int,
+    db: AsyncSession = Depends(get_db),
+    _admin: dict = Depends(get_current_admin),
+    _writable: dict = Depends(require_season_writable),
+) -> dict:
+    """Scrape only the teams from the homepage (idempotent, synchronous)."""
+    from src.features.scraping.service import ScrapingService
+
+    result = await ScrapingService(db).import_teams_only(season_id)
+    await db.commit()
+    return result
+
+
+@router.post("/admin/{season_id}/scrape/rosters", response_model=dict)
+async def scrape_rosters_only(
+    season_id: int,
+    background_tasks: BackgroundTasks,
+    _admin: dict = Depends(get_current_admin),
+    _writable: dict = Depends(require_season_writable),
+) -> dict:
+    """Re-fetch every team's roster and create missing players (background)."""
+    background_tasks.add_task(_background_rosters, season_id)
+    return {"rosters_started": True}
+
+
+@router.post("/admin/{season_id}/clean", response_model=dict)
+async def clean_scraped(
+    season_id: int,
+    body: SeasonCleanRequest,
+    service: SeasonService = Depends(_get_service),
+    _admin: dict = Depends(get_current_admin),
+    _writable: dict = Depends(require_season_writable),
+) -> dict:
+    """Delete scraped rows (all / calendar / rosters / teams) so the season
+    can be re-imported cleanly. Only allowed on a 'setup' season with no
+    game data."""
+    return await service.clean_scraped(season_id, body.part)
+
+
 @router.put("/admin/{season_id}", response_model=SeasonDetail)
 async def update_season(
     season_id: int,
@@ -326,6 +368,21 @@ async def set_edit_unlock(
 # ---------------------------------------------------------------------------
 # Background task for team/player import
 # ---------------------------------------------------------------------------
+
+
+async def _background_rosters(season_id: int) -> None:
+    """Re-fetch rosters for a season in a fresh DB session."""
+    from src.core.database import AsyncSessionLocal
+    from src.features.scraping.service import ScrapingService
+
+    async with AsyncSessionLocal() as session:
+        try:
+            result = await ScrapingService(session).import_rosters_only(season_id)
+            await session.commit()
+            logger.info("background_rosters: season_id=%d — %s", season_id, result)
+        except Exception:
+            await session.rollback()
+            logger.exception("background_rosters: season_id=%d failed", season_id)
 
 
 async def _background_import_teams(season_id: int, scraping_slug: str) -> None:

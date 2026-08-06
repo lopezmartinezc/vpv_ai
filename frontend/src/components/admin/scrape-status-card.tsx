@@ -125,6 +125,65 @@ export function ScrapeStatusCard({ seasonId }: { seasonId: number }) {
     }
   }
 
+  async function scrapeTeams() {
+    setBusy("teams");
+    setNote(null);
+    setError(null);
+    try {
+      const res = await apiClient.post<Record<string, number>>(
+        `/seasons/admin/${seasonId}/scrape/teams`,
+        {},
+      );
+      setNote(`Equipos: ${res.teams ?? 0} creados.`);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error scrapeando equipos");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function scrapeRosters() {
+    setBusy("rosters");
+    setNote(null);
+    setError(null);
+    try {
+      await apiClient.post(`/seasons/admin/${seasonId}/scrape/rosters`, {});
+      setNote("Plantillas lanzadas en segundo plano. Pulsa Actualizar en unos segundos.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error scrapeando plantillas");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function clean(part: string, label: string) {
+    if (
+      !confirm(
+        `Limpiar ${label}? Borra datos scrapeados (solo permitido en estado 'setup' sin datos de juego).`,
+      )
+    )
+      return;
+    setBusy(`clean-${part}`);
+    setNote(null);
+    setError(null);
+    try {
+      const res = await apiClient.post<Record<string, number>>(
+        `/seasons/admin/${seasonId}/clean`,
+        { part },
+      );
+      setNote(
+        `Limpiado: ${res.matches ?? 0} partidos, ${res.players ?? 0} jugadores, ` +
+          `${res.teams ?? 0} equipos.`,
+      );
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error limpiando");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const s = status;
   const teamsState: State = !s || s.teams === 0 ? "empty" : "ok";
   const squadState: State = !s || s.players_total === 0
@@ -205,21 +264,78 @@ export function ScrapeStatusCard({ seasonId }: { seasonId: number }) {
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={reimport}
-          disabled={busy !== null}
-          className="rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          {busy === "reimport" ? "Lanzando…" : "Re-importar equipos"}
-        </button>
-        <button
-          onClick={syncCalendar}
-          disabled={busy !== null}
-          className="rounded bg-vpv-bg px-3 py-1.5 text-xs font-medium text-vpv-text transition-colors hover:bg-vpv-border disabled:opacity-50"
-        >
-          {busy === "calendar" ? "Sincronizando…" : "Sincronizar calendario"}
-        </button>
+      <div className="space-y-2">
+        <div>
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-vpv-text-muted">
+            Scrapear
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={reimport}
+              disabled={busy !== null}
+              className="rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+            >
+              {busy === "reimport" ? "Lanzando…" : "Todo (equipos+plantillas+calendario)"}
+            </button>
+            <button
+              onClick={scrapeTeams}
+              disabled={busy !== null}
+              className="rounded bg-vpv-bg px-3 py-1.5 text-xs font-medium text-vpv-text transition-colors hover:bg-vpv-border disabled:opacity-50"
+            >
+              {busy === "teams" ? "…" : "Equipos"}
+            </button>
+            <button
+              onClick={scrapeRosters}
+              disabled={busy !== null}
+              className="rounded bg-vpv-bg px-3 py-1.5 text-xs font-medium text-vpv-text transition-colors hover:bg-vpv-border disabled:opacity-50"
+            >
+              {busy === "rosters" ? "…" : "Plantillas"}
+            </button>
+            <button
+              onClick={syncCalendar}
+              disabled={busy !== null}
+              className="rounded bg-vpv-bg px-3 py-1.5 text-xs font-medium text-vpv-text transition-colors hover:bg-vpv-border disabled:opacity-50"
+            >
+              {busy === "calendar" ? "…" : "Calendario"}
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-red-400/80">
+            Limpiar (solo en estado setup)
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => clean("all", "TODO lo scrapeado")}
+              disabled={busy !== null}
+              className="rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+            >
+              {busy === "clean-all" ? "Limpiando…" : "Todo"}
+            </button>
+            <button
+              onClick={() => clean("calendar", "el calendario")}
+              disabled={busy !== null}
+              className="rounded border border-red-500/40 px-3 py-1.5 text-xs font-medium text-red-300 transition-colors hover:bg-red-500/10 disabled:opacity-50"
+            >
+              {busy === "clean-calendar" ? "…" : "Calendario"}
+            </button>
+            <button
+              onClick={() => clean("rosters", "las plantillas")}
+              disabled={busy !== null}
+              className="rounded border border-red-500/40 px-3 py-1.5 text-xs font-medium text-red-300 transition-colors hover:bg-red-500/10 disabled:opacity-50"
+            >
+              {busy === "clean-rosters" ? "…" : "Plantillas"}
+            </button>
+            <button
+              onClick={() => clean("teams", "los equipos")}
+              disabled={busy !== null}
+              className="rounded border border-red-500/40 px-3 py-1.5 text-xs font-medium text-red-300 transition-colors hover:bg-red-500/10 disabled:opacity-50"
+            >
+              {busy === "clean-teams" ? "…" : "Equipos"}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

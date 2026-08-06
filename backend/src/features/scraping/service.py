@@ -1870,6 +1870,39 @@ class ScrapingService:
         )
         return {"teams": teams_created, "players": players_created, "matches": matches_created}
 
+    async def import_teams_only(self, season_id: int) -> dict[str, int]:
+        """Scrape ONLY the teams from the homepage (idempotent). Lets the
+        admin import parts of a season setup separately."""
+        base_url = self._settings.scraping_base_url
+        season = await self.repo.get_season(season_id)
+        if season is None:
+            logger.error("import_teams_only: season_id=%d not found", season_id)
+            return {"teams": 0}
+        if season.kind == "tournament":
+            prefix = competition_url_prefix(season.kind, season.tournament_type)
+            homepage_url = f"{base_url}/{prefix}/home"
+        else:
+            homepage_url = base_url
+
+        async with ScrapingClient() as client:
+            try:
+                homepage_html = await client.fetch(homepage_url)
+            except ScrapingError as exc:
+                logger.error("import_teams_only: homepage fetch failed: %s", exc)
+                return {"teams": 0}
+
+        team_data_list = parse_teams(homepage_html)
+        existing = {t.slug for t in await self.repo.get_teams_by_season(season_id)}
+        created = 0
+        for td in team_data_list:
+            if td.slug in existing:
+                continue
+            await self.repo.create_team(season_id=season_id, name=td.name, slug=td.slug)
+            existing.add(td.slug)
+            created += 1
+        await self.session.flush()
+        return {"teams": created}
+
     # ==================================================================
     # Marca rating (admin tool for tournaments where futbolfantasy
     # ships everyone as "SC").
