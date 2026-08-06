@@ -14,6 +14,7 @@ from src.features.seasons.schemas import (
     SeasonInitializeRequest,
     SeasonInitializeResponse,
     SeasonPaymentResponse,
+    SeasonScrapeStatusResponse,
 )
 from src.shared.models.season import ScoringRule, Season, SeasonPayment, ValidFormation
 
@@ -323,6 +324,29 @@ class SeasonService:
             payments_copied=payments_copied,
             matchdays_created=matchdays_created,
             scraping_started=False,
+        )
+
+    async def get_scrape_status(self, season_id: int) -> SeasonScrapeStatusResponse:
+        """What has been scraped for a season + the last import result."""
+        from src.features.scraping.log_repository import ScrapingLogRepository
+
+        await self.get_season(season_id)  # 404 if missing
+        counts = await self.repo.get_scrape_status_counts(season_id)
+
+        last_import: dict | None = None
+        rows = await ScrapingLogRepository(self.repo.session).query(
+            season_id=season_id, job_type="import_setup", limit=1
+        )
+        if rows:
+            last_import = rows[0]
+
+        return SeasonScrapeStatusResponse(
+            season_id=season_id,
+            **counts,
+            last_import_at=(last_import or {}).get("created_at"),
+            last_import_status=(last_import or {}).get("status"),
+            last_import_message=(last_import or {}).get("message"),
+            last_import_detail=(last_import or {}).get("detail"),
         )
 
     async def download_photos(self, season_id: int) -> dict[str, int]:

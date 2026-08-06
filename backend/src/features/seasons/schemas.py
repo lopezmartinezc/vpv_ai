@@ -195,5 +195,31 @@ class PhotoDownloadResponse(BaseModel):
     restored: int
 
 
+class SeasonScrapeStatusResponse(BaseModel):
+    """What has been scraped for a season, and the last import result.
+
+    Counts are a live snapshot derived from the DB (the source of truth of
+    what actually got imported); ``last_import_*`` comes from the persisted
+    ``import_setup`` scraping-log row.
+    """
+
+    season_id: int
+    teams: int
+    players_total: int
+    players_with_position: int
+    players_with_photo: int
+    matchdays_total: int
+    matchdays_counting: int
+    matchdays_with_fixtures: int
+    matches_total: int
+    matches_with_result: int
+    first_match_at: datetime | None = None
+    last_match_at: datetime | None = None
+    last_import_at: datetime | None = None
+    last_import_status: str | None = None  # "ok" | "error"
+    last_import_message: str | None = None
+    last_import_detail: dict[str, Any] | None = None
+
+
 class SeasonFinalizeResponse(BaseModel):
     season: SeasonDetail
