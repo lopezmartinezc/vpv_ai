@@ -1884,7 +1884,8 @@ const SIGNAL_BADGE: Record<string, { bg: string; text: string; label: string }> 
 type DraftSortKey = keyof DraftValuePlayer;
 
 const DRAFT_COLS: { key: DraftSortKey; label: string; title: string; w: string }[] = [
-  { key: "ensemble_score", label: "Ens", title: "Ensemble: Media de 4 modelos (mejor predictor, Spearman 0.718)", w: "w-14" },
+  { key: "vorp", label: "VORP", title: "Valor sobre reemplazo posicional: valor proyectado por encima del jugador de reemplazo en su posición. Compara DEF/MED/DEL/POR en un solo eje — la columna maestra del tablero.", w: "w-14" },
+  { key: "ensemble_score", label: "Ens", title: "Ensemble: valor proyectado (histórico + actual, shrinkage k=4)", w: "w-14" },
   { key: "simple_avg", label: "Avg", title: "Media simple: pts/partido temporada anterior (baseline)", w: "w-14" },
   { key: "second_half_score", label: "Form", title: "Forma 2a mitad: rendimiento J20-J38 (predice siguiente temporada)", w: "w-14" },
   { key: "stability_score", label: "Stab", title: "Estabilidad: minutos altos y constantes (menor riesgo busto)", w: "w-14" },
@@ -1898,7 +1899,7 @@ function DraftValueTab({ seasonId }: { seasonId: number }) {
   const [data, setData] = useState<DraftValueResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [posFilter, setPosFilter] = useState("");
-  const [sortKey, setSortKey] = useState<DraftSortKey>("ensemble_score");
+  const [sortKey, setSortKey] = useState<DraftSortKey>("vorp");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [signalFilter, setSignalFilter] = useState("");
   const [expandedId, setExpandedId] = useState<number | null>(null);

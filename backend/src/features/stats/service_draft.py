@@ -40,6 +40,11 @@ MIN_GAMES = 10
 # history-only and current-only extremes. The optimum is a flat plateau
 # over k in [2, 6].
 DRAFT_SHRINKAGE_K = 4
+# Positional replacement depth for VORP: the rank (per position) whose
+# projected value defines "replacement level" — how deep the draftable pool
+# goes at each position. Mirrors the historical PAR thresholds in
+# service_advanced so the draft board and the PAR tab agree.
+_REPLACEMENT_RANK: dict[str, int] = {"POR": 35, "DEF": 90, "MED": 90, "DEL": 70}
 # A current-season player needs at least this many games to be a candidate
 # (below it the 4-8 game sample is pure noise).
 CURRENT_MIN_GAMES = 2
@@ -294,8 +299,27 @@ class DraftValueService:
                 )
             )
 
-        # Sort by ensemble score
-        results.sort(key=lambda p: p.ensemble_score, reverse=True)
+        # === Draft board: VORP (value over positional replacement) ===
+        # Make positions comparable on one axis: subtract each position's
+        # replacement level (the projected value of the Nth-best player at
+        # that position — the depth of the draftable pool) from the player's
+        # projected value. Mirrors the historical PAR definition but uses the
+        # forward-looking blend.
+        by_pos: dict[str, list[DraftValuePlayer]] = defaultdict(list)
+        for r in results:
+            by_pos[r.position].append(r)
+        for pos, plist in by_pos.items():
+            plist.sort(key=lambda p: p.ensemble_score, reverse=True)
+            repl_rank = _REPLACEMENT_RANK.get(pos, len(plist))
+            idx = min(repl_rank, len(plist) - 1)
+            replacement = plist[idx].ensemble_score if plist else 0.0
+            for rank, p in enumerate(plist, start=1):
+                p.replacement_level = round(replacement, 2)
+                p.vorp = round(p.ensemble_score - replacement, 2)
+                p.position_rank = rank
+
+        # Sort by VORP (cross-position draft value); ensemble as tie-breaker.
+        results.sort(key=lambda p: (p.vorp or 0.0, p.ensemble_score), reverse=True)
 
         # Season-level summary of how much the current partial season weighs
         # for a typical full-window candidate (n = md_played).
