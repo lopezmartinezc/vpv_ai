@@ -1716,10 +1716,15 @@ class ScrapingService:
             team_data_list = parse_teams(homepage_html)
             logger.info("import_teams_and_players: parsed %d teams", len(team_data_list))
 
-            # 2. Create Team rows and build lookup
-            team_slug_to_id: dict[str, int] = {}
-            team_name_to_id: dict[str, int] = {}
+            # 2. Create Team rows and build lookup. Seed from EXISTING teams
+            # so a re-import reuses them instead of violating the
+            # (season_id, slug) unique constraint.
+            existing_teams = await self.repo.get_teams_by_season(season_id)
+            team_slug_to_id: dict[str, int] = {t.slug: t.id for t in existing_teams}
+            team_name_to_id: dict[str, int] = {t.name: t.id for t in existing_teams}
             for td in team_data_list:
+                if td.slug in team_slug_to_id:
+                    continue
                 team = await self.repo.create_team(season_id=season_id, name=td.name, slug=td.slug)
                 team_slug_to_id[td.slug] = team.id
                 team_name_to_id[td.name] = team.id
@@ -1741,6 +1746,9 @@ class ScrapingService:
             roster_prefix = competition_url_prefix(
                 season_for_url.kind, season_for_url.tournament_type
             )
+            # Skip players already imported (idempotent re-import) and guard
+            # against the same slug appearing in two rosters within one run.
+            existing_slugs = await self.repo.get_player_slugs_by_season(season_id)
             for td in team_data_list:
                 team_id = team_slug_to_id[td.slug]
                 roster_url = f"{base_url}/{roster_prefix}/equipos/{td.slug}/plantilla"
@@ -1762,6 +1770,8 @@ class ScrapingService:
                     )
                     continue
                 for player_data in roster:
+                    if player_data.slug in existing_slugs:
+                        continue
                     position = self._POSITION_MAP.get(player_data.position, player_data.position)
                     display_name = (
                         player_data.display_name or player_data.slug.replace("-", " ").title()
@@ -1774,6 +1784,7 @@ class ScrapingService:
                         slug=player_data.slug,
                         position=position,
                     )
+                    existing_slugs.add(player_data.slug)
                     players_created += 1
 
                 logger.info("import_teams_and_players: %s → %d players", td.name, len(roster))
@@ -1807,9 +1818,14 @@ class ScrapingService:
         result = await self.session.execute(stmt)
         md_number_to_id = {row.number: row.id for row in result.all()}
 
+        # Skip fixtures already created (idempotent re-import).
+        existing_source_ids = await self.repo.get_match_source_ids_by_season(season_id)
+
         for cal_match in cal_matches:
             matchday_id = md_number_to_id.get(cal_match.matchday_number)
             if matchday_id is None:
+                continue
+            if cal_match.source_id in existing_source_ids:
                 continue
 
             home_id = team_name_to_id.get(cal_match.home_team_name)
@@ -1836,6 +1852,8 @@ class ScrapingService:
                 source_url=source_url,
                 played_at=played_at,
             )
+            if cal_match.source_id is not None:
+                existing_source_ids.add(cal_match.source_id)
             matches_created += 1
 
         await self.session.flush()
