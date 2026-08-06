@@ -555,6 +555,24 @@ class ScrapingRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars())
 
+    async def get_player_slugs_by_season(self, season_id: int) -> set[str]:
+        """Existing player slugs for a season — used to make the roster
+        import idempotent (skip already-imported players on re-runs)."""
+        result = await self.session.execute(
+            select(Player.slug).where(Player.season_id == season_id)
+        )
+        return {row[0] for row in result.all()}
+
+    async def get_match_source_ids_by_season(self, season_id: int) -> set[int]:
+        """Existing match ``source_id`` values for a season — used to make
+        the calendar import idempotent (skip already-created fixtures)."""
+        result = await self.session.execute(
+            select(Match.source_id)
+            .join(Matchday, Match.matchday_id == Matchday.id)
+            .where(Matchday.season_id == season_id, Match.source_id.isnot(None))
+        )
+        return {row[0] for row in result.all()}
+
     # ------------------------------------------------------------------
     # CRC persistence (file-based, not in DB) — legacy homepage CRC
     # ------------------------------------------------------------------
