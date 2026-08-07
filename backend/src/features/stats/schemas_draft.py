@@ -93,6 +93,12 @@ class DraftValuePlayer(BaseModel):
     is_new: bool = False  # no prior-season history
     team_changed: bool = False  # roster team differs from last historical season
     position_changed: bool = False  # roster position differs from last historical season
+    # Risk flags (scorecard). is_peak_year: last season well above career avg
+    #   (regression risk). is_penalty_taker: DEL who took penalties last season
+    #   (ceiling bonus, ~44% persists). is_bench_risk: rotation/availability risk.
+    is_peak_year: bool = False
+    is_penalty_taker: bool = False
+    is_bench_risk: bool = False
 
 
 class DraftValueResponse(BaseModel):

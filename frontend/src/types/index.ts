@@ -1111,6 +1111,9 @@ export interface DraftValuePlayer {
   is_new?: boolean;
   team_changed?: boolean;
   position_changed?: boolean;
+  is_peak_year?: boolean;
+  is_penalty_taker?: boolean;
+  is_bench_risk?: boolean;
 }
 
 export interface DraftValueResponse {
