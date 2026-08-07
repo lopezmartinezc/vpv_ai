@@ -43,17 +43,28 @@ import type {
 // Sub-tabs
 // ---------------------------------------------------------------------------
 
-const STAT_TABS = [
+// Top-level tabs grouped by *use* (see docs / plan): the draft board, the
+// performance browser (several lenses over the same data), draft analysis,
+// and the metrics guide. Weekly xPts lives in its own page (/admin/predicciones).
+const MAIN_TABS = [
+  { key: "draft", label: "Draft" },
+  { key: "rendimiento", label: "Rendimiento" },
+  { key: "analisis", label: "Análisis" },
+  { key: "guia", label: "📖 Guía" },
+] as const;
+
+type MainTab = (typeof MAIN_TABS)[number]["key"];
+
+// Lenses inside "Rendimiento" — same job (understand performance), different cut.
+const PERF_LENSES = [
   { key: "jugadores", label: "Jugadores" },
   { key: "participantes", label: "Participantes" },
   { key: "liga", label: "Liga" },
   { key: "avanzado", label: "Avanzado" },
-  { key: "draft", label: "Draft Valor" },
-  { key: "retro", label: "Draft Retro" },
-  { key: "guia", label: "📖 Guía" },
+  { key: "contexto", label: "Contexto" },
 ] as const;
 
-type StatTab = (typeof STAT_TABS)[number]["key"];
+type PerfLens = (typeof PERF_LENSES)[number]["key"];
 
 interface SeasonOption {
   id: number;
@@ -79,7 +90,8 @@ function ErrorBanner({ message }: { message: string }) {
 export default function AdminEstadisticasPage() {
   const [seasons, setSeasons] = useState<SeasonOption[]>([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<StatTab>("jugadores");
+  const [activeTab, setActiveTab] = useState<MainTab>("rendimiento");
+  const [perfLens, setPerfLens] = useState<PerfLens>("jugadores");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -96,7 +108,6 @@ export default function AdminEstadisticasPage() {
     [],
   );
   const [dependencyData, setDependencyData] = useState<TeamDependencyEntry[]>([]);
-  const [advSubTab, setAdvSubTab] = useState<"valoracion" | "contexto">("valoracion");
   const [tabLoading, setTabLoading] = useState(false);
 
   const fetchSeasons = useCallback(async () => {
@@ -120,30 +131,32 @@ export default function AdminEstadisticasPage() {
     fetchSeasons();
   }, [fetchSeasons]);
 
-  const fetchTabData = useCallback(
-    async (tab: StatTab, seasonId: number) => {
+  // Only the "Rendimiento" lenses need a page-level fetch; Draft/Análisis
+  // self-fetch inside their components and Guía is static.
+  const fetchLensData = useCallback(
+    async (lens: PerfLens, seasonId: number) => {
       setTabLoading(true);
       setError(null);
       try {
-        if (tab === "jugadores") {
+        if (lens === "jugadores") {
           const data = await apiClient.get<PlayerStatsResponse>(
             `/stats/${seasonId}/players`,
           );
           setPlayers(data.players);
-        } else if (tab === "participantes") {
+        } else if (lens === "participantes") {
           const data = await apiClient.get<ParticipantStatsResponse>(
             `/stats/${seasonId}/participants`,
           );
           setBreakdowns(data.breakdowns);
           setExtremes(data.extremes);
-        } else if (tab === "liga") {
+        } else if (lens === "liga") {
           const data = await apiClient.get<LeagueStatsResponse>(
             `/stats/${seasonId}/league`,
           );
           setFormations(data.formations);
           setMatchdayAverages(data.matchday_averages);
           setRecords(data.records);
-        } else if (tab === "avanzado") {
+        } else if (lens === "avanzado" || lens === "contexto") {
           const [advData, depData] = await Promise.all([
             apiClient.get<AdvancedPlayersResponse>(
               `/stats/${seasonId}/players/advanced`,
@@ -157,7 +170,7 @@ export default function AdminEstadisticasPage() {
         }
       } catch (err) {
         setError(
-          `Error al cargar ${tab}: ${err instanceof Error ? err.message : "desconocido"}`,
+          `Error al cargar ${lens}: ${err instanceof Error ? err.message : "desconocido"}`,
         );
       } finally {
         setTabLoading(false);
@@ -167,10 +180,10 @@ export default function AdminEstadisticasPage() {
   );
 
   useEffect(() => {
-    if (selectedSeasonId !== null) {
-      fetchTabData(activeTab, selectedSeasonId);
+    if (selectedSeasonId !== null && activeTab === "rendimiento") {
+      fetchLensData(perfLens, selectedSeasonId);
     }
-  }, [selectedSeasonId, activeTab, fetchTabData]);
+  }, [selectedSeasonId, activeTab, perfLens, fetchLensData]);
 
   if (loading) {
     return (
@@ -206,9 +219,9 @@ export default function AdminEstadisticasPage() {
       {/* Error */}
       {error && <ErrorBanner message={error} />}
 
-      {/* Sub-tabs */}
+      {/* Top tabs (by use) */}
       <div className="flex gap-1 border-b border-vpv-border pb-px">
-        {STAT_TABS.map(({ key, label }) => (
+        {MAIN_TABS.map(({ key, label }) => (
           <button
             key={key}
             onClick={() => setActiveTab(key)}
@@ -223,71 +236,73 @@ export default function AdminEstadisticasPage() {
         ))}
       </div>
 
-      {/* Content */}
-      {tabLoading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div
-              key={i}
-              className="h-10 animate-pulse rounded-lg bg-vpv-border"
-            />
-          ))}
-        </div>
-      ) : (
-        <>
-          {activeTab === "jugadores" && <PlayersTab players={players} />}
-          {activeTab === "participantes" && (
-            <ParticipantsTab breakdowns={breakdowns} extremes={extremes} />
-          )}
-          {activeTab === "liga" && (
-            <LeagueTab
-              formations={formations}
-              matchdayAverages={matchdayAverages}
-              records={records}
-            />
-          )}
-          {activeTab === "draft" && selectedSeasonId && (
-            <DraftValueTab seasonId={selectedSeasonId} />
-          )}
-          {activeTab === "retro" && (
-            <DraftRetroTab seasons={seasons} defaultSeasonId={selectedSeasonId} />
-          )}
-          {activeTab === "guia" && <StatsGuide />}
-          {activeTab === "avanzado" && (
-            <div className="space-y-4">
-              {/* Advanced sub-tabs */}
-              <div className="flex gap-1">
-                {([
-                  { key: "valoracion", label: "Valoracion" },
-                  { key: "contexto", label: "Contexto" },
-                ] as const).map(({ key, label }) => (
-                  <button
-                    key={key}
-                    onClick={() => setAdvSubTab(key)}
-                    className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                      advSubTab === key
-                        ? "bg-vpv-accent text-white"
-                        : "bg-vpv-card text-vpv-text-muted hover:text-vpv-text"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+      {/* Draft */}
+      {activeTab === "draft" && selectedSeasonId && (
+        <DraftValueTab seasonId={selectedSeasonId} />
+      )}
 
-              {advSubTab === "valoracion" && (
+      {/* Análisis */}
+      {activeTab === "analisis" && (
+        <DraftRetroTab seasons={seasons} defaultSeasonId={selectedSeasonId} />
+      )}
+
+      {/* Guía */}
+      {activeTab === "guia" && <StatsGuide />}
+
+      {/* Rendimiento — several lenses over the same performance data */}
+      {activeTab === "rendimiento" && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-1">
+            {PERF_LENSES.map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setPerfLens(key)}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  perfLens === key
+                    ? "bg-vpv-accent text-white"
+                    : "bg-vpv-card text-vpv-text-muted hover:text-vpv-text"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {tabLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="h-10 animate-pulse rounded-lg bg-vpv-border"
+                />
+              ))}
+            </div>
+          ) : (
+            <>
+              {perfLens === "jugadores" && <PlayersTab players={players} />}
+              {perfLens === "participantes" && (
+                <ParticipantsTab breakdowns={breakdowns} extremes={extremes} />
+              )}
+              {perfLens === "liga" && (
+                <LeagueTab
+                  formations={formations}
+                  matchdayAverages={matchdayAverages}
+                  records={records}
+                />
+              )}
+              {perfLens === "avanzado" && (
                 <AdvancedTab players={advancedPlayers} />
               )}
-              {advSubTab === "contexto" && selectedSeasonId && (
+              {perfLens === "contexto" && selectedSeasonId && (
                 <ContextoTab
                   seasonId={selectedSeasonId}
                   dependency={dependencyData}
                   advancedPlayers={advancedPlayers}
                 />
               )}
-            </div>
+            </>
           )}
-        </>
+        </div>
       )}
     </div>
   );
