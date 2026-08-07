@@ -40,7 +40,7 @@ from src.features.stats.schemas_advanced import (
     PredictionsResponse,
     TeamDependencyResponse,
 )
-from src.features.stats.schemas_draft import DraftValueResponse
+from src.features.stats.schemas_draft import DraftValueOverrideRequest, DraftValueResponse
 from src.features.stats.schemas_draft_retro import (
     BacktestResponse,
     DraftRetrospectiveResponse,
@@ -71,6 +71,24 @@ async def get_draft_values(
     """Draft value predictions using backtested models."""
     service = DraftValueService(db)
     return await service.get_draft_values(season_id, min_games=min_games)
+
+
+@router.put(
+    "/admin/{season_id}/draft-value/{player_id}/override",
+    response_model=DraftValueResponse,
+)
+async def set_draft_value_override(
+    season_id: int,
+    player_id: int,
+    body: DraftValueOverrideRequest,
+    admin: dict = Depends(require_perm(Perm.STATS)),
+    db: AsyncSession = Depends(get_db),
+) -> DraftValueResponse:
+    """Set/clear the shared admin manual value + note for a player, then return
+    the recomputed draft board (so VORP reflects the new effective value)."""
+    service = DraftValueService(db)
+    await service.upsert_override(season_id, player_id, body.manual_value, body.note)
+    return await service.get_draft_values(season_id)
 
 
 # ---------------------------------------------------------------------------

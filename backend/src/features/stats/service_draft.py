@@ -26,6 +26,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.stats.schemas_draft import DraftValuePlayer, DraftValueResponse
+from src.features.stats.scorecard import is_mover
 
 logger = logging.getLogger(__name__)
 
@@ -70,20 +71,28 @@ class _Projection:
 def project_value(
     *,
     hist: list[_PlayerSeason],
-    current: _PlayerSeason,
+    current: _PlayerSeason | None,
     k: float = DRAFT_SHRINKAGE_K,
 ) -> _Projection:
     """Blend the historical ensemble prediction with the current-season
     (partial) average using empirical-Bayes shrinkage.
 
     ``hist`` is the player's prior seasons oldest->newest; ``current`` is
-    the current partial season. Returns the blended ``ensemble_score`` plus
-    the pre-blend ``career_ensemble``, the shrinkage ``weight_current`` and
-    the informational component scores (unchanged in meaning). With no
-    history the projection is the current average (weight 1.0).
+    the current partial season, or ``None`` in the preseason (no current
+    stats). Returns the blended ``ensemble_score`` plus the pre-blend
+    ``career_ensemble``, the shrinkage ``weight_current`` and the
+    informational component scores. With no history the projection is the
+    current average (weight 1.0); with no current data it is the pure
+    historical ensemble (weight 0.0). The caller must not pass both empty.
     """
     # --- Component models from history (informational + career ensemble) ---
-    simple_avg_career = hist[-1].avg_pts if hist else current.avg_pts
+    # `base` is the reference used when there's no history (falls back to the
+    # current season); the `not hist` path is only reachable with current
+    # present, so base is never None.
+    base = hist[-1] if hist else current
+    assert base is not None, "project_value requires history or current data"
+
+    simple_avg_career = base.avg_pts
 
     second_half_score: float | None = None
     if hist and hist[-1].second_half_avg > 0:
@@ -91,21 +100,18 @@ def project_value(
     elif hist:
         second_half_score = hist[-1].avg_pts
 
-    prod_ref = hist[-1] if hist else current
-    productivity_score = prod_ref.avg_pts
-    if prod_ref.minutes > 500:
-        ga_per90 = ((prod_ref.goals + prod_ref.assists) / prod_ref.minutes) * 90
+    productivity_score = base.avg_pts
+    if base.minutes > 500:
+        ga_per90 = ((base.goals + base.assists) / base.minutes) * 90
         if ga_per90 > 0.5:
-            productivity_score = prod_ref.avg_pts * (1 + (ga_per90 - 0.5) * 0.3)
+            productivity_score = base.avg_pts * (1 + (ga_per90 - 0.5) * 0.3)
 
     if hist:
         starter_rates = [s.games_45min / max(s.games, 1) for s in hist]
         career_avg = statistics.mean(s.avg_pts for s in hist)
         stability_score = career_avg * (0.8 + statistics.mean(starter_rates) * 0.4)
     else:
-        stability_score = current.avg_pts * (
-            0.8 + (current.games_45min / max(current.games, 1)) * 0.4
-        )
+        stability_score = base.avg_pts * (0.8 + (base.games_45min / max(base.games, 1)) * 0.4)
 
     trend_score: float | None = None
     career_trend_pct: float | None = None
@@ -123,12 +129,17 @@ def project_value(
     career_ensemble = statistics.mean(components)
 
     # --- Shrinkage blend with the current partial season ---
-    n_cur = current.games
-    if not hist:
+    if current is None:
+        # Preseason / no current data → pure historical projection.
+        weight_current = 0.0
+        ensemble_score = career_ensemble
+        blended_simple = simple_avg_career
+    elif not hist:
         weight_current = 1.0
         ensemble_score = current.avg_pts
         blended_simple = current.avg_pts
     else:
+        n_cur = current.games
         weight_current = n_cur / (n_cur + k) if (n_cur + k) > 0 else 0.0
         ensemble_score = career_ensemble * (1 - weight_current) + current.avg_pts * weight_current
         blended_simple = (
@@ -176,6 +187,23 @@ class _PlayerSeason:
     penalties_missed: int
 
 
+@dataclass
+class _RosterPlayer:
+    """A draftable player of the target season (from the ``players`` table).
+
+    Seeds the draft board so it works PRESEASON: identity, current team and
+    position come from here (not from historical stats), which is what lets
+    the new/team-change/position-change flags work before any matchday.
+    """
+
+    player_id: int
+    slug: str
+    display_name: str
+    position: str
+    photo_path: str | None
+    team_name: str
+
+
 class DraftValueService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -185,27 +213,30 @@ class DraftValueService:
         season_id: int,
         min_games: int = CURRENT_MIN_GAMES,
     ) -> DraftValueResponse:
-        """Compute draft value predictions for all players.
+        """Compute the draft board for every draftable player of the season.
 
-        ``min_games`` is the minimum current-season games for a player to be
-        a draft candidate (the historical prior covers the small sample via
-        shrinkage). Defaults to the draft-window floor, not the old ``10``.
+        Seeded from the SEASON ROSTER (``players`` table), so it works in the
+        PRESEASON too (0 matchdays): players with prior-season history get a
+        cold-start projection, brand-new players appear flagged with no value,
+        and once the season starts the current-season stats blend in.
+
+        ``min_games`` gates the BLEND, not appearance: a current sample below
+        it is treated as too thin to trust (projection falls back to history),
+        but the player still shows. Admin manual overrides replace the
+        projection where set.
         """
 
         # Load data (SQL load floor kept at 1 so the current partial season
         # is included; candidate/history filtering happens below).
         season_info = await self._get_season_info(season_id)
+        roster = await self._load_roster(season_id)
+        overrides = await self._load_overrides(season_id)
         all_data = await self._load_seasons(season_id, min_games=1)
         current_data = [ps for ps in all_data if ps.season_id == season_id]
         history_data = [ps for ps in all_data if ps.season_id != season_id]
 
-        # Organize
-        by_slug: dict[str, list[_PlayerSeason]] = defaultdict(list)
-        for ps in all_data:
-            by_slug[ps.slug].append(ps)
-        for slug in by_slug:
-            by_slug[slug].sort(key=lambda s: s.season_id)
-
+        # Organize. all_data is ordered by (slug, season_id) from the query,
+        # so history[slug] stays ascending and hist[-1] is the most recent.
         history: dict[str, list[_PlayerSeason]] = defaultdict(list)
         for ps in history_data:
             history[ps.slug].append(ps)
@@ -221,63 +252,85 @@ class DraftValueService:
         md_end = season_info.get("matchday_end")
         remaining_md = max(0, int(md_end) - int(season_info["matchday_current"])) if md_end else 0
 
-        # Candidates: current-season players with enough games to carry a
-        # signal. The historical prior (via shrinkage) covers the small
-        # 4-8 game sample — that's the whole point of this model.
-        targets = [slug for slug, ps in current_map.items() if ps.games >= min_games]
-
         results: list[DraftValuePlayer] = []
 
-        for slug in targets:
-            ps = current_map[slug]
+        # Iterate the ROSTER (every draftable player), not just those with
+        # current-season stats — that's what makes the board work preseason.
+        for rp in roster:
+            slug = rp.slug
+            current = current_map.get(slug)
+            # Thin current sample → don't trust the blend, but keep the player.
+            if current is not None and current.games < min_games:
+                current = None
             # Only reasonably-sampled prior seasons make a stable prior.
             hist = [h for h in history.get(slug, []) if h.games >= HISTORY_MIN_GAMES]
-            seasons_played = len(hist) + 1
+            seasons_played = len(hist) + (1 if current is not None else 0)
 
-            proj = project_value(hist=hist, current=ps, k=DRAFT_SHRINKAGE_K)
-            ensemble_score = proj.ensemble_score
-            simple_avg = proj.simple_avg
-            second_half_score = proj.second_half_score
-            productivity_score = proj.productivity_score
-            stability_score = proj.stability_score
-            trend_score = proj.trend_score
-            career_trend_pct = proj.career_trend_pct
-            weight_current = proj.weight_current
+            proj = (
+                project_value(hist=hist, current=current, k=DRAFT_SHRINKAGE_K)
+                if (current is not None or hist)
+                else None
+            )
+            # Reference for display stats: current preferred, else last season.
+            ref = current if current is not None else (hist[-1] if hist else None)
+
+            auto_projection = round(proj.ensemble_score, 2) if proj is not None else None
+            ensemble_score = proj.ensemble_score if proj is not None else 0.0
+            simple_avg = proj.simple_avg if proj is not None else 0.0
+            second_half_score = proj.second_half_score if proj is not None else None
+            productivity_score = proj.productivity_score if proj is not None else 0.0
+            stability_score = proj.stability_score if proj is not None else 0.0
+            trend_score = proj.trend_score if proj is not None else None
+            career_trend_pct = proj.career_trend_pct if proj is not None else None
+            weight_current = proj.weight_current if proj is not None else 0.0
 
             second_half_avg = (
                 hist[-1].second_half_avg if (hist and hist[-1].second_half_avg > 0) else None
             )
 
-            # === Signals ===
-            availability = ps.games_45min / max(ps.games, 1)
+            availability = ref.games_45min / max(ref.games, 1) if ref else 0.0
 
-            # === F2: points reliability (event vs media rating) ===
-            # Media points (Marca/AS) are noisier/subjective; a high event
-            # share (goals, assists, clean sheets, ...) is more repeatable.
-            career_total = ps.total_pts + sum(h.total_pts for h in hist)
-            career_media = ps.media_pts + sum(h.media_pts for h in hist)
+            # F2: points reliability (event vs media) over all available seasons.
+            seasons_for_share = ([current] if current is not None else []) + hist
+            career_total = sum(s.total_pts for s in seasons_for_share)
+            career_media = sum(s.media_pts for s in seasons_for_share)
             event_share = (
                 max(0.0, min(1.0, (career_total - career_media) / career_total))
                 if career_total > 0
                 else None
             )
 
-            # === F2: durability — expected games + rest-of-season points ===
-            exp_games_remaining = round(remaining_md * availability, 1)
-            proj_rest_points = round(ensemble_score * exp_games_remaining, 1)
-            cv = ps.std_pts / ps.avg_pts if ps.avg_pts > 0 else 1.0
+            cv = ref.std_pts / ref.avg_pts if (ref and ref.avg_pts > 0) else 1.0
             consistency = max(0, 1 - cv)
 
-            # Prefer the fresh current-season media ratings, fall back to
-            # last season's when the player has no current rating yet.
+            # === Manual override → effective value (what VORP ranks on) ===
+            manual_value, note = overrides.get(rp.player_id, (None, None))
+            effective_value = manual_value if manual_value is not None else auto_projection
+
+            # F2: durability — expected games + rest-of-season points.
+            exp_games_remaining = round(remaining_md * availability, 1)
+            proj_rest_points = (
+                round(effective_value * exp_games_remaining, 1)
+                if effective_value is not None
+                else None
+            )
+
             marca = (
-                ps.marca_avg
-                if ps.marca_avg is not None
+                current.marca_avg
+                if (current is not None and current.marca_avg is not None)
                 else (hist[-1].marca_avg if hist else None)
             )
-            as_val = ps.as_avg if ps.as_avg is not None else (hist[-1].as_avg if hist else None)
+            as_val = (
+                current.as_avg
+                if (current is not None and current.as_avg is not None)
+                else (hist[-1].as_avg if hist else None)
+            )
 
-            # === Draft signal ===
+            # === Role-change flags (roster vs most-recent prior season) ===
+            is_new = not hist
+            team_changed = bool(hist) and is_mover(rp.team_name, hist[-1].team_name)
+            position_changed = bool(hist) and rp.position != hist[-1].position
+
             signal, reasons = self._compute_signal(
                 ensemble_score=ensemble_score,
                 career_trend_pct=career_trend_pct,
@@ -289,16 +342,16 @@ class DraftValueService:
 
             results.append(
                 DraftValuePlayer(
-                    player_id=ps.player_id,
-                    slug=ps.slug,
-                    display_name=ps.display_name,
-                    team_name=ps.team_name,
-                    position=ps.position,
-                    photo_path=ps.photo_path,
-                    games_played=ps.games,
+                    player_id=rp.player_id,
+                    slug=rp.slug,
+                    display_name=rp.display_name,
+                    team_name=rp.team_name,
+                    position=rp.position,
+                    photo_path=rp.photo_path,
+                    games_played=ref.games if ref else 0,
                     seasons_played=seasons_played,
-                    avg_points=round(ps.avg_pts, 2),
-                    total_points=round(ps.total_pts, 1),
+                    avg_points=round(ref.avg_pts, 2) if ref else 0.0,
+                    total_points=round(ref.total_pts, 1) if ref else 0.0,
                     ensemble_score=round(ensemble_score, 2),
                     simple_avg=round(simple_avg, 2),
                     second_half_score=round(second_half_score, 2) if second_half_score else None,
@@ -311,38 +364,56 @@ class DraftValueService:
                     availability=round(availability, 2),
                     consistency=round(consistency, 2),
                     second_half_avg=round(second_half_avg, 2) if second_half_avg else None,
-                    goals=ps.goals,
-                    assists=ps.assists,
+                    goals=ref.goals if ref else 0,
+                    assists=ref.assists if ref else 0,
                     signal=signal,
                     signal_reasons=reasons,
                     weight_current=round(weight_current, 2),
                     event_share=round(event_share, 2) if event_share is not None else None,
                     exp_games_remaining=exp_games_remaining,
                     proj_rest_points=proj_rest_points,
+                    auto_projection=auto_projection,
+                    manual_value=round(manual_value, 2) if manual_value is not None else None,
+                    note=note,
+                    effective_value=round(effective_value, 2)
+                    if effective_value is not None
+                    else None,
+                    is_new=is_new,
+                    team_changed=team_changed,
+                    position_changed=position_changed,
                 )
             )
 
         # === Draft board: VORP (value over positional replacement) ===
-        # Make positions comparable on one axis: subtract each position's
-        # replacement level (the projected value of the Nth-best player at
-        # that position — the depth of the draftable pool) from the player's
-        # projected value. Mirrors the historical PAR definition but uses the
-        # forward-looking blend.
+        # Compare positions on one axis: subtract each position's replacement
+        # level (the effective value of the Nth-best player at that position)
+        # from the player's EFFECTIVE value (manual override, else projection).
+        # Players with no effective value (brand-new, no manual value) don't
+        # rank and keep vorp=None.
         by_pos: dict[str, list[DraftValuePlayer]] = defaultdict(list)
         for r in results:
             by_pos[r.position].append(r)
         for pos, plist in by_pos.items():
-            plist.sort(key=lambda p: p.ensemble_score, reverse=True)
-            repl_rank = _REPLACEMENT_RANK.get(pos, len(plist))
-            idx = min(repl_rank, len(plist) - 1)
-            replacement = plist[idx].ensemble_score if plist else 0.0
-            for rank, p in enumerate(plist, start=1):
+            ranked = sorted(
+                (p for p in plist if p.effective_value is not None),
+                key=lambda p: p.effective_value or 0.0,
+                reverse=True,
+            )
+            if not ranked:
+                continue
+            repl_rank = _REPLACEMENT_RANK.get(pos, len(ranked))
+            idx = min(repl_rank, len(ranked) - 1)
+            replacement = ranked[idx].effective_value or 0.0
+            for rank, p in enumerate(ranked, start=1):
                 p.replacement_level = round(replacement, 2)
-                p.vorp = round(p.ensemble_score - replacement, 2)
+                p.vorp = round((p.effective_value or 0.0) - replacement, 2)
                 p.position_rank = rank
 
-        # Sort by VORP (cross-position draft value); ensemble as tie-breaker.
-        results.sort(key=lambda p: (p.vorp or 0.0, p.ensemble_score), reverse=True)
+        # Sort by VORP (cross-position); no-value players sort last.
+        results.sort(
+            key=lambda p: (p.vorp if p.vorp is not None else -1e9, p.ensemble_score),
+            reverse=True,
+        )
 
         # Season-level summary of how much the current partial season weighs
         # for a typical full-window candidate (n = md_played).
@@ -431,6 +502,68 @@ class DraftValueService:
             "matchday_current": row.matchday_current,
             "matchday_end": row.matchday_end,
         }
+
+    async def _load_roster(self, season_id: int) -> list[_RosterPlayer]:
+        """All draftable players of the season (from ``players``). Available
+        preseason — this is what seeds the board before any matchday."""
+        result = await self.session.execute(
+            text(
+                "SELECT p.id, p.slug, p.display_name, p.position, p.photo_path, "
+                "       t.name AS team_name "
+                "FROM players p JOIN teams t ON p.team_id = t.id "
+                "WHERE p.season_id = :sid "
+                "ORDER BY p.slug"
+            ),
+            {"sid": season_id},
+        )
+        return [
+            _RosterPlayer(
+                player_id=r.id,
+                slug=r.slug,
+                display_name=r.display_name,
+                position=r.position,
+                photo_path=r.photo_path,
+                team_name=r.team_name or "",
+            )
+            for r in result.all()
+        ]
+
+    async def _load_overrides(self, season_id: int) -> dict[int, tuple[float | None, str | None]]:
+        """player_id → (manual_value, note) admin overrides for the season."""
+        result = await self.session.execute(
+            text(
+                "SELECT player_id, manual_value, note "
+                "FROM draft_value_overrides WHERE season_id = :sid"
+            ),
+            {"sid": season_id},
+        )
+        return {
+            r.player_id: (
+                float(r.manual_value) if r.manual_value is not None else None,
+                r.note,
+            )
+            for r in result.all()
+        }
+
+    async def upsert_override(
+        self, season_id: int, player_id: int, manual_value: float | None, note: str | None
+    ) -> None:
+        """Set/clear the admin manual value + note for a player. A NULL
+        ``manual_value`` keeps the row (as a note holder) but falls back to
+        the automatic projection."""
+        await self.session.execute(
+            text(
+                "INSERT INTO draft_value_overrides "
+                "  (season_id, player_id, manual_value, note, updated_at) "
+                "VALUES (:sid, :pid, :val, :note, now()) "
+                "ON CONFLICT ON CONSTRAINT uq_draft_value_override DO UPDATE SET "
+                "  manual_value = EXCLUDED.manual_value, "
+                "  note = EXCLUDED.note, "
+                "  updated_at = now()"
+            ),
+            {"sid": season_id, "pid": player_id, "val": manual_value, "note": note},
+        )
+        await self.session.commit()
 
     async def _resolve_season_ids(self, current_season_id: int, n_history: int) -> list[int]:
         """The current season + up to ``n_history`` prior LEAGUE seasons.

@@ -81,6 +81,19 @@ class DraftValuePlayer(BaseModel):
     exp_games_remaining: float | None = None
     proj_rest_points: float | None = None
 
+    # Preseason draft board.
+    # auto_projection: value the model projects (None for a brand-new player
+    #   with no history and no current stats). manual_value/note: admin
+    #   override. effective_value = manual_value if set else auto_projection —
+    #   what VORP is computed on. Flags surface who needs a manual look.
+    auto_projection: float | None = None
+    manual_value: float | None = None
+    note: str | None = None
+    effective_value: float | None = None
+    is_new: bool = False  # no prior-season history
+    team_changed: bool = False  # roster team differs from last historical season
+    position_changed: bool = False  # roster position differs from last historical season
+
 
 class DraftValueResponse(BaseModel):
     season_id: int
@@ -90,3 +103,11 @@ class DraftValueResponse(BaseModel):
     peso_historico: float  # how much career data weighs (0-1)
     model_info: dict[str, str]  # model name → description
     players: list[DraftValuePlayer]
+
+
+class DraftValueOverrideRequest(BaseModel):
+    """Admin manual override for a player on the draft board. A null
+    ``manual_value`` clears the override back to the automatic projection."""
+
+    manual_value: float | None = None
+    note: str | None = None

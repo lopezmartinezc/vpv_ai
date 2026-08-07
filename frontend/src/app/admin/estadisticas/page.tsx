@@ -1886,8 +1886,10 @@ const SIGNAL_BADGE: Record<string, { bg: string; text: string; label: string }> 
 type DraftSortKey = keyof DraftValuePlayer;
 
 const DRAFT_COLS: { key: DraftSortKey; label: string; title: string; w: string }[] = [
-  { key: "vorp", label: "VORP", title: "Valor sobre reemplazo posicional: valor proyectado por encima del jugador de reemplazo en su posición. Compara DEF/MED/DEL/POR en un solo eje — la columna maestra del tablero.", w: "w-14" },
-  { key: "proj_rest_points", label: "PtsRes", title: "Puntos proyectados resto de temporada = valor proyectado × partidos esperados restantes (jornadas restantes × disponibilidad).", w: "w-16" },
+  { key: "vorp", label: "VORP", title: "Valor sobre reemplazo posicional: valor efectivo por encima del jugador de reemplazo en su posición. Compara DEF/MED/DEL/POR en un solo eje — la columna maestra del tablero.", w: "w-14" },
+  { key: "effective_value", label: "Efect", title: "Valor efectivo usado para el ranking = valor manual si lo has puesto, si no la proyección automática.", w: "w-14" },
+  { key: "manual_value", label: "Manual", title: "Tu valor manual (pts/partido). Sobrescribe la proyección. Edítalo abriendo la fila. Imprescindible para jugadores nuevos sin histórico.", w: "w-14" },
+  { key: "proj_rest_points", label: "PtsRes", title: "Puntos proyectados resto de temporada = valor efectivo × partidos esperados restantes (jornadas restantes × disponibilidad).", w: "w-16" },
   { key: "event_share", label: "Fiab", title: "Fiabilidad: % de puntos por eventos concretos (goles, asistencias, portería a cero...) vs nota mediática Marca/AS. Alto = más repetible.", w: "w-12" },
   { key: "ensemble_score", label: "Ens", title: "Ensemble: valor proyectado (histórico + actual, shrinkage k=4)", w: "w-14" },
   { key: "simple_avg", label: "Avg", title: "Media simple: pts/partido temporada anterior (baseline)", w: "w-14" },
@@ -1898,6 +1900,82 @@ const DRAFT_COLS: { key: DraftSortKey; label: string; title: string; w: string }
   { key: "availability", label: "Disp", title: "Disponibilidad: % partidos con 45+ min jugados", w: "w-12" },
   { key: "consistency", label: "Cons", title: "Consistencia: 1-CV (1=muy fiable, 0=impredecible)", w: "w-12" },
 ];
+
+function ManualOverrideEditor({
+  seasonId,
+  player,
+  onSaved,
+}: {
+  seasonId: number;
+  player: DraftValuePlayer;
+  onSaved: (resp: DraftValueResponse) => void;
+}) {
+  const [value, setValue] = useState(
+    player.manual_value != null ? String(player.manual_value) : "",
+  );
+  const [note, setNote] = useState(player.note ?? "");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function save() {
+    const trimmed = value.trim();
+    const manual_value = trimmed === "" ? null : Number(trimmed);
+    if (manual_value != null && !Number.isFinite(manual_value)) {
+      setErr("Valor inválido");
+      return;
+    }
+    setSaving(true);
+    setErr(null);
+    try {
+      const resp = await apiClient.put<DraftValueResponse>(
+        `/stats/admin/${seasonId}/draft-value/${player.player_id}/override`,
+        { manual_value, note: note.trim() || null },
+      );
+      onSaved(resp);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Error guardando");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-vpv-border/30 pt-2">
+      <label className="text-[10px] text-vpv-text-muted">
+        Valor manual (pts/partido)
+        <input
+          type="number"
+          step="0.1"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={player.auto_projection != null ? `auto ${player.auto_projection}` : "—"}
+          className="mt-0.5 block w-28 rounded border border-vpv-border bg-vpv-bg px-2 py-1 text-xs text-vpv-text"
+        />
+      </label>
+      <label className="flex-1 text-[10px] text-vpv-text-muted">
+        Nota
+        <input
+          type="text"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="p.ej. fichaje estrella / rol nuevo / lesión"
+          className="mt-0.5 block w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1 text-xs text-vpv-text"
+        />
+      </label>
+      <button
+        onClick={save}
+        disabled={saving}
+        className="rounded bg-vpv-accent px-3 py-1.5 text-xs font-medium text-vpv-bg transition-opacity disabled:opacity-40"
+      >
+        {saving ? "Guardando…" : "Guardar"}
+      </button>
+      {err && <span className="text-[10px] text-red-400">{err}</span>}
+      <span className="text-[10px] text-vpv-text-muted">
+        Vacío → usa la proyección automática.
+      </span>
+    </div>
+  );
+}
 
 function DraftValueTab({ seasonId }: { seasonId: number }) {
   const [data, setData] = useState<DraftValueResponse | null>(null);
@@ -2065,6 +2143,13 @@ function DraftValueTab({ seasonId }: { seasonId: number }) {
           <span className="w-16 text-center" title="Signal de draft: Comprar / Bien / Neutro / Evitar">Signal</span>
         </div>
 
+        {data.players.length === 0 && (
+          <div className="rounded-lg border border-vpv-card-border bg-vpv-card px-4 py-6 text-center text-sm text-vpv-text-muted">
+            Aún no hay jugadores drafteables. Importa equipos y plantillas de la
+            temporada (Admin → Temporadas → Scrapear) y el tablero se llenará con
+            las proyecciones desde el histórico.
+          </div>
+        )}
         <div className="divide-y divide-vpv-border/50">
           {(showAll ? players : players.slice(0, 100)).map((p, i) => {
             const badge = SIGNAL_BADGE[p.signal] ?? SIGNAL_BADGE.hold;
@@ -2096,8 +2181,14 @@ function DraftValueTab({ seasonId }: { seasonId: number }) {
                     <span className="flex-1 truncate text-xs font-medium text-vpv-text">
                       {p.display_name}
                       <span className="ml-1 text-[10px] font-normal text-vpv-text-muted">{p.team_name}</span>
-                      {p.seasons_played === 1 && (
-                        <span className="ml-1 rounded bg-amber-500/15 px-1 text-[8px] text-amber-400">NEW</span>
+                      {p.is_new && (
+                        <span className="ml-1 rounded bg-amber-500/15 px-1 text-[8px] text-amber-400">NUEVO</span>
+                      )}
+                      {p.team_changed && (
+                        <span className="ml-1 rounded bg-blue-500/15 px-1 text-[8px] text-blue-300" title="Cambió de equipo">+EQ</span>
+                      )}
+                      {p.position_changed && (
+                        <span className="ml-1 rounded bg-purple-500/15 px-1 text-[8px] text-purple-300" title="Cambió de posición">+POS</span>
                       )}
                     </span>
                     <span className="w-12 text-center text-[10px] text-vpv-text-muted">{p.position}</span>
@@ -2205,6 +2296,7 @@ function DraftValueTab({ seasonId }: { seasonId: number }) {
                         ))}
                       </div>
                     )}
+                    <ManualOverrideEditor seasonId={seasonId} player={p} onSaved={setData} />
                   </div>
                 )}
               </div>
