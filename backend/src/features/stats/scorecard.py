@@ -45,6 +45,12 @@ _TIER_THRESHOLDS: dict[str, dict[str, float]] = {
     "DEL": {"elite": 7.2, "solid": 5.4, "normal": 4.2},
 }
 
+# Positional replacement depth: the rank (per position) whose value defines
+# "replacement level" for VORP / PAR — how deep the draftable pool goes. Shared
+# by the live draft board (VORP) and the historical position-value (PAR) so
+# they agree. Tuned to the ~11-13 participant x 26-pick league.
+REPLACEMENT_RANK: dict[str, int] = {"POR": 35, "DEF": 90, "MED": 90, "DEL": 70}
+
 # Survival haircut applied to the ensemble score before ranking.
 # Same brackets used across positions — they refer to avg_pts of the
 # previous season (the most-recent reliable signal we have).

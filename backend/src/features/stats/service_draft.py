@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.stats.schemas_draft import DraftValuePlayer, DraftValueResponse
 from src.features.stats.scorecard import (
+    REPLACEMENT_RANK,
     is_bench_risk,
     is_likely_penalty_taker,
     is_mover,
@@ -34,8 +35,6 @@ from src.features.stats.scorecard import (
 )
 
 logger = logging.getLogger(__name__)
-
-MIN_GAMES = 10
 
 # --- Early-season blend (Liga draft happens at 4-8 matchdays) -------------
 # Empirical-Bayes shrinkage of the current-season average toward the
@@ -46,11 +45,6 @@ MIN_GAMES = 10
 # history-only and current-only extremes. The optimum is a flat plateau
 # over k in [2, 6].
 DRAFT_SHRINKAGE_K = 4
-# Positional replacement depth for VORP: the rank (per position) whose
-# projected value defines "replacement level" — how deep the draftable pool
-# goes at each position. Mirrors the historical PAR thresholds in
-# service_advanced so the draft board and the PAR tab agree.
-_REPLACEMENT_RANK: dict[str, int] = {"POR": 35, "DEF": 90, "MED": 90, "DEL": 70}
 # A current-season player needs at least this many games to be a candidate
 # (below it the 4-8 game sample is pure noise).
 CURRENT_MIN_GAMES = 2
@@ -417,7 +411,7 @@ class DraftValueService:
             )
             if not ranked:
                 continue
-            repl_rank = _REPLACEMENT_RANK.get(pos, len(ranked))
+            repl_rank = REPLACEMENT_RANK.get(pos, len(ranked))
             idx = min(repl_rank, len(ranked) - 1)
             replacement = ranked[idx].effective_value or 0.0
             for rank, p in enumerate(ranked, start=1):

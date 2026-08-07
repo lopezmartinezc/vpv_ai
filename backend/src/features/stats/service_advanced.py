@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from typing import ClassVar
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,6 +37,7 @@ from src.features.stats.schemas_advanced import (
     TeamDependencyEntry,
     TeamDependencyResponse,
 )
+from src.features.stats.scorecard import REPLACEMENT_RANK
 
 # ---------------------------------------------------------------------------
 # t-distribution critical values for 95% CI (two-tailed, alpha=0.025)
@@ -112,6 +112,12 @@ def _ewma(values: list[float], alpha: float = 0.3) -> float:
     for v in values[1:]:
         result = alpha * v + (1.0 - alpha) * result
     return result
+
+
+# Bounds for the xPts rival factor. A modest schedule nudge — not a swing that
+# can 10x a player's expected points off a small-sample opponent stat.
+_RIVAL_FACTOR_MIN = 0.7
+_RIVAL_FACTOR_MAX = 1.4
 
 
 # ---------------------------------------------------------------------------
@@ -218,11 +224,6 @@ class AdvancedStatsService:
     # Phase 2 — Position value analysis
     # ------------------------------------------------------------------
 
-    # Typical number of players drafted per position (11 participants x 26 players)
-    # POR: ~3-4 per participant, DEF: ~8-9, MED: ~8-9, DEL: ~6-7
-    # Replacement level = (N+1)th player, where N = typical drafted count
-    _TYPICAL_DRAFTED: ClassVar[dict[str, int]] = {"POR": 35, "DEF": 90, "MED": 90, "DEL": 70}
-
     async def get_position_value(
         self, season_id: int, min_played: int = 3
     ) -> PositionValueResponse:
@@ -245,7 +246,7 @@ class AdvancedStatsService:
             n = len(totals)
 
             # Replacement level
-            draft_n = self._TYPICAL_DRAFTED.get(pos, n)
+            draft_n = REPLACEMENT_RANK.get(pos, n)
             repl_idx = min(draft_n, n - 1)
             replacement_level = float(totals[repl_idx]) if repl_idx < n else 0.0
 
@@ -426,10 +427,7 @@ class AdvancedStatsService:
         """Home/away splits for a single player."""
         rows = await self.repo.get_player_splits(season_id, player_id)
 
-        # Get player name from first row or fetch separately
-        display_name = rows[0].location if not rows else ""
-        # We need the player name — get it from the split rows context
-        # Since splits don't carry the name, fetch from the advanced stats
+        # Splits don't carry the name — fetch it (falls back for empty splits).
         from sqlalchemy import select
 
         from src.shared.models.player import Player
@@ -437,8 +435,7 @@ class AdvancedStatsService:
         result = await self.repo.session.execute(
             select(Player.display_name).where(Player.id == player_id)
         )
-        name_row = result.scalar_one_or_none()
-        display_name = name_row or f"Player {player_id}"
+        display_name = result.scalar_one_or_none() or f"Player {player_id}"
 
         return PlayerSplitsResponse(
             player_id=player_id,
@@ -640,6 +637,9 @@ class AdvancedStatsService:
                 rival_factor = league_avg_goals / max(opp_goals_conceded, 0.1)
             else:
                 rival_factor = opp_goals_conceded / max(league_avg_goals, 0.1)
+            # Clamp: a team that recently conceded ~0 would otherwise send the
+            # raw ratio to ~10x and blow up the xPts. Keep it a modest nudge.
+            rival_factor = max(_RIVAL_FACTOR_MIN, min(_RIVAL_FACTOR_MAX, rival_factor))
 
             # Location average
             loc = location_avgs.get(player_id, {})
