@@ -8,13 +8,6 @@ import type {
   DraftValueResponse,
 } from "@/types";
 
-const SIGNAL_BADGE: Record<string, { bg: string; text: string; label: string }> = {
-  strong_buy: { bg: "bg-green-500/20", text: "text-green-400", label: "Comprar" },
-  buy: { bg: "bg-green-500/10", text: "text-green-400", label: "Bien" },
-  hold: { bg: "bg-amber-500/15", text: "text-amber-400", label: "Neutro" },
-  avoid: { bg: "bg-red-500/20", text: "text-red-400", label: "Evitar" },
-};
-
 // Positional tier from the scorecard — instant context on how good a player is
 // *for their position* (thresholds live in backend scorecard.py).
 const TIER_BADGE: Record<string, { cls: string; label: string; title: string }> = {
@@ -140,7 +133,6 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
   const [posFilter, setPosFilter] = useState("");
   const [sortKey, setSortKey] = useState<DraftSortKey>("vorp");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [signalFilter, setSignalFilter] = useState("");
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [error, setError] = useState(false);
   const [showAll, setShowAll] = useState(false);
@@ -175,7 +167,6 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
     if (!data) return [];
     let list = data.players;
     if (posFilter) list = list.filter((p) => p.position === posFilter);
-    if (signalFilter) list = list.filter((p) => p.signal === signalFilter);
     // Tier is categorical — sort by its quality rank, not alphabetically.
     if (sortKey === "position_tier") {
       const dir = sortDir === "asc" ? 1 : -1;
@@ -187,7 +178,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
       );
     }
     return sorted(list, sortKey, sortDir);
-  }, [data, posFilter, signalFilter, sortKey, sortDir]);
+  }, [data, posFilter, sortKey, sortDir]);
 
   // Positional scarcity: how deep the draftable pool runs per position.
   // Fewer players above replacement (vorp > 0) => scarcer => draft earlier.
@@ -298,64 +289,22 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
             </button>
           ))}
         </div>
-        <div className="flex gap-0.5">
-          {["", "strong_buy", "buy", "hold", "avoid"].map((s) => {
-            const badge = SIGNAL_BADGE[s];
-            return (
-              <button
-                key={s}
-                onClick={() => setSignalFilter(s)}
-                className={`rounded px-2 py-1 text-[10px] font-medium ${
-                  signalFilter === s ? "bg-vpv-accent text-white" : "border border-vpv-border text-vpv-text-muted"
-                }`}
-              >
-                {badge?.label || "Todos"}
-              </button>
-            );
-          })}
-        </div>
         <span className="text-[10px] text-vpv-text-muted">Click columna para ordenar · desliza para ver todas</span>
-      </div>
-
-      {/* Signal legend */}
-      <div className="rounded-lg border border-vpv-card-border bg-vpv-card px-4 py-2">
-        <div className="flex flex-wrap items-start gap-x-6 gap-y-1 text-[10px]">
-          <div>
-            <span className="font-semibold text-vpv-text">Signal </span>
-            <span className="text-vpv-text-muted">se calcula con:</span>
-          </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-vpv-text-muted">
-            <span><span className="text-green-400">+</span> Ensemble supera media</span>
-            <span><span className="text-green-400">+</span> Tendencia positiva (&gt;10%)</span>
-            <span><span className="text-green-400">+</span> Disponibilidad &gt;85%</span>
-            <span><span className="text-green-400">+</span> Consistencia alta</span>
-            <span><span className="text-green-400">+</span> 3+ temporadas</span>
-            <span><span className="text-red-400">-</span> Declive &gt;15%</span>
-            <span><span className="text-red-400">-</span> Disponibilidad &lt;60%</span>
-            <span><span className="text-red-400">-</span> Muy volatil</span>
-            <span><span className="text-red-400">-</span> Sin historial</span>
-          </div>
-        </div>
-        <div className="mt-1 flex gap-3 text-[10px]">
-          <span className="rounded bg-green-500/20 px-1.5 py-0.5 text-green-400">Comprar = 3+ positivas, 0 negativas</span>
-          <span className="rounded bg-green-500/10 px-1.5 py-0.5 text-green-400">Bien = 2+ positivas</span>
-          <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-400">Neutro = resto</span>
-          <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-red-400">Evitar = 2+ negativas</span>
-        </div>
       </div>
 
       {/* Table */}
       <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
        <div className="overflow-x-auto">
         {/* Desktop header */}
-        <div className="hidden border-b border-vpv-border bg-vpv-bg px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted md:flex md:min-w-[1160px]">
-          <span className="w-8">#</span>
-          <span className="flex-1 min-w-[8rem]">Jugador</span>
-          <span className="w-12 text-center">Pos</span>
+        <div className="hidden min-w-[1230px] border-b border-vpv-border bg-vpv-bg px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted md:flex">
+          <span className="w-8 shrink-0">#</span>
+          <span className="w-52 shrink-0">Jugador</span>
+          <span className="w-24 shrink-0" title="Alertas: nuevo, cambio de equipo/posición, pico de forma, penaltis, riesgo banquillo">Alertas</span>
+          <span className="w-10 shrink-0 text-center">Pos</span>
           <button
             onClick={() => handleSort("position_tier")}
             title="Tier posicional (elite / sólido / normal / flojo; los porteros dependen del equipo)"
-            className={`w-16 text-center hover:text-vpv-text ${sortKey === "position_tier" ? "text-vpv-accent" : ""}`}
+            className={`w-16 shrink-0 text-center hover:text-vpv-text ${sortKey === "position_tier" ? "text-vpv-accent" : ""}`}
           >
             Tier
             {sortKey === "position_tier" && (
@@ -365,7 +314,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
           <button
             onClick={() => handleSort("overall_rank")}
             title="Ronda estimada de draft = rank VORP global ÷ nº de participantes"
-            className={`w-12 text-center hover:text-vpv-text ${sortKey === "overall_rank" ? "text-vpv-accent" : ""}`}
+            className={`w-12 shrink-0 text-center hover:text-vpv-text ${sortKey === "overall_rank" ? "text-vpv-accent" : ""}`}
           >
             Ronda
             {sortKey === "overall_rank" && (
@@ -377,7 +326,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
               key={col.key}
               onClick={() => handleSort(col.key)}
               title={col.title}
-              className={`${col.w} text-right hover:text-vpv-text ${sortKey === col.key ? "text-vpv-accent" : ""}`}
+              className={`${col.w} shrink-0 text-right hover:text-vpv-text ${sortKey === col.key ? "text-vpv-accent" : ""}`}
             >
               {col.label}
               {sortKey === col.key && (
@@ -385,7 +334,6 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
               )}
             </button>
           ))}
-          <span className="w-16 text-center" title="Signal de draft: Comprar / Bien / Neutro / Evitar">Signal</span>
         </div>
 
         {data.players.length === 0 && (
@@ -397,7 +345,6 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
         )}
         <div className="divide-y divide-vpv-border/50">
           {(showAll ? players : players.slice(0, 100)).map((p, i) => {
-            const badge = SIGNAL_BADGE[p.signal] ?? SIGNAL_BADGE.hold;
             const tier = p.position_tier ? TIER_BADGE[p.position_tier] : null;
             const rnd = roundOf(p, data.participant_count);
             const isExpanded = expandedId === p.player_id;
@@ -407,7 +354,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
                 <button
                   type="button"
                   onClick={() => setExpandedId(isExpanded ? null : p.player_id)}
-                  className={`flex w-full items-center px-3 py-1.5 text-left hover:bg-vpv-bg/30 ${isExpanded ? "bg-vpv-bg/40" : ""}`}
+                  className={`flex w-full items-center px-3 py-1.5 text-left hover:bg-vpv-bg/30 md:min-w-[1230px] ${isExpanded ? "bg-vpv-bg/40" : ""}`}
                 >
                   {/* Mobile: compact */}
                   <div className="flex flex-1 items-center gap-2 md:hidden">
@@ -424,43 +371,43 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
                         {rnd != null && <span className="ml-1 text-vpv-accent">· R{rnd}</span>}
                       </p>
                     </div>
-                    <span className="text-xs font-bold tabular-nums text-vpv-text">{p.ensemble_score.toFixed(1)}</span>
-                    <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${badge.bg} ${badge.text}`}>
-                      {badge.label}
+                    <span className="text-right text-[9px] leading-tight text-vpv-text-muted">
+                      VORP
+                      <span className="block text-xs font-bold tabular-nums text-vpv-accent">
+                        {p.vorp != null ? p.vorp.toFixed(1) : "—"}
+                      </span>
                     </span>
                   </div>
 
                   {/* Desktop: full row */}
-                  <div className="hidden w-full items-center md:flex md:min-w-[1160px]">
-                    <span className="w-8 text-[10px] text-vpv-text-muted">{i + 1}</span>
-                    <span className="flex flex-1 min-w-[8rem] items-center gap-1 text-xs font-medium text-vpv-text">
-                      <span className="truncate">
-                        {p.display_name}
-                        <span className="ml-1 text-[10px] font-normal text-vpv-text-muted">{p.team_name}</span>
-                      </span>
-                      <span className="flex flex-none items-center gap-0.5">
-                        {p.is_new && (
-                          <span className="rounded bg-amber-500/15 px-1 text-[8px] text-amber-400">NUEVO</span>
-                        )}
-                        {p.team_changed && (
-                          <span className="rounded bg-blue-500/15 px-1 text-[8px] text-blue-300" title="Cambió de equipo">+EQ</span>
-                        )}
-                        {p.position_changed && (
-                          <span className="rounded bg-purple-500/15 px-1 text-[8px] text-purple-300" title="Cambió de posición">+POS</span>
-                        )}
-                        {p.is_peak_year && (
-                          <span className="rounded bg-orange-500/15 px-1 text-[8px] text-orange-300" title="Pico de forma: última temporada muy por encima de su media — riesgo de regresión">PICO</span>
-                        )}
-                        {p.is_penalty_taker && (
-                          <span className="rounded bg-emerald-500/15 px-1 text-[8px] text-emerald-300" title="Lanzó penaltis la temporada pasada (bonus de techo; verifica el lanzador actual)">PEN</span>
-                        )}
-                        {p.is_bench_risk && (
-                          <span className="rounded bg-red-500/15 px-1 text-[8px] text-red-300" title="Riesgo de banquillo: rota o juega pocos partidos">🪑</span>
-                        )}
-                      </span>
+                  <div className="hidden min-w-[1230px] items-center md:flex">
+                    <span className="w-8 shrink-0 text-[10px] text-vpv-text-muted">{i + 1}</span>
+                    <span className="w-52 shrink-0 truncate text-xs font-medium text-vpv-text">
+                      {p.display_name}
+                      <span className="ml-1 text-[10px] font-normal text-vpv-text-muted">{p.team_name}</span>
                     </span>
-                    <span className="w-12 text-center text-[10px] text-vpv-text-muted">{p.position}</span>
-                    <span className="w-16 text-center">
+                    <span className="flex w-24 shrink-0 items-center gap-0.5 overflow-hidden">
+                      {p.is_new && (
+                        <span className="rounded bg-amber-500/15 px-1 text-[8px] text-amber-400">NUEVO</span>
+                      )}
+                      {p.team_changed && (
+                        <span className="rounded bg-blue-500/15 px-1 text-[8px] text-blue-300" title="Cambió de equipo">+EQ</span>
+                      )}
+                      {p.position_changed && (
+                        <span className="rounded bg-purple-500/15 px-1 text-[8px] text-purple-300" title="Cambió de posición">+POS</span>
+                      )}
+                      {p.is_peak_year && (
+                        <span className="rounded bg-orange-500/15 px-1 text-[8px] text-orange-300" title="Pico de forma: última temporada muy por encima de su media — riesgo de regresión">PICO</span>
+                      )}
+                      {p.is_penalty_taker && (
+                        <span className="rounded bg-emerald-500/15 px-1 text-[8px] text-emerald-300" title="Lanzó penaltis la temporada pasada (bonus de techo; verifica el lanzador actual)">PEN</span>
+                      )}
+                      {p.is_bench_risk && (
+                        <span className="rounded bg-red-500/15 px-1 text-[8px] text-red-300" title="Riesgo de banquillo: rota o juega pocos partidos">🪑</span>
+                      )}
+                    </span>
+                    <span className="w-10 shrink-0 text-center text-[10px] text-vpv-text-muted">{p.position}</span>
+                    <span className="w-16 shrink-0 text-center">
                       {tier ? (
                         <span className={`rounded px-1 py-0.5 text-[9px] font-medium ${tier.cls}`} title={tier.title}>
                           {tier.label}
@@ -470,7 +417,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
                       )}
                     </span>
                     <span
-                      className="w-12 text-center text-[10px] tabular-nums text-vpv-text-muted"
+                      className="w-12 shrink-0 text-center text-[10px] tabular-nums text-vpv-text-muted"
                       title={p.overall_rank != null ? `Pick global #${p.overall_rank}` : undefined}
                     >
                       {rnd != null ? `R${rnd}` : p.overall_rank != null ? `#${p.overall_rank}` : "—"}
@@ -480,7 +427,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
                       const isActive = sortKey === col.key;
                       if (col.key === "career_trend_pct") {
                         return (
-                          <span key={col.key} className={`${col.w} text-right text-xs tabular-nums ${
+                          <span key={col.key} className={`${col.w} shrink-0 text-right text-xs tabular-nums ${
                             val != null && (val as number) > 0.05 ? "text-green-400" :
                             val != null && (val as number) < -0.05 ? "text-red-400" : "text-vpv-text-muted"
                           } ${isActive ? "font-bold" : ""}`}>
@@ -491,22 +438,19 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
                       if (col.key === "availability" || col.key === "consistency" || col.key === "event_share") {
                         const n = (val as number) ?? 0;
                         return (
-                          <span key={col.key} className={`${col.w} text-right text-xs tabular-nums ${isActive ? "font-bold text-vpv-accent" : "text-vpv-text-muted"}`}>
+                          <span key={col.key} className={`${col.w} shrink-0 text-right text-xs tabular-nums ${isActive ? "font-bold text-vpv-accent" : "text-vpv-text-muted"}`}>
                             {(n * 100).toFixed(0)}%
                           </span>
                         );
                       }
                       return (
-                        <span key={col.key} className={`${col.w} text-right text-xs tabular-nums ${
+                        <span key={col.key} className={`${col.w} shrink-0 text-right text-xs tabular-nums ${
                           isActive ? "font-bold text-vpv-accent" : col.key === "ensemble_score" ? "font-bold text-vpv-accent" : "text-vpv-text-muted"
                         }`}>
                           {val != null ? (val as number).toFixed(1) : "—"}
                         </span>
                       );
                     })}
-                    <span className={`w-16 text-center rounded px-1.5 py-0.5 text-[9px] font-bold ${badge.bg} ${badge.text}`}>
-                      {badge.label}
-                    </span>
                   </div>
                 </button>
 
@@ -563,22 +507,6 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
                         <span className="font-medium text-vpv-text">{p.productivity_score.toFixed(1)}</span>
                       </div>
                     </div>
-                    {p.signal_reasons.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {p.signal_reasons.map((r, ri) => (
-                          <span
-                            key={ri}
-                            className={`rounded px-1.5 py-0.5 text-[9px] ${
-                              r.startsWith("En declive") || r.startsWith("Poca") || r.startsWith("Muy") || r.startsWith("Sin")
-                                ? "bg-red-500/10 text-red-400"
-                                : "bg-green-500/10 text-green-400"
-                            }`}
-                          >
-                            {r}
-                          </span>
-                        ))}
-                      </div>
-                    )}
                     <ManualOverrideEditor seasonId={seasonId} player={p} onSaved={setData} />
                   </div>
                 )}
