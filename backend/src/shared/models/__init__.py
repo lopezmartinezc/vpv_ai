@@ -2,6 +2,7 @@ from src.shared.models.base import Base
 from src.shared.models.competition import Competition
 from src.shared.models.competition_matchup import CompetitionMatchup
 from src.shared.models.draft import Draft, DraftPick
+from src.shared.models.draft_value_override import DraftValueOverride
 from src.shared.models.draft_wishlist import DraftWishlist, DraftWishlistPlayer
 from src.shared.models.invite import Invite
 from src.shared.models.lineup import Lineup, LineupPlayer
@@ -25,6 +26,7 @@ __all__ = [
     "CompetitionMatchup",
     "Draft",
     "DraftPick",
+    "DraftValueOverride",
     "DraftWishlist",
     "DraftWishlistPlayer",
     "Invite",

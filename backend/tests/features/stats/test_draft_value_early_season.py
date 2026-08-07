@@ -91,9 +91,15 @@ async def test_draft_values_blend_at_six_matchdays(db_session) -> None:
     resp = await DraftValueService(db_session).get_draft_values(current.id)
 
     by_slug = {p.slug: p for p in resp.players}
-    # Candidates present; fringe (1 game) excluded.
+    # Roster-seeded: everyone in the season appears. fringe (1 game < min, no
+    # history) shows flagged new with no projection instead of being dropped.
     assert "star" in by_slug and "rookie" in by_slug
-    assert "fringe" not in by_slug
+    assert "fringe" in by_slug
+    fringe_row = by_slug["fringe"]
+    assert fringe_row.is_new is True
+    assert fringe_row.auto_projection is None
+    assert fringe_row.effective_value is None
+    assert fringe_row.vorp is None
 
     star = by_slug["star"]
     # Shrinkage weight on current = 6 / (6 + 4) = 0.6.
@@ -111,12 +117,17 @@ async def test_draft_values_blend_at_six_matchdays(db_session) -> None:
 
     assert resp.matchdays_played == 6
 
-    # Draft board: every player gets a VORP + position rank, and the board is
-    # sorted by VORP (cross-position). Both candidates are MED, so replacement
-    # is the weaker one -> its VORP is 0 and the stronger one's is positive.
-    assert all(p.vorp is not None and p.position_rank is not None for p in resp.players)
-    assert resp.players == sorted(resp.players, key=lambda p: p.vorp, reverse=True)
-    med = [p for p in resp.players if p.position == "MED"]
+    # Draft board: players WITH a value get a VORP + position rank; the board
+    # is sorted by VORP (no-value players last). star & rookie are MED, so the
+    # weaker one is replacement (VORP 0) and the stronger one's is positive.
+    valued = [p for p in resp.players if p.effective_value is not None]
+    assert all(p.vorp is not None and p.position_rank is not None for p in valued)
+    assert resp.players == sorted(
+        resp.players,
+        key=lambda p: (p.vorp if p.vorp is not None else -1e9, p.ensemble_score),
+        reverse=True,
+    )
+    med = [p for p in valued if p.position == "MED"]
     assert min(p.vorp for p in med) == pytest.approx(0.0)
     assert max(p.vorp for p in med) > 0
 

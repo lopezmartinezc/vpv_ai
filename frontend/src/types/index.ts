@@ -1103,6 +1103,14 @@ export interface DraftValuePlayer {
   event_share?: number | null;
   exp_games_remaining?: number | null;
   proj_rest_points?: number | null;
+  // Preseason draft board.
+  auto_projection?: number | null;
+  manual_value?: number | null;
+  note?: string | null;
+  effective_value?: number | null;
+  is_new?: boolean;
+  team_changed?: boolean;
+  position_changed?: boolean;
 }
 
 export interface DraftValueResponse {
