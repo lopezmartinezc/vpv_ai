@@ -1,0 +1,528 @@
+"use client";
+
+import { useState, useEffect, useMemo } from "react";
+import { apiClient } from "@/lib/api-client";
+import { sorted, SortDir, POS_COLOR } from "@/components/admin/stats/common";
+import type {
+  DraftValuePlayer,
+  DraftValueResponse,
+} from "@/types";
+
+const SIGNAL_BADGE: Record<string, { bg: string; text: string; label: string }> = {
+  strong_buy: { bg: "bg-green-500/20", text: "text-green-400", label: "Comprar" },
+  buy: { bg: "bg-green-500/10", text: "text-green-400", label: "Bien" },
+  hold: { bg: "bg-amber-500/15", text: "text-amber-400", label: "Neutro" },
+  avoid: { bg: "bg-red-500/20", text: "text-red-400", label: "Evitar" },
+};
+
+type DraftSortKey = keyof DraftValuePlayer;
+
+const DRAFT_COLS: { key: DraftSortKey; label: string; title: string; w: string }[] = [
+  { key: "vorp", label: "VORP", title: "Valor sobre reemplazo posicional: valor efectivo por encima del jugador de reemplazo en su posición. Compara DEF/MED/DEL/POR en un solo eje — la columna maestra del tablero.", w: "w-14" },
+  { key: "effective_value", label: "Efect", title: "Valor efectivo usado para el ranking = valor manual si lo has puesto, si no la proyección automática.", w: "w-14" },
+  { key: "manual_value", label: "Manual", title: "Tu valor manual (pts/partido). Sobrescribe la proyección. Edítalo abriendo la fila. Imprescindible para jugadores nuevos sin histórico.", w: "w-14" },
+  { key: "proj_rest_points", label: "PtsRes", title: "Puntos proyectados resto de temporada = valor efectivo × partidos esperados restantes (jornadas restantes × disponibilidad).", w: "w-16" },
+  { key: "event_share", label: "Fiab", title: "Fiabilidad: % de puntos por eventos concretos (goles, asistencias, portería a cero...) vs nota mediática Marca/AS. Alto = más repetible.", w: "w-12" },
+  { key: "ensemble_score", label: "Ens", title: "Ensemble: valor proyectado (histórico + actual, shrinkage k=4)", w: "w-14" },
+  { key: "simple_avg", label: "Avg", title: "Media simple: pts/partido temporada anterior (baseline)", w: "w-14" },
+  { key: "second_half_score", label: "Form", title: "Forma 2a mitad: rendimiento J20-J38 (predice siguiente temporada)", w: "w-14" },
+  { key: "stability_score", label: "Stab", title: "Estabilidad: minutos altos y constantes (menor riesgo busto)", w: "w-14" },
+  { key: "productivity_score", label: "Prod", title: "Productividad: bonificado por G+A por 90 minutos", w: "w-14" },
+  { key: "career_trend_pct", label: "Trend", title: "Tendencia interanual: % mejora o declive", w: "w-14" },
+  { key: "availability", label: "Disp", title: "Disponibilidad: % partidos con 45+ min jugados", w: "w-12" },
+  { key: "consistency", label: "Cons", title: "Consistencia: 1-CV (1=muy fiable, 0=impredecible)", w: "w-12" },
+];
+
+function ManualOverrideEditor({
+  seasonId,
+  player,
+  onSaved,
+}: {
+  seasonId: number;
+  player: DraftValuePlayer;
+  onSaved: (resp: DraftValueResponse) => void;
+}) {
+  const [value, setValue] = useState(
+    player.manual_value != null ? String(player.manual_value) : "",
+  );
+  const [note, setNote] = useState(player.note ?? "");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function save() {
+    const trimmed = value.trim();
+    const manual_value = trimmed === "" ? null : Number(trimmed);
+    if (manual_value != null && !Number.isFinite(manual_value)) {
+      setErr("Valor inválido");
+      return;
+    }
+    setSaving(true);
+    setErr(null);
+    try {
+      const resp = await apiClient.put<DraftValueResponse>(
+        `/stats/admin/${seasonId}/draft-value/${player.player_id}/override`,
+        { manual_value, note: note.trim() || null },
+      );
+      onSaved(resp);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Error guardando");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-vpv-border/30 pt-2">
+      <label className="text-[10px] text-vpv-text-muted">
+        Valor manual (pts/partido)
+        <input
+          type="number"
+          step="0.1"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={player.auto_projection != null ? `auto ${player.auto_projection}` : "—"}
+          className="mt-0.5 block w-28 rounded border border-vpv-border bg-vpv-bg px-2 py-1 text-xs text-vpv-text"
+        />
+      </label>
+      <label className="flex-1 text-[10px] text-vpv-text-muted">
+        Nota
+        <input
+          type="text"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="p.ej. fichaje estrella / rol nuevo / lesión"
+          className="mt-0.5 block w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1 text-xs text-vpv-text"
+        />
+      </label>
+      <button
+        onClick={save}
+        disabled={saving}
+        className="rounded bg-vpv-accent px-3 py-1.5 text-xs font-medium text-vpv-bg transition-opacity disabled:opacity-40"
+      >
+        {saving ? "Guardando…" : "Guardar"}
+      </button>
+      {err && <span className="text-[10px] text-red-400">{err}</span>}
+      <span className="text-[10px] text-vpv-text-muted">
+        Vacío → usa la proyección automática.
+      </span>
+    </div>
+  );
+}
+
+export function DraftValueTab({ seasonId }: { seasonId: number }) {
+  const [data, setData] = useState<DraftValueResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [posFilter, setPosFilter] = useState("");
+  const [sortKey, setSortKey] = useState<DraftSortKey>("vorp");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [signalFilter, setSignalFilter] = useState("");
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [error, setError] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+
+  const handleSort = (key: DraftSortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    apiClient
+      .get<DraftValueResponse>(`/stats/${seasonId}/players/draft-value`)
+      .then((d) => {
+        if (!cancelled) { setData(d); setError(false); }
+      })
+      .catch(() => {
+        if (!cancelled) setError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [seasonId]);
+
+  const players = useMemo(() => {
+    if (!data) return [];
+    let list = data.players;
+    if (posFilter) list = list.filter((p) => p.position === posFilter);
+    if (signalFilter) list = list.filter((p) => p.signal === signalFilter);
+    return sorted(list, sortKey, sortDir);
+  }, [data, posFilter, signalFilter, sortKey, sortDir]);
+
+  // Positional scarcity: how deep the draftable pool runs per position.
+  // Fewer players above replacement (vorp > 0) => scarcer => draft earlier.
+  const scarcity = useMemo(() => {
+    if (!data) return [];
+    return (["POR", "DEF", "MED", "DEL"] as const).map((pos) => {
+      const inPos = data.players.filter(
+        (p) => p.position === pos && p.vorp != null,
+      );
+      const aboveRepl = inPos.filter((p) => (p.vorp ?? 0) > 0).length;
+      const topVorp = inPos.reduce((m, p) => Math.max(m, p.vorp ?? 0), 0);
+      return { pos, total: inPos.length, aboveRepl, topVorp };
+    });
+  }, [data]);
+
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="h-10 animate-pulse rounded bg-vpv-border" />
+        ))}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+        Error al cargar datos de draft.{" "}
+        <button onClick={() => { setLoading(true); setError(false); }} className="underline">
+          Reintentar
+        </button>
+      </div>
+    );
+  }
+
+  if (!data) return <p className="text-sm text-vpv-text-muted">Sin datos</p>;
+
+  return (
+    <div className="space-y-3">
+      {/* Header info */}
+      <div className="rounded-lg border border-vpv-card-border bg-vpv-card px-4 py-2.5">
+        <div className="flex flex-wrap items-center gap-3 text-xs text-vpv-text-muted">
+          <span>
+            <b className="text-vpv-text">{data.draft_type === "winter" ? "Draft Invierno" : "Draft Pretemporada"}</b>
+            {" "}{data.season_name}
+          </span>
+          <span>J{data.matchdays_played} jugadas</span>
+          <span>Peso historial: {(data.peso_historico * 100).toFixed(0)}%</span>
+          <span>{players.length} jugadores</span>
+        </div>
+      </div>
+
+      {/* Positional scarcity — draft the shallow positions earlier */}
+      {scarcity.some((s) => s.total > 0) && (
+        <div className="rounded-lg border border-vpv-card-border bg-vpv-card px-4 py-2.5">
+          <div className="mb-1.5 flex items-baseline gap-2">
+            <h4 className="text-xs font-semibold text-vpv-text">
+              Escasez por posicion
+            </h4>
+            <span className="text-[10px] text-vpv-text-muted">
+              jugadores por encima del reemplazo (VORP &gt; 0) — cuantos menos, antes conviene draftear
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {scarcity.map((s) => (
+              <button
+                key={s.pos}
+                type="button"
+                onClick={() => setPosFilter(posFilter === s.pos ? "" : s.pos)}
+                className={`rounded-lg border px-3 py-2 text-left transition ${
+                  posFilter === s.pos
+                    ? "border-vpv-accent bg-vpv-accent/10"
+                    : "border-vpv-border bg-vpv-bg hover:border-vpv-accent/50"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span
+                    className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${POS_COLOR[s.pos] ?? "bg-vpv-bg text-vpv-text-muted"}`}
+                  >
+                    {s.pos}
+                  </span>
+                  <span className="text-lg font-bold text-vpv-accent">
+                    {s.aboveRepl}
+                  </span>
+                </div>
+                <p className="mt-1 text-[10px] text-vpv-text-muted">
+                  {s.total} drafteables · techo VORP {s.topVorp.toFixed(1)}
+                </p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="flex gap-0.5">
+          {["", "POR", "DEF", "MED", "DEL"].map((p) => (
+            <button
+              key={p}
+              onClick={() => setPosFilter(p)}
+              className={`rounded px-2 py-1 text-[10px] font-medium ${
+                posFilter === p ? "bg-vpv-accent text-white" : "border border-vpv-border text-vpv-text-muted"
+              }`}
+            >
+              {p || "Todas"}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-0.5">
+          {["", "strong_buy", "buy", "hold", "avoid"].map((s) => {
+            const badge = SIGNAL_BADGE[s];
+            return (
+              <button
+                key={s}
+                onClick={() => setSignalFilter(s)}
+                className={`rounded px-2 py-1 text-[10px] font-medium ${
+                  signalFilter === s ? "bg-vpv-accent text-white" : "border border-vpv-border text-vpv-text-muted"
+                }`}
+              >
+                {badge?.label || "Todos"}
+              </button>
+            );
+          })}
+        </div>
+        <span className="text-[10px] text-vpv-text-muted">Click columna para ordenar</span>
+      </div>
+
+      {/* Signal legend */}
+      <div className="rounded-lg border border-vpv-card-border bg-vpv-card px-4 py-2">
+        <div className="flex flex-wrap items-start gap-x-6 gap-y-1 text-[10px]">
+          <div>
+            <span className="font-semibold text-vpv-text">Signal </span>
+            <span className="text-vpv-text-muted">se calcula con:</span>
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-vpv-text-muted">
+            <span><span className="text-green-400">+</span> Ensemble supera media</span>
+            <span><span className="text-green-400">+</span> Tendencia positiva (&gt;10%)</span>
+            <span><span className="text-green-400">+</span> Disponibilidad &gt;85%</span>
+            <span><span className="text-green-400">+</span> Consistencia alta</span>
+            <span><span className="text-green-400">+</span> 3+ temporadas</span>
+            <span><span className="text-red-400">-</span> Declive &gt;15%</span>
+            <span><span className="text-red-400">-</span> Disponibilidad &lt;60%</span>
+            <span><span className="text-red-400">-</span> Muy volatil</span>
+            <span><span className="text-red-400">-</span> Sin historial</span>
+          </div>
+        </div>
+        <div className="mt-1 flex gap-3 text-[10px]">
+          <span className="rounded bg-green-500/20 px-1.5 py-0.5 text-green-400">Comprar = 3+ positivas, 0 negativas</span>
+          <span className="rounded bg-green-500/10 px-1.5 py-0.5 text-green-400">Bien = 2+ positivas</span>
+          <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-400">Neutro = resto</span>
+          <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-red-400">Evitar = 2+ negativas</span>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="rounded-lg border border-vpv-card-border bg-vpv-card overflow-hidden">
+        {/* Desktop header */}
+        <div className="hidden border-b border-vpv-border bg-vpv-bg px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted md:flex">
+          <span className="w-8">#</span>
+          <span className="flex-1">Jugador</span>
+          <span className="w-12 text-center">Pos</span>
+          {DRAFT_COLS.map((col) => (
+            <button
+              key={col.key}
+              onClick={() => handleSort(col.key)}
+              title={col.title}
+              className={`${col.w} text-right hover:text-vpv-text ${sortKey === col.key ? "text-vpv-accent" : ""}`}
+            >
+              {col.label}
+              {sortKey === col.key && (
+                <span className="ml-0.5">{sortDir === "desc" ? "\u25BC" : "\u25B2"}</span>
+              )}
+            </button>
+          ))}
+          <span className="w-16 text-center" title="Signal de draft: Comprar / Bien / Neutro / Evitar">Signal</span>
+        </div>
+
+        {data.players.length === 0 && (
+          <div className="rounded-lg border border-vpv-card-border bg-vpv-card px-4 py-6 text-center text-sm text-vpv-text-muted">
+            Aún no hay jugadores drafteables. Importa equipos y plantillas de la
+            temporada (Admin → Temporadas → Scrapear) y el tablero se llenará con
+            las proyecciones desde el histórico.
+          </div>
+        )}
+        <div className="divide-y divide-vpv-border/50">
+          {(showAll ? players : players.slice(0, 100)).map((p, i) => {
+            const badge = SIGNAL_BADGE[p.signal] ?? SIGNAL_BADGE.hold;
+            const isExpanded = expandedId === p.player_id;
+
+            return (
+              <div key={p.player_id}>
+                <button
+                  type="button"
+                  onClick={() => setExpandedId(isExpanded ? null : p.player_id)}
+                  className={`flex w-full items-center px-3 py-1.5 text-left hover:bg-vpv-bg/30 ${isExpanded ? "bg-vpv-bg/40" : ""}`}
+                >
+                  {/* Mobile: compact */}
+                  <div className="flex flex-1 items-center gap-2 md:hidden">
+                    <span className="w-6 text-[10px] text-vpv-text-muted">{i + 1}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-medium text-vpv-text">{p.display_name}</p>
+                      <p className="text-[10px] text-vpv-text-muted">{p.team_name} · {p.position}</p>
+                    </div>
+                    <span className="text-xs font-bold tabular-nums text-vpv-text">{p.ensemble_score.toFixed(1)}</span>
+                    <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${badge.bg} ${badge.text}`}>
+                      {badge.label}
+                    </span>
+                  </div>
+
+                  {/* Desktop: full row */}
+                  <div className="hidden w-full items-center md:flex">
+                    <span className="w-8 text-[10px] text-vpv-text-muted">{i + 1}</span>
+                    <span className="flex-1 truncate text-xs font-medium text-vpv-text">
+                      {p.display_name}
+                      <span className="ml-1 text-[10px] font-normal text-vpv-text-muted">{p.team_name}</span>
+                      {p.is_new && (
+                        <span className="ml-1 rounded bg-amber-500/15 px-1 text-[8px] text-amber-400">NUEVO</span>
+                      )}
+                      {p.team_changed && (
+                        <span className="ml-1 rounded bg-blue-500/15 px-1 text-[8px] text-blue-300" title="Cambió de equipo">+EQ</span>
+                      )}
+                      {p.position_changed && (
+                        <span className="ml-1 rounded bg-purple-500/15 px-1 text-[8px] text-purple-300" title="Cambió de posición">+POS</span>
+                      )}
+                      {p.is_peak_year && (
+                        <span className="ml-1 rounded bg-orange-500/15 px-1 text-[8px] text-orange-300" title="Pico de forma: última temporada muy por encima de su media — riesgo de regresión">PICO</span>
+                      )}
+                      {p.is_penalty_taker && (
+                        <span className="ml-1 rounded bg-emerald-500/15 px-1 text-[8px] text-emerald-300" title="Lanzó penaltis la temporada pasada (bonus de techo; verifica el lanzador actual)">PEN</span>
+                      )}
+                      {p.is_bench_risk && (
+                        <span className="ml-1 rounded bg-red-500/15 px-1 text-[8px] text-red-300" title="Riesgo de banquillo: rota o juega pocos partidos">🪑</span>
+                      )}
+                    </span>
+                    <span className="w-12 text-center text-[10px] text-vpv-text-muted">{p.position}</span>
+                    {DRAFT_COLS.map((col) => {
+                      const val = p[col.key];
+                      const isActive = sortKey === col.key;
+                      if (col.key === "career_trend_pct") {
+                        return (
+                          <span key={col.key} className={`${col.w} text-right text-xs tabular-nums ${
+                            val != null && (val as number) > 0.05 ? "text-green-400" :
+                            val != null && (val as number) < -0.05 ? "text-red-400" : "text-vpv-text-muted"
+                          } ${isActive ? "font-bold" : ""}`}>
+                            {val != null ? `${(val as number) > 0 ? "+" : ""}${((val as number) * 100).toFixed(0)}%` : "—"}
+                          </span>
+                        );
+                      }
+                      if (col.key === "availability" || col.key === "consistency" || col.key === "event_share") {
+                        const n = (val as number) ?? 0;
+                        return (
+                          <span key={col.key} className={`${col.w} text-right text-xs tabular-nums ${isActive ? "font-bold text-vpv-accent" : "text-vpv-text-muted"}`}>
+                            {(n * 100).toFixed(0)}%
+                          </span>
+                        );
+                      }
+                      return (
+                        <span key={col.key} className={`${col.w} text-right text-xs tabular-nums ${
+                          isActive ? "font-bold text-vpv-accent" : col.key === "ensemble_score" ? "font-bold text-vpv-accent" : "text-vpv-text-muted"
+                        }`}>
+                          {val != null ? (val as number).toFixed(1) : "—"}
+                        </span>
+                      );
+                    })}
+                    <span className={`w-16 text-center rounded px-1.5 py-0.5 text-[9px] font-bold ${badge.bg} ${badge.text}`}>
+                      {badge.label}
+                    </span>
+                  </div>
+                </button>
+
+                {/* Expanded detail */}
+                {isExpanded && (
+                  <div className="border-t border-vpv-border/30 bg-vpv-bg/20 px-4 py-2.5 text-xs">
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 sm:grid-cols-3 md:grid-cols-4">
+                      <div>
+                        <span className="text-vpv-text-muted">Temporadas: </span>
+                        <span className="font-medium text-vpv-text">{p.seasons_played}</span>
+                      </div>
+                      <div>
+                        <span className="text-vpv-text-muted">Partidos: </span>
+                        <span className="font-medium text-vpv-text">{p.games_played}</span>
+                      </div>
+                      <div>
+                        <span className="text-vpv-text-muted">Pts totales: </span>
+                        <span className="font-medium text-vpv-text">{p.total_points.toFixed(0)}</span>
+                      </div>
+                      <div>
+                        <span className="text-vpv-text-muted">Disponibilidad: </span>
+                        <span className={`font-medium ${p.availability > 0.8 ? "text-green-400" : p.availability > 0.6 ? "text-amber-400" : "text-red-400"}`}>
+                          {(p.availability * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-vpv-text-muted">Goles: </span>
+                        <span className="font-medium text-vpv-text">{p.goals}</span>
+                      </div>
+                      <div>
+                        <span className="text-vpv-text-muted">Asistencias: </span>
+                        <span className="font-medium text-vpv-text">{p.assists}</span>
+                      </div>
+                      {p.marca_avg != null && (
+                        <div>
+                          <span className="text-vpv-text-muted">Marca: </span>
+                          <span className="font-medium text-vpv-text">{p.marca_avg.toFixed(1)} estrellas</span>
+                        </div>
+                      )}
+                      {p.as_avg != null && (
+                        <div>
+                          <span className="text-vpv-text-muted">AS: </span>
+                          <span className="font-medium text-vpv-text">{p.as_avg.toFixed(1)} picas</span>
+                        </div>
+                      )}
+                      {p.second_half_avg != null && (
+                        <div>
+                          <span className="text-vpv-text-muted">2a mitad: </span>
+                          <span className="font-medium text-vpv-text">{p.second_half_avg.toFixed(1)} pts/j</span>
+                        </div>
+                      )}
+                      <div>
+                        <span className="text-vpv-text-muted">Productividad: </span>
+                        <span className="font-medium text-vpv-text">{p.productivity_score.toFixed(1)}</span>
+                      </div>
+                    </div>
+                    {p.signal_reasons.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {p.signal_reasons.map((r, ri) => (
+                          <span
+                            key={ri}
+                            className={`rounded px-1.5 py-0.5 text-[9px] ${
+                              r.startsWith("En declive") || r.startsWith("Poca") || r.startsWith("Muy") || r.startsWith("Sin")
+                                ? "bg-red-500/10 text-red-400"
+                                : "bg-green-500/10 text-green-400"
+                            }`}
+                          >
+                            {r}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <ManualOverrideEditor seasonId={seasonId} player={p} onSaved={setData} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {!showAll && players.length > 100 && (
+        <button
+          onClick={() => setShowAll(true)}
+          className="w-full rounded-lg border border-vpv-border py-2 text-xs text-vpv-text-muted hover:text-vpv-text"
+        >
+          Mostrando 100 de {players.length} — Ver todos
+        </button>
+      )}
+
+      {/* Model legend */}
+      <div className="rounded-lg border border-vpv-card-border bg-vpv-card px-4 py-2.5">
+        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted">Modelos (backtested)</p>
+        <div className="grid grid-cols-1 gap-1 text-[10px] sm:grid-cols-2">
+          {data.model_info && Object.entries(data.model_info).map(([key, desc]) => (
+            <div key={key}>
+              <span className="font-medium text-vpv-text">{key}: </span>
+              <span className="text-vpv-text-muted">{desc}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
