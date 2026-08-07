@@ -22,21 +22,13 @@ import type {
   PlayerStatsResponse,
   ParticipantBreakdown,
   ParticipantExtremes,
-  EvolutionEntry,
   ParticipantStatsResponse,
   FormationUsage,
-  MostLinedUpPlayer,
   MatchdayAverageEntry,
   RecordEntry,
   LeagueStatsResponse,
   AdvancedPlayerStat,
   AdvancedPlayersResponse,
-  PositionAnalysis,
-  PositionValueResponse,
-  DraftHistoryResponse,
-  PickValuePoint,
-  PositionRoundValue,
-  RateEntry,
   TeamDependencyEntry,
   TeamDependencyResponse,
   ComparePlayerAxis,
@@ -405,13 +397,11 @@ function PlayersTab({ players }: { players: PlayerStatRow[] }) {
 function ParticipantsTab({
   breakdowns,
   extremes,
-  evolution,
 }: {
   breakdowns: ParticipantBreakdown[];
   extremes: ParticipantExtremes[];
-  evolution: EvolutionEntry[];
 }) {
-  const [view, setView] = useState<"breakdown" | "extremes" | "evolution">(
+  const [view, setView] = useState<"breakdown" | "extremes">(
     "breakdown",
   );
 
@@ -422,7 +412,6 @@ function ParticipantsTab({
           [
             { key: "breakdown", label: "Desglose" },
             { key: "extremes", label: "Extremos" },
-            { key: "evolution", label: "Evolucion" },
           ] as const
         ).map((v) => (
           <button
@@ -441,7 +430,6 @@ function ParticipantsTab({
 
       {view === "breakdown" && <BreakdownTable breakdowns={breakdowns} />}
       {view === "extremes" && <ExtremesTable extremes={extremes} />}
-      {view === "evolution" && <EvolutionTable evolution={evolution} />}
     </div>
   );
 }
@@ -451,6 +439,13 @@ function BreakdownTable({
 }: {
   breakdowns: ParticipantBreakdown[];
 }) {
+  if (breakdowns.length === 0) {
+    return (
+      <div className="rounded-lg border border-vpv-card-border bg-vpv-card p-6 text-sm text-vpv-text-muted">
+        Sin desglose todavia: aparecera cuando haya jornadas puntuadas.
+      </div>
+    );
+  }
   return (
     <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
       <div className="overflow-x-auto">
@@ -515,6 +510,13 @@ function BreakdownTable({
 }
 
 function ExtremesTable({ extremes }: { extremes: ParticipantExtremes[] }) {
+  if (extremes.length === 0) {
+    return (
+      <div className="rounded-lg border border-vpv-card-border bg-vpv-card p-6 text-sm text-vpv-text-muted">
+        Sin extremos todavia: aparecera cuando haya jornadas puntuadas.
+      </div>
+    );
+  }
   return (
     <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
       <div className="overflow-x-auto">
@@ -562,82 +564,6 @@ function ExtremesTable({ extremes }: { extremes: ParticipantExtremes[] }) {
   );
 }
 
-/** Cumulative evolution matrix — sticky first column for matchday label. */
-function EvolutionTable({ evolution }: { evolution: EvolutionEntry[] }) {
-  const matchdays = useMemo(() => {
-    const map = new Map<number, EvolutionEntry[]>();
-    for (const e of evolution) {
-      if (!map.has(e.matchday_number)) map.set(e.matchday_number, []);
-      map.get(e.matchday_number)!.push(e);
-    }
-    return Array.from(map.entries()).sort((a, b) => a[0] - b[0]);
-  }, [evolution]);
-
-  const participants = useMemo(() => {
-    if (matchdays.length === 0) return [];
-    const lastMd = matchdays[matchdays.length - 1][1];
-    return [...lastMd].sort((a, b) => b.cumulative - a.cumulative);
-  }, [matchdays]);
-
-  if (matchdays.length === 0) {
-    return (
-      <p className="py-4 text-center text-sm text-vpv-text-muted">
-        Sin datos de evolucion
-      </p>
-    );
-  }
-
-  return (
-    <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-vpv-border bg-vpv-bg text-left text-xs text-vpv-text-muted">
-              <th className="sticky left-0 bg-vpv-bg px-3 py-2">Jornada</th>
-              {participants.map((p) => (
-                <th key={p.participant_id} className="px-3 py-2 text-right">
-                  {p.display_name}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {matchdays.map(([mdNumber, entries]) => (
-              <tr
-                key={mdNumber}
-                className="border-b border-vpv-border last:border-0 hover:bg-vpv-bg/50"
-              >
-                <td className="sticky left-0 bg-vpv-card px-3 py-1.5 font-medium text-vpv-text">
-                  J{mdNumber}
-                </td>
-                {participants.map((p) => {
-                  const entry = entries.find(
-                    (e) => e.participant_id === p.participant_id,
-                  );
-                  return (
-                    <td
-                      key={p.participant_id}
-                      className="px-3 py-1.5 text-right text-vpv-text-muted"
-                    >
-                      {entry ? (
-                        <span title={`+${entry.points}`}>
-                          {entry.cumulative}
-                        </span>
-                      ) : (
-                        "\u2014"
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // League Tab
 // ---------------------------------------------------------------------------
@@ -646,17 +572,14 @@ function EvolutionTable({ evolution }: { evolution: EvolutionEntry[] }) {
  * LeagueTab — League-wide stats:
  *  - Records cards (best/worst individual, best/worst avg matchday)
  *  - Formation usage horizontal bar chart
- *  - Most lined-up players table (top 15)
- *  - Matchday averages table with range column
+ *  - Matchday averages table
  */
 function LeagueTab({
   formations,
-  mostLinedUp,
   matchdayAverages,
   records,
 }: {
   formations: FormationUsage[];
-  mostLinedUp: MostLinedUpPlayer[];
   matchdayAverages: MatchdayAverageEntry[];
   records: RecordEntry[];
 }) {
@@ -719,96 +642,50 @@ function LeagueTab({
         </div>
       </div>
 
-      {/* Most lined up */}
-      <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
-        <div className="border-b border-vpv-border px-4 py-3">
-          <h3 className="font-semibold text-vpv-text">
-            Jugadores mas alineados
-          </h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-vpv-border bg-vpv-bg text-left text-xs text-vpv-text-muted">
-                <th className="px-3 py-2">#</th>
-                <th className="px-3 py-2">Jugador</th>
-                <th className="px-3 py-2">Pos</th>
-                <th className="px-3 py-2">Equipo</th>
-                <th className="px-3 py-2 text-right">Veces</th>
-              </tr>
-            </thead>
-            <tbody>
-              {mostLinedUp.map((p, i) => (
-                <tr
-                  key={p.player_id}
-                  className="border-b border-vpv-border last:border-0 hover:bg-vpv-bg/50"
-                >
-                  <td className="px-3 py-1.5 text-vpv-text-muted">{i + 1}</td>
-                  <td className="px-3 py-1.5 font-medium text-vpv-text">
-                    {p.display_name}
-                  </td>
-                  <td className="px-3 py-1.5">
-                    <span
-                      className={`rounded px-1.5 py-0.5 text-xs font-medium ${POS_COLOR[p.position] ?? "bg-vpv-bg text-vpv-text-muted"}`}
-                    >
-                      {p.position}
-                    </span>
-                  </td>
-                  <td className="px-3 py-1.5 text-vpv-text-muted">
-                    {p.team_name}
-                  </td>
-                  <td className="px-3 py-1.5 text-right font-medium text-vpv-accent">
-                    {p.times_lined_up}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
       {/* Matchday averages */}
       <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
         <div className="border-b border-vpv-border px-4 py-3">
           <h3 className="font-semibold text-vpv-text">Medias por jornada</h3>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-vpv-border bg-vpv-bg text-left text-xs text-vpv-text-muted">
-                <th className="px-3 py-2">Jornada</th>
-                <th className="px-3 py-2 text-right">Media</th>
-                <th className="px-3 py-2 text-right">Max</th>
-                <th className="px-3 py-2 text-right">Min</th>
-                <th className="px-3 py-2 text-right">Rango</th>
-              </tr>
-            </thead>
-            <tbody>
-              {matchdayAverages.map((md) => (
-                <tr
-                  key={md.matchday_number}
-                  className="border-b border-vpv-border last:border-0 hover:bg-vpv-bg/50"
-                >
-                  <td className="px-3 py-1.5 font-medium text-vpv-text">
-                    J{md.matchday_number}
-                  </td>
-                  <td className="px-3 py-1.5 text-right font-medium text-vpv-accent">
-                    {md.avg_points.toFixed(1)}
-                  </td>
-                  <td className="px-3 py-1.5 text-right text-green-400">
-                    {md.max_points}
-                  </td>
-                  <td className="px-3 py-1.5 text-right text-red-400">
-                    {md.min_points}
-                  </td>
-                  <td className="px-3 py-1.5 text-right text-vpv-text-muted">
-                    {md.max_points - md.min_points}
-                  </td>
+        {matchdayAverages.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-vpv-text-muted">
+            Sin jornadas puntuadas todavia.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-vpv-border bg-vpv-bg text-left text-xs text-vpv-text-muted">
+                  <th className="px-3 py-2">Jornada</th>
+                  <th className="px-3 py-2 text-right">Media</th>
+                  <th className="px-3 py-2 text-right">Max</th>
+                  <th className="px-3 py-2 text-right">Min</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {matchdayAverages.map((md) => (
+                  <tr
+                    key={md.matchday_number}
+                    className="border-b border-vpv-border last:border-0 hover:bg-vpv-bg/50"
+                  >
+                    <td className="px-3 py-1.5 font-medium text-vpv-text">
+                      J{md.matchday_number}
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-medium text-vpv-accent">
+                      {md.avg_points.toFixed(1)}
+                    </td>
+                    <td className="px-3 py-1.5 text-right text-green-400">
+                      {md.max_points}
+                    </td>
+                    <td className="px-3 py-1.5 text-right text-red-400">
+                      {md.min_points}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1036,401 +913,6 @@ function AdvancedTab({ players }: { players: AdvancedPlayerStat[] }) {
         <span>CI = intervalo confianza 95%</span>
         <span>Form = media ponderada ultimos 5</span>
       </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Positions Tab (Phase 2)
-// ---------------------------------------------------------------------------
-
-const TIER_COLORS: Record<number, string> = {
-  1: "border-amber-500/50 bg-amber-500/10",
-  2: "border-blue-500/50 bg-blue-500/10",
-  3: "border-emerald-500/50 bg-emerald-500/10",
-  4: "border-zinc-500/50 bg-zinc-500/10",
-};
-
-const TIER_LABEL_COLORS: Record<number, string> = {
-  1: "text-amber-400",
-  2: "text-blue-400",
-  3: "text-emerald-400",
-  4: "text-zinc-400",
-};
-
-function PositionsTab({ positions }: { positions: PositionAnalysis[] }) {
-  if (positions.length === 0) {
-    return (
-      <p className="py-6 text-center text-vpv-text-muted">
-        Sin datos de posiciones
-      </p>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {positions.map((pos) => (
-          <div
-            key={pos.position}
-            className="rounded-lg border border-vpv-border bg-vpv-card p-3"
-          >
-            <div className="flex items-center justify-between">
-              <span
-                className={`rounded px-1.5 py-0.5 text-xs font-bold ${POS_COLOR[pos.position] ?? ""}`}
-              >
-                {pos.position}
-              </span>
-              <span className="text-xs text-vpv-text-muted">
-                {pos.player_count} jugadores
-              </span>
-            </div>
-            <div className="mt-2 space-y-1 text-xs">
-              <div className="flex justify-between">
-                <span className="text-vpv-text-muted">Reemplazo</span>
-                <span className="tabular-nums text-vpv-text">
-                  {pos.replacement_level.toFixed(0)} pts
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-vpv-text-muted">Media</span>
-                <span className="tabular-nums text-vpv-text">
-                  {pos.avg_points.toFixed(0)} pts
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-vpv-text-muted">Escasez</span>
-                <span
-                  className={`tabular-nums font-medium ${
-                    pos.scarcity_index < 0.05
-                      ? "text-red-400"
-                      : pos.scarcity_index < 0.1
-                        ? "text-amber-400"
-                        : "text-green-400"
-                  }`}
-                >
-                  {(pos.scarcity_index * 100).toFixed(1)}%
-                </span>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Tier breakdown per position */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        {positions.map((pos) => (
-          <div
-            key={pos.position}
-            className="rounded-lg border border-vpv-border bg-vpv-bg p-4"
-          >
-            <h3 className="mb-3 text-sm font-semibold text-vpv-text">
-              <span
-                className={`mr-2 rounded px-1.5 py-0.5 text-xs font-bold ${POS_COLOR[pos.position] ?? ""}`}
-              >
-                {pos.position}
-              </span>
-              Tiers
-            </h3>
-            <div className="space-y-2">
-              {pos.tiers.map((tier) => (
-                <div
-                  key={tier.tier}
-                  className={`rounded border p-2 ${TIER_COLORS[tier.tier] ?? ""}`}
-                >
-                  <div className="mb-1 flex items-center justify-between">
-                    <span
-                      className={`text-xs font-semibold ${TIER_LABEL_COLORS[tier.tier] ?? ""}`}
-                    >
-                      T{tier.tier} — {tier.label}
-                    </span>
-                    <span className="text-[10px] text-vpv-text-muted">
-                      {tier.min_points.toFixed(0)}–{tier.max_points.toFixed(0)}{" "}
-                      pts
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {tier.players.map((p) => (
-                      <span
-                        key={p.player_id}
-                        className="inline-flex items-center gap-1 rounded bg-vpv-bg/60 px-1.5 py-0.5 text-[11px]"
-                        title={`${p.display_name} (${p.team_name}) — PAR: ${p.par > 0 ? "+" : ""}${p.par.toFixed(0)}`}
-                      >
-                        <span className="truncate text-vpv-text">
-                          {p.display_name}
-                        </span>
-                        <span
-                          className={`tabular-nums font-medium ${
-                            p.par > 0 ? "text-green-400" : "text-red-400"
-                          }`}
-                        >
-                          {p.par > 0 ? "+" : ""}
-                          {p.par.toFixed(0)}
-                        </span>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Legend */}
-      <div className="flex flex-wrap gap-4 text-xs text-vpv-text-muted">
-        <span>PAR = puntos sobre nivel de reemplazo</span>
-        <span>Escasez = % jugadores elite vs total</span>
-        <span>Nivel reemplazo = jugador N+1 (no drafteado)</span>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Draft Tab (Phase 3)
-// ---------------------------------------------------------------------------
-
-function DraftTab({ data }: { data: DraftHistoryResponse }) {
-  const { pick_value_curve, position_by_round, bust_rate, steal_rate } = data;
-
-  // Group position_by_round by round for heatmap
-  const rounds = useMemo(() => {
-    const map = new Map<number, Map<string, PositionRoundValue>>();
-    for (const pr of position_by_round) {
-      if (!map.has(pr.round_number)) map.set(pr.round_number, new Map());
-      map.get(pr.round_number)!.set(pr.position, pr);
-    }
-    return map;
-  }, [position_by_round]);
-
-  const roundNumbers = useMemo(
-    () => [...rounds.keys()].sort((a, b) => a - b),
-    [rounds],
-  );
-  const positions = ["POR", "DEF", "MED", "DEL"];
-
-  // Find max avg for color scale
-  const maxAvg = useMemo(
-    () => Math.max(...position_by_round.map((pr) => pr.avg_total_points), 1),
-    [position_by_round],
-  );
-
-  return (
-    <div className="space-y-6">
-      {/* Pick Value Curve */}
-      <div className="rounded-lg border border-vpv-border bg-vpv-card p-4">
-        <h3 className="mb-3 text-sm font-semibold text-vpv-text">
-          Curva de Valor por Pick
-        </h3>
-        {pick_value_curve.length > 0 ? (
-          <PickValueChart points={pick_value_curve} />
-        ) : (
-          <p className="text-sm text-vpv-text-muted">Sin datos de draft</p>
-        )}
-      </div>
-
-      {/* Position by Round Heatmap */}
-      {roundNumbers.length > 0 && (
-        <div className="rounded-lg border border-vpv-border bg-vpv-card p-4">
-          <h3 className="mb-3 text-sm font-semibold text-vpv-text">
-            Rendimiento por Posicion y Ronda
-          </h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-vpv-border">
-                  <th className="px-2 py-1.5 text-left text-vpv-text-muted">
-                    Ronda
-                  </th>
-                  {positions.map((pos) => (
-                    <th
-                      key={pos}
-                      className="px-2 py-1.5 text-center text-vpv-text-muted"
-                    >
-                      {pos}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {roundNumbers.map((rn) => (
-                  <tr
-                    key={rn}
-                    className="border-b border-vpv-border/50 last:border-0"
-                  >
-                    <td className="px-2 py-1 font-medium text-vpv-text-muted">
-                      R{rn}
-                    </td>
-                    {positions.map((pos) => {
-                      const val = rounds.get(rn)?.get(pos);
-                      if (!val)
-                        return (
-                          <td
-                            key={pos}
-                            className="px-2 py-1 text-center text-vpv-text-muted"
-                          >
-                            —
-                          </td>
-                        );
-                      const intensity = Math.min(
-                        val.avg_total_points / maxAvg,
-                        1,
-                      );
-                      const bg =
-                        intensity > 0.7
-                          ? "bg-green-500/30"
-                          : intensity > 0.4
-                            ? "bg-amber-500/20"
-                            : "bg-red-500/15";
-                      return (
-                        <td
-                          key={pos}
-                          className={`px-2 py-1 text-center tabular-nums ${bg}`}
-                          title={`${val.pick_count} picks`}
-                        >
-                          {val.avg_total_points.toFixed(0)}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Bust & Steal Rates */}
-      <div className="grid gap-3 sm:grid-cols-2">
-        <RateCard
-          title="Bust Rate"
-          subtitle="Picks tempranos que rinden bajo la mediana"
-          entries={bust_rate}
-          colorClass="text-red-400"
-        />
-        <RateCard
-          title="Steal Rate"
-          subtitle="Picks tardios que superan mediana de rondas 1-3"
-          entries={steal_rate}
-          colorClass="text-green-400"
-        />
-      </div>
-
-      {/* Legend */}
-      <div className="flex flex-wrap gap-4 text-xs text-vpv-text-muted">
-        <span>Curva = avg puntos temporada por pick (todas las temporadas)</span>
-        <span>Bust = pick rondas 1-3 bajo mediana global</span>
-        <span>Steal = pick rondas 15+ sobre mediana rondas 1-3</span>
-      </div>
-    </div>
-  );
-}
-
-/** SVG bar chart for pick value curve. */
-function PickValueChart({ points }: { points: PickValuePoint[] }) {
-  const maxPts = Math.max(...points.map((p) => p.avg_total_points), 1);
-  const chartH = 160;
-  const barW = Math.max(4, Math.min(12, 600 / points.length));
-  const chartW = points.length * (barW + 2) + 20;
-
-  return (
-    <div className="overflow-x-auto">
-      <svg
-        width={chartW}
-        height={chartH + 30}
-        className="text-vpv-text"
-        viewBox={`0 0 ${chartW} ${chartH + 30}`}
-      >
-        {points.map((p, i) => {
-          const h = (p.avg_total_points / maxPts) * chartH;
-          const x = i * (barW + 2) + 10;
-          const y = chartH - h;
-          return (
-            <g key={p.pick_number}>
-              <rect
-                x={x}
-                y={y}
-                width={barW}
-                height={h}
-                rx={1}
-                className="fill-vpv-accent/70 hover:fill-vpv-accent"
-              >
-                <title>
-                  Pick {p.pick_number}: {p.avg_total_points.toFixed(0)} pts
-                  (n={p.sample_count})
-                </title>
-              </rect>
-              {p.pick_number % 5 === 0 && (
-                <text
-                  x={x + barW / 2}
-                  y={chartH + 15}
-                  textAnchor="middle"
-                  className="fill-current text-[9px] text-vpv-text-muted"
-                >
-                  {p.pick_number}
-                </text>
-              )}
-            </g>
-          );
-        })}
-        {/* Y-axis labels */}
-        <text
-          x={4}
-          y={10}
-          className="fill-current text-[9px] text-vpv-text-muted"
-        >
-          {maxPts.toFixed(0)}
-        </text>
-        <text
-          x={4}
-          y={chartH}
-          className="fill-current text-[9px] text-vpv-text-muted"
-        >
-          0
-        </text>
-      </svg>
-    </div>
-  );
-}
-
-function RateCard({
-  title,
-  subtitle,
-  entries,
-  colorClass,
-}: {
-  title: string;
-  subtitle: string;
-  entries: RateEntry[];
-  colorClass: string;
-}) {
-  return (
-    <div className="rounded-lg border border-vpv-border bg-vpv-card p-4">
-      <h4 className="text-sm font-semibold text-vpv-text">{title}</h4>
-      <p className="mb-3 text-xs text-vpv-text-muted">{subtitle}</p>
-      {entries.length === 0 ? (
-        <p className="text-xs text-vpv-text-muted">Sin datos</p>
-      ) : (
-        <div className="space-y-2">
-          {entries.map((e) => (
-            <div key={e.round_range} className="flex items-center justify-between">
-              <span className="text-xs text-vpv-text-muted">
-                Rondas {e.round_range}
-              </span>
-              <div className="flex items-center gap-2">
-                <span className={`text-sm font-semibold tabular-nums ${colorClass}`}>
-                  {e.rate_pct.toFixed(1)}%
-                </span>
-                <span className="text-[10px] text-vpv-text-muted">
-                  ({e.total_picks} picks)
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -2021,6 +1503,20 @@ function DraftValueTab({ seasonId }: { seasonId: number }) {
     return sorted(list, sortKey, sortDir);
   }, [data, posFilter, signalFilter, sortKey, sortDir]);
 
+  // Positional scarcity: how deep the draftable pool runs per position.
+  // Fewer players above replacement (vorp > 0) => scarcer => draft earlier.
+  const scarcity = useMemo(() => {
+    if (!data) return [];
+    return (["POR", "DEF", "MED", "DEL"] as const).map((pos) => {
+      const inPos = data.players.filter(
+        (p) => p.position === pos && p.vorp != null,
+      );
+      const aboveRepl = inPos.filter((p) => (p.vorp ?? 0) > 0).length;
+      const topVorp = inPos.reduce((m, p) => Math.max(m, p.vorp ?? 0), 0);
+      return { pos, total: inPos.length, aboveRepl, topVorp };
+    });
+  }, [data]);
+
   if (loading) {
     return (
       <div className="space-y-2">
@@ -2058,6 +1554,48 @@ function DraftValueTab({ seasonId }: { seasonId: number }) {
           <span>{players.length} jugadores</span>
         </div>
       </div>
+
+      {/* Positional scarcity — draft the shallow positions earlier */}
+      {scarcity.some((s) => s.total > 0) && (
+        <div className="rounded-lg border border-vpv-card-border bg-vpv-card px-4 py-2.5">
+          <div className="mb-1.5 flex items-baseline gap-2">
+            <h4 className="text-xs font-semibold text-vpv-text">
+              Escasez por posicion
+            </h4>
+            <span className="text-[10px] text-vpv-text-muted">
+              jugadores por encima del reemplazo (VORP &gt; 0) — cuantos menos, antes conviene draftear
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {scarcity.map((s) => (
+              <button
+                key={s.pos}
+                type="button"
+                onClick={() => setPosFilter(posFilter === s.pos ? "" : s.pos)}
+                className={`rounded-lg border px-3 py-2 text-left transition ${
+                  posFilter === s.pos
+                    ? "border-vpv-accent bg-vpv-accent/10"
+                    : "border-vpv-border bg-vpv-bg hover:border-vpv-accent/50"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span
+                    className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${POS_COLOR[s.pos] ?? "bg-vpv-bg text-vpv-text-muted"}`}
+                  >
+                    {s.pos}
+                  </span>
+                  <span className="text-lg font-bold text-vpv-accent">
+                    {s.aboveRepl}
+                  </span>
+                </div>
+                <p className="mt-1 text-[10px] text-vpv-text-muted">
+                  {s.total} drafteables · techo VORP {s.topVorp.toFixed(1)}
+                </p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-2">
@@ -2351,9 +1889,7 @@ export default function AdminEstadisticasPage() {
   const [players, setPlayers] = useState<PlayerStatRow[]>([]);
   const [breakdowns, setBreakdowns] = useState<ParticipantBreakdown[]>([]);
   const [extremes, setExtremes] = useState<ParticipantExtremes[]>([]);
-  const [evolution, setEvolution] = useState<EvolutionEntry[]>([]);
   const [formations, setFormations] = useState<FormationUsage[]>([]);
-  const [mostLinedUp, setMostLinedUp] = useState<MostLinedUpPlayer[]>([]);
   const [matchdayAverages, setMatchdayAverages] = useState<
     MatchdayAverageEntry[]
   >([]);
@@ -2361,10 +1897,8 @@ export default function AdminEstadisticasPage() {
   const [advancedPlayers, setAdvancedPlayers] = useState<AdvancedPlayerStat[]>(
     [],
   );
-  const [positionData, setPositionData] = useState<PositionAnalysis[]>([]);
-  const [draftData, setDraftData] = useState<DraftHistoryResponse | null>(null);
   const [dependencyData, setDependencyData] = useState<TeamDependencyEntry[]>([]);
-  const [advSubTab, setAdvSubTab] = useState<"valoracion" | "posiciones" | "draft" | "contexto">("valoracion");
+  const [advSubTab, setAdvSubTab] = useState<"valoracion" | "contexto">("valoracion");
   const [tabLoading, setTabLoading] = useState(false);
 
   const fetchSeasons = useCallback(async () => {
@@ -2404,32 +1938,23 @@ export default function AdminEstadisticasPage() {
           );
           setBreakdowns(data.breakdowns);
           setExtremes(data.extremes);
-          setEvolution(data.evolution);
         } else if (tab === "liga") {
           const data = await apiClient.get<LeagueStatsResponse>(
             `/stats/${seasonId}/league`,
           );
           setFormations(data.formations);
-          setMostLinedUp(data.most_lined_up);
           setMatchdayAverages(data.matchday_averages);
           setRecords(data.records);
         } else if (tab === "avanzado") {
-          // Fetch all advanced sub-tab data in parallel
-          const [advData, posData, draftRes, depData] = await Promise.all([
+          const [advData, depData] = await Promise.all([
             apiClient.get<AdvancedPlayersResponse>(
               `/stats/${seasonId}/players/advanced`,
             ),
-            apiClient.get<PositionValueResponse>(
-              `/stats/${seasonId}/positions/value`,
-            ),
-            apiClient.get<DraftHistoryResponse>(`/stats/draft-history`),
             apiClient.get<TeamDependencyResponse>(
               `/stats/${seasonId}/teams/dependency`,
             ),
           ]);
           setAdvancedPlayers(advData.players);
-          setPositionData(posData.positions);
-          setDraftData(draftRes);
           setDependencyData(depData.entries);
         }
       } catch (err) {
@@ -2514,16 +2039,11 @@ export default function AdminEstadisticasPage() {
         <>
           {activeTab === "jugadores" && <PlayersTab players={players} />}
           {activeTab === "participantes" && (
-            <ParticipantsTab
-              breakdowns={breakdowns}
-              extremes={extremes}
-              evolution={evolution}
-            />
+            <ParticipantsTab breakdowns={breakdowns} extremes={extremes} />
           )}
           {activeTab === "liga" && (
             <LeagueTab
               formations={formations}
-              mostLinedUp={mostLinedUp}
               matchdayAverages={matchdayAverages}
               records={records}
             />
@@ -2541,8 +2061,6 @@ export default function AdminEstadisticasPage() {
               <div className="flex gap-1">
                 {([
                   { key: "valoracion", label: "Valoracion" },
-                  { key: "posiciones", label: "Posiciones" },
-                  { key: "draft", label: "Historial Draft" },
                   { key: "contexto", label: "Contexto" },
                 ] as const).map(({ key, label }) => (
                   <button
@@ -2561,12 +2079,6 @@ export default function AdminEstadisticasPage() {
 
               {advSubTab === "valoracion" && (
                 <AdvancedTab players={advancedPlayers} />
-              )}
-              {advSubTab === "posiciones" && (
-                <PositionsTab positions={positionData} />
-              )}
-              {advSubTab === "draft" && draftData && (
-                <DraftTab data={draftData} />
               )}
               {advSubTab === "contexto" && selectedSeasonId && (
                 <ContextoTab
