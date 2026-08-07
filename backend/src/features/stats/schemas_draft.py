@@ -100,6 +100,14 @@ class DraftValuePlayer(BaseModel):
     is_penalty_taker: bool = False
     is_bench_risk: bool = False
 
+    # Positional tier from the scorecard (elite | solid | normal | weak;
+    # "team_dependent" for POR). None for brand-new players with no history.
+    position_tier: str | None = None
+    # 1-based rank across ALL positions by VORP (the effective draft order).
+    # None for players without an effective value. Combined with
+    # ``DraftValueResponse.participant_count`` gives the estimated round.
+    overall_rank: int | None = None
+
 
 class DraftValueResponse(BaseModel):
     season_id: int
@@ -108,6 +116,9 @@ class DraftValueResponse(BaseModel):
     draft_type: str  # "preseason" or "winter"
     peso_historico: float  # how much career data weighs (0-1)
     model_info: dict[str, str]  # model name → description
+    # Number of season participants — the round size for the ADP estimate
+    # (round = ceil(overall_rank / participant_count)). 0 if unknown.
+    participant_count: int = 0
     players: list[DraftValuePlayer]
 
 
