@@ -26,7 +26,12 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.stats.schemas_draft import DraftValuePlayer, DraftValueResponse
-from src.features.stats.scorecard import is_mover
+from src.features.stats.scorecard import (
+    is_bench_risk,
+    is_likely_penalty_taker,
+    is_mover,
+    is_peak_year,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -331,6 +336,14 @@ class DraftValueService:
             team_changed = bool(hist) and is_mover(rp.team_name, hist[-1].team_name)
             position_changed = bool(hist) and rp.position != hist[-1].position
 
+            # === Risk flags (scorecard, from history) ===
+            career_avg = statistics.mean(h.avg_pts for h in hist) if hist else None
+            peak_year = bool(hist) and is_peak_year(hist[-1].avg_pts, career_avg)
+            penalty_taker = bool(hist) and is_likely_penalty_taker(
+                rp.position, hist[-1].penalty_goals, hist[-1].penalties_missed
+            )
+            bench_risk = ref is not None and is_bench_risk(availability, ref.games)
+
             signal, reasons = self._compute_signal(
                 ensemble_score=ensemble_score,
                 career_trend_pct=career_trend_pct,
@@ -381,6 +394,9 @@ class DraftValueService:
                     is_new=is_new,
                     team_changed=team_changed,
                     position_changed=position_changed,
+                    is_peak_year=peak_year,
+                    is_penalty_taker=penalty_taker,
+                    is_bench_risk=bench_risk,
                 )
             )
 

@@ -156,6 +156,61 @@ async def test_manual_override_drives_effective_value_and_vorp(db_session) -> No
     assert max(med, key=lambda p: p.vorp).slug == "rookie"
 
 
+@pytest.mark.asyncio
+async def test_risk_flags(db_session) -> None:
+    older = Season(name="2024-2025", matchday_start=1, matchday_current=38, kind="league")
+    last = Season(name="2025-2026", matchday_start=1, matchday_current=38, kind="league")
+    current = Season(
+        name="2026-2027", matchday_start=1, matchday_current=1, matchday_end=38, kind="league"
+    )
+    db_session.add_all([older, last, current])
+    await db_session.flush()
+    teams = {}
+    for s in (older, last, current):
+        t = Team(season_id=s.id, name="Alfa", slug="alfa")
+        db_session.add(t)
+        teams[s.id] = t
+    await db_session.flush()
+    o_mds = [Matchday(season_id=older.id, number=n) for n in range(1, 11)]
+    l_mds = [Matchday(season_id=last.id, number=n) for n in range(1, 11)]
+    db_session.add_all(o_mds + l_mds)
+    await db_session.flush()
+
+    # peaker: MED, older avg 3, last avg 6 -> last well above career -> peak year.
+    await _prior_player(db_session, older, teams[older.id], "peaker", "MED", avg=3, mds=o_mds)
+    await _prior_player(db_session, last, teams[last.id], "peaker", "MED", avg=6, mds=l_mds)
+    # pen: DEL who took penalties last season.
+    pen = Player(
+        season_id=last.id, team_id=teams[last.id].id, name="pen", display_name="pen",
+        slug="pen", position="DEL",
+    )
+    db_session.add(pen)
+    await db_session.flush()
+    for md in l_mds:
+        db_session.add(
+            PlayerStat(
+                player_id=pen.id, matchday_id=md.id, position="DEL",
+                played=True, minutes_played=90, pts_total=5, penalty_goals=1,
+            )
+        )
+    # roster rows for current season.
+    _roster_player(db_session, current, teams[current.id], "peaker", "MED")
+    db_session.add(
+        Player(
+            season_id=current.id, team_id=teams[current.id].id, name="pen",
+            display_name="pen", slug="pen", position="DEL",
+        )
+    )
+    await db_session.flush()
+
+    resp = await DraftValueService(db_session).get_draft_values(current.id)
+    by_slug = {p.slug: p for p in resp.players}
+    assert by_slug["peaker"].is_peak_year is True
+    assert by_slug["pen"].is_penalty_taker is True
+    # Both played only 10 games last season -> flagged bench risk (<22 games).
+    assert by_slug["pen"].is_bench_risk is True
+
+
 def _ps(avg, games=10, minutes=900) -> _PlayerSeason:
     return _PlayerSeason(
         slug="p",

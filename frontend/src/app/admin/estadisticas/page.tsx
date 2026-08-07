@@ -2190,6 +2190,15 @@ function DraftValueTab({ seasonId }: { seasonId: number }) {
                       {p.position_changed && (
                         <span className="ml-1 rounded bg-purple-500/15 px-1 text-[8px] text-purple-300" title="Cambió de posición">+POS</span>
                       )}
+                      {p.is_peak_year && (
+                        <span className="ml-1 rounded bg-orange-500/15 px-1 text-[8px] text-orange-300" title="Pico de forma: última temporada muy por encima de su media — riesgo de regresión">PICO</span>
+                      )}
+                      {p.is_penalty_taker && (
+                        <span className="ml-1 rounded bg-emerald-500/15 px-1 text-[8px] text-emerald-300" title="Lanzó penaltis la temporada pasada (bonus de techo; verifica el lanzador actual)">PEN</span>
+                      )}
+                      {p.is_bench_risk && (
+                        <span className="ml-1 rounded bg-red-500/15 px-1 text-[8px] text-red-300" title="Riesgo de banquillo: rota o juega pocos partidos">🪑</span>
+                      )}
                     </span>
                     <span className="w-12 text-center text-[10px] text-vpv-text-muted">{p.position}</span>
                     {DRAFT_COLS.map((col) => {
