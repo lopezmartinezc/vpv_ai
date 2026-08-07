@@ -52,12 +52,6 @@ from src.features.stats.service_draft import DraftValueService
 
 logger = logging.getLogger(__name__)
 
-# Fixed historical cohort for the retrospective / backtest analytics: the
-# four complete La Liga seasons with full draft + stats data. This is a
-# deliberate backtest cohort (unlike the live model, which resolves prior
-# league seasons dynamically).
-VALID_SEASON_IDS = [5, 6, 7, 8]
-
 
 # ---------------------------------------------------------------------------
 # Pure helpers (unit-testable without DB)
@@ -232,9 +226,9 @@ class DraftRetroService:
                 picks=[],
             )
 
-        # Slot baseline comes from ALL historical seasons (same phase).
+        # Slot baseline comes from ALL league seasons (same phase).
         baseline_rows = await self._load_picks(
-            season_ids=VALID_SEASON_IDS,
+            season_ids=await self._league_season_ids(),
             phases=[info["phase"]],
         )
         slot_curve = compute_slot_curve(
@@ -290,7 +284,7 @@ class DraftRetroService:
         season_ids: list[int] | None,
         phases: list[str] | None,
     ) -> DraftScatterResponse:
-        sids = season_ids if season_ids else list(VALID_SEASON_IDS)
+        sids = season_ids if season_ids else await self._league_season_ids()
         phs = phases if phases else ["preseason"]
         rows = await self._load_picks(season_ids=sids, phases=phs)
 
@@ -334,7 +328,7 @@ class DraftRetroService:
         season_name = await self._get_season_name(season_id)
 
         # History up to but not including the target season.
-        past_sids = [s for s in VALID_SEASON_IDS if s < season_id]
+        past_sids = await self._league_season_ids(before=season_id)
         if not past_sids:
             raise NotFoundError(
                 "BacktestData",
@@ -438,7 +432,7 @@ class DraftRetroService:
         min_seasons: int,
     ) -> ParticipantIQResponse:
         rows = await self._load_picks(
-            season_ids=VALID_SEASON_IDS,
+            season_ids=await self._league_season_ids(),
             phases=[phase],
         )
         slot_curve = compute_slot_curve([(r.pick_number, r.season_total_points) for r in rows])
@@ -534,6 +528,20 @@ class DraftRetroService:
             "phase": row.phase,
             "season_name": row.season_name,
         }
+
+    async def _league_season_ids(self, before: int | None = None) -> list[int]:
+        """All LEAGUE season ids (optionally those strictly before ``before``).
+
+        Replaces the old hardcoded ``[5, 6, 7, 8]`` so the retro/backtest
+        include every season — including 2026-27 and beyond — as history."""
+        sql = "SELECT id FROM seasons WHERE kind = 'league'"
+        params: dict[str, int] = {}
+        if before is not None:
+            sql += " AND id < :before"
+            params["before"] = before
+        sql += " ORDER BY id"
+        result = await self.session.execute(text(sql), params)
+        return [r.id for r in result.all()]
 
     async def _get_season_name(self, season_id: int) -> str:
         result = await self.session.execute(
