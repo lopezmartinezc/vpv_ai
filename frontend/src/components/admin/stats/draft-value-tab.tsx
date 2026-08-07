@@ -15,7 +15,32 @@ const SIGNAL_BADGE: Record<string, { bg: string; text: string; label: string }> 
   avoid: { bg: "bg-red-500/20", text: "text-red-400", label: "Evitar" },
 };
 
+// Positional tier from the scorecard — instant context on how good a player is
+// *for their position* (thresholds live in backend scorecard.py).
+const TIER_BADGE: Record<string, { cls: string; label: string; title: string }> = {
+  elite: { cls: "bg-green-500/20 text-green-300", label: "Elite", title: "Tier elite en su posición" },
+  solid: { cls: "bg-blue-500/15 text-blue-300", label: "Sólido", title: "Tier sólido en su posición" },
+  normal: { cls: "bg-vpv-bg text-vpv-text-muted", label: "Normal", title: "Tier normal en su posición" },
+  weak: { cls: "bg-red-500/10 text-red-300", label: "Flojo", title: "Tier flojo en su posición" },
+  team_dependent: { cls: "bg-amber-500/15 text-amber-300", label: "Equipo", title: "Portero: el valor depende del equipo (clean sheets), no de una escala de puntos" },
+};
+
+/** Estimated draft round from the global VORP rank and the league size. */
+function roundOf(p: DraftValuePlayer, participants: number): number | null {
+  if (p.overall_rank == null || participants <= 0) return null;
+  return Math.ceil(p.overall_rank / participants);
+}
+
 type DraftSortKey = keyof DraftValuePlayer;
+
+// Order in which positional tiers sort (higher = better) when sorting by Tier.
+const TIER_RANK: Record<string, number> = {
+  elite: 5,
+  solid: 4,
+  normal: 3,
+  team_dependent: 2,
+  weak: 1,
+};
 
 const DRAFT_COLS: { key: DraftSortKey; label: string; title: string; w: string }[] = [
   { key: "vorp", label: "VORP", title: "Valor sobre reemplazo posicional: valor efectivo por encima del jugador de reemplazo en su posición. Compara DEF/MED/DEL/POR en un solo eje — la columna maestra del tablero.", w: "w-14" },
@@ -125,7 +150,8 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
       setSortKey(key);
-      setSortDir("desc");
+      // Ronda (overall_rank) is "lower is better" → default ascending.
+      setSortDir(key === "overall_rank" ? "asc" : "desc");
     }
   };
 
@@ -150,6 +176,16 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
     let list = data.players;
     if (posFilter) list = list.filter((p) => p.position === posFilter);
     if (signalFilter) list = list.filter((p) => p.signal === signalFilter);
+    // Tier is categorical — sort by its quality rank, not alphabetically.
+    if (sortKey === "position_tier") {
+      const dir = sortDir === "asc" ? 1 : -1;
+      return [...list].sort(
+        (a, b) =>
+          dir *
+          ((TIER_RANK[a.position_tier ?? ""] ?? 0) -
+            (TIER_RANK[b.position_tier ?? ""] ?? 0)),
+      );
+    }
     return sorted(list, sortKey, sortDir);
   }, [data, posFilter, signalFilter, sortKey, sortDir]);
 
@@ -278,7 +314,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
             );
           })}
         </div>
-        <span className="text-[10px] text-vpv-text-muted">Click columna para ordenar</span>
+        <span className="text-[10px] text-vpv-text-muted">Click columna para ordenar · desliza para ver todas</span>
       </div>
 
       {/* Signal legend */}
@@ -309,12 +345,33 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
       </div>
 
       {/* Table */}
-      <div className="rounded-lg border border-vpv-card-border bg-vpv-card overflow-hidden">
+      <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
+       <div className="overflow-x-auto">
         {/* Desktop header */}
-        <div className="hidden border-b border-vpv-border bg-vpv-bg px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted md:flex">
+        <div className="hidden border-b border-vpv-border bg-vpv-bg px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted md:flex md:min-w-[1160px]">
           <span className="w-8">#</span>
-          <span className="flex-1">Jugador</span>
+          <span className="flex-1 min-w-[8rem]">Jugador</span>
           <span className="w-12 text-center">Pos</span>
+          <button
+            onClick={() => handleSort("position_tier")}
+            title="Tier posicional (elite / sólido / normal / flojo; los porteros dependen del equipo)"
+            className={`w-16 text-center hover:text-vpv-text ${sortKey === "position_tier" ? "text-vpv-accent" : ""}`}
+          >
+            Tier
+            {sortKey === "position_tier" && (
+              <span className="ml-0.5">{sortDir === "desc" ? "▼" : "▲"}</span>
+            )}
+          </button>
+          <button
+            onClick={() => handleSort("overall_rank")}
+            title="Ronda estimada de draft = rank VORP global ÷ nº de participantes"
+            className={`w-12 text-center hover:text-vpv-text ${sortKey === "overall_rank" ? "text-vpv-accent" : ""}`}
+          >
+            Ronda
+            {sortKey === "overall_rank" && (
+              <span className="ml-0.5">{sortDir === "desc" ? "▼" : "▲"}</span>
+            )}
+          </button>
           {DRAFT_COLS.map((col) => (
             <button
               key={col.key}
@@ -341,6 +398,8 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
         <div className="divide-y divide-vpv-border/50">
           {(showAll ? players : players.slice(0, 100)).map((p, i) => {
             const badge = SIGNAL_BADGE[p.signal] ?? SIGNAL_BADGE.hold;
+            const tier = p.position_tier ? TIER_BADGE[p.position_tier] : null;
+            const rnd = roundOf(p, data.participant_count);
             const isExpanded = expandedId === p.player_id;
 
             return (
@@ -354,8 +413,16 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
                   <div className="flex flex-1 items-center gap-2 md:hidden">
                     <span className="w-6 text-[10px] text-vpv-text-muted">{i + 1}</span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-medium text-vpv-text">{p.display_name}</p>
-                      <p className="text-[10px] text-vpv-text-muted">{p.team_name} · {p.position}</p>
+                      <p className="truncate text-xs font-medium text-vpv-text">
+                        {p.display_name}
+                        {tier && (
+                          <span className={`ml-1 rounded px-1 py-0.5 text-[8px] font-medium ${tier.cls}`}>{tier.label}</span>
+                        )}
+                      </p>
+                      <p className="text-[10px] text-vpv-text-muted">
+                        {p.team_name} · {p.position}
+                        {rnd != null && <span className="ml-1 text-vpv-accent">· R{rnd}</span>}
+                      </p>
                     </div>
                     <span className="text-xs font-bold tabular-nums text-vpv-text">{p.ensemble_score.toFixed(1)}</span>
                     <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${badge.bg} ${badge.text}`}>
@@ -364,31 +431,50 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
                   </div>
 
                   {/* Desktop: full row */}
-                  <div className="hidden w-full items-center md:flex">
+                  <div className="hidden w-full items-center md:flex md:min-w-[1160px]">
                     <span className="w-8 text-[10px] text-vpv-text-muted">{i + 1}</span>
-                    <span className="flex-1 truncate text-xs font-medium text-vpv-text">
-                      {p.display_name}
-                      <span className="ml-1 text-[10px] font-normal text-vpv-text-muted">{p.team_name}</span>
-                      {p.is_new && (
-                        <span className="ml-1 rounded bg-amber-500/15 px-1 text-[8px] text-amber-400">NUEVO</span>
-                      )}
-                      {p.team_changed && (
-                        <span className="ml-1 rounded bg-blue-500/15 px-1 text-[8px] text-blue-300" title="Cambió de equipo">+EQ</span>
-                      )}
-                      {p.position_changed && (
-                        <span className="ml-1 rounded bg-purple-500/15 px-1 text-[8px] text-purple-300" title="Cambió de posición">+POS</span>
-                      )}
-                      {p.is_peak_year && (
-                        <span className="ml-1 rounded bg-orange-500/15 px-1 text-[8px] text-orange-300" title="Pico de forma: última temporada muy por encima de su media — riesgo de regresión">PICO</span>
-                      )}
-                      {p.is_penalty_taker && (
-                        <span className="ml-1 rounded bg-emerald-500/15 px-1 text-[8px] text-emerald-300" title="Lanzó penaltis la temporada pasada (bonus de techo; verifica el lanzador actual)">PEN</span>
-                      )}
-                      {p.is_bench_risk && (
-                        <span className="ml-1 rounded bg-red-500/15 px-1 text-[8px] text-red-300" title="Riesgo de banquillo: rota o juega pocos partidos">🪑</span>
-                      )}
+                    <span className="flex flex-1 min-w-[8rem] items-center gap-1 text-xs font-medium text-vpv-text">
+                      <span className="truncate">
+                        {p.display_name}
+                        <span className="ml-1 text-[10px] font-normal text-vpv-text-muted">{p.team_name}</span>
+                      </span>
+                      <span className="flex flex-none items-center gap-0.5">
+                        {p.is_new && (
+                          <span className="rounded bg-amber-500/15 px-1 text-[8px] text-amber-400">NUEVO</span>
+                        )}
+                        {p.team_changed && (
+                          <span className="rounded bg-blue-500/15 px-1 text-[8px] text-blue-300" title="Cambió de equipo">+EQ</span>
+                        )}
+                        {p.position_changed && (
+                          <span className="rounded bg-purple-500/15 px-1 text-[8px] text-purple-300" title="Cambió de posición">+POS</span>
+                        )}
+                        {p.is_peak_year && (
+                          <span className="rounded bg-orange-500/15 px-1 text-[8px] text-orange-300" title="Pico de forma: última temporada muy por encima de su media — riesgo de regresión">PICO</span>
+                        )}
+                        {p.is_penalty_taker && (
+                          <span className="rounded bg-emerald-500/15 px-1 text-[8px] text-emerald-300" title="Lanzó penaltis la temporada pasada (bonus de techo; verifica el lanzador actual)">PEN</span>
+                        )}
+                        {p.is_bench_risk && (
+                          <span className="rounded bg-red-500/15 px-1 text-[8px] text-red-300" title="Riesgo de banquillo: rota o juega pocos partidos">🪑</span>
+                        )}
+                      </span>
                     </span>
                     <span className="w-12 text-center text-[10px] text-vpv-text-muted">{p.position}</span>
+                    <span className="w-16 text-center">
+                      {tier ? (
+                        <span className={`rounded px-1 py-0.5 text-[9px] font-medium ${tier.cls}`} title={tier.title}>
+                          {tier.label}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-vpv-text-muted">—</span>
+                      )}
+                    </span>
+                    <span
+                      className="w-12 text-center text-[10px] tabular-nums text-vpv-text-muted"
+                      title={p.overall_rank != null ? `Pick global #${p.overall_rank}` : undefined}
+                    >
+                      {rnd != null ? `R${rnd}` : p.overall_rank != null ? `#${p.overall_rank}` : "—"}
+                    </span>
                     {DRAFT_COLS.map((col) => {
                       const val = p[col.key];
                       const isActive = sortKey === col.key;
@@ -500,6 +586,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
             );
           })}
         </div>
+       </div>
       </div>
 
       {!showAll && players.length > 100 && (

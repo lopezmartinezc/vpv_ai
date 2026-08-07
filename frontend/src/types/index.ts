@@ -1114,6 +1114,10 @@ export interface DraftValuePlayer {
   is_peak_year?: boolean;
   is_penalty_taker?: boolean;
   is_bench_risk?: boolean;
+  // Positional tier (elite | solid | normal | weak; "team_dependent" for POR).
+  position_tier?: string | null;
+  // 1-based rank across all positions by VORP (draft order / ADP).
+  overall_rank?: number | null;
 }
 
 export interface DraftValueResponse {
@@ -1123,6 +1127,8 @@ export interface DraftValueResponse {
   draft_type: string;
   peso_historico: number;
   model_info: Record<string, string>;
+  // Season participant count — round size for the ADP estimate.
+  participant_count: number;
   players: DraftValuePlayer[];
 }
 

@@ -32,6 +32,7 @@ from src.features.stats.scorecard import (
     is_likely_penalty_taker,
     is_mover,
     is_peak_year,
+    tier_for,
 )
 
 logger = logging.getLogger(__name__)
@@ -391,6 +392,7 @@ class DraftValueService:
                     is_peak_year=peak_year,
                     is_penalty_taker=penalty_taker,
                     is_bench_risk=bench_risk,
+                    position_tier=(tier_for(rp.position, simple_avg) if hist else None),
                 )
             )
 
@@ -425,6 +427,14 @@ class DraftValueService:
             reverse=True,
         )
 
+        # Global draft order (ADP): 1-based rank across all positions for
+        # players that actually have a VORP. Feeds the estimated round.
+        overall = 0
+        for p in results:
+            if p.vorp is not None:
+                overall += 1
+                p.overall_rank = overall
+
         # Season-level summary of how much the current partial season weighs
         # for a typical full-window candidate (n = md_played).
         typical_w = md_played / (md_played + DRAFT_SHRINKAGE_K) if md_played > 0 else 0.0
@@ -446,6 +456,7 @@ class DraftValueService:
                 "stability_score": "Minutos estables — seguridad",
                 "trend_score": "Tendencia interanual — mejora o empeora",
             },
+            participant_count=int(season_info.get("participant_count") or 0),
             players=results,
         )
 
@@ -500,8 +511,10 @@ class DraftValueService:
     async def _get_season_info(self, season_id: int) -> dict:
         result = await self.session.execute(
             text(
-                "SELECT name, matchday_start, matchday_current, matchday_end "
-                "FROM seasons WHERE id = :id"
+                "SELECT s.name, s.matchday_start, s.matchday_current, s.matchday_end, "
+                "       (SELECT COUNT(*) FROM season_participants sp "
+                "        WHERE sp.season_id = s.id) AS participant_count "
+                "FROM seasons s WHERE s.id = :id"
             ),
             {"id": season_id},
         )
@@ -511,6 +524,7 @@ class DraftValueService:
             "matchday_start": row.matchday_start,
             "matchday_current": row.matchday_current,
             "matchday_end": row.matchday_end,
+            "participant_count": row.participant_count,
         }
 
     async def _load_roster(self, season_id: int) -> list[_RosterPlayer]:
