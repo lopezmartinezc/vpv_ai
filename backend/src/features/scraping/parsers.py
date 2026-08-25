@@ -629,11 +629,21 @@ def _parse_events(row: Tag) -> dict[str, int | bool]:
 
 
 def _parse_marca(row: Tag) -> str | None:
-    """Return raw Marca rating string or None if cell is absent."""
+    """Return the Marca rating (1-4) as a numeric string, or None if absent.
+
+    futbolfantasy's 2026 redesign renders the rating as filled-star glyphs
+    (``★``) instead of a number, so we count them. Falls back to numeric text
+    (legacy format) or to "SC"/"-" (not rated) so downstream scoring, which
+    only credits rows matching ``^\\d+$``, keeps working.
+    """
     marca_td = row.find("td", class_="marca")
     if not isinstance(marca_td, Tag):
         return None
-    return marca_td.get_text(strip=True) or None
+    text = marca_td.get_text(strip=True)
+    stars = text.count("★")
+    if stars:
+        return str(stars)
+    return text or None
 
 
 def _parse_as_picas(row: Tag) -> str | None:
