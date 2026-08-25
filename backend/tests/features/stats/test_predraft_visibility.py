@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from src.features.stats.repository import StatsRepository
+from src.features.stats.service_advanced import AdvancedStatsService
 from src.shared.models.matchday import Matchday
 from src.shared.models.player import Player
 from src.shared.models.player_stat import PlayerStat
@@ -77,3 +78,59 @@ async def test_get_player_stats_predraft_toggle(db_session) -> None:
     assert len(both) == 1
     assert both[0].total_points == 12
     assert both[0].matchdays_played == 2
+
+
+@pytest.mark.asyncio
+async def test_advanced_and_dependency_predraft_toggle(db_session) -> None:
+    """Avanzado/Contexto also drop the min_played floor to 1 pre-draft, so a
+    single scraped (non-counting) matchday still returns players."""
+    season = Season(name="2026-2027", matchday_start=4, kind="league")
+    db_session.add(season)
+    await db_session.flush()
+
+    team = Team(season_id=season.id, name="A", slug="a")
+    db_session.add(team)
+    await db_session.flush()
+
+    players = [
+        Player(
+            season_id=season.id,
+            team_id=team.id,
+            name=f"P{i}",
+            display_name=f"P{i}",
+            slug=f"p{i}",
+            position="DEL",
+        )
+        for i in range(2)
+    ]
+    md_pre = Matchday(season_id=season.id, number=1, counts=False)  # pre-draft
+    db_session.add_all([*players, md_pre])
+    await db_session.flush()
+
+    db_session.add_all(
+        [
+            PlayerStat(
+                player_id=p.id,
+                matchday_id=md_pre.id,
+                position="DEL",
+                played=True,
+                minutes_played=90,
+                pts_total=6 + i,
+                pts_starter=1,
+            )
+            for i, p in enumerate(players)
+        ]
+    )
+    await db_session.flush()
+
+    svc = AdvancedStatsService(db_session)
+
+    # Default (league view): non-counting matchday excluded → empty.
+    assert (await svc.get_advanced_players(season.id)).players == []
+    assert (await svc.get_team_dependency(season.id)).entries == []
+
+    # Pre-draft toggle: 1 game is enough (min_played dropped to 1) → 2 players.
+    adv = await svc.get_advanced_players(season.id, include_noncounting=True)
+    assert len(adv.players) == 2
+    dep = await svc.get_team_dependency(season.id, include_noncounting=True)
+    assert len(dep.entries) == 1  # one team
