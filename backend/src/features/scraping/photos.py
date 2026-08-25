@@ -299,6 +299,7 @@ class PhotoDownloader:
         self,
         season_id: int,
         concurrency: int = 5,
+        only_missing: bool = False,
     ) -> dict[str, int]:
         """Fast pass: only re-check the VPV position for every active player.
 
@@ -316,9 +317,14 @@ class PhotoDownloader:
 
         all_players = await self.repo.get_players_for_season(season_id)
         players = [p for p in all_players if p.is_available]
+        if only_missing:
+            # Backfill mode: only players whose position was never resolved
+            # (e.g. created from a roster page that no longer renders it).
+            players = [p for p in players if not (p.position or "").strip()]
         logger.info(
-            "refresh_positions: %d active players, concurrency=%d",
+            "refresh_positions: %d players (only_missing=%s), concurrency=%d",
             len(players),
+            only_missing,
             concurrency,
         )
 
