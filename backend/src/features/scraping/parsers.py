@@ -655,19 +655,25 @@ def _parse_as_picas(row: Tag) -> str | None:
 
 
 def _find_stats_table(html: str) -> Tag | None:
-    """Locate the per-matchday stats table inside ``div.puntos``.
+    """Locate the per-matchday stats table.
 
-    Identified by containing ``tr.plegado`` rows with a ``td.jorn-td`` cell.
-    Some player pages prepend a summary table (e.g. top scorers) and others
-    don't — so we pick the first ``table.tablestats`` matching this shape.
+    Identified by a ``table.tablestats`` containing ``tr.plegado`` rows with a
+    ``td.jorn-td`` cell. Historically this table lived inside ``div.puntos``;
+    futbolfantasy's 2026 Vue redesign dropped that wrapper, so we scope to
+    ``div.puntos`` when it's still present (back-compat) and otherwise search
+    the whole document. The ``td.jorn-td`` shape filter uniquely identifies the
+    per-matchday table either way (summary/top-scorer tables have no jorn-td).
     """
     soup = _soup(html)
+    scopes: list[Tag] = []
     puntos_div = soup.find("div", class_="puntos")
-    if not isinstance(puntos_div, Tag):
-        return None
-    for candidate in puntos_div.find_all("table", class_="tablestats"):
-        if isinstance(candidate, Tag) and candidate.find("td", class_="jorn-td") is not None:
-            return candidate
+    if isinstance(puntos_div, Tag):
+        scopes.append(puntos_div)
+    scopes.append(soup)  # fallback: wrapper removed in the Vue redesign
+    for scope in scopes:
+        for candidate in scope.find_all("table", class_="tablestats"):
+            if isinstance(candidate, Tag) and candidate.find("td", class_="jorn-td") is not None:
+                return candidate
     return None
 
 
