@@ -394,6 +394,7 @@ async def _background_rosters(season_id: int) -> None:
             result = await ScrapingService(session).import_rosters_only(season_id)
             await session.commit()
             logger.info("background_rosters: season_id=%d — %s", season_id, result)
+            await _backfill_positions(session, season_id)
         except Exception:
             await session.rollback()
             logger.exception("background_rosters: season_id=%d failed", season_id)
@@ -409,9 +410,29 @@ async def _background_sync_rosters(season_id: int) -> None:
             result = await ScrapingService(session).sync_rosters(season_id)
             await session.commit()
             logger.info("background_sync_rosters: season_id=%d — %s", season_id, result)
+            await _backfill_positions(session, season_id)
         except Exception:
             await session.rollback()
             logger.exception("background_sync_rosters: season_id=%d failed", season_id)
+
+
+async def _backfill_positions(session: AsyncSession, season_id: int) -> None:
+    """Fill the VPV position of players the roster page no longer carries.
+
+    futbolfantasy's 2026 redesign dropped the position from the team roster
+    page, so newly-created players land with an empty position. This resolves
+    them from each player's individual page (span.position-box CSS code, or a
+    Spanish position label as fallback) and updates ``players.position``.
+    """
+    from src.features.scraping.photos import PhotoDownloader
+
+    try:
+        result = await PhotoDownloader(session).refresh_positions(season_id, only_missing=True)
+        await session.commit()
+        logger.info("backfill_positions: season_id=%d — %s", season_id, result)
+    except Exception:
+        await session.rollback()
+        logger.exception("backfill_positions: season_id=%d failed", season_id)
 
 
 async def _background_import_teams(season_id: int, scraping_slug: str) -> None:
