@@ -142,6 +142,10 @@ class AdvancedStatsService:
         2. Fetch per-matchday points for EWMA
         3. Compute CI, pp90, form, trend in Python
         """
+        # Pre-draft preview: only 1-2 matchdays exist, so the usual min_played=3
+        # floor would exclude everyone. Drop it to 1 when non-counting is on.
+        if include_noncounting:
+            min_played = 1
         # Run both queries
         rows = await self.repo.get_advanced_player_stats(
             season_id, min_played, position, include_noncounting
@@ -465,6 +469,8 @@ class AdvancedStatsService:
         self, season_id: int, min_played: int = 3, include_noncounting: bool = False
     ) -> TeamDependencyResponse:
         """Team dependency: how much each team relies on one player."""
+        if include_noncounting:
+            min_played = 1
         rows = await self.repo.get_team_dependency(season_id, min_played, include_noncounting)
         return TeamDependencyResponse(
             season_id=season_id,
@@ -487,7 +493,12 @@ class AdvancedStatsService:
         self, season_id: int, player_ids: list[int], include_noncounting: bool = False
     ) -> ComparePlayersResponse:
         """Radar chart comparison: normalize 6 axes to 0-100."""
-        rows = await self.repo.get_compare_raw(season_id, player_ids, include_noncounting)
+        rows = await self.repo.get_compare_raw(
+            season_id,
+            player_ids,
+            min_played=1 if include_noncounting else 3,
+            include_noncounting=include_noncounting,
+        )
 
         if not rows:
             return ComparePlayersResponse(season_id=season_id, players=[])
