@@ -152,6 +152,7 @@ class AdvancedStatsRepository:
         season_id: int,
         min_played: int = 3,
         position: str | None = None,
+        include_noncounting: bool = False,
     ) -> list[AdvancedPlayerRow]:
         """Aggregate per-player stats with stddev and percentiles.
 
@@ -191,7 +192,7 @@ class AdvancedStatsRepository:
             .join(Matchday, PlayerStat.matchday_id == Matchday.id)
             .where(
                 Matchday.season_id == season_id,
-                Matchday.counts.is_(True),
+                *([] if include_noncounting else [Matchday.counts.is_(True)]),
                 PlayerStat.played.is_(True),
             )
         )
@@ -235,6 +236,7 @@ class AdvancedStatsRepository:
         season_id: int,
         min_played: int = 3,
         position: str | None = None,
+        include_noncounting: bool = False,
     ) -> list[PlayerMatchdayPoints]:
         """Get per-matchday pts_total for each player, ordered by matchday.
 
@@ -248,7 +250,7 @@ class AdvancedStatsRepository:
             .join(Player, PlayerStat.player_id == Player.id)
             .where(
                 Matchday.season_id == season_id,
-                Matchday.counts.is_(True),
+                *([] if include_noncounting else [Matchday.counts.is_(True)]),
                 PlayerStat.played.is_(True),
             )
         )
@@ -270,7 +272,7 @@ class AdvancedStatsRepository:
             .join(Matchday, PlayerStat.matchday_id == Matchday.id)
             .where(
                 Matchday.season_id == season_id,
-                Matchday.counts.is_(True),
+                *([] if include_noncounting else [Matchday.counts.is_(True)]),
                 PlayerStat.played.is_(True),
                 PlayerStat.player_id.in_(select(qualifying_sub.c.player_id)),
             )
@@ -498,7 +500,9 @@ class AdvancedStatsRepository:
     # Phase 4 — Context analysis
     # ------------------------------------------------------------------
 
-    async def get_player_splits(self, season_id: int, player_id: int) -> list[PlayerSplitRow]:
+    async def get_player_splits(
+        self, season_id: int, player_id: int, include_noncounting: bool = False
+    ) -> list[PlayerSplitRow]:
         """Home/away split stats for a single player in a season."""
         # Per-matchday team (falls back to current team for un-backfilled rows)
         # so a transferred player's earlier matchdays keep the right location.
@@ -524,7 +528,7 @@ class AdvancedStatsRepository:
             .join(Match, PlayerStat.match_id == Match.id)
             .where(
                 Matchday.season_id == season_id,
-                Matchday.counts.is_(True),
+                *([] if include_noncounting else [Matchday.counts.is_(True)]),
                 PlayerStat.played.is_(True),
                 PlayerStat.player_id == player_id,
             )
@@ -546,7 +550,10 @@ class AdvancedStatsRepository:
         ]
 
     async def get_team_dependency(
-        self, season_id: int, min_played: int = 3
+        self,
+        season_id: int,
+        min_played: int = 3,
+        include_noncounting: bool = False,
     ) -> list[TeamDependencyRow]:
         """Per-team: top scorer and their % of team total fantasy points."""
         # Subquery: per-player season total
@@ -561,7 +568,7 @@ class AdvancedStatsRepository:
             .join(Matchday, PlayerStat.matchday_id == Matchday.id)
             .where(
                 Matchday.season_id == season_id,
-                Matchday.counts.is_(True),
+                *([] if include_noncounting else [Matchday.counts.is_(True)]),
                 PlayerStat.played.is_(True),
             )
             .group_by(PlayerStat.player_id, Player.display_name, Player.team_id)
@@ -624,7 +631,11 @@ class AdvancedStatsRepository:
         ]
 
     async def get_compare_raw(
-        self, season_id: int, player_ids: list[int], min_played: int = 3
+        self,
+        season_id: int,
+        player_ids: list[int],
+        min_played: int = 3,
+        include_noncounting: bool = False,
     ) -> list[CompareRawRow]:
         """Raw stats for player comparison radar chart."""
         md_count = func.count(PlayerStat.id)
@@ -648,7 +659,7 @@ class AdvancedStatsRepository:
             .join(Matchday, PlayerStat.matchday_id == Matchday.id)
             .where(
                 Matchday.season_id == season_id,
-                Matchday.counts.is_(True),
+                *([] if include_noncounting else [Matchday.counts.is_(True)]),
                 PlayerStat.played.is_(True),
                 Player.id.in_(player_ids),
             )
