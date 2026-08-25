@@ -92,6 +92,7 @@ export default function AdminEstadisticasPage() {
   const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<MainTab>("rendimiento");
   const [perfLens, setPerfLens] = useState<PerfLens>("jugadores");
+  const [includeNoncounting, setIncludeNoncounting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -140,7 +141,7 @@ export default function AdminEstadisticasPage() {
       try {
         if (lens === "jugadores") {
           const data = await apiClient.get<PlayerStatsResponse>(
-            `/stats/${seasonId}/players`,
+            `/stats/${seasonId}/players${includeNoncounting ? "?include_noncounting=true" : ""}`,
           );
           setPlayers(data.players);
         } else if (lens === "participantes") {
@@ -176,7 +177,7 @@ export default function AdminEstadisticasPage() {
         setTabLoading(false);
       }
     },
-    [],
+    [includeNoncounting],
   );
 
   useEffect(() => {
@@ -279,7 +280,21 @@ export default function AdminEstadisticasPage() {
             </div>
           ) : (
             <>
-              {perfLens === "jugadores" && <PlayersTab players={players} />}
+              {perfLens === "jugadores" && (
+                <div className="space-y-3">
+                  <label className="flex items-center gap-2 text-xs text-vpv-text-muted">
+                    <input
+                      type="checkbox"
+                      checked={includeNoncounting}
+                      onChange={(e) => setIncludeNoncounting(e.target.checked)}
+                      className="accent-vpv-accent"
+                    />
+                    Incluir jornadas pre-draft / no computables (para preparar el
+                    draft antes de que la liga empiece a contar)
+                  </label>
+                  <PlayersTab players={players} />
+                </div>
+              )}
               {perfLens === "participantes" && (
                 <ParticipantsTab breakdowns={breakdowns} extremes={extremes} />
               )}

@@ -339,11 +339,16 @@ async def get_predictions(
 @router.get("/{season_id}/players", response_model=PlayerStatsResponse)
 async def get_player_stats(
     season_id: int,
+    include_noncounting: bool = Query(
+        default=False,
+        description="Include pre-draft / disabled matchdays (counts=false) — "
+        "useful to preview this season before the draft.",
+    ),
     admin: dict = Depends(require_perm(Perm.STATS)),
     db: AsyncSession = Depends(get_db),
 ) -> PlayerStatsResponse:
     repo = StatsRepository(db)
-    rows = await repo.get_player_stats(season_id)
+    rows = await repo.get_player_stats(season_id, include_noncounting=include_noncounting)
     return PlayerStatsResponse(
         season_id=season_id,
         players=[
