@@ -383,11 +383,12 @@ async def get_advanced_player_stats(
     season_id: int,
     min_played: int = 3,
     position: str | None = None,
+    include_noncounting: bool = False,
     admin: dict = Depends(require_perm(Perm.STATS)),
     db: AsyncSession = Depends(get_db),
 ) -> AdvancedPlayersResponse:
     service = AdvancedStatsService(db)
-    return await service.get_advanced_players(season_id, min_played, position)
+    return await service.get_advanced_players(season_id, min_played, position, include_noncounting)
 
 
 @router.get("/{season_id}/positions/value", response_model=PositionValueResponse)
@@ -405,34 +406,37 @@ async def get_position_value(
 async def get_compare_players(
     season_id: int,
     player_ids: str = "",
+    include_noncounting: bool = False,
     admin: dict = Depends(require_perm(Perm.STATS)),
     db: AsyncSession = Depends(get_db),
 ) -> ComparePlayersResponse:
     parsed = [int(s) for s in player_ids.split(",") if s.strip()] if player_ids else []
     service = AdvancedStatsService(db)
-    return await service.get_compare_players(season_id, parsed)
+    return await service.get_compare_players(season_id, parsed, include_noncounting)
 
 
 @router.get("/{season_id}/players/{player_id}/splits", response_model=PlayerSplitsResponse)
 async def get_player_splits(
     season_id: int,
     player_id: int,
+    include_noncounting: bool = False,
     admin: dict = Depends(require_perm(Perm.STATS)),
     db: AsyncSession = Depends(get_db),
 ) -> PlayerSplitsResponse:
     service = AdvancedStatsService(db)
-    return await service.get_player_splits(season_id, player_id)
+    return await service.get_player_splits(season_id, player_id, include_noncounting)
 
 
 @router.get("/{season_id}/teams/dependency", response_model=TeamDependencyResponse)
 async def get_team_dependency(
     season_id: int,
     min_played: int = 3,
+    include_noncounting: bool = False,
     admin: dict = Depends(require_perm(Perm.STATS)),
     db: AsyncSession = Depends(get_db),
 ) -> TeamDependencyResponse:
     service = AdvancedStatsService(db)
-    return await service.get_team_dependency(season_id, min_played)
+    return await service.get_team_dependency(season_id, min_played, include_noncounting)
 
 
 @router.get("/{season_id}/participants", response_model=ParticipantStatsResponse)

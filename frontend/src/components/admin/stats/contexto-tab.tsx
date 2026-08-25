@@ -15,10 +15,12 @@ export function ContextoTab({
   seasonId,
   dependency,
   advancedPlayers,
+  includeNoncounting = false,
 }: {
   seasonId: number;
   dependency: TeamDependencyEntry[];
   advancedPlayers: AdvancedPlayerStat[];
+  includeNoncounting?: boolean;
 }) {
   // Compare state
   const [compareIds, setCompareIds] = useState<number[]>([]);
@@ -67,7 +69,9 @@ export function ContextoTab({
     setCompareLoading(true);
     apiClient
       .get<ComparePlayersResponse>(
-        `/stats/${seasonId}/players/compare?player_ids=${compareIds.join(",")}`,
+        `/stats/${seasonId}/players/compare?player_ids=${compareIds.join(",")}${
+          includeNoncounting ? "&include_noncounting=true" : ""
+        }`,
       )
       .then((data) => {
         if (!cancelled) setCompareData(data.players);
@@ -79,7 +83,7 @@ export function ContextoTab({
     return () => {
       cancelled = true;
     };
-  }, [seasonId, compareIds]);
+  }, [seasonId, compareIds, includeNoncounting]);
 
   // Fetch splits
   const fetchSplits = (playerId: number, name: string) => {
@@ -88,7 +92,9 @@ export function ContextoTab({
     setSplitLoading(true);
     apiClient
       .get<PlayerSplitsResponse>(
-        `/stats/${seasonId}/players/${playerId}/splits`,
+        `/stats/${seasonId}/players/${playerId}/splits${
+          includeNoncounting ? "?include_noncounting=true" : ""
+        }`,
       )
       .then((data) => setSplits(data.splits))
       .catch(() => setSplits([]))

@@ -134,6 +134,7 @@ class AdvancedStatsService:
         season_id: int,
         min_played: int = 3,
         position: str | None = None,
+        include_noncounting: bool = False,
     ) -> AdvancedPlayersResponse:
         """Build the full advanced player stats response.
 
@@ -142,8 +143,12 @@ class AdvancedStatsService:
         3. Compute CI, pp90, form, trend in Python
         """
         # Run both queries
-        rows = await self.repo.get_advanced_player_stats(season_id, min_played, position)
-        md_points = await self.repo.get_player_matchday_points(season_id, min_played, position)
+        rows = await self.repo.get_advanced_player_stats(
+            season_id, min_played, position, include_noncounting
+        )
+        md_points = await self.repo.get_player_matchday_points(
+            season_id, min_played, position, include_noncounting
+        )
 
         # Group matchday points by player_id
         points_by_player: dict[int, list[float]] = defaultdict(list)
@@ -423,9 +428,11 @@ class AdvancedStatsService:
     # Phase 4 — Context analysis
     # ------------------------------------------------------------------
 
-    async def get_player_splits(self, season_id: int, player_id: int) -> PlayerSplitsResponse:
+    async def get_player_splits(
+        self, season_id: int, player_id: int, include_noncounting: bool = False
+    ) -> PlayerSplitsResponse:
         """Home/away splits for a single player."""
-        rows = await self.repo.get_player_splits(season_id, player_id)
+        rows = await self.repo.get_player_splits(season_id, player_id, include_noncounting)
 
         # Splits don't carry the name — fetch it (falls back for empty splits).
         from sqlalchemy import select
@@ -455,10 +462,10 @@ class AdvancedStatsService:
         )
 
     async def get_team_dependency(
-        self, season_id: int, min_played: int = 3
+        self, season_id: int, min_played: int = 3, include_noncounting: bool = False
     ) -> TeamDependencyResponse:
         """Team dependency: how much each team relies on one player."""
-        rows = await self.repo.get_team_dependency(season_id, min_played)
+        rows = await self.repo.get_team_dependency(season_id, min_played, include_noncounting)
         return TeamDependencyResponse(
             season_id=season_id,
             entries=[
@@ -477,10 +484,10 @@ class AdvancedStatsService:
         )
 
     async def get_compare_players(
-        self, season_id: int, player_ids: list[int]
+        self, season_id: int, player_ids: list[int], include_noncounting: bool = False
     ) -> ComparePlayersResponse:
         """Radar chart comparison: normalize 6 axes to 0-100."""
-        rows = await self.repo.get_compare_raw(season_id, player_ids)
+        rows = await self.repo.get_compare_raw(season_id, player_ids, include_noncounting)
 
         if not rows:
             return ComparePlayersResponse(season_id=season_id, players=[])

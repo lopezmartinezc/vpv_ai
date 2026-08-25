@@ -158,12 +158,13 @@ export default function AdminEstadisticasPage() {
           setMatchdayAverages(data.matchday_averages);
           setRecords(data.records);
         } else if (lens === "avanzado" || lens === "contexto") {
+          const q = includeNoncounting ? "?include_noncounting=true" : "";
           const [advData, depData] = await Promise.all([
             apiClient.get<AdvancedPlayersResponse>(
-              `/stats/${seasonId}/players/advanced`,
+              `/stats/${seasonId}/players/advanced${q}`,
             ),
             apiClient.get<TeamDependencyResponse>(
-              `/stats/${seasonId}/teams/dependency`,
+              `/stats/${seasonId}/teams/dependency${q}`,
             ),
           ]);
           setAdvancedPlayers(advData.players);
@@ -269,6 +270,23 @@ export default function AdminEstadisticasPage() {
             ))}
           </div>
 
+          {/* Pre-draft toggle: applies to the player-centric lenses whose
+              queries filter counts=true (Jugadores / Avanzado / Contexto). */}
+          {(["jugadores", "avanzado", "contexto"] as PerfLens[]).includes(
+            perfLens,
+          ) && (
+            <label className="flex items-center gap-2 text-xs text-vpv-text-muted">
+              <input
+                type="checkbox"
+                checked={includeNoncounting}
+                onChange={(e) => setIncludeNoncounting(e.target.checked)}
+                className="accent-vpv-accent"
+              />
+              Incluir jornadas pre-draft / no computables (para preparar el draft
+              antes de que la liga empiece a contar)
+            </label>
+          )}
+
           {tabLoading ? (
             <div className="space-y-2">
               {Array.from({ length: 5 }).map((_, i) => (
@@ -280,21 +298,7 @@ export default function AdminEstadisticasPage() {
             </div>
           ) : (
             <>
-              {perfLens === "jugadores" && (
-                <div className="space-y-3">
-                  <label className="flex items-center gap-2 text-xs text-vpv-text-muted">
-                    <input
-                      type="checkbox"
-                      checked={includeNoncounting}
-                      onChange={(e) => setIncludeNoncounting(e.target.checked)}
-                      className="accent-vpv-accent"
-                    />
-                    Incluir jornadas pre-draft / no computables (para preparar el
-                    draft antes de que la liga empiece a contar)
-                  </label>
-                  <PlayersTab players={players} />
-                </div>
-              )}
+              {perfLens === "jugadores" && <PlayersTab players={players} />}
               {perfLens === "participantes" && (
                 <ParticipantsTab breakdowns={breakdowns} extremes={extremes} />
               )}
@@ -313,6 +317,7 @@ export default function AdminEstadisticasPage() {
                   seasonId={selectedSeasonId}
                   dependency={dependencyData}
                   advancedPlayers={advancedPlayers}
+                  includeNoncounting={includeNoncounting}
                 />
               )}
             </>
