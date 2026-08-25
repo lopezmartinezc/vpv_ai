@@ -129,8 +129,16 @@ class StatsRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def get_player_stats(self, season_id: int) -> list[PlayerStatRow]:
-        """Aggregate player-level stats grouped by player + position."""
+    async def get_player_stats(
+        self, season_id: int, include_noncounting: bool = False
+    ) -> list[PlayerStatRow]:
+        """Aggregate player-level stats grouped by player + position.
+
+        By default only counting matchdays are included (league view). Set
+        ``include_noncounting`` to also include pre-draft / disabled matchdays
+        — useful for previewing this season's raw player output before the
+        draft, when matchdays before ``matchday_start`` are ``counts=false``.
+        """
         total_pts = func.coalesce(func.sum(PlayerStat.pts_total), 0)
         md_count = func.count(PlayerStat.id)
         stmt = (
@@ -206,8 +214,8 @@ class StatsRepository:
             .join(Matchday, PlayerStat.matchday_id == Matchday.id)
             .where(
                 Matchday.season_id == season_id,
-                Matchday.counts.is_(True),
                 PlayerStat.played.is_(True),
+                *([] if include_noncounting else [Matchday.counts.is_(True)]),
             )
             .group_by(
                 Player.id,

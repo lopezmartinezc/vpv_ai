@@ -245,7 +245,12 @@ class DraftValueService:
         for ps in current_data:
             current_map[ps.slug] = ps
 
-        md_played = season_info["matchday_current"] - season_info["matchday_start"]
+        # "Matchdays played" = how much current-season signal we actually have.
+        # Pre-draft (matchday_current < matchday_start) the league formula goes
+        # negative, so fall back to the count of current-season matchdays that
+        # have scraped stats (which includes the pre-draft ones we now blend).
+        league_md = season_info["matchday_current"] - season_info["matchday_start"]
+        md_played = max(league_md, int(season_info.get("scraped_matchdays") or 0))
         is_winter = md_played >= 19  # informational label only; blend always applies
 
         # Matchdays left in the season — for durability-adjusted projections.
@@ -513,7 +518,10 @@ class DraftValueService:
             text(
                 "SELECT s.name, s.matchday_start, s.matchday_current, s.matchday_end, "
                 "       (SELECT COUNT(*) FROM season_participants sp "
-                "        WHERE sp.season_id = s.id) AS participant_count "
+                "        WHERE sp.season_id = s.id) AS participant_count, "
+                "       (SELECT COUNT(DISTINCT ps.matchday_id) "
+                "        FROM player_stats ps JOIN matchdays md ON ps.matchday_id = md.id "
+                "        WHERE md.season_id = s.id) AS scraped_matchdays "
                 "FROM seasons s WHERE s.id = :id"
             ),
             {"id": season_id},
@@ -525,6 +533,7 @@ class DraftValueService:
             "matchday_current": row.matchday_current,
             "matchday_end": row.matchday_end,
             "participant_count": row.participant_count,
+            "scraped_matchdays": row.scraped_matchdays,
         }
 
     async def _load_roster(self, season_id: int) -> list[_RosterPlayer]:
@@ -632,7 +641,11 @@ class DraftValueService:
                        AVG(CASE WHEN md.number > 19 THEN ps.pts_total END) as second_half_avg
                 FROM player_stats ps
                 JOIN players p ON ps.player_id = p.id
-                JOIN matchdays md ON ps.matchday_id = md.id AND md.counts = TRUE
+                -- History uses only counting matchdays; the CURRENT season also
+                -- includes pre-draft matchdays (counts=false before
+                -- matchday_start) so the board has early-season signal to blend.
+                JOIN matchdays md ON ps.matchday_id = md.id
+                     AND (md.counts = TRUE OR md.season_id = :current)
                 JOIN teams t ON p.team_id = t.id
                 JOIN seasons s ON md.season_id = s.id
                 WHERE md.season_id = ANY(:ids)
@@ -641,7 +654,7 @@ class DraftValueService:
                 HAVING COUNT(*) >= :min
                 ORDER BY p.slug, md.season_id
             """),
-            {"ids": season_ids, "min": min_games},
+            {"ids": season_ids, "min": min_games, "current": current_season_id},
         )
 
         return [
