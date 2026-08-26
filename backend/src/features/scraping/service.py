@@ -444,9 +444,16 @@ class ScrapingService:
         matchday_id = matchday.id
         matches = await self.repo.get_matches_for_matchday(matchday_id)
 
-        counting_matches = [m for m in matches if m.counts]
+        # Only PLAYED matches (a result is in): scraping an unplayed matchday
+        # would fetch player pages and match a stray "jornada N" row from
+        # another competition (Copa / Segunda / loans), storing phantom stats
+        # for a fixture that hasn't happened. home_score is set by the calendar
+        # scrape once the match finishes.
+        counting_matches = [m for m in matches if m.counts and m.home_score is not None]
         if not counting_matches:
-            logger.info("scrape_matchday: no counting matches for matchday_id=%d", matchday_id)
+            logger.info(
+                "scrape_matchday: no played counting matches for matchday_id=%d", matchday_id
+            )
             return {"processed": 0, "skipped": 0, "errors": 0}
 
         # Collect the set of team IDs referenced by counting matches.
