@@ -342,7 +342,18 @@ class DraftValueService:
             penalty_taker = bool(hist) and is_likely_penalty_taker(
                 rp.position, hist[-1].penalty_goals, hist[-1].penalties_missed
             )
-            bench_risk = ref is not None and is_bench_risk(availability, ref.games)
+            # Bench risk is a durability/role trait, so judge it from the last
+            # COMPLETE season (history) — not the partial current one, whose
+            # 1-8 game counts are all below the 22-game threshold and would flag
+            # every starter (e.g. an established keeper after matchday 1).
+            # No history → can't assess durability (the player is already
+            # flagged NUEVO), so don't flag.
+            if hist:
+                h = hist[-1]
+                hist_availability = h.games_45min / max(h.games, 1)
+                bench_risk = is_bench_risk(hist_availability, h.games)
+            else:
+                bench_risk = False
 
             signal, reasons = self._compute_signal(
                 ensemble_score=ensemble_score,
