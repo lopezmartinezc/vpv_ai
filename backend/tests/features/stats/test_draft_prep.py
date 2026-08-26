@@ -300,3 +300,74 @@ async def test_deactivated_players_excluded_from_board(db_session) -> None:
     slugs = {p.slug for p in resp.players}
     assert "here" in slugs
     assert "gone" not in slugs
+
+
+@pytest.mark.asyncio
+async def test_bench_risk_uses_history_not_partial_current(db_session) -> None:
+    """An established starter (full last season) must NOT be flagged bench risk
+    just because the current season only has 1-2 matchdays scraped."""
+    last = Season(name="2025-2026", matchday_start=1, matchday_current=38, kind="league")
+    current = Season(
+        name="2026-2027", matchday_start=1, matchday_current=2, matchday_end=38, kind="league"
+    )
+    db_session.add_all([last, current])
+    await db_session.flush()
+    t_last = Team(season_id=last.id, name="Getafe", slug="getafe")
+    t_cur = Team(season_id=current.id, name="Getafe", slug="getafe")
+    db_session.add_all([t_last, t_cur])
+    await db_session.flush()
+
+    # Last season: durable keeper, played 23 games (>= 22, full availability).
+    last_mds = [Matchday(season_id=last.id, number=n) for n in range(1, 24)]
+    db_session.add_all(last_mds)
+    await db_session.flush()
+    soria_last = Player(
+        season_id=last.id,
+        team_id=t_last.id,
+        name="soria",
+        display_name="Soria",
+        slug="soria",
+        position="POR",
+    )
+    db_session.add(soria_last)
+    await db_session.flush()
+    for md in last_mds:
+        db_session.add(
+            PlayerStat(
+                player_id=soria_last.id,
+                matchday_id=md.id,
+                position="POR",
+                played=True,
+                minutes_played=90,
+                pts_total=5,
+            )
+        )
+
+    # Current season: roster row + a single scraped matchday (1 game).
+    soria_cur = Player(
+        season_id=current.id,
+        team_id=t_cur.id,
+        name="soria",
+        display_name="Soria",
+        slug="soria",
+        position="POR",
+        is_available=True,
+    )
+    md_cur = Matchday(season_id=current.id, number=1, counts=True)
+    db_session.add_all([soria_cur, md_cur])
+    await db_session.flush()
+    db_session.add(
+        PlayerStat(
+            player_id=soria_cur.id,
+            matchday_id=md_cur.id,
+            position="POR",
+            played=True,
+            minutes_played=90,
+            pts_total=6,
+        )
+    )
+    await db_session.flush()
+
+    resp = await DraftValueService(db_session).get_draft_values(current.id)
+    soria = {p.slug: p for p in resp.players}["soria"]
+    assert soria.is_bench_risk is False  # durable last season, not a bench risk
