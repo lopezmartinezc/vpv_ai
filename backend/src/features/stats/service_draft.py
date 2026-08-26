@@ -537,14 +537,19 @@ class DraftValueService:
         }
 
     async def _load_roster(self, season_id: int) -> list[_RosterPlayer]:
-        """All draftable players of the season (from ``players``). Available
-        preseason — this is what seeds the board before any matchday."""
+        """All DRAFTABLE players of the season (from ``players``). Available
+        preseason — this is what seeds the board before any matchday.
+
+        Only ``is_available`` players: sync-rosters soft-deactivates anyone
+        gone from every squad (left the league), and a departed player must
+        not appear on the draft board.
+        """
         result = await self.session.execute(
             text(
                 "SELECT p.id, p.slug, p.display_name, p.position, p.photo_path, "
                 "       t.name AS team_name "
                 "FROM players p JOIN teams t ON p.team_id = t.id "
-                "WHERE p.season_id = :sid "
+                "WHERE p.season_id = :sid AND p.is_available = TRUE "
                 "ORDER BY p.slug"
             ),
             {"sid": season_id},

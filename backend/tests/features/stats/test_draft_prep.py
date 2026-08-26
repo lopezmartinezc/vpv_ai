@@ -181,24 +181,37 @@ async def test_risk_flags(db_session) -> None:
     await _prior_player(db_session, last, teams[last.id], "peaker", "MED", avg=6, mds=l_mds)
     # pen: DEL who took penalties last season.
     pen = Player(
-        season_id=last.id, team_id=teams[last.id].id, name="pen", display_name="pen",
-        slug="pen", position="DEL",
+        season_id=last.id,
+        team_id=teams[last.id].id,
+        name="pen",
+        display_name="pen",
+        slug="pen",
+        position="DEL",
     )
     db_session.add(pen)
     await db_session.flush()
     for md in l_mds:
         db_session.add(
             PlayerStat(
-                player_id=pen.id, matchday_id=md.id, position="DEL",
-                played=True, minutes_played=90, pts_total=5, penalty_goals=1,
+                player_id=pen.id,
+                matchday_id=md.id,
+                position="DEL",
+                played=True,
+                minutes_played=90,
+                pts_total=5,
+                penalty_goals=1,
             )
         )
     # roster rows for current season.
     _roster_player(db_session, current, teams[current.id], "peaker", "MED")
     db_session.add(
         Player(
-            season_id=current.id, team_id=teams[current.id].id, name="pen",
-            display_name="pen", slug="pen", position="DEL",
+            season_id=current.id,
+            team_id=teams[current.id].id,
+            name="pen",
+            display_name="pen",
+            slug="pen",
+            position="DEL",
         )
     )
     await db_session.flush()
@@ -247,3 +260,43 @@ def test_project_value_none_current_is_history_only() -> None:
     out2 = project_value(hist=[], current=_ps(5.0))
     assert out2.weight_current == 1.0
     assert out2.ensemble_score == pytest.approx(5.0)
+
+
+@pytest.mark.asyncio
+async def test_deactivated_players_excluded_from_board(db_session) -> None:
+    """A player who left the league (is_available=False, soft-deactivated by
+    sync-rosters) must NOT appear on the draft board."""
+    season = Season(
+        name="2026-2027", matchday_start=4, matchday_current=1, matchday_end=38, kind="league"
+    )
+    db_session.add(season)
+    await db_session.flush()
+    team = Team(season_id=season.id, name="Alfa", slug="alfa")
+    db_session.add(team)
+    await db_session.flush()
+
+    here = Player(
+        season_id=season.id,
+        team_id=team.id,
+        name="here",
+        display_name="here",
+        slug="here",
+        position="DEL",
+        is_available=True,
+    )
+    gone = Player(
+        season_id=season.id,
+        team_id=team.id,
+        name="gone",
+        display_name="gone",
+        slug="gone",
+        position="DEL",
+        is_available=False,
+    )
+    db_session.add_all([here, gone])
+    await db_session.flush()
+
+    resp = await DraftValueService(db_session).get_draft_values(season.id)
+    slugs = {p.slug for p in resp.players}
+    assert "here" in slugs
+    assert "gone" not in slugs
