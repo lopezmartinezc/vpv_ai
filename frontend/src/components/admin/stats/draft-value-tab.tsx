@@ -18,6 +18,15 @@ const TIER_BADGE: Record<string, { cls: string; label: string; title: string }> 
   team_dependent: { cls: "bg-amber-500/15 text-amber-300", label: "Equipo", title: "Portero: el valor depende del equipo (clean sheets), no de una escala de puntos" },
 };
 
+// Recommended roster composition (26 players), from the strategy analysis:
+// forwards are the position most people under-draft (best formations play 3).
+const ROSTER_TARGET: { pos: string; n: string; note: string }[] = [
+  { pos: "POR", n: "2", note: "1 titular fijo de equipo con buena defensa" },
+  { pos: "DEF", n: "8", note: "suelo alto; 3-4 titulares + fondo" },
+  { pos: "MED", n: "7-8", note: "pool profundo y barato" },
+  { pos: "DEL", n: "6-7", note: "fondo para poder alinear 3 siempre" },
+];
+
 /** Estimated draft round from the global VORP rank and the league size. */
 function roundOf(p: DraftValuePlayer, participants: number): number | null {
   if (p.overall_rank == null || participants <= 0) return null;
@@ -275,6 +284,33 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
           </div>
         </div>
       )}
+
+      {/* Roster target — reference composition + best formations */}
+      <div className="rounded-lg border border-vpv-card-border bg-vpv-card px-4 py-2.5">
+        <div className="mb-1.5 flex flex-wrap items-baseline gap-2">
+          <h4 className="text-xs font-semibold text-vpv-text">Objetivo de plantilla (26)</h4>
+          <span className="text-[10px] text-vpv-text-muted">
+            reparto recomendado por datos — el delantero suele infra-draftearse
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {ROSTER_TARGET.map((r) => (
+            <div
+              key={r.pos}
+              className="flex items-center gap-1.5 rounded border border-vpv-border bg-vpv-bg px-2 py-1"
+              title={r.note}
+            >
+              <span className={`rounded px-1 py-0.5 text-[9px] font-medium ${POS_COLOR[r.pos] ?? ""}`}>
+                {r.pos}
+              </span>
+              <span className="text-sm font-bold tabular-nums text-vpv-text">{r.n}</span>
+            </div>
+          ))}
+          <span className="ml-1 text-[10px] text-vpv-text-muted">
+            Formación: <b className="text-vpv-text">1-4-3-3</b> / <b className="text-vpv-text">1-3-4-3</b> (3 delanteros)
+          </span>
+        </div>
+      </div>
 
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-2">
