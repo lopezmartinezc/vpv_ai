@@ -42,6 +42,7 @@ const DRAFT_COLS: { key: DraftSortKey; label: string; title: string; w: string }
   { key: "manual_value", label: "Manual", title: "Tu valor manual (pts/partido). Sobrescribe la proyección. Edítalo abriendo la fila. Imprescindible para jugadores nuevos sin histórico.", w: "w-14" },
   { key: "proj_rest_points", label: "PtsRes", title: "Puntos proyectados resto de temporada = valor efectivo × partidos esperados restantes (jornadas restantes × disponibilidad).", w: "w-16" },
   { key: "event_share", label: "Fiab", title: "Fiabilidad: % de puntos por eventos concretos (goles, asistencias, portería a cero...) vs nota mediática Marca/AS. Alto = más repetible.", w: "w-12" },
+  { key: "team_goals_conceded", label: "DefEq", title: "Defensa del equipo: goles que encaja por partido (temporada pasada; prior neutro para ascendidos). Menos = mejor. El factor clave para porteros (corr −0.83 con sus puntos).", w: "w-14" },
   { key: "ensemble_score", label: "Ens", title: "Ensemble: valor proyectado (histórico + actual, shrinkage k=4)", w: "w-14" },
   { key: "simple_avg", label: "Avg", title: "Media simple: pts/partido temporada anterior (baseline)", w: "w-14" },
   { key: "second_half_score", label: "Form", title: "Forma 2a mitad: rendimiento J20-J38 (predice siguiente temporada)", w: "w-14" },
@@ -143,8 +144,8 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
       setSortKey(key);
-      // Ronda (overall_rank) is "lower is better" → default ascending.
-      setSortDir(key === "overall_rank" ? "asc" : "desc");
+      // Ronda and team goals conceded are "lower is better" → default ascending.
+      setSortDir(key === "overall_rank" || key === "team_goals_conceded" ? "asc" : "desc");
     }
   };
 
@@ -441,6 +442,17 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
                         return (
                           <span key={col.key} className={`${col.w} shrink-0 text-right text-xs tabular-nums ${isActive ? "font-bold text-vpv-accent" : "text-vpv-text-muted"}`}>
                             {(n * 100).toFixed(0)}%
+                          </span>
+                        );
+                      }
+                      if (col.key === "team_goals_conceded") {
+                        // Fewer goals conceded = stronger defense = greener.
+                        return (
+                          <span key={col.key} className={`${col.w} shrink-0 text-right text-xs tabular-nums ${
+                            val != null && (val as number) < 1.1 ? "text-green-400" :
+                            val != null && (val as number) > 1.4 ? "text-red-400" : "text-vpv-text-muted"
+                          } ${isActive ? "font-bold" : ""}`}>
+                            {val != null ? (val as number).toFixed(1) : "—"}
                           </span>
                         );
                       }

@@ -99,6 +99,10 @@ class DraftValuePlayer(BaseModel):
     is_peak_year: bool = False
     is_penalty_taker: bool = False
     is_bench_risk: bool = False
+    # Team defensive strength: goals conceded per game (prior league season,
+    # neutral league-average prior for promoted teams). The main value driver
+    # for keepers (corr with keeper pts ~ -0.83) and relevant for defenders.
+    team_goals_conceded: float | None = None
 
     # Positional tier from the scorecard (elite | solid | normal | weak;
     # "team_dependent" for POR). None for brand-new players with no history.

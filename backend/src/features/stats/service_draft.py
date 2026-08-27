@@ -61,6 +61,16 @@ HISTORY_MIN_GAMES = 3
 N_HISTORY_SEASONS = 4
 
 
+def _keeper_ppg_from_defense(goals_conceded: float) -> float:
+    """Expected keeper pts/game implied by the team's goals-conceded rate.
+
+    Empirical fit over 8 seasons (keeper value is ~83% team defense): a strong
+    defense (0.93 conceded/game) -> ~7.1 ppg, weak (1.61) -> ~4.7. Used to
+    re-point a keeper who CHANGED clubs, whose history reflects the old defense.
+    """
+    return max(4.0, min(8.0, 10.3 - 3.5 * goals_conceded))
+
+
 @dataclass
 class _Projection:
     ensemble_score: float
@@ -267,6 +277,10 @@ class DraftValueService:
         md_end = season_info.get("matchday_end")
         remaining_md = max(0, int(md_end) - int(season_info["matchday_current"])) if md_end else 0
 
+        # Team defensive strength (goals conceded/game) from the prior league
+        # season, neutral league-average prior for promoted teams.
+        team_def = await self._team_defense(season_id)
+
         results: list[DraftValuePlayer] = []
 
         # Iterate the ROSTER (every draftable player), not just those with
@@ -281,6 +295,15 @@ class DraftValueService:
             hist = [h for h in history.get(slug, []) if h.games >= HISTORY_MIN_GAMES]
             seasons_played = len(hist) + (1 if current is not None else 0)
 
+            # Role-change flags (roster vs most-recent prior season).
+            is_new = not hist
+            team_changed = bool(hist) and is_mover(rp.team_name, hist[-1].team_name)
+            position_changed = bool(hist) and rp.position != hist[-1].position
+            # Current team's defensive strength (goals conceded/game).
+            team_gc = (
+                team_def.get(rp.team_name.lower(), team_def.get("__avg__")) if team_def else None
+            )
+
             proj = (
                 project_value(hist=hist, current=current, k=DRAFT_SHRINKAGE_K)
                 if (current is not None or hist)
@@ -291,6 +314,19 @@ class DraftValueService:
 
             auto_projection = round(proj.ensemble_score, 2) if proj is not None else None
             ensemble_score = proj.ensemble_score if proj is not None else 0.0
+
+            # Keepers are team-dependent: a POR who CHANGED clubs carries his old
+            # team's clean-sheet history, so re-point his projection halfway
+            # toward the new team's defense-implied level.
+            if (
+                rp.position == "POR"
+                and team_changed
+                and auto_projection is not None
+                and team_gc is not None
+            ):
+                implied = _keeper_ppg_from_defense(team_gc)
+                auto_projection = round(0.5 * auto_projection + 0.5 * implied, 2)
+                ensemble_score = auto_projection
             simple_avg = proj.simple_avg if proj is not None else 0.0
             second_half_score = proj.second_half_score if proj is not None else None
             productivity_score = proj.productivity_score if proj is not None else 0.0
@@ -340,11 +376,6 @@ class DraftValueService:
                 if (current is not None and current.as_avg is not None)
                 else (hist[-1].as_avg if hist else None)
             )
-
-            # === Role-change flags (roster vs most-recent prior season) ===
-            is_new = not hist
-            team_changed = bool(hist) and is_mover(rp.team_name, hist[-1].team_name)
-            position_changed = bool(hist) and rp.position != hist[-1].position
 
             # === Risk flags (scorecard, from history) ===
             career_avg = statistics.mean(h.avg_pts for h in hist) if hist else None
@@ -419,6 +450,7 @@ class DraftValueService:
                     is_penalty_taker=penalty_taker,
                     is_bench_risk=bench_risk,
                     position_tier=(tier_for(rp.position, simple_avg) if hist else None),
+                    team_goals_conceded=(round(team_gc, 2) if team_gc is not None else None),
                 )
             )
 
@@ -573,6 +605,37 @@ class DraftValueService:
             "participant_count": row.participant_count,
             "scraped_matchdays": row.scraped_matchdays,
         }
+
+    async def _team_defense(self, current_season_id: int) -> dict[str, float]:
+        """Goals conceded per game per team in the most recent PRIOR league
+        season, keyed by lowercased team name. Adds a ``"__avg__"`` entry with
+        the league average as a neutral prior for promoted teams (not present
+        last season). Empty when there is no prior league season."""
+        ids = await self._resolve_season_ids(current_season_id, N_HISTORY_SEASONS)
+        prior = next((i for i in ids if i != current_season_id), None)
+        if prior is None:
+            return {}
+        result = await self.session.execute(
+            text("""
+                SELECT lower(t.name) AS name, AVG(x.conceded) AS gc
+                FROM (
+                    SELECT m.home_team_id AS team_id, m.away_score AS conceded
+                    FROM matches m JOIN matchdays md ON m.matchday_id = md.id
+                    WHERE md.season_id = :sid AND md.counts AND m.home_score IS NOT NULL
+                    UNION ALL
+                    SELECT m.away_team_id, m.home_score
+                    FROM matches m JOIN matchdays md ON m.matchday_id = md.id
+                    WHERE md.season_id = :sid AND md.counts AND m.home_score IS NOT NULL
+                ) x
+                JOIN teams t ON t.id = x.team_id
+                GROUP BY lower(t.name)
+            """),
+            {"sid": prior},
+        )
+        d = {row.name: float(row.gc) for row in result.all() if row.gc is not None}
+        if d:
+            d["__avg__"] = sum(d.values()) / len(d)
+        return d
 
     async def _load_roster(self, season_id: int) -> list[_RosterPlayer]:
         """All DRAFTABLE players of the season (from ``players``). Available

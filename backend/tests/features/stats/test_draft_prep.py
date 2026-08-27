@@ -15,7 +15,7 @@ from src.features.stats.service_draft import (
     _PlayerSeason,
     project_value,
 )
-from src.shared.models.matchday import Matchday
+from src.shared.models.matchday import Match, Matchday
 from src.shared.models.player import Player
 from src.shared.models.player_stat import PlayerStat
 from src.shared.models.season import Season
@@ -441,3 +441,104 @@ async def test_priority_is_master_sort_and_risk_discounted(db_session) -> None:
     for p in ranked:
         if (p.is_bench_risk or p.is_peak_year) and p.proj_rest_points:
             assert p.priority < p.proj_rest_points
+
+
+@pytest.mark.asyncio
+async def test_keeper_valued_by_team_defense(db_session) -> None:
+    """Keepers carry the defensive strength of their team, promoted teams get a
+    neutral prior, and a keeper who moved to a stronger defense is nudged up."""
+    prior = Season(name="2025-2026", matchday_start=1, matchday_current=38, kind="league")
+    current = Season(
+        name="2026-2027", matchday_start=1, matchday_current=2, matchday_end=38, kind="league"
+    )
+    db_session.add_all([prior, current])
+    await db_session.flush()
+    p_fort = Team(season_id=prior.id, name="Fortress", slug="fortress")  # concedes 0
+    p_siev = Team(season_id=prior.id, name="Sieve", slug="sieve")  # concedes 2
+    db_session.add_all([p_fort, p_siev])
+    await db_session.flush()
+    mds = [Matchday(season_id=prior.id, number=n, counts=True) for n in range(1, 7)]
+    db_session.add_all(mds)
+    await db_session.flush()
+    for md in mds:  # Fortress 2-0 Sieve every week
+        db_session.add(
+            Match(
+                matchday_id=md.id,
+                home_team_id=p_fort.id,
+                away_team_id=p_siev.id,
+                home_score=2,
+                away_score=0,
+                counts=True,
+            )
+        )
+    # Two keepers, identical history at the weak-defense club (Sieve, avg 5).
+    for slug in ("mover", "stayer"):
+        kp = Player(
+            season_id=prior.id,
+            team_id=p_siev.id,
+            name=slug,
+            display_name=slug,
+            slug=slug,
+            position="POR",
+        )
+        db_session.add(kp)
+        await db_session.flush()
+        for md in mds:
+            db_session.add(
+                PlayerStat(
+                    player_id=kp.id,
+                    matchday_id=md.id,
+                    position="POR",
+                    played=True,
+                    minutes_played=90,
+                    pts_total=5,
+                )
+            )
+    # Current rosters: 'mover' -> Fortress (strong D), 'stayer' -> Sieve, plus a
+    # promoted-team player whose club wasn't in La Liga last season.
+    c_fort = Team(season_id=current.id, name="Fortress", slug="fortress")
+    c_siev = Team(season_id=current.id, name="Sieve", slug="sieve")
+    c_promo = Team(season_id=current.id, name="Promoted", slug="promoted")
+    db_session.add_all([c_fort, c_siev, c_promo])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Player(
+                season_id=current.id,
+                team_id=c_fort.id,
+                name="mover",
+                display_name="mover",
+                slug="mover",
+                position="POR",
+                is_available=True,
+            ),
+            Player(
+                season_id=current.id,
+                team_id=c_siev.id,
+                name="stayer",
+                display_name="stayer",
+                slug="stayer",
+                position="POR",
+                is_available=True,
+            ),
+            Player(
+                season_id=current.id,
+                team_id=c_promo.id,
+                name="promo",
+                display_name="promo",
+                slug="promo",
+                position="DEF",
+                is_available=True,
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    resp = await DraftValueService(db_session).get_draft_values(current.id)
+    by = {p.slug: p for p in resp.players}
+    # Team defense attached: Fortress concedes 0, Sieve 2, promoted -> league avg (1.0).
+    assert by["mover"].team_goals_conceded == pytest.approx(0.0)
+    assert by["stayer"].team_goals_conceded == pytest.approx(2.0)
+    assert by["promo"].team_goals_conceded == pytest.approx(1.0)
+    # Same history, but the keeper who moved to a stronger defense is valued higher.
+    assert by["mover"].auto_projection > by["stayer"].auto_projection
