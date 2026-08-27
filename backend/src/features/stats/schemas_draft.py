@@ -103,8 +103,12 @@ class DraftValuePlayer(BaseModel):
     # Positional tier from the scorecard (elite | solid | normal | weak;
     # "team_dependent" for POR). None for brand-new players with no history.
     position_tier: str | None = None
-    # 1-based rank across ALL positions by VORP (the effective draft order).
-    # None for players without an effective value. Combined with
+    # Draft priority: projected rest-of-season points, risk-adjusted (peak-year,
+    # bench risk, low reliability). The MASTER sort — ordering by projected total
+    # beats per-game VORP at predicting real points. None without a projection.
+    priority: float | None = None
+    # 1-based rank across ALL positions by priority (the draft order / ADP).
+    # None for players without a projection. Combined with
     # ``DraftValueResponse.participant_count`` gives the estimated round.
     overall_rank: int | None = None
 

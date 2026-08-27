@@ -36,7 +36,8 @@ const TIER_RANK: Record<string, number> = {
 };
 
 const DRAFT_COLS: { key: DraftSortKey; label: string; title: string; w: string }[] = [
-  { key: "vorp", label: "VORP", title: "Valor sobre reemplazo posicional: valor efectivo por encima del jugador de reemplazo en su posición. Compara DEF/MED/DEL/POR en un solo eje — la columna maestra del tablero.", w: "w-14" },
+  { key: "priority", label: "Prio", title: "Prioridad de draft (columna maestra): puntos proyectados el resto de temporada, ajustados por riesgo (pico de forma, banquillo, fiabilidad). Ordenar por total proyectado predice mejor los puntos reales que el valor por partido.", w: "w-16" },
+  { key: "vorp", label: "VORP", title: "Valor sobre reemplazo posicional: valor efectivo por encima del jugador de reemplazo en su posición. Compara DEF/MED/DEL/POR en un solo eje. Diagnóstico de escasez.", w: "w-14" },
   { key: "effective_value", label: "Efect", title: "Valor efectivo usado para el ranking = valor manual si lo has puesto, si no la proyección automática.", w: "w-14" },
   { key: "manual_value", label: "Manual", title: "Tu valor manual (pts/partido). Sobrescribe la proyección. Edítalo abriendo la fila. Imprescindible para jugadores nuevos sin histórico.", w: "w-14" },
   { key: "proj_rest_points", label: "PtsRes", title: "Puntos proyectados resto de temporada = valor efectivo × partidos esperados restantes (jornadas restantes × disponibilidad).", w: "w-16" },
@@ -131,7 +132,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
   const [data, setData] = useState<DraftValueResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [posFilter, setPosFilter] = useState("");
-  const [sortKey, setSortKey] = useState<DraftSortKey>("vorp");
+  const [sortKey, setSortKey] = useState<DraftSortKey>("priority");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [error, setError] = useState(false);
@@ -372,9 +373,9 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
                       </p>
                     </div>
                     <span className="text-right text-[9px] leading-tight text-vpv-text-muted">
-                      VORP
+                      Prio
                       <span className="block text-xs font-bold tabular-nums text-vpv-accent">
-                        {p.vorp != null ? p.vorp.toFixed(1) : "—"}
+                        {p.priority != null ? p.priority.toFixed(0) : "—"}
                       </span>
                     </span>
                   </div>
