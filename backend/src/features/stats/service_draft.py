@@ -46,6 +46,12 @@ logger = logging.getLogger(__name__)
 # history-only and current-only extremes. The optimum is a flat plateau
 # over k in [2, 6].
 DRAFT_SHRINKAGE_K = 4
+# Cold-start prior for a player with NO La Liga history (typically promoted
+# from Segunda). Without shrinkage his 1-2 game average gets full weight and,
+# times ~36 remaining games, balloons his projected total — over-valuing
+# newly-promoted squads. Shrink toward this prior (k=4) instead. 5.0 is the
+# empirical median pts/game of La Liga debutants (647 first-seasons, mean 5.14).
+NEWCOMER_PRIOR = 5.0
 # A current-season player needs at least this many games to be a candidate
 # (below it the 4-8 game sample is pure noise).
 CURRENT_MIN_GAMES = 2
@@ -135,9 +141,13 @@ def project_value(
         ensemble_score = career_ensemble
         blended_simple = simple_avg_career
     elif not hist:
-        weight_current = 1.0
-        ensemble_score = current.avg_pts
-        blended_simple = current.avg_pts
+        # No La Liga history (e.g. promoted from Segunda): shrink the current
+        # small-sample average toward the newcomer prior instead of trusting
+        # it at full weight, so a 1-2 game hot start doesn't balloon the total.
+        n_cur = current.games
+        weight_current = n_cur / (n_cur + k) if (n_cur + k) > 0 else 0.0
+        ensemble_score = NEWCOMER_PRIOR * (1 - weight_current) + current.avg_pts * weight_current
+        blended_simple = ensemble_score
     else:
         n_cur = current.games
         weight_current = n_cur / (n_cur + k) if (n_cur + k) > 0 else 0.0
