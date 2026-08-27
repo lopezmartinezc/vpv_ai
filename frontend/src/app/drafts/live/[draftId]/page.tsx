@@ -9,6 +9,7 @@ import { useDraftWebSocket, type DraftWSEvent } from "@/hooks/use-draft-websocke
 import { apiClient } from "@/lib/api-client";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
 import { WishlistPanel } from "@/components/draft/wishlist-panel";
+import { RosterCounter } from "@/components/draft/roster-counter";
 import {
   SIGNAL_LABELS,
   TIER_COLORS,
@@ -609,6 +610,15 @@ export default function LiveDraftPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* Roster composition vs target (for actual participants) */}
+      {myParticipantId !== null && (
+        <RosterCounter
+          positions={picks
+            .filter((p) => p.participant_id === myParticipantId)
+            .map((p) => p.position)}
+        />
       )}
 
       {/* Auto-pick wishlist (only for actual participants on an active draft) */}
