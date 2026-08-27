@@ -1114,6 +1114,8 @@ export interface DraftValuePlayer {
   is_peak_year?: boolean;
   is_penalty_taker?: boolean;
   is_bench_risk?: boolean;
+  // Team goals conceded per game (prior season; neutral prior for promoted).
+  team_goals_conceded?: number | null;
   // Positional tier (elite | solid | normal | weak; "team_dependent" for POR).
   position_tier?: string | null;
   // Draft priority: projected rest-of-season points, risk-adjusted. Master sort.
