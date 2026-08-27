@@ -420,3 +420,23 @@ async def test_nonplayed_rows_do_not_dilute(db_session) -> None:
     assert star_row.avg_points == pytest.approx(8.0)
     # Started every game he featured in → full availability, not 10/15.
     assert star_row.availability == pytest.approx(1.0)
+
+
+@pytest.mark.asyncio
+async def test_priority_is_master_sort_and_risk_discounted(db_session) -> None:
+    """Board is ordered by `priority` (risk-adjusted projected total), and the
+    discount actually lowers it below the raw projection."""
+    current = await _setup(db_session)
+    resp = await DraftValueService(db_session).get_draft_values(current.id)
+
+    ranked = [p for p in resp.players if p.priority is not None]
+    assert ranked, "expected players with a priority"
+    # Results come back sorted by priority descending.
+    prios = [p.priority for p in ranked]
+    assert prios == sorted(prios, reverse=True)
+    # overall_rank follows priority order (1-based).
+    assert ranked[0].overall_rank == 1
+    # A flagged player's priority is strictly below its raw projected total.
+    for p in ranked:
+        if (p.is_bench_risk or p.is_peak_year) and p.proj_rest_points:
+            assert p.priority < p.proj_rest_points

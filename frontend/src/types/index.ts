@@ -1116,7 +1116,9 @@ export interface DraftValuePlayer {
   is_bench_risk?: boolean;
   // Positional tier (elite | solid | normal | weak; "team_dependent" for POR).
   position_tier?: string | null;
-  // 1-based rank across all positions by VORP (draft order / ADP).
+  // Draft priority: projected rest-of-season points, risk-adjusted. Master sort.
+  priority?: number | null;
+  // 1-based rank across all positions by priority (draft order / ADP).
   overall_rank?: number | null;
 }
 
