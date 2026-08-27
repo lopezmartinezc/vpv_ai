@@ -110,8 +110,9 @@ async def test_draft_values_blend_at_six_matchdays(db_session) -> None:
     assert star.seasons_played == 2
 
     rookie_row = by_slug["rookie"]
-    # No history -> pure current average, full weight on current.
-    assert rookie_row.weight_current == pytest.approx(1.0)
+    # No history -> shrink toward the newcomer prior (weight 4/(4+4)=0.5).
+    assert rookie_row.weight_current == pytest.approx(0.5)
+    # Rookie's current avg is 5.0 == the prior, so the blend still lands on 5.0.
     assert rookie_row.ensemble_score == pytest.approx(5.0, abs=1e-6)
     assert rookie_row.seasons_played == 1
 

@@ -11,7 +11,14 @@ Weight on the current signal = n_current / (n_current + k).
 
 from __future__ import annotations
 
-from src.features.stats.service_draft import DRAFT_SHRINKAGE_K, _PlayerSeason, project_value
+import pytest
+
+from src.features.stats.service_draft import (
+    DRAFT_SHRINKAGE_K,
+    NEWCOMER_PRIOR,
+    _PlayerSeason,
+    project_value,
+)
 
 
 def _ps(season_id: int, avg: float, games: int, minutes: int | None = None) -> _PlayerSeason:
@@ -41,11 +48,14 @@ def _ps(season_id: int, avg: float, games: int, minutes: int | None = None) -> _
     )
 
 
-def test_no_history_uses_current_only() -> None:
-    current = _ps(8, avg=5.0, games=6)
+def test_no_history_shrinks_toward_newcomer_prior() -> None:
+    # 6 games at 8.0, no La Liga history: shrink toward the newcomer prior
+    # (weight 6/(6+4)=0.6) instead of trusting the small sample at full weight.
+    current = _ps(8, avg=8.0, games=6)
     out = project_value(hist=[], current=current, k=DRAFT_SHRINKAGE_K)
-    assert out.ensemble_score == 5.0
-    assert out.weight_current == 1.0
+    w = 6 / (6 + DRAFT_SHRINKAGE_K)
+    assert out.weight_current == pytest.approx(w)
+    assert out.ensemble_score == pytest.approx(NEWCOMER_PRIOR * (1 - w) + 8.0 * w)
 
 
 def test_weight_follows_n_over_n_plus_k() -> None:

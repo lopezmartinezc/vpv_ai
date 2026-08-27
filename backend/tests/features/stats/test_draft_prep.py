@@ -256,9 +256,10 @@ def test_project_value_none_current_is_history_only() -> None:
     out = project_value(hist=hist, current=None)
     assert out.weight_current == 0.0
     assert out.ensemble_score == pytest.approx(out.career_ensemble)
-    # And no-history + current still works (weight 1.0).
+    # No-history + current: shrinks toward the newcomer prior (not full weight).
     out2 = project_value(hist=[], current=_ps(5.0))
-    assert out2.weight_current == 1.0
+    assert out2.weight_current == pytest.approx(10 / 14)  # games 10, k 4
+    # avg == prior (5.0) here, so the blend still lands on 5.0.
     assert out2.ensemble_score == pytest.approx(5.0)
 
 
