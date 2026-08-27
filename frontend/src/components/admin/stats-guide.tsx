@@ -67,13 +67,13 @@ function Metric({
 }
 
 const CHEAT: { m: string; good: string; bad: string }[] = [
-  { m: "VORP (columna maestra)", good: "alto (> 0)", bad: "≈ 0 (nivel reemplazo)" },
+  { m: "Prioridad (columna maestra)", good: "alta — total proyectado ajustado por riesgo", bad: "baja / — sin proyección" },
   { m: "PtsRes (resto de temporada)", good: "alto", bad: "bajo pese a buen valor → pocos minutos" },
+  { m: "VORP (escasez posicional)", good: "alto (> 0)", bad: "≈ 0 (nivel reemplazo)" },
   { m: "Disponibilidad", good: "> 85% (titular fijo)", bad: "< 60% (riesgo rotación)" },
-  { m: "Consistencia (1−CV)", good: "> 0.6 (fiable)", bad: "< 0.3 (lotería)" },
   { m: "Fiabilidad (evento vs nota)", good: "alta — puntos repetibles", bad: "baja — depende de la nota" },
+  { m: "DefEq — defensa del equipo (porteros)", good: "< 1.1 goles/partido (muro)", bad: "> 1.4 (colador)" },
   { m: "Tendencia interanual", good: "> +10% (mejora)", bad: "< −15% (declive)" },
-  { m: "Señal", good: "strong_buy / buy", bad: "avoid" },
   { m: "Confianza (xPts)", good: "alta", bad: "baja (< 5–10 partidos)" },
 ];
 
@@ -88,8 +88,11 @@ export function StatsGuide() {
           Qué mide cada cosa, cómo leerla y qué valores son buenos. Todo sirve a
           dos objetivos: <b className="text-vpv-text">preparar el draft</b> (elegir la
           mejor plantilla) y <b className="text-vpv-text">entender el rendimiento</b>{" "}
-          durante la temporada. El modelo de draft está validado con un backtest
-          sobre 6 temporadas reales (Spearman ~0.83 a 4–8 jornadas).
+          durante la temporada. El modelo de draft está validado con backtests
+          sobre 8 temporadas reales: la mezcla histórico⊕actual (Spearman ~0.83 a
+          4–8 jornadas) y el orden por <b className="text-vpv-text">Prioridad</b>{" "}
+          (total proyectado), que predice los puntos reales mejor que el valor por
+          partido (0.45 vs 0.35).
         </p>
       </div>
 
@@ -120,46 +123,75 @@ export function StatsGuide() {
 
       <Section
         title="1 · Cómo elegir en el draft (paso a paso)"
-        subtitle="El flujo recomendado en la pestaña «Draft Valor»"
+        subtitle="El flujo recomendado en la pestaña «Draft»"
         defaultOpen
       >
         <ol className="ml-4 list-decimal space-y-1.5">
           <li>
-            <b className="text-vpv-text">Ordena por VORP</b> (columna maestra). Es el
-            valor que da un jugador <i>por encima del reemplazo de su posición</i>, así
-            que compara POR/DEF/MED/DEL en un solo eje. VORP alto = pick prioritario;
-            ≈ 0 = «lo mismo que hay disponible después».
+            <b className="text-vpv-text">Ordena por Prioridad</b> (columna maestra, orden
+            por defecto). Es el <i>total proyectado el resto de temporada</i> (valor por
+            partido × partidos esperados) con descuentos de riesgo. Ordenar por total —no
+            por valor por partido— predice mejor los puntos que sumas (backtest 8
+            temporadas). Prioridad alta = pick prioritario.
           </li>
           <li>
-            <b className="text-vpv-text">Mira PtsRes</b> (puntos del resto de temporada
-            = valor proyectado × partidos esperados). Es el objetivo real. Un jugador
-            con gran valor por partido pero pocos minutos baja aquí.
+            <b className="text-vpv-text">Descuentos de riesgo</b> que ya lleva la Prioridad:
+            <span className="text-vpv-text-muted"> PICO (año atípico) −10%, riesgo banquillo
+            −25%, fiabilidad baja −8%.</span> Por eso una estrella con banderas rojas baja.
           </li>
           <li>
-            <b className="text-vpv-text">Ajusta por riesgo</b> según tu turno en el
-            snake: picks tempranos → <i>seguro</i> (Disponibilidad y Consistencia altas);
-            picks tardíos → <i>lotería</i> (techo alto aunque el suelo sea bajo).
+            <b className="text-vpv-text">Escasez con VORP</b>: el VORP (valor sobre el
+            reemplazo de su posición) te dice <i>cuándo</i> conviene gastar un pick en una
+            posición — pocas opciones por encima del reemplazo = draftea antes. Mira el
+            resumen de «Escasez por posición» arriba.
           </li>
           <li>
-            <b className="text-vpv-text">Comprueba la Fiabilidad</b>: cuántos de sus
-            puntos vienen de eventos concretos (goles, asistencias, portería a cero) vs
-            nota mediática. Alto = repetible; bajo = depende de notas subjetivas.
+            <b className="text-vpv-text">Rol y fiabilidad</b>: Disponibilidad alta (titular
+            fijo) manda; y prefiere puntos de <i>eventos</i> (goles, asistencias, portería a
+            cero) sobre nota Marca/AS (Fiabilidad alta = repetible).
           </li>
           <li>
-            <b className="text-vpv-text">Usa la Señal como filtro rápido</b>{" "}
-            (strong_buy / buy / hold / avoid), no como verdad absoluta.
+            <b className="text-vpv-text">Porteros: por la defensa del equipo</b>, no por su
+            fama. Mira <b className="text-vpv-text">DefEq</b> (goles que encaja su equipo):
+            menos = mejor. Un titular de equipo con buena defensa suma clean sheets. Su
+            valor ya lo capta la Prioridad (disponibilidad + defensa).
+          </li>
+          <li>
+            <b className="text-vpv-text">Banderas</b>: NUEVO (sin histórico), +EQ / +POS
+            (cambió equipo/posición), PICO (riesgo regresión), PEN (lanza penaltis), 🪑
+            (riesgo banquillo).
           </li>
         </ol>
       </Section>
 
       <Section
         title="2 · Columnas del tablero de draft"
-        subtitle="Glosario de la pestaña «Draft Valor»"
+        subtitle="Glosario de la pestaña «Draft»"
       >
-        <Metric name="VORP" good="alto = pick prioritario">
+        <Metric name="Prioridad (Prio)" good="alta = pick prioritario">
+          Columna maestra y orden por defecto. Puntos proyectados el resto de temporada
+          (valor × partidos esperados) con descuentos de riesgo (PICO, banquillo,
+          fiabilidad). Ordenar por total proyectado predice los puntos reales mejor que el
+          valor por partido (backtest 8 temporadas: 0.45 vs 0.35).
+        </Metric>
+        <Metric name="DefEq (defensa del equipo)" good="< 1.1 goles/partido">
+          Goles que encaja el equipo por partido (temporada pasada; media de la liga como
+          prior para ascendidos). Es el factor clave del portero (correlación −0.83 con sus
+          puntos): menos goles encajados = más portería a cero = más puntos.
+        </Metric>
+        <Metric name="Ronda" good="baja = se va antes">
+          Ronda estimada de draft = puesto global por Prioridad ÷ nº de participantes. Al
+          pasar el ratón, el pick global.
+        </Metric>
+        <Metric name="Tier" good="Elite / Sólido">
+          Tier posicional (elite / sólido / normal / flojo). Los porteros salen «Equipo»:
+          su valor depende del equipo, no de una escala de puntos.
+        </Metric>
+        <Metric name="VORP (escasez)" good="alto = posición escasa">
           Valor sobre reemplazo posicional = valor proyectado − valor del jugador de
-          reemplazo en su posición (el Nº 35 en POR, 90 en DEF/MED, 70 en DEL). Hace
-          comparables las posiciones.
+          reemplazo en su posición (el Nº 35 en POR, 90 en DEF/MED, 70 en DEL). Ya no es
+          el orden maestro (lo es Prioridad), pero sí el diagnóstico de <i>escasez</i>:
+          pocas opciones con VORP &gt; 0 en una posición = draftéala antes.
         </Metric>
         <Metric name="PtsRes" good="alto">
           Puntos proyectados del resto de temporada = valor por partido × partidos
@@ -190,38 +222,30 @@ export function StatsGuide() {
       </Section>
 
       <Section
-        title="3 · Señal de draft — cómo se calcula"
-        subtitle="strong_buy · buy · hold · avoid"
+        title="3 · Composición y formaciones"
+        subtitle="cuántos por posición y qué once puntúa más"
       >
         <p>
-          Se cuentan señales positivas y negativas y se resume:
+          Reparto recomendado (26): <b className="text-vpv-text">2 POR · 8 DEF · 7-8 MED ·
+          6-7 DEL</b>. Suele infra-draftearse el delantero: la mejor formación pide 3 y
+          hace falta fondo para poder alinearlos siempre.
         </p>
-        <ul className="ml-4 list-disc space-y-1">
-          <li>
-            <span className="text-emerald-300">Positivas</span>: ensemble +5% sobre la
-            media · tendencia &gt; +10% · disponibilidad &gt; 85% · consistencia &gt; 0.6
-            · ≥ 3 temporadas de historial.
-          </li>
-          <li>
-            <span className="text-red-300">Negativas</span>: en declive &lt; −15% ·
-            disponibilidad &lt; 60% · consistencia &lt; 0.3 · sin historial (1 temporada).
-          </li>
-        </ul>
-        <p>
-          <b className="text-emerald-300">strong_buy</b>: ≥ 3 positivas y 0 negativas ·{" "}
-          <b className="text-emerald-300">buy</b>: ≥ 2 positivas y ≤ 1 negativa ·{" "}
-          <b className="text-red-300">avoid</b>: ≥ 2 negativas · <b>hold</b>: el resto.
+        <p className="mt-2">
+          Formaciones que más puntúan (datos reales): <b className="text-vpv-text">1-4-3-3</b>{" "}
+          y <b className="text-vpv-text">1-3-4-3</b> (3 delanteros). El delantero titular
+          aporta más que el resto de posiciones, así que juega 3 siempre que puedas.
+        </p>
+        <p className="mt-2">
+          Portero: solo ~12 titulares fijos por temporada (posición escasa); un titular fijo
+          suma de los más puntos totales de la liga. Elígelo por la <b className="text-vpv-text">
+          defensa del equipo</b> (DefEq), no por su fama.
         </p>
       </Section>
 
       <Section
-        title="4 · Valor posicional (pestaña «Avanzado»)"
-        subtitle="PAR, tiers y escasez"
+        title="4 · Tiers posicionales"
+        subtitle="referencia de nivel por posición"
       >
-        <Metric name="PAR (Points Above Replacement)">
-          Puntos totales por encima del nivel de reemplazo de la posición (versión
-          histórica de VORP).
-        </Metric>
         <Metric name="Tiers">
           Elite (top 10%), Sólido (top 25%), Promedio (top 50%), Reemplazable (resto).
           Por pts/partido: DEF 6.6 / 5.8 / 4.9 · MED 6.1 / 5.3 / 4.4 · DEL 7.2 / 5.4 / 4.2.
@@ -281,11 +305,12 @@ export function StatsGuide() {
           histórico).
         </p>
         <p>
-          <b className="text-vpv-text">VORP</b> hace comparables las posiciones,{" "}
-          <b className="text-vpv-text">PtsRes</b> proyecta el resto de temporada, y{" "}
-          <b className="text-vpv-text">Fiabilidad</b> separa el punto repetible del punto
-          por nota. El equipo de cada jornada queda anclado en el histórico, así que los
-          traspasos a mitad de temporada no reescriben el pasado.
+          El orden lo manda la <b className="text-vpv-text">Prioridad</b> (total proyectado
+          + descuentos de riesgo); el <b className="text-vpv-text">VORP</b> diagnostica la
+          escasez por posición, <b className="text-vpv-text">PtsRes</b> es el total sin
+          ajustar, y la <b className="text-vpv-text">Fiabilidad</b> separa el punto repetible
+          del punto por nota. El equipo de cada jornada queda anclado en el histórico, así
+          que los traspasos a mitad de temporada no reescriben el pasado.
         </p>
       </Section>
     </div>

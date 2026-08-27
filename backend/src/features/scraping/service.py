@@ -322,7 +322,7 @@ class ScrapingService:
             player_id = matched.id
             existing = await self.repo.get_player_stat(player_id, matchday_id)
             if existing is not None:
-                position = existing.position
+                position = existing.position or matched.position
                 persisted_match_id = existing.match_id or match_id
             else:
                 position = matched.position
@@ -589,7 +589,7 @@ class ScrapingService:
                     # or team (real-life transfer) since the original scrape.
                     existing = await self.repo.get_player_stat(player.id, matchday_id)
                     if existing is not None:
-                        position = existing.position
+                        position = existing.position or player.position
                         persisted_match_id = existing.match_id or match.id
                     else:
                         position = player.position
@@ -908,7 +908,7 @@ class ScrapingService:
                     # Preserve historical position/match_id when re-scraping.
                     existing = await self.repo.get_player_stat(player.id, matchday_id)
                     if existing is not None:
-                        position = existing.position
+                        position = existing.position or player.position
                         persisted_match_id = existing.match_id or match_id
                     else:
                         position = player.position
@@ -1142,7 +1142,7 @@ class ScrapingService:
                     # (real transfer) must keep his old data for past matchdays.
                     existing = await self.repo.get_player_stat(player.id, md.id)
                     if existing is not None:
-                        position = existing.position
+                        position = existing.position or player.position
                         match_id: int | None = existing.match_id
                     else:
                         position = player.position
