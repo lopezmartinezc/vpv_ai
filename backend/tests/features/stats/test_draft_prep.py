@@ -371,3 +371,52 @@ async def test_bench_risk_uses_history_not_partial_current(db_session) -> None:
     resp = await DraftValueService(db_session).get_draft_values(current.id)
     soria = {p.slug: p for p in resp.players}["soria"]
     assert soria.is_bench_risk is False  # durable last season, not a bench risk
+
+
+@pytest.mark.asyncio
+async def test_nonplayed_rows_do_not_dilute(db_session) -> None:
+    """player_stats rows for games the player did NOT play (played=False,
+    0 min, 0 pts) must not count: they'd deflate avg_pts and availability and
+    falsely flag a nailed starter as bench risk."""
+    season = Season(
+        name="2026-2027", matchday_start=1, matchday_current=16, matchday_end=38, kind="league"
+    )
+    db_session.add(season)
+    await db_session.flush()
+    team = Team(season_id=season.id, name="Alfa", slug="alfa")
+    db_session.add(team)
+    await db_session.flush()
+    star = Player(
+        season_id=season.id,
+        team_id=team.id,
+        name="star",
+        display_name="Star",
+        slug="star",
+        position="DEL",
+        is_available=True,
+    )
+    mds = [Matchday(season_id=season.id, number=n, counts=True) for n in range(1, 16)]
+    db_session.add_all([star, *mds])
+    await db_session.flush()
+
+    # 10 games actually played (8 pts, full match) + 5 he did not play.
+    for i, md in enumerate(mds):
+        played = i < 10
+        db_session.add(
+            PlayerStat(
+                player_id=star.id,
+                matchday_id=md.id,
+                position="DEL",
+                played=played,
+                minutes_played=90 if played else 0,
+                pts_total=8 if played else 0,
+            )
+        )
+    await db_session.flush()
+
+    resp = await DraftValueService(db_session).get_draft_values(season.id, min_games=2)
+    star_row = {p.slug: p for p in resp.players}["star"]
+    # avg over the 10 PLAYED games = 8.0, not 8*10/15 = 5.33.
+    assert star_row.avg_points == pytest.approx(8.0)
+    # Started every game he featured in → full availability, not 10/15.
+    assert star_row.availability == pytest.approx(1.0)

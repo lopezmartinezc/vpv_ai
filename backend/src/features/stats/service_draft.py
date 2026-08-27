@@ -664,7 +664,12 @@ class DraftValueService:
                      AND (md.counts = TRUE OR md.season_id = :current)
                 JOIN teams t ON p.team_id = t.id
                 JOIN seasons s ON md.season_id = s.id
-                WHERE md.season_id = ANY(:ids)
+                -- Only games the player actually featured in. Non-played rows
+                -- (played=false, 0 min, 0/NULL pts) would otherwise inflate the
+                -- game count, deflate avg_pts, and wreck availability
+                -- (g45/all-rows instead of g45/games-played), falsely flagging
+                -- established starters as bench risk.
+                WHERE md.season_id = ANY(:ids) AND ps.played IS TRUE
                 GROUP BY p.id, p.slug, p.display_name, p.photo_path,
                          ps.position, md.season_id, s.name, t.name
                 HAVING COUNT(*) >= :min
