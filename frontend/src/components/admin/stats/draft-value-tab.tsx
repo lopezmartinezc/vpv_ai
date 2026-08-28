@@ -18,6 +18,23 @@ const TIER_BADGE: Record<string, { cls: string; label: string; title: string }> 
   team_dependent: { cls: "bg-amber-500/15 text-amber-300", label: "Equipo", title: "Portero: el valor depende del equipo (clean sheets), no de una escala de puntos" },
 };
 
+// Admin player tags (fixed set) — badges on the row + editable in the row.
+// Effect on Priority lives in the backend (service_draft.TAG_MULTIPLIER).
+const PLAYER_TAGS: { key: string; label: string; cls: string }[] = [
+  { key: "titular", label: "Titular", cls: "bg-green-500/20 text-green-300" },
+  { key: "suplente", label: "Suplente", cls: "bg-amber-500/15 text-amber-300" },
+  { key: "penaltis", label: "Penaltis", cls: "bg-emerald-500/15 text-emerald-300" },
+  { key: "lesion", label: "Lesión", cls: "bg-red-500/20 text-red-300" },
+  { key: "objetivo", label: "Objetivo", cls: "bg-blue-500/20 text-blue-300" },
+  { key: "evitar", label: "Evitar", cls: "bg-red-500/10 text-red-400" },
+];
+const TAG_LABEL: Record<string, string> = Object.fromEntries(
+  PLAYER_TAGS.map((t) => [t.key, t.label]),
+);
+const TAG_CLS: Record<string, string> = Object.fromEntries(
+  PLAYER_TAGS.map((t) => [t.key, t.cls]),
+);
+
 // Recommended roster composition (26 players), from the strategy analysis:
 // forwards are the position most people under-draft (best formations play 3).
 const ROSTER_TARGET: { pos: string; n: string; note: string }[] = [
@@ -75,8 +92,12 @@ function ManualOverrideEditor({
     player.manual_value != null ? String(player.manual_value) : "",
   );
   const [note, setNote] = useState(player.note ?? "");
+  const [tags, setTags] = useState<string[]>(player.tags ?? []);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const toggleTag = (k: string) =>
+    setTags((t) => (t.includes(k) ? t.filter((x) => x !== k) : [...t, k]));
 
   async function save() {
     const trimmed = value.trim();
@@ -90,7 +111,7 @@ function ManualOverrideEditor({
     try {
       const resp = await apiClient.put<DraftValueResponse>(
         `/stats/admin/${seasonId}/draft-value/${player.player_id}/override`,
-        { manual_value, note: note.trim() || null },
+        { manual_value, note: note.trim() || null, tags },
       );
       onSaved(resp);
     } catch (e) {
@@ -102,6 +123,25 @@ function ManualOverrideEditor({
 
   return (
     <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-vpv-border/30 pt-2">
+      <div className="flex w-full flex-wrap items-center gap-1.5">
+        <span className="text-[10px] text-vpv-text-muted">Tags:</span>
+        {PLAYER_TAGS.map((t) => {
+          const on = tags.includes(t.key);
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => toggleTag(t.key)}
+              className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition ${
+                on ? t.cls : "border border-vpv-border text-vpv-text-muted hover:text-vpv-text"
+              }`}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+        <span className="text-[9px] text-vpv-text-muted">ajustan la Prioridad</span>
+      </div>
       <label className="text-[10px] text-vpv-text-muted">
         Valor manual (pts/partido)
         <input
@@ -337,7 +377,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
         <div className="hidden min-w-[1230px] border-b border-vpv-border bg-vpv-bg px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted md:flex">
           <span className="w-8 shrink-0">#</span>
           <span className="w-52 shrink-0">Jugador</span>
-          <span className="w-24 shrink-0" title="Alertas: nuevo, cambio de equipo/posición, pico de forma, penaltis, riesgo banquillo">Alertas</span>
+          <span className="w-32 shrink-0" title="Alertas: nuevo, cambio de equipo/posición, pico de forma, penaltis, riesgo banquillo">Alertas</span>
           <span className="w-10 shrink-0 text-center">Pos</span>
           <button
             onClick={() => handleSort("position_tier")}
@@ -424,7 +464,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
                       {p.display_name}
                       <span className="ml-1 text-[10px] font-normal text-vpv-text-muted">{p.team_name}</span>
                     </span>
-                    <span className="flex w-24 shrink-0 items-center gap-0.5 overflow-hidden">
+                    <span className="flex w-32 shrink-0 items-center gap-0.5 overflow-hidden">
                       {p.is_new && (
                         <span className="rounded bg-amber-500/15 px-1 text-[8px] text-amber-400">NUEVO</span>
                       )}
@@ -443,6 +483,11 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
                       {p.is_bench_risk && (
                         <span className="rounded bg-red-500/15 px-1 text-[8px] text-red-300" title="Riesgo de banquillo: rota o juega pocos partidos">🪑</span>
                       )}
+                      {p.tags?.map((t) => (
+                        <span key={t} className={`rounded px-1 text-[8px] ${TAG_CLS[t] ?? "bg-vpv-bg text-vpv-text-muted"}`} title="Tag admin (ajusta Prioridad)">
+                          {TAG_LABEL[t] ?? t}
+                        </span>
+                      ))}
                     </span>
                     <span className="w-10 shrink-0 text-center text-[10px] text-vpv-text-muted">{p.position}</span>
                     <span className="w-16 shrink-0 text-center">

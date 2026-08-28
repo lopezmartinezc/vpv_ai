@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Numeric, Text, UniqueConstraint, func
+from sqlalchemy import ARRAY, DateTime, ForeignKey, Numeric, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.shared.models.base import Base
@@ -25,6 +25,9 @@ class DraftValueOverride(Base):
     player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), nullable=False)
     manual_value: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     note: Mapped[str | None] = mapped_column(Text)
+    # Fixed admin tags (titular/suplente/penaltis/lesion/objetivo/evitar) that
+    # adjust the draft Priority. The service reads/writes via raw SQL.
+    tags: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

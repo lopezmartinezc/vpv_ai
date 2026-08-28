@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class DraftValuePlayer(BaseModel):
@@ -89,6 +89,9 @@ class DraftValuePlayer(BaseModel):
     auto_projection: float | None = None
     manual_value: float | None = None
     note: str | None = None
+    # Admin tags (titular/suplente/penaltis/lesion/objetivo/evitar) — shown as
+    # badges and applied to Priority (not to effective_value/VORP).
+    tags: list[str] = Field(default_factory=list)
     effective_value: float | None = None
     is_new: bool = False  # no prior-season history
     team_changed: bool = False  # roster team differs from last historical season
@@ -136,3 +139,4 @@ class DraftValueOverrideRequest(BaseModel):
 
     manual_value: float | None = None
     note: str | None = None
+    tags: list[str] | None = None

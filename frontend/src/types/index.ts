@@ -1107,6 +1107,8 @@ export interface DraftValuePlayer {
   auto_projection?: number | null;
   manual_value?: number | null;
   note?: string | null;
+  // Admin tags (titular/suplente/penaltis/lesion/objetivo/evitar) → adjust Priority.
+  tags?: string[] | null;
   effective_value?: number | null;
   is_new?: boolean;
   team_changed?: boolean;

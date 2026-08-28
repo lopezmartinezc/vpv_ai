@@ -542,3 +542,50 @@ async def test_keeper_valued_by_team_defense(db_session) -> None:
     assert by["promo"].team_goals_conceded == pytest.approx(1.0)
     # Same history, but the keeper who moved to a stronger defense is valued higher.
     assert by["mover"].auto_projection > by["stayer"].auto_projection
+
+
+@pytest.mark.asyncio
+async def test_tags_adjust_priority(db_session) -> None:
+    """Admin tags multiply the draft Priority; 'titular' cancels the bench-risk
+    discount; unknown tags are dropped and known ones round-trip."""
+    prior = Season(name="2025-2026", matchday_start=1, matchday_current=38, kind="league")
+    current = Season(
+        name="2026-2027", matchday_start=1, matchday_current=1, matchday_end=38, kind="league"
+    )
+    db_session.add_all([prior, current])
+    await db_session.flush()
+    p_team = Team(season_id=prior.id, name="A", slug="a")
+    c_team = Team(season_id=current.id, name="A", slug="a")
+    db_session.add_all([p_team, c_team])
+    await db_session.flush()
+    prior_mds = [Matchday(season_id=prior.id, number=n) for n in range(1, 11)]
+    db_session.add_all(prior_mds)
+    await db_session.flush()
+    # 10 games last season (< 22) → is_bench_risk True → baseline priority x0.75.
+    await _prior_player(db_session, prior, p_team, "star", "MED", avg=6, mds=prior_mds)
+    _roster_player(db_session, current, c_team, "star", "MED")
+    await db_session.flush()
+
+    svc = DraftValueService(db_session)
+    base = {p.slug: p for p in (await svc.get_draft_values(current.id)).players}["star"]
+    base_prio = base.priority
+    assert base.is_bench_risk is True and base_prio is not None
+    pid = base.player_id
+
+    async def prio_with(tags: list[str]) -> float:
+        await svc.upsert_override(current.id, pid, None, None, tags)
+        row = {p.slug: p for p in (await svc.get_draft_values(current.id)).players}["star"]
+        assert row.tags == [t for t in tags if t in {"titular", "evitar", "objetivo"}]
+        assert row.priority is not None
+        return row.priority
+
+    # evitar x0.40 (bench discount still applies) → lower.
+    assert await prio_with(["evitar"]) == pytest.approx(base_prio * 0.40, rel=1e-3)
+    # objetivo x1.20 → higher.
+    assert await prio_with(["objetivo"]) == pytest.approx(base_prio * 1.20, rel=1e-3)
+    # titular cancels the x0.75 bench discount → priority goes up ~1/0.75.
+    assert await prio_with(["titular"]) == pytest.approx(base_prio / 0.75, rel=1e-3)
+    # unknown tag is dropped (round-trips empty).
+    await svc.upsert_override(current.id, pid, None, None, ["bogus"])
+    row = {p.slug: p for p in (await svc.get_draft_values(current.id)).players}["star"]
+    assert row.tags == []
