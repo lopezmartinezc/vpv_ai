@@ -157,6 +157,13 @@ export function StatsGuide() {
             valor ya lo capta la Prioridad (disponibilidad + defensa).
           </li>
           <li>
+            <b className="text-vpv-text">Tus etiquetas (tags)</b>: abre una fila y marca lo que
+            el modelo no ve — <i>Titular, Suplente, Penaltis, Lesión, Objetivo, Evitar</i>. Ajustan
+            la Prioridad (columna <b className="text-vpv-text">Prio</b>); la columna
+            <b className="text-vpv-text"> Base</b> mantiene la vista del modelo sin tus tags, para
+            comparar. Solo admin.
+          </li>
+          <li>
             <b className="text-vpv-text">Banderas</b>: NUEVO (sin histórico), +EQ / +POS
             (cambió equipo/posición), PICO (riesgo regresión), PEN (lanza penaltis), 🪑
             (riesgo banquillo).
@@ -171,8 +178,26 @@ export function StatsGuide() {
         <Metric name="Prioridad (Prio)" good="alta = pick prioritario">
           Columna maestra y orden por defecto. Puntos proyectados el resto de temporada
           (valor × partidos esperados) con descuentos de riesgo (PICO, banquillo,
-          fiabilidad). Ordenar por total proyectado predice los puntos reales mejor que el
-          valor por partido (backtest 8 temporadas: 0.45 vs 0.35).
+          fiabilidad) <b className="text-vpv-text">y tus etiquetas</b>. Ordenar por total
+          proyectado predice los puntos reales mejor que el valor por partido (backtest 8
+          temporadas: 0.45 vs 0.35).
+        </Metric>
+        <Metric name="Base (Prioridad del modelo)" good="compárala con Prio">
+          La misma Prioridad pero <b className="text-vpv-text">sin tus tags</b>: la vista pura
+          del modelo. Si Prio y Base difieren, es exactamente por tus etiquetas
+          (Objetivo/Evitar/Lesión/…). Útil para ver cuánto estás moviendo tú el orden.
+        </Metric>
+        <Metric name="Tags (etiquetas de admin)" good="ajustan la Prioridad">
+          Abre la fila para marcarlas. <b className="text-vpv-text">Titular</b> anula el descuento
+          de banquillo; <b className="text-vpv-text">Objetivo</b> ×1.20, <b className="text-vpv-text">
+          Penaltis</b> ×1.05, <b className="text-vpv-text">Suplente</b> ×0.75, <b className="text-vpv-text">
+          Lesión</b> ×0.55, <b className="text-vpv-text">Evitar</b> ×0.40. No tocan VORP ni el valor
+          efectivo, solo la Prioridad. Compartidas por temporada (solo admin).
+        </Metric>
+        <Metric name="+ Modelos (columnas de sub-modelos)">
+          Las columnas Ens, Avg, Form, Stab, Prod, Trend, Disp y Cons están ocultas por defecto
+          para que la tabla quepa; muéstralas con el botón <b className="text-vpv-text">+ Modelos</b>.
+          Siguen siendo ordenables. Las de abajo describen cada una.
         </Metric>
         <Metric name="DefEq (defensa del equipo)" good="< 1.1 goles/partido">
           Goles que encaja el equipo por partido (temporada pasada; media de la liga como
