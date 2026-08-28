@@ -501,18 +501,23 @@ class DraftValueService:
         for p in results:
             if p.proj_rest_points is None:
                 continue
-            mult = 1.0
+            # Risk multiplier shared by both views.
+            risk = 1.0
             if p.is_peak_year:
-                mult *= 0.90
-            # Admin "titular" tag overrides the model's bench-risk flag.
-            if p.is_bench_risk and "titular" not in p.tags:
-                mult *= 0.75
+                risk *= 0.90
             if p.event_share is not None and p.event_share < 0.5:
-                mult *= 0.92
-            # Admin tags adjust Priority (not effective_value/VORP).
+                risk *= 0.92
+            # Base = pure model view (no tags): bench risk applies as detected.
+            base_mult = risk * (0.75 if p.is_bench_risk else 1.0)
+            p.priority_base = round(p.proj_rest_points * base_mult, 1)
+            # Adjusted = with admin tags: "titular" cancels the bench discount,
+            # the rest multiply. This is the master sort.
+            adj = risk
+            if p.is_bench_risk and "titular" not in p.tags:
+                adj *= 0.75
             for tag in p.tags:
-                mult *= TAG_MULTIPLIER.get(tag, 1.0)
-            p.priority = round(p.proj_rest_points * mult, 1)
+                adj *= TAG_MULTIPLIER.get(tag, 1.0)
+            p.priority = round(p.proj_rest_points * adj, 1)
 
         # Sort by draft priority (the master axis); no-projection players last.
         results.sort(

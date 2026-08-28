@@ -577,6 +577,8 @@ async def test_tags_adjust_priority(db_session) -> None:
         row = {p.slug: p for p in (await svc.get_draft_values(current.id)).players}["star"]
         assert row.tags == [t for t in tags if t in {"titular", "evitar", "objetivo"}]
         assert row.priority is not None
+        # Model view (priority_base) is unaffected by tags.
+        assert row.priority_base == pytest.approx(base_prio)
         return row.priority
 
     # evitar x0.40 (bench discount still applies) → lower.
