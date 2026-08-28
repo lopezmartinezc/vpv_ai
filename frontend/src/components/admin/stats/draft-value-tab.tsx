@@ -62,7 +62,8 @@ const TIER_RANK: Record<string, number> = {
 };
 
 const DRAFT_COLS: { key: DraftSortKey; label: string; title: string; w: string }[] = [
-  { key: "priority", label: "Prio", title: "Prioridad de draft (columna maestra): puntos proyectados el resto de temporada, ajustados por riesgo (pico de forma, banquillo, fiabilidad). Ordenar por total proyectado predice mejor los puntos reales que el valor por partido.", w: "w-16" },
+  { key: "priority", label: "Prio", title: "Prioridad de draft (columna maestra), CON tus tags: puntos proyectados el resto de temporada, ajustados por riesgo (pico, banquillo, fiabilidad) y por los tags. Es el orden por defecto.", w: "w-16" },
+  { key: "priority_base", label: "Base", title: "Prioridad del MODELO, sin tus tags. Compárala con Prio: si difieren, es por tus etiquetas (Objetivo/Evitar/Lesión/…).", w: "w-16" },
   { key: "vorp", label: "VORP", title: "Valor sobre reemplazo posicional: valor efectivo por encima del jugador de reemplazo en su posición. Compara DEF/MED/DEL/POR en un solo eje. Diagnóstico de escasez.", w: "w-14" },
   { key: "effective_value", label: "Efect", title: "Valor efectivo usado para el ranking = valor manual si lo has puesto, si no la proyección automática.", w: "w-14" },
   { key: "manual_value", label: "Manual", title: "Tu valor manual (pts/partido). Sobrescribe la proyección. Edítalo abriendo la fila. Imprescindible para jugadores nuevos sin histórico.", w: "w-14" },

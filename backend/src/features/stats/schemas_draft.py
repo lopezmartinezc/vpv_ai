@@ -113,7 +113,10 @@ class DraftValuePlayer(BaseModel):
     # Draft priority: projected rest-of-season points, risk-adjusted (peak-year,
     # bench risk, low reliability). The MASTER sort — ordering by projected total
     # beats per-game VORP at predicting real points. None without a projection.
+    # ``priority`` includes the admin tag adjustments; ``priority_base`` is the
+    # pure model view (no tags), shown side by side for transparency.
     priority: float | None = None
+    priority_base: float | None = None
     # 1-based rank across ALL positions by priority (the draft order / ADP).
     # None for players without a projection. Combined with
     # ``DraftValueResponse.participant_count`` gives the estimated round.

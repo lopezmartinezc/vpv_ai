@@ -1121,7 +1121,9 @@ export interface DraftValuePlayer {
   // Positional tier (elite | solid | normal | weak; "team_dependent" for POR).
   position_tier?: string | null;
   // Draft priority: projected rest-of-season points, risk-adjusted. Master sort.
+  // priority includes admin tags; priority_base is the pure model view.
   priority?: number | null;
+  priority_base?: number | null;
   // 1-based rank across all positions by priority (draft order / ADP).
   overall_rank?: number | null;
 }
