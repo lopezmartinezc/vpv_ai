@@ -61,23 +61,26 @@ const TIER_RANK: Record<string, number> = {
   weak: 1,
 };
 
-const DRAFT_COLS: { key: DraftSortKey; label: string; title: string; w: string }[] = [
-  { key: "priority", label: "Prio", title: "Prioridad de draft (columna maestra), CON tus tags: puntos proyectados el resto de temporada, ajustados por riesgo (pico, banquillo, fiabilidad) y por los tags. Es el orden por defecto.", w: "w-16" },
-  { key: "priority_base", label: "Base", title: "Prioridad del MODELO, sin tus tags. Compárala con Prio: si difieren, es por tus etiquetas (Objetivo/Evitar/Lesión/…).", w: "w-16" },
-  { key: "vorp", label: "VORP", title: "Valor sobre reemplazo posicional: valor efectivo por encima del jugador de reemplazo en su posición. Compara DEF/MED/DEL/POR en un solo eje. Diagnóstico de escasez.", w: "w-14" },
-  { key: "effective_value", label: "Efect", title: "Valor efectivo usado para el ranking = valor manual si lo has puesto, si no la proyección automática.", w: "w-14" },
-  { key: "manual_value", label: "Manual", title: "Tu valor manual (pts/partido). Sobrescribe la proyección. Edítalo abriendo la fila. Imprescindible para jugadores nuevos sin histórico.", w: "w-14" },
-  { key: "proj_rest_points", label: "PtsRes", title: "Puntos proyectados resto de temporada = valor efectivo × partidos esperados restantes (jornadas restantes × disponibilidad).", w: "w-16" },
-  { key: "event_share", label: "Fiab", title: "Fiabilidad: % de puntos por eventos concretos (goles, asistencias, portería a cero...) vs nota mediática Marca/AS. Alto = más repetible.", w: "w-12" },
-  { key: "team_goals_conceded", label: "DefEq", title: "Defensa del equipo: goles que encaja por partido (temporada pasada; prior neutro para ascendidos). Menos = mejor. El factor clave para porteros (corr −0.83 con sus puntos).", w: "w-14" },
-  { key: "ensemble_score", label: "Ens", title: "Ensemble: valor proyectado (histórico + actual, shrinkage k=4)", w: "w-14" },
-  { key: "simple_avg", label: "Avg", title: "Media simple: pts/partido temporada anterior (baseline)", w: "w-14" },
-  { key: "second_half_score", label: "Form", title: "Forma 2a mitad: rendimiento J20-J38 (predice siguiente temporada)", w: "w-14" },
-  { key: "stability_score", label: "Stab", title: "Estabilidad: minutos altos y constantes (menor riesgo busto)", w: "w-14" },
-  { key: "productivity_score", label: "Prod", title: "Productividad: bonificado por G+A por 90 minutos", w: "w-14" },
-  { key: "career_trend_pct", label: "Trend", title: "Tendencia interanual: % mejora o declive", w: "w-14" },
-  { key: "availability", label: "Disp", title: "Disponibilidad: % partidos con 45+ min jugados", w: "w-12" },
-  { key: "consistency", label: "Cons", title: "Consistencia: 1-CV (1=muy fiable, 0=impredecible)", w: "w-12" },
+// group: "core" columns always show (the draft-decision essentials, they fit on
+// screen); "models" columns are the individual sub-model scores, hidden behind a
+// toggle so the table isn't unusably wide. Every column stays sortable.
+const DRAFT_COLS: { key: DraftSortKey; label: string; title: string; w: string; group: "core" | "models" }[] = [
+  { key: "priority", label: "Prio", title: "Prioridad de draft (columna maestra), CON tus tags: puntos proyectados el resto de temporada, ajustados por riesgo (pico, banquillo, fiabilidad) y por los tags. Es el orden por defecto.", w: "w-16", group: "core" },
+  { key: "priority_base", label: "Base", title: "Prioridad del MODELO, sin tus tags. Compárala con Prio: si difieren, es por tus etiquetas (Objetivo/Evitar/Lesión/…).", w: "w-16", group: "core" },
+  { key: "vorp", label: "VORP", title: "Valor sobre reemplazo posicional: valor efectivo por encima del jugador de reemplazo en su posición. Compara DEF/MED/DEL/POR en un solo eje. Diagnóstico de escasez.", w: "w-14", group: "core" },
+  { key: "effective_value", label: "Efect", title: "Valor efectivo usado para el ranking = valor manual si lo has puesto, si no la proyección automática.", w: "w-14", group: "core" },
+  { key: "manual_value", label: "Manual", title: "Tu valor manual (pts/partido). Sobrescribe la proyección. Edítalo abriendo la fila. Imprescindible para jugadores nuevos sin histórico.", w: "w-14", group: "core" },
+  { key: "proj_rest_points", label: "PtsRes", title: "Puntos proyectados resto de temporada = valor efectivo × partidos esperados restantes (jornadas restantes × disponibilidad).", w: "w-16", group: "core" },
+  { key: "event_share", label: "Fiab", title: "Fiabilidad: % de puntos por eventos concretos (goles, asistencias, portería a cero...) vs nota mediática Marca/AS. Alto = más repetible.", w: "w-12", group: "core" },
+  { key: "team_goals_conceded", label: "DefEq", title: "Defensa del equipo: goles que encaja por partido (temporada pasada; prior neutro para ascendidos). Menos = mejor. El factor clave para porteros (corr −0.83 con sus puntos).", w: "w-14", group: "core" },
+  { key: "ensemble_score", label: "Ens", title: "Ensemble: valor proyectado (histórico + actual, shrinkage k=4)", w: "w-14", group: "models" },
+  { key: "simple_avg", label: "Avg", title: "Media simple: pts/partido temporada anterior (baseline)", w: "w-14", group: "models" },
+  { key: "second_half_score", label: "Form", title: "Forma 2a mitad: rendimiento J20-J38 (predice siguiente temporada)", w: "w-14", group: "models" },
+  { key: "stability_score", label: "Stab", title: "Estabilidad: minutos altos y constantes (menor riesgo busto)", w: "w-14", group: "models" },
+  { key: "productivity_score", label: "Prod", title: "Productividad: bonificado por G+A por 90 minutos", w: "w-14", group: "models" },
+  { key: "career_trend_pct", label: "Trend", title: "Tendencia interanual: % mejora o declive", w: "w-14", group: "models" },
+  { key: "availability", label: "Disp", title: "Disponibilidad: % partidos con 45+ min jugados", w: "w-12", group: "models" },
+  { key: "consistency", label: "Cons", title: "Consistencia: 1-CV (1=muy fiable, 0=impredecible)", w: "w-12", group: "models" },
 ];
 
 function ManualOverrideEditor({
@@ -188,6 +191,16 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [error, setError] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  // Column groups: keep the essential columns on screen; reveal the individual
+  // model scores on demand so the table isn't unusably wide.
+  const [showModels, setShowModels] = useState(false);
+  const visibleCols = useMemo(
+    () => (showModels ? DRAFT_COLS : DRAFT_COLS.filter((c) => c.group === "core")),
+    [showModels],
+  );
+  // Table needs a wider min-width when the model columns are shown so nothing
+  // cramps; narrower otherwise so the core view fits without scrolling.
+  const tableMinW = showModels ? "md:min-w-[1450px]" : "md:min-w-[1024px]";
 
   const handleSort = (key: DraftSortKey) => {
     if (sortKey === key) {
@@ -368,14 +381,23 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
             </button>
           ))}
         </div>
-        <span className="text-[10px] text-vpv-text-muted">Click columna para ordenar · desliza para ver todas</span>
+        <button
+          onClick={() => setShowModels((v) => !v)}
+          title="Muestra u oculta las columnas de sub-modelos (Ens, Avg, Form, Stab, Prod, Trend, Disp, Cons). Siguen siendo ordenables."
+          className={`rounded px-2 py-1 text-[10px] font-medium transition ${
+            showModels ? "bg-vpv-accent text-white" : "border border-vpv-border text-vpv-text-muted hover:text-vpv-text"
+          }`}
+        >
+          {showModels ? "− Modelos" : "+ Modelos"}
+        </button>
+        <span className="text-[10px] text-vpv-text-muted">Click columna para ordenar</span>
       </div>
 
       {/* Table */}
       <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
        <div className="overflow-x-auto">
         {/* Desktop header */}
-        <div className="hidden min-w-[1230px] border-b border-vpv-border bg-vpv-bg px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted md:flex">
+        <div className={`hidden ${tableMinW} border-b border-vpv-border bg-vpv-bg px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted md:flex`}>
           <span className="w-8 shrink-0">#</span>
           <span className="w-52 shrink-0">Jugador</span>
           <span className="w-32 shrink-0" title="Alertas: nuevo, cambio de equipo/posición, pico de forma, penaltis, riesgo banquillo">Alertas</span>
@@ -400,7 +422,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
               <span className="ml-0.5">{sortDir === "desc" ? "▼" : "▲"}</span>
             )}
           </button>
-          {DRAFT_COLS.map((col) => (
+          {visibleCols.map((col) => (
             <button
               key={col.key}
               onClick={() => handleSort(col.key)}
@@ -433,7 +455,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
                 <button
                   type="button"
                   onClick={() => setExpandedId(isExpanded ? null : p.player_id)}
-                  className={`flex w-full items-center px-3 py-1.5 text-left hover:bg-vpv-bg/30 md:min-w-[1230px] ${isExpanded ? "bg-vpv-bg/40" : ""}`}
+                  className={`flex w-full items-center px-3 py-1.5 text-left hover:bg-vpv-bg/30 ${tableMinW} ${isExpanded ? "bg-vpv-bg/40" : ""}`}
                 >
                   {/* Mobile: compact */}
                   <div className="flex flex-1 items-center gap-2 md:hidden">
@@ -459,7 +481,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
                   </div>
 
                   {/* Desktop: full row */}
-                  <div className="hidden min-w-[1230px] items-center md:flex">
+                  <div className={`hidden ${tableMinW} items-center md:flex`}>
                     <span className="w-8 shrink-0 text-[10px] text-vpv-text-muted">{i + 1}</span>
                     <span className="w-52 shrink-0 truncate text-xs font-medium text-vpv-text">
                       {p.display_name}
@@ -506,7 +528,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
                     >
                       {rnd != null ? `R${rnd}` : p.overall_rank != null ? `#${p.overall_rank}` : "—"}
                     </span>
-                    {DRAFT_COLS.map((col) => {
+                    {visibleCols.map((col) => {
                       const val = p[col.key];
                       const isActive = sortKey === col.key;
                       if (col.key === "career_trend_pct") {
