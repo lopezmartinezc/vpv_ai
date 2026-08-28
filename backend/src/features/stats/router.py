@@ -87,7 +87,7 @@ async def set_draft_value_override(
     """Set/clear the shared admin manual value + note for a player, then return
     the recomputed draft board (so VORP reflects the new effective value)."""
     service = DraftValueService(db)
-    await service.upsert_override(season_id, player_id, body.manual_value, body.note)
+    await service.upsert_override(season_id, player_id, body.manual_value, body.note, body.tags)
     return await service.get_draft_values(season_id)
 
 

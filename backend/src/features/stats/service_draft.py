@@ -60,6 +60,18 @@ HISTORY_MIN_GAMES = 3
 # How many prior league seasons to pull as history (plus the current one).
 N_HISTORY_SEASONS = 4
 
+# Admin player tags (fixed set) and how they adjust the draft Priority.
+# "titular" has no multiplier — it cancels the bench-risk discount instead
+# (the admin confirms the player starts). Tuneable.
+ALLOWED_TAGS = {"titular", "suplente", "penaltis", "lesion", "objetivo", "evitar"}
+TAG_MULTIPLIER: dict[str, float] = {
+    "suplente": 0.75,
+    "penaltis": 1.05,
+    "lesion": 0.55,
+    "objetivo": 1.20,
+    "evitar": 0.40,
+}
+
 
 def _keeper_ppg_from_defense(goals_conceded: float) -> float:
     """Expected keeper pts/game implied by the team's goals-conceded rate.
@@ -355,7 +367,7 @@ class DraftValueService:
             consistency = max(0, 1 - cv)
 
             # === Manual override → effective value (what VORP ranks on) ===
-            manual_value, note = overrides.get(rp.player_id, (None, None))
+            manual_value, note, tags = overrides.get(rp.player_id, (None, None, []))
             effective_value = manual_value if manual_value is not None else auto_projection
 
             # F2: durability — expected games + rest-of-season points.
@@ -451,6 +463,7 @@ class DraftValueService:
                     is_bench_risk=bench_risk,
                     position_tier=(tier_for(rp.position, simple_avg) if hist else None),
                     team_goals_conceded=(round(team_gc, 2) if team_gc is not None else None),
+                    tags=tags,
                 )
             )
 
@@ -491,10 +504,14 @@ class DraftValueService:
             mult = 1.0
             if p.is_peak_year:
                 mult *= 0.90
-            if p.is_bench_risk:
+            # Admin "titular" tag overrides the model's bench-risk flag.
+            if p.is_bench_risk and "titular" not in p.tags:
                 mult *= 0.75
             if p.event_share is not None and p.event_share < 0.5:
                 mult *= 0.92
+            # Admin tags adjust Priority (not effective_value/VORP).
+            for tag in p.tags:
+                mult *= TAG_MULTIPLIER.get(tag, 1.0)
             p.priority = round(p.proj_rest_points * mult, 1)
 
         # Sort by draft priority (the master axis); no-projection players last.
@@ -667,11 +684,13 @@ class DraftValueService:
             for r in result.all()
         ]
 
-    async def _load_overrides(self, season_id: int) -> dict[int, tuple[float | None, str | None]]:
-        """player_id → (manual_value, note) admin overrides for the season."""
+    async def _load_overrides(
+        self, season_id: int
+    ) -> dict[int, tuple[float | None, str | None, list[str]]]:
+        """player_id → (manual_value, note, tags) admin overrides for the season."""
         result = await self.session.execute(
             text(
-                "SELECT player_id, manual_value, note "
+                "SELECT player_id, manual_value, note, tags "
                 "FROM draft_value_overrides WHERE season_id = :sid"
             ),
             {"sid": season_id},
@@ -680,27 +699,41 @@ class DraftValueService:
             r.player_id: (
                 float(r.manual_value) if r.manual_value is not None else None,
                 r.note,
+                list(r.tags) if r.tags else [],
             )
             for r in result.all()
         }
 
     async def upsert_override(
-        self, season_id: int, player_id: int, manual_value: float | None, note: str | None
+        self,
+        season_id: int,
+        player_id: int,
+        manual_value: float | None,
+        note: str | None,
+        tags: list[str] | None = None,
     ) -> None:
-        """Set/clear the admin manual value + note for a player. A NULL
-        ``manual_value`` keeps the row (as a note holder) but falls back to
-        the automatic projection."""
+        """Set/clear the admin manual value + note + tags for a player. A NULL
+        ``manual_value`` keeps the row (as a note/tags holder) but falls back to
+        the automatic projection. Unknown tags are dropped."""
+        clean_tags = [t for t in (tags or []) if t in ALLOWED_TAGS] or None
         await self.session.execute(
             text(
                 "INSERT INTO draft_value_overrides "
-                "  (season_id, player_id, manual_value, note, updated_at) "
-                "VALUES (:sid, :pid, :val, :note, now()) "
+                "  (season_id, player_id, manual_value, note, tags, updated_at) "
+                "VALUES (:sid, :pid, :val, :note, :tags, now()) "
                 "ON CONFLICT ON CONSTRAINT uq_draft_value_override DO UPDATE SET "
                 "  manual_value = EXCLUDED.manual_value, "
                 "  note = EXCLUDED.note, "
+                "  tags = EXCLUDED.tags, "
                 "  updated_at = now()"
             ),
-            {"sid": season_id, "pid": player_id, "val": manual_value, "note": note},
+            {
+                "sid": season_id,
+                "pid": player_id,
+                "val": manual_value,
+                "note": note,
+                "tags": clean_tags,
+            },
         )
         await self.session.commit()
 
