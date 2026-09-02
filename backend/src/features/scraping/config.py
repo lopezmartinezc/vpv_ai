@@ -78,8 +78,12 @@ def stats_source_for(tournament_config: dict | None) -> str:
 
     Tournament admins opt-in by setting
     ``seasons.tournament_config = {"stats_source": "match_page", ...}``.
+
+    Defensive: JSONB columns can hold anything JSON-valid. If the stored
+    value is not a mapping (list, str, int, …) we fall back to the default
+    silently instead of raising.
     """
-    if not tournament_config:
+    if not isinstance(tournament_config, dict):
         return "player_page"
     candidate = tournament_config.get("stats_source")
     if candidate in VALID_STATS_SOURCES:
