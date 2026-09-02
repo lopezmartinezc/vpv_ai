@@ -14,7 +14,7 @@ from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.scraping.client import ScrapingClient, ScrapingError
-from src.features.scraping.config import scraping_settings
+from src.features.scraping.config import position_writes_allowed, scraping_settings
 from src.features.scraping.parsers import parse_player_photo, parse_player_position
 from src.features.scraping.repository import ScrapingRepository
 
@@ -171,6 +171,16 @@ class PhotoDownloader:
         season = await self.repo.get_season(season_id)
         url_suffix = f"/{season.scraping_slug}" if season and season.scraping_slug else ""
 
+        # Position era-lock (see refresh_positions / position_writes_allowed):
+        # outside the pre-draft / winter windows, positions are frozen; only
+        # empty ones are filled.
+        current_md = await self.repo.get_max_played_matchday_number(season_id)
+        may_change = position_writes_allowed(
+            season.matchday_start if season else 1,
+            season.matchday_winter if season else None,
+            current_md,
+        )
+
         async with ScrapingClient() as client:
             total = len(players)
             for idx, player in enumerate(players, start=1):
@@ -218,7 +228,7 @@ class PhotoDownloader:
                             await self.repo.update_player_position(player.id, pos)
                             player.position = pos
                             positions_set += 1
-                        elif refresh and pos != player.position:
+                        elif refresh and pos != player.position and may_change:
                             logger.info(
                                 "PhotoDownloader: %s position %s -> %s",
                                 player.slug,
@@ -332,6 +342,16 @@ class PhotoDownloader:
         url_suffix = f"/{season.scraping_slug}" if season and season.scraping_slug else ""
         base_url = self._settings.scraping_base_url
 
+        # Position era-lock: outside the pre-draft / winter-resync windows a
+        # player's position is frozen (see position_writes_allowed). Empty
+        # positions (new signings) are still filled below regardless.
+        current_md = await self.repo.get_max_played_matchday_number(season_id)
+        may_change = position_writes_allowed(
+            season.matchday_start if season else 1,
+            season.matchday_winter if season else None,
+            current_md,
+        )
+
         checked = 0
         positions_set = 0
         positions_updated = 0
@@ -371,7 +391,7 @@ class PhotoDownloader:
                     if not player.position:
                         positions_set += 1
                         updates.append((player.id, pos))
-                    elif pos != player.position:
+                    elif pos != player.position and may_change:
                         logger.info(
                             "refresh_positions: %s position %s -> %s",
                             player.slug,
