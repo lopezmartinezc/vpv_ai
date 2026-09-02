@@ -12,7 +12,7 @@ Two goals:
    lined up for THAT matchday, resolved by ``slug`` across the whole season
    (not restricted to the current roster of the parsed team).
 
-Fixture: a real J-early Celta 1–2 Osasuna, trimmed to the two per-team
+Fixture: a real J-early Celta 1-2 Osasuna, trimmed to the two per-team
 ``tablestats`` tables + score block.
 """
 
@@ -34,10 +34,7 @@ from src.shared.models.season import Season
 from src.shared.models.team import Team
 
 FIXTURE = (
-    Path(__file__).parent.parent
-    / "fixtures"
-    / "scraping"
-    / "match_laliga_celta_osasuna.html"
+    Path(__file__).parent.parent / "fixtures" / "scraping" / "match_laliga_celta_osasuna.html"
 )
 
 
@@ -80,16 +77,14 @@ def test_parses_laliga_match_page_teams_and_events() -> None:
 def _fake_fetch():
     html = _html()
 
-    async def fetch(self, url: str) -> str:  # noqa: ANN001
+    async def fetch(self, url: str) -> str:
         return html
 
     return fetch
 
 
 @pytest.mark.asyncio
-async def test_scrape_attributes_moved_player_to_historical_team(
-    db_session, monkeypatch
-) -> None:
+async def test_scrape_attributes_moved_player_to_historical_team(db_session, monkeypatch) -> None:
     monkeypatch.setattr(ScrapingClient, "fetch", _fake_fetch())
 
     # Season configured to use the match-page path (the target for La Liga).
@@ -140,9 +135,7 @@ async def test_scrape_attributes_moved_player_to_historical_team(
     await db_session.flush()
 
     row = (
-        await db_session.execute(
-            select(PlayerStat).where(PlayerStat.player_id == aspas.id)
-        )
+        await db_session.execute(select(PlayerStat).where(PlayerStat.player_id == aspas.id))
     ).scalar_one_or_none()
 
     # He must NOT be dropped just because his CURRENT club isn't Celta, and
