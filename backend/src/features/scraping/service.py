@@ -174,16 +174,22 @@ class ScrapingService:
         matchday_number: int,
         engine: ScoringEngine,
         players_by_team: dict[int, list[Player]],
+        players_by_slug: dict[str, Player],
         team_names: dict[int, str],
     ) -> tuple[int, int, list[str]]:
         """Scrape one match by parsing the match page (Mundial/Eurocopa flow).
 
         Replaces N per-player fetches with a single fetch of
         ``match.source_url``. The page lists both teams' rosters (up to
-        52 players) with raw stats. Players are matched to DB rows by
-        team_id + accent-folded surname; entries with no surname match
-        (e.g. a substitute who never made the season roster) are
-        skipped silently.
+        52 players) with raw stats.
+
+        Players are resolved by ``slug`` across the WHOLE season
+        (``players_by_slug``, keys normalised like the parser), never
+        restricted to the parsed team's current roster — a player who has
+        since transferred still resolves and gets attributed to the team he
+        actually lined up for THAT matchday (the home/away side of this
+        match). Surname is a last-resort fallback, scoped to the parsed
+        team's current roster to avoid cross-team collisions.
 
         Returns ``(processed, errors, error_details)``.
         """
@@ -274,11 +280,13 @@ class ScrapingService:
         # sides of the lookup in the same canonical form.
         from src.features.scraping.parsers import _normalize_player_slug
 
+        # Surname fallback stays scoped to the parsed team's CURRENT roster
+        # (cross-team surname collisions season-wide would misattribute).
+        # Slug resolution, in contrast, is season-wide (below) so transferred
+        # players still resolve to their historical team for this matchday.
         per_team_by_surname: dict[int, dict[str, Player]] = {}
-        per_team_by_slug: dict[int, dict[str, Player]] = {}
         for team_id in (home_team_id, away_team_id):
             surname_lookup: dict[str, Player] = {}
-            slug_lookup: dict[str, Player] = {}
             for player in players_by_team.get(team_id, []):
                 key = _surname_key(player.display_name)
                 if key:
@@ -286,10 +294,7 @@ class ScrapingService:
                     # team are rare and a tie-break heuristic isn't worth
                     # the complexity for v1.
                     surname_lookup[key] = player
-                if player.slug:
-                    slug_lookup[_normalize_player_slug(player.slug)] = player
             per_team_by_surname[team_id] = surname_lookup
-            per_team_by_slug[team_id] = slug_lookup
 
         processed = 0
         errors = 0
@@ -301,7 +306,7 @@ class ScrapingService:
             # back to surname when the desglose anchor is missing.
             matched: Player | None = None
             if mp.slug:
-                matched = per_team_by_slug.get(team_id, {}).get(mp.slug)
+                matched = players_by_slug.get(_normalize_player_slug(mp.slug))
             if matched is None:
                 matched = per_team_by_surname.get(team_id, {}).get(mp.surname_clean)
             if matched is None:
@@ -470,6 +475,17 @@ class ScrapingService:
         for player in all_players:
             players_by_team.setdefault(player.team_id, []).append(player)
 
+        # Season-wide slug → Player map for the match-page path: lets a
+        # transferred player resolve to his historical team for a past
+        # matchday, not be dropped because his CURRENT club isn't playing.
+        # Keys normalised to match the parser's slug extraction.
+        from src.features.scraping.parsers import _normalize_player_slug
+
+        season_players = await self.repo.get_players_by_slug(season_id)
+        players_by_slug: dict[str, Player] = {
+            _normalize_player_slug(p.slug): p for p in season_players.values() if p.slug
+        }
+
         # Strategy per season: "player_page" (Liga default) hits each
         # player's individual stats page; "match_page" (Mundial etc.)
         # fetches the match page once and reads all 52 players at once.
@@ -495,6 +511,7 @@ class ScrapingService:
                         matchday_number=matchday_number,
                         engine=engine,
                         players_by_team=players_by_team,
+                        players_by_slug=players_by_slug,
                         team_names=team_names,
                     )
                     total_processed += processed
@@ -800,6 +817,14 @@ class ScrapingService:
             players_by_team: dict[int, list[Player]] = {}
             for player_row in match_players:
                 players_by_team.setdefault(player_row.team_id, []).append(player_row)
+            # Season-wide slug map so a transferred player still resolves to
+            # the team he played for this matchday (mirrors scrape_matchday).
+            from src.features.scraping.parsers import _normalize_player_slug
+
+            season_players = await self.repo.get_players_by_slug(season_id)
+            players_by_slug: dict[str, Player] = {
+                _normalize_player_slug(p.slug): p for p in season_players.values() if p.slug
+            }
             async with ScrapingClient() as client:
                 processed, errors, errs = await self._process_match_via_match_page(
                     client=client,
@@ -808,6 +833,7 @@ class ScrapingService:
                     matchday_number=matchday_number,
                     engine=engine,
                     players_by_team=players_by_team,
+                    players_by_slug=players_by_slug,
                     team_names=team_names,
                 )
             if errors == 0 and processed > 0:
