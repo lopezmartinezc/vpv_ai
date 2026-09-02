@@ -59,6 +59,20 @@ class ScrapingRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_max_played_matchday_number(self, season_id: int) -> int:
+        """Highest matchday number with at least one played match (score set).
+
+        Drives the season's current phase for the position era-lock. Returns
+        0 when nothing has been played yet (pre-draft).
+        """
+        stmt = (
+            select(func.max(Matchday.number))
+            .join(Match, Match.matchday_id == Matchday.id)
+            .where(Matchday.season_id == season_id, Match.home_score.is_not(None))
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar() or 0
+
     async def get_scoring_rules(
         self, season_id: int
     ) -> dict[str, dict[str | None, Decimal | None]]:

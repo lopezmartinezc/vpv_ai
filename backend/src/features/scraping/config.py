@@ -40,6 +40,31 @@ _TOURNAMENT_URL_PREFIX: dict[str, str] = {
 VALID_STATS_SOURCES = ("player_page", "match_page")
 
 
+def position_writes_allowed(
+    matchday_start: int,
+    matchday_winter: int | None,
+    current_md: int,
+) -> bool:
+    """Whether a futbolfantasy-driven position CHANGE may be applied now.
+
+    Business rule: a player's VPV position is frozen at the preseason draft
+    and re-synced only at the winter draft. So source-driven position changes
+    are allowed only in two windows:
+
+    - Pre-draft, before counting begins (``current_md < matchday_start``).
+    - The winter re-sync, at the winter-draft matchday
+      (``current_md == matchday_winter``).
+
+    Outside these, callers must ignore changes and only FILL empty positions
+    (new signings). ``current_md`` is the season's latest played matchday
+    (0 when nothing has been played yet → pre-draft).
+    """
+    if current_md < matchday_start:
+        return True
+    # Winter re-sync: one pass at the winter-draft matchday.
+    return matchday_winter is not None and current_md == matchday_winter
+
+
 def stats_source_for(tournament_config: dict | None) -> str:
     """Return the stats-source strategy for a season.
 
