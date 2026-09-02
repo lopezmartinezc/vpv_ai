@@ -62,6 +62,8 @@ Referencia completa: `claude_data/normas_puntuacion_vpv.md`
 6. Draft invierno: en seasons.matchday_winter los participantes pueden soltar jugadores y fichar sustitutos, manteniendo el limite de 26 jugadores. Jugadores pueden cambiar de equipo en cualquier jornada de la temporada (fichajes reales de La Liga)
 7. Deadline alineacion: seasons.lineup_deadline_min minutos antes del primer partido
 8. Alineacion: 1 POR + 10 de campo, formaciones en tabla valid_formations
+9. Posicion congelada por eras: la posicion VPV de un jugador se fija al hacer el draft y se mantiene aunque cambie en futbolfantasy hasta el draft de invierno, cuando se re-sincroniza. Cambios de posicion desde la fuente solo se aplican en dos ventanas (`scraping/config.py::position_writes_allowed`): pre-draft (`current_md < matchday_start`) y re-sync invierno (`current_md == matchday_winter`); fuera de ahi solo se rellenan posiciones vacias (altas nuevas)
+10. Equipo por jornada: `player_stats.team_id` es la verdad del equipo con el que jugo el jugador ESA jornada (regla 6 permite fichajes intra-temporada). Se scrapea via `match_page` (opt-in por temporada con `tournament_config={"stats_source":"match_page"}`), resolviendo al jugador por `slug` en toda la temporada — idempotente ante traspasos
 
 ## Estrategia de Migracion
 FASE 1: Next.js -> FastAPI -> MySQL existente
