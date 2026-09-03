@@ -186,6 +186,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
   const [data, setData] = useState<DraftValueResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [posFilter, setPosFilter] = useState("");
+  const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<DraftSortKey>("priority");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -232,6 +233,14 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
     if (!data) return [];
     let list = data.players;
     if (posFilter) list = list.filter((p) => p.position === posFilter);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (p) =>
+          p.display_name.toLowerCase().includes(q) ||
+          p.team_name.toLowerCase().includes(q),
+      );
+    }
     // Tier is categorical — sort by its quality rank, not alphabetically.
     if (sortKey === "position_tier") {
       const dir = sortDir === "asc" ? 1 : -1;
@@ -243,7 +252,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
       );
     }
     return sorted(list, sortKey, sortDir);
-  }, [data, posFilter, sortKey, sortDir]);
+  }, [data, posFilter, search, sortKey, sortDir]);
 
   // Positional scarcity: how deep the draftable pool runs per position.
   // Fewer players above replacement (vorp > 0) => scarcer => draft earlier.
@@ -381,6 +390,14 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
             </button>
           ))}
         </div>
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Buscar jugador o equipo..."
+          className="rounded border border-vpv-border bg-vpv-bg px-3 py-1 text-xs text-vpv-text placeholder:text-vpv-text-muted"
+        />
+        <span className="text-[10px] text-vpv-text-muted">{players.length} jug.</span>
         <button
           onClick={() => setShowModels((v) => !v)}
           title="Muestra u oculta las columnas de sub-modelos (Ens, Avg, Form, Stab, Prod, Trend, Disp, Cons). Siguen siendo ordenables."
