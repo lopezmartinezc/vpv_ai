@@ -190,7 +190,8 @@ export function StatsGuide() {
         <Metric name="Tags (etiquetas de admin)" good="ajustan la Prioridad">
           Abre la fila para marcarlas. <b className="text-vpv-text">Titular</b> anula el descuento
           de banquillo; <b className="text-vpv-text">Objetivo</b> ×1.20, <b className="text-vpv-text">
-          Penaltis</b> ×1.05, <b className="text-vpv-text">Suplente</b> ×0.75, <b className="text-vpv-text">
+          Gol</b> ×1.10 (goleador nato), <b className="text-vpv-text">Penaltis</b> ×1.05,{" "}
+          <b className="text-vpv-text">Suplente</b> ×0.75, <b className="text-vpv-text">
           Lesión</b> ×0.55, <b className="text-vpv-text">Evitar</b> ×0.40. No tocan VORP ni el valor
           efectivo, solo la Prioridad. Compartidas por temporada (solo admin).
         </Metric>

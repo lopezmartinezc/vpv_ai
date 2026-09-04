@@ -63,10 +63,11 @@ N_HISTORY_SEASONS = 4
 # Admin player tags (fixed set) and how they adjust the draft Priority.
 # "titular" has no multiplier — it cancels the bench-risk discount instead
 # (the admin confirms the player starts). Tuneable.
-ALLOWED_TAGS = {"titular", "suplente", "penaltis", "lesion", "objetivo", "evitar"}
+ALLOWED_TAGS = {"titular", "suplente", "penaltis", "gol", "lesion", "objetivo", "evitar"}
 TAG_MULTIPLIER: dict[str, float] = {
     "suplente": 0.75,
     "penaltis": 1.05,
+    "gol": 1.10,  # natural goalscorer — ceiling bonus
     "lesion": 0.55,
     "objetivo": 1.20,
     "evitar": 0.40,
