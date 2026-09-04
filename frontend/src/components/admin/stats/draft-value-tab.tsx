@@ -24,6 +24,7 @@ const PLAYER_TAGS: { key: string; label: string; cls: string }[] = [
   { key: "titular", label: "Titular", cls: "bg-green-500/20 text-green-300" },
   { key: "suplente", label: "Suplente", cls: "bg-amber-500/15 text-amber-300" },
   { key: "penaltis", label: "Penaltis", cls: "bg-emerald-500/15 text-emerald-300" },
+  { key: "gol", label: "Gol", cls: "bg-lime-500/15 text-lime-300" },
   { key: "lesion", label: "Lesión", cls: "bg-red-500/20 text-red-300" },
   { key: "objetivo", label: "Objetivo", cls: "bg-blue-500/20 text-blue-300" },
   { key: "evitar", label: "Evitar", cls: "bg-red-500/10 text-red-400" },
