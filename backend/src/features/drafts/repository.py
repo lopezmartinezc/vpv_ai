@@ -294,6 +294,31 @@ class DraftRepository:
             )
         return deleted
 
+    async def reset_draft(self, draft_id: int) -> int:
+        """Delete every pick of a draft and release the players' ownership.
+
+        Releases ``players.owner_id`` for every player picked in this draft,
+        then removes all its ``draft_picks`` rows. Returns how many picks were
+        deleted. Does not touch the draft row's status (the service does).
+        """
+        picked = (
+            (
+                await self.session.execute(
+                    select(DraftPick.player_id).where(DraftPick.draft_id == draft_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if picked:
+            await self.session.execute(
+                update(Player).where(Player.id.in_(picked)).values(owner_id=None)
+            )
+        result = await self.session.execute(
+            delete(DraftPick).where(DraftPick.draft_id == draft_id)
+        )
+        return result.rowcount or 0  # type: ignore[attr-defined]
+
     async def reorder_picks(
         self,
         draft_id: int,

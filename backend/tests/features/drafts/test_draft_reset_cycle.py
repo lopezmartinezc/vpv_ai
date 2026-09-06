@@ -28,8 +28,14 @@ ADMIN = {"is_admin": True, "permissions": 0, "sub": 1}
 async def test_test_draft_can_be_run_and_fully_reset(db_session: AsyncSession) -> None:
     # --- season with 3 participants, pool of 3 => 9 picks to complete ---
     season = Season(
-        name="2026-2027", status="active", matchday_start=1, matchday_end=38,
-        draft_pool_size=3, lineup_deadline_min=30, total_participants=3, kind="league",
+        name="2026-2027",
+        status="active",
+        matchday_start=1,
+        matchday_end=38,
+        draft_pool_size=3,
+        lineup_deadline_min=30,
+        total_participants=3,
+        kind="league",
     )
     db_session.add(season)
     await db_session.flush()
@@ -50,8 +56,13 @@ async def test_test_draft_can_be_run_and_fully_reset(db_session: AsyncSession) -
 
     players = [
         Player(
-            season_id=season.id, team_id=team.id, owner_id=None,
-            name=f"P{i}", display_name=f"P{i}", slug=f"p{i}", position="MED",
+            season_id=season.id,
+            team_id=team.id,
+            owner_id=None,
+            name=f"P{i}",
+            display_name=f"P{i}",
+            slug=f"p{i}",
+            position="MED",
         )
         for i in range(9)
     ]
@@ -69,7 +80,11 @@ async def test_test_draft_can_be_run_and_fully_reset(db_session: AsyncSession) -
     draft = await db_session.get(Draft, draft_id)
     await db_session.refresh(draft)
     assert draft.status == "completed"
-    owners = (await db_session.execute(select(Player.owner_id).where(Player.season_id == season.id))).scalars().all()
+    owners = (
+        (await db_session.execute(select(Player.owner_id).where(Player.season_id == season.id)))
+        .scalars()
+        .all()
+    )
     assert all(o is not None for o in owners)  # every player owned during the test
 
     # --- reset: delete every pick ---
@@ -77,9 +92,81 @@ async def test_test_draft_can_be_run_and_fully_reset(db_session: AsyncSession) -
         await svc.delete_pick(draft_id, n, ADMIN)
 
     # --- clean board on the SAME draft: 0 picks, no owners, reopened ---
-    remaining = (await db_session.execute(select(DraftPick).where(DraftPick.draft_id == draft_id))).scalars().all()
+    remaining = (
+        (await db_session.execute(select(DraftPick).where(DraftPick.draft_id == draft_id)))
+        .scalars()
+        .all()
+    )
     assert remaining == []
-    owners = (await db_session.execute(select(Player.owner_id).where(Player.season_id == season.id))).scalars().all()
+    owners = (
+        (await db_session.execute(select(Player.owner_id).where(Player.season_id == season.id)))
+        .scalars()
+        .all()
+    )
     assert all(o is None for o in owners)  # ownership fully released
     await db_session.refresh(draft)
     assert draft.status != "completed"  # reopened, ready for the real draft
+
+
+@pytest.mark.asyncio
+async def test_reset_draft_wipes_everything_in_one_call(db_session: AsyncSession) -> None:
+    season = Season(
+        name="2026-2027",
+        status="active",
+        matchday_start=1,
+        matchday_end=38,
+        draft_pool_size=3,
+        lineup_deadline_min=30,
+        total_participants=3,
+        kind="league",
+    )
+    db_session.add(season)
+    await db_session.flush()
+    users = [User(username=f"r{i}", password_hash="x", display_name=f"R{i}") for i in range(3)]
+    db_session.add_all(users)
+    await db_session.flush()
+    parts = [
+        SeasonParticipant(season_id=season.id, user_id=users[i].id, draft_order=i + 1)
+        for i in range(3)
+    ]
+    db_session.add_all(parts)
+    await db_session.flush()
+    team = Team(season_id=season.id, name="T", slug="t2")
+    db_session.add(team)
+    await db_session.flush()
+    players = [
+        Player(
+            season_id=season.id,
+            team_id=team.id,
+            owner_id=None,
+            name=f"Q{i}",
+            display_name=f"Q{i}",
+            slug=f"q{i}",
+            position="MED",
+        )
+        for i in range(4)
+    ]
+    db_session.add_all(players)
+    await db_session.flush()
+
+    svc = DraftService(db_session)
+    created = await svc.create_draft(season.id, "preseason", "snake")
+    for p in players[:4]:
+        await svc.add_pick(created.id, p.id, ADMIN)
+
+    result = await svc.reset_draft(created.id, ADMIN)
+
+    assert result["deleted_picks"] == 4
+    assert result["status"] == "pending"
+    remaining = (
+        (await db_session.execute(select(DraftPick).where(DraftPick.draft_id == created.id)))
+        .scalars()
+        .all()
+    )
+    assert remaining == []
+    owners = (
+        (await db_session.execute(select(Player.owner_id).where(Player.season_id == season.id)))
+        .scalars()
+        .all()
+    )
+    assert all(o is None for o in owners)

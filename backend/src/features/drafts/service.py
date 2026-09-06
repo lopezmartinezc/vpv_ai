@@ -845,6 +845,39 @@ class DraftService:
         # re-engage the auto-pick chain naturally.
         return DeletePickResponse(deleted_pick_number=pick_number)
 
+    async def reset_draft(self, draft_id: int, user: dict) -> dict:
+        """Wipe every pick of a draft and release all ownership (admin only).
+
+        For the "test the draft, then run the real one" workflow: deletes all
+        ``draft_picks``, sets each picked player's ``owner_id`` back to NULL,
+        and returns the draft row to a clean ``pending`` state. Broadcasts a
+        ``draft_reset`` event so any connected client resyncs.
+        """
+        draft = await self.repo.get_draft_by_id(draft_id)
+        if draft is None:
+            raise NotFoundError("Draft", draft_id)
+
+        is_privileged = bool(user.get("is_admin")) or bool(
+            (user.get("permissions") or 0) & Perm.DRAFT
+        )
+        if not is_privileged:
+            raise AuthorizationError("Solo un administrador puede reiniciar el draft")
+
+        deleted = await self.repo.reset_draft(draft_id)
+        draft.status = "pending"
+        draft.started_at = None
+        draft.completed_at = None
+        draft.current_round = 0
+        draft.current_pick = 0
+        self.repo.session.add(draft)
+        await self.repo.session.commit()
+
+        await draft_ws_manager.broadcast(
+            draft_id,
+            {"type": "draft_reset", "status": "pending"},
+        )
+        return {"deleted_picks": deleted, "status": draft.status}
+
     async def list_teams(self, draft_id: int) -> list[DraftTeamOption]:
         """Return the teams of the draft's season for the search filter."""
         draft = await self.repo.get_draft_by_id(draft_id)
