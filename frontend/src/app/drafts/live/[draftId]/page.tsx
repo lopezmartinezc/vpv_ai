@@ -10,11 +10,13 @@ import { apiClient } from "@/lib/api-client";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
 import { WishlistPanel } from "@/components/draft/wishlist-panel";
 import { RosterCounter } from "@/components/draft/roster-counter";
+import { TIER_COLORS, TIER_LABELS } from "@/lib/draft-scorecard";
 import {
-  SIGNAL_LABELS,
-  TIER_COLORS,
-  TIER_LABELS,
-} from "@/lib/draft-scorecard";
+  PLAYER_TAG_CLASSES,
+  PLAYER_TAG_EMOJI,
+  PLAYER_TAG_LABELS,
+  PLAYER_TAGS,
+} from "@/lib/player-tags";
 import type {
   DraftDetailResponse,
   DraftPickEntry,
@@ -451,19 +453,18 @@ export default function LiveDraftPage() {
               </div>
 
               <div>
-                <p className="mb-1 font-bold text-sky-300">xPts (effective_score)</p>
+                <p className="mb-1 font-bold text-sky-300">Prioridad (Prio) — el número maestro</p>
                 <p className="text-vpv-text-muted">
-                  Puntos esperados por jornada para la próxima temporada, ya
-                  descontado el <span className="text-vpv-text">survival haircut</span>:
-                  <code className="ml-1 rounded bg-vpv-card px-1">xPts = ensemble × (1 − haircut)</code>.
-                  El ensemble lo calcula el modelo (Spearman 0.718 backtest); el
-                  haircut compensa la fragilidad histórica de cada tramo:
+                  Es el mismo orden que el tablero de <span className="text-vpv-text">Estadísticas → Draft</span>:
+                  puntos proyectados el resto de temporada, ajustados por riesgo
+                  (pico de forma, banquillo, fiabilidad) <span className="text-vpv-text">y tus tags</span>.
+                  El tooltip de cada jugador muestra además:
                 </p>
                 <ul className="mt-1 ml-3 list-disc text-vpv-text-muted">
-                  <li><span className="text-vpv-text">avg ≥ 7.0</span> → 22% (élite, baja fragilidad)</li>
-                  <li><span className="text-vpv-text">6.0–7.0</span> → 27%</li>
-                  <li><span className="text-vpv-text">5.0–6.0</span> → 32% (rondas 4–8, mayor riesgo de bust)</li>
-                  <li><span className="text-vpv-text">&lt; 5.0</span> → 48%</li>
+                  <li><span className="text-vpv-text">modelo</span> — la Prioridad sin tus tags (Base), para comparar.</li>
+                  <li><span className="text-vpv-text">VORP</span> — valor sobre el reemplazo de su posición (escasez).</li>
+                  <li><span className="text-vpv-text">Fiab</span> — % de puntos por eventos concretos vs nota (más = repetible).</li>
+                  <li><span className="text-vpv-text">DefEq</span> (porteros) — goles que encaja su equipo/partido; menos = mejor.</li>
                 </ul>
               </div>
 
@@ -499,17 +500,17 @@ export default function LiveDraftPage() {
               </div>
 
               <div>
-                <p className="mb-1 font-bold text-sky-300">Signal (recomendación del modelo)</p>
+                <p className="mb-1 font-bold text-sky-300">Tus tags (ajustan la Prioridad)</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {Object.entries(SIGNAL_LABELS).map(([key, v]) => (
-                    <span key={key} className={`rounded px-1.5 py-px text-[9px] font-bold ${v.classes}`}>
-                      {v.label}
+                  {PLAYER_TAGS.map((t) => (
+                    <span key={t.key} className={`rounded px-1.5 py-px text-[9px] font-bold ${t.cls}`}>
+                      {t.label}
                     </span>
                   ))}
                 </div>
                 <p className="mt-1 text-vpv-text-muted">
-                  Pasa el ratón sobre el badge para ver las razones (signal_reasons)
-                  que explican la recomendación.
+                  Se ponen en el tablero de Draft (fila expandida). Titular anula el
+                  descuento de banquillo; Objetivo/Gol/Penaltis suben, Suplente/Lesión/Evitar bajan.
                 </p>
               </div>
 
@@ -517,41 +518,40 @@ export default function LiveDraftPage() {
                 <p className="mb-1 font-bold text-sky-300">Banderas de aviso</p>
                 <ul className="ml-3 list-none space-y-1 text-vpv-text-muted">
                   <li>
-                    <span title="Suplente">📌</span>{" "}
-                    <span className="text-vpv-text">Suplente</span> —{" "}
-                    <em>starter_pct &lt; 79%</em> o jugó &lt; 22 partidos
-                    (Paso 0). La disponibilidad pesa más que el talento: si
-                    no juega, no puntúa.
+                    <span title="Banquillo">📌</span>{" "}
+                    <span className="text-vpv-text">Riesgo de banquillo</span> —
+                    rota o juega pocos partidos. La disponibilidad pesa más que
+                    el talento: si no juega, no puntúa. (El tag <em>Titular</em> lo anula.)
                   </li>
                   <li>
-                    <span title="Mover">🔄</span>{" "}
-                    <span className="text-vpv-text">Mover</span> — cambia de
-                    equipo. Hint del scorecard: <em>POR ±2 pts</em>,{" "}
-                    <em>DEL/MED ±1 pt</em>, <em>DEF ±1 pt</em> según salto de
-                    calidad. Solo aplica si el salto es grande (top-4 ↔
-                    descenso); resta o suma a mano.
+                    <span title="Nuevo">🆕</span>{" "}
+                    <span className="text-vpv-text">Nuevo</span> — sin histórico en
+                    La Liga (ascendido/fichaje); proyección con más incertidumbre.
                   </li>
                   <li>
-                    <span title="Peak year">🔻</span>{" "}
-                    <span className="text-vpv-text">Peak year</span> — su última
-                    temporada fue ≥0.5 pts/J por encima de su media histórica.
-                    Riesgo de regresión a la media (~0.7 pts).
+                    <span title="Cambió de equipo">🔄</span>{" "}
+                    <span className="text-vpv-text">Cambió de equipo</span> —
+                    re-evalúa el entorno (entorno pasivo POR/DEF, penaltis, rol).
                   </li>
                   <li>
-                    <span title="Penalti">⚽</span>{" "}
-                    <span className="text-vpv-text">Lanzador de penaltis</span> — DEL
-                    con ≥2 lanzamientos la temporada pasada (≈+15
-                    pts/temporada). <strong>OJO:</strong> el rol solo persiste
-                    el 44% YoY — verifica quién lanza ESTA temporada.
+                    <span title="Pico de forma">🔻</span>{" "}
+                    <span className="text-vpv-text">Pico de forma</span> — su última
+                    temporada fue muy por encima de su media. Riesgo de regresión.
+                  </li>
+                  <li>
+                    <span title="Penaltis">⚽</span>{" "}
+                    <span className="text-vpv-text">Lanzador de penaltis</span> — la
+                    temporada pasada. <strong>OJO:</strong> el rol solo persiste
+                    ~44% — verifica quién lanza ESTA temporada.
                   </li>
                 </ul>
               </div>
 
               <div className="border-t border-sky-500/20 pt-2 text-[10px] text-vpv-text-muted">
                 Las sugerencias del panel siguiente están ordenadas por
-                <span className="text-vpv-text"> xPts</span>, no por avg crudo. Para
-                el detalle completo consulta{" "}
-                <code className="rounded bg-vpv-card px-1">docs/DRAFT_SCORECARD.md</code>.
+                <span className="text-vpv-text"> Prioridad</span> (el orden maestro del
+                tablero). Para el detalle completo, la pestaña{" "}
+                <span className="text-vpv-text">Estadísticas → Guía</span>.
               </div>
             </div>
           )}
@@ -587,20 +587,20 @@ export default function LiveDraftPage() {
                           onClick={() => handlePick(pid)}
                           disabled={picking}
                           className="flex w-full items-center justify-between rounded px-1 py-1 text-[10px] transition-colors hover:bg-vpv-accent/10 disabled:opacity-50"
-                          title={
-                            s.signal_reasons.length
-                              ? s.signal_reasons.join(" · ")
-                              : `xPts ${s.effective_score.toFixed(1)} = ensemble ${s.ensemble_score.toFixed(1)} − ${(s.survival_haircut_pct * 100).toFixed(0)}% haircut`
-                          }
+                          title={`Prioridad ${s.priority?.toFixed(0) ?? "—"}${s.priority_base != null ? ` (modelo ${s.priority_base.toFixed(0)})` : ""}${s.vorp != null ? ` · VORP ${s.vorp.toFixed(1)}` : ""}${s.event_share != null ? ` · Fiab ${(s.event_share * 100).toFixed(0)}%` : ""}${pos === "POR" && s.team_goals_conceded != null ? ` · DefEq ${s.team_goals_conceded.toFixed(1)}` : ""}`}
                         >
                           <span className="flex items-center gap-1 truncate text-vpv-text">
                             <span className="truncate">{findPlayerName(pid)}</span>
-                            {s.is_bench_risk && <span title="Suplente / poco juego">📌</span>}
-                            {s.is_mover && <span title="Cambia de equipo">🔄</span>}
-                            {s.is_peak_year && <span title="Año atípicamente alto">🔻</span>}
-                            {s.is_likely_penalty_taker && <span title="Lanzador (verifica esta temporada)">⚽</span>}
+                            {s.tags?.map((t) => (
+                              <span key={t} title={PLAYER_TAG_LABELS[t] ?? t}>
+                                {PLAYER_TAG_EMOJI[t] ?? "🏷️"}
+                              </span>
+                            ))}
+                            {s.is_bench_risk && !s.tags?.includes("titular") && <span title="Riesgo de banquillo">📌</span>}
+                            {s.is_new && <span title="Sin histórico">🆕</span>}
+                            {s.is_peak_year && <span title="Pico de forma (riesgo regresión)">🔻</span>}
                           </span>
-                          <span className="ml-1 tabular-nums font-bold text-vpv-accent">{s.effective_score.toFixed(1)}</span>
+                          <span className="ml-1 tabular-nums font-bold text-vpv-accent">{s.priority != null ? s.priority.toFixed(0) : "—"}</span>
                         </button>
                       );
                     })}
@@ -926,63 +926,45 @@ function SearchResults({
               </div>
               {stats && (
                 <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-vpv-text-muted">
-                  {/* Tier badge \u2014 the headline read */}
-                  <span
-                    className={`rounded px-1.5 py-px text-[9px] font-bold tracking-wide ${TIER_COLORS[stats.position_tier] ?? ""}`}
-                    title={`Tier ${stats.position_tier}: umbral por posici\u00f3n de docs/DRAFT_SCORECARD.md`}
-                  >
-                    {TIER_LABELS[stats.position_tier] ?? stats.position_tier}
-                  </span>
-                  {/* Signal from the Ensemble model */}
-                  {SIGNAL_LABELS[stats.signal] && (
+                  {stats.position_tier && (
                     <span
-                      className={`rounded px-1 py-px text-[9px] font-bold ${SIGNAL_LABELS[stats.signal].classes}`}
-                      title={stats.signal_reasons.join(" \u00b7 ")}
+                      className={`rounded px-1.5 py-px text-[9px] font-bold tracking-wide ${TIER_COLORS[stats.position_tier] ?? ""}`}
+                      title={`Tier ${stats.position_tier} en su posici\u00f3n`}
                     >
-                      {SIGNAL_LABELS[stats.signal].label}
+                      {TIER_LABELS[stats.position_tier] ?? stats.position_tier}
                     </span>
                   )}
-                  {/* Step 0 \u2014 availability. If the player is at bench
-                      risk this beats everything; surface it first. */}
-                  {stats.is_bench_risk && (
+                  {/* Admin tags (titular/gol/penaltis/\u2026) */}
+                  {stats.tags?.map((t) => (
                     <span
-                      title="Suplente / poco juego \u2014 starter_pct < 79% o jug\u00f3 < 22 partidos. Por el Paso 0 del scorecard, el riesgo de banquillo pesa m\u00e1s que el talento."
-                      className="rounded bg-yellow-500/20 px-1 py-px text-[9px] font-bold text-yellow-300"
+                      key={t}
+                      className={`rounded px-1 py-px text-[9px] ${PLAYER_TAG_CLASSES[t] ?? ""}`}
+                      title="Tag admin (ajusta la Prioridad)"
                     >
-                      \ud83d\udccc suplente
+                      {PLAYER_TAG_LABELS[t] ?? t}
                     </span>
+                  ))}
+                  {stats.is_bench_risk && !stats.tags?.includes("titular") && (
+                    <span title="Riesgo de banquillo: rota o juega pocos partidos" className="rounded bg-yellow-500/20 px-1 py-px text-[9px] font-bold text-yellow-300">\ud83d\udccc</span>
                   )}
-                  {/* Warning flags from the scorecard heuristics */}
-                  {stats.is_mover && (
-                    <span
-                      title={`Cambi\u00f3 de equipo \u2014 re-proyecta el entorno. Hint del scorecard: \u00b1${(stats.mover_penalty_hint ?? 1).toFixed(0)} pt(s) seg\u00fan salto de calidad de equipo (POR \u00b12, otros \u00b11).`}
-                      className="rounded bg-purple-500/15 px-1 py-px text-[9px] text-purple-300"
-                    >
-                      \ud83d\udd04 mover
-                    </span>
+                  {stats.is_new && (
+                    <span title="Sin hist\u00f3rico en La Liga" className="rounded bg-amber-500/15 px-1 py-px text-[9px] text-amber-400">\ud83c\udd95</span>
+                  )}
+                  {stats.team_changed && (
+                    <span title="Cambi\u00f3 de equipo" className="rounded bg-blue-500/15 px-1 py-px text-[9px] text-blue-300">\ud83d\udd04</span>
                   )}
                   {stats.is_peak_year && (
-                    <span
-                      title="\u00daltimo fue su a\u00f1o-techo \u2014 regresa ~0.7 pts seg\u00fan el scorecard"
-                      className="rounded bg-orange-500/15 px-1 py-px text-[9px] text-orange-300"
-                    >
-                      \ud83d\udd3b peak
-                    </span>
+                    <span title="Pico de forma: temporada muy por encima de su media (riesgo de regresi\u00f3n)" className="rounded bg-orange-500/15 px-1 py-px text-[9px] text-orange-300">\ud83d\udd3b</span>
                   )}
-                  {stats.is_likely_penalty_taker && (
-                    <span
-                      title="Tir\u00f3 \u22652 penaltis la \u00faltima temporada \u2014 lanzador probable (~+15 pts/temporada). OJO: solo persiste el 44% YoY \u2014 verifica qui\u00e9n lanza ESTA temporada."
-                      className="rounded bg-cyan-500/15 px-1 py-px text-[9px] text-cyan-300"
-                    >
-                      \u26bd penalti
-                    </span>
+                  {stats.is_penalty_taker && (
+                    <span title="Lanz\u00f3 penaltis la temporada pasada (verifica el lanzador actual)" className="rounded bg-emerald-500/15 px-1 py-px text-[9px] text-emerald-300">\u26bd</span>
                   )}
-                  {/* Effective score after the survival haircut */}
+                  {/* Priority \u2014 the master number */}
                   <span
                     className="ml-auto font-bold text-vpv-accent tabular-nums"
-                    title={`Ensemble ${stats.ensemble_score.toFixed(1)} \u2212 ${(stats.survival_haircut_pct * 100).toFixed(0)}% haircut`}
+                    title={`Prioridad ${stats.priority?.toFixed(0) ?? "\u2014"}${stats.priority_base != null ? ` (modelo ${stats.priority_base.toFixed(0)})` : ""}${stats.vorp != null ? ` \u00b7 VORP ${stats.vorp.toFixed(1)}` : ""}${stats.event_share != null ? ` \u00b7 Fiab ${(stats.event_share * 100).toFixed(0)}%` : ""}${player.position === "POR" && stats.team_goals_conceded != null ? ` \u00b7 DefEq ${stats.team_goals_conceded.toFixed(1)}` : ""}`}
                   >
-                    xPts {stats.effective_score.toFixed(1)}
+                    Prio {stats.priority != null ? stats.priority.toFixed(0) : "\u2014"}
                   </span>
                   {/* Supporting numbers (small, on the next visual row) */}
                   <span>\u00b7</span>
