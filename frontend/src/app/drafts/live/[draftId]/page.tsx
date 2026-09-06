@@ -344,14 +344,6 @@ export default function LiveDraftPage() {
   }
 
   // Helper to find player name from picks or search results
-  function findPlayerName(playerId: number): string {
-    const fromPick = picks.find((p) => p.player_id === playerId);
-    if (fromPick) return fromPick.player_name;
-    const fromSearch = searchResults.find((p) => p.id === playerId);
-    if (fromSearch) return fromSearch.display_name;
-    return `#${playerId}`;
-  }
-
   if (!draft) {
     return (
       <div className="py-10 text-center text-vpv-text-muted">
@@ -581,26 +573,44 @@ export default function LiveDraftPage() {
                     {ids.map((pid) => {
                       const s = adminStats.players[String(pid)];
                       if (!s) return null;
+                      const detail =
+                        pos === "POR" && s.team_goals_conceded != null
+                          ? `DefEq ${s.team_goals_conceded.toFixed(1)}`
+                          : `${s.avg_pts} pts/j · T${s.starter_pct.toFixed(0)}%`;
                       return (
                         <button
                           key={pid}
                           onClick={() => handlePick(pid)}
                           disabled={picking}
-                          className="flex w-full items-center justify-between rounded px-1 py-1 text-[10px] transition-colors hover:bg-vpv-accent/10 disabled:opacity-50"
-                          title={`Prioridad ${s.priority?.toFixed(0) ?? "—"}${s.priority_base != null ? ` (modelo ${s.priority_base.toFixed(0)})` : ""}${s.vorp != null ? ` · VORP ${s.vorp.toFixed(1)}` : ""}${s.event_share != null ? ` · Fiab ${(s.event_share * 100).toFixed(0)}%` : ""}${pos === "POR" && s.team_goals_conceded != null ? ` · DefEq ${s.team_goals_conceded.toFixed(1)}` : ""}`}
+                          className="mb-1 flex w-full items-center gap-1.5 rounded border border-transparent px-1 py-1 text-left text-[10px] transition-colors hover:border-vpv-border hover:bg-vpv-accent/10 disabled:opacity-50"
+                          title={`Prioridad ${s.priority?.toFixed(0) ?? "—"}${s.priority_base != null ? ` (modelo ${s.priority_base.toFixed(0)})` : ""}${s.vorp != null ? ` · VORP ${s.vorp.toFixed(1)}` : ""}${s.event_share != null ? ` · Fiab ${(s.event_share * 100).toFixed(0)}%` : ""} · Pincha para fichar`}
                         >
-                          <span className="flex items-center gap-1 truncate text-vpv-text">
-                            <span className="truncate">{findPlayerName(pid)}</span>
-                            {s.tags?.map((t) => (
-                              <span key={t} title={PLAYER_TAG_LABELS[t] ?? t}>
-                                {PLAYER_TAG_EMOJI[t] ?? "🏷️"}
-                              </span>
-                            ))}
-                            {s.is_bench_risk && !s.tags?.includes("titular") && <span title="Riesgo de banquillo">📌</span>}
-                            {s.is_new && <span title="Sin histórico">🆕</span>}
-                            {s.is_peak_year && <span title="Pico de forma (riesgo regresión)">🔻</span>}
+                          <PlayerAvatar photoPath={s.photo_path} name={s.display_name} size={24} />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center gap-1">
+                              <span className="truncate font-medium text-vpv-text">{s.display_name}</span>
+                              {s.tags?.map((t) => (
+                                <span key={t} title={PLAYER_TAG_LABELS[t] ?? t}>
+                                  {PLAYER_TAG_EMOJI[t] ?? "🏷️"}
+                                </span>
+                              ))}
+                              {s.is_bench_risk && !s.tags?.includes("titular") && <span title="Riesgo de banquillo">📌</span>}
+                              {s.is_new && <span title="Sin histórico">🆕</span>}
+                              {s.is_peak_year && <span title="Pico de forma (riesgo regresión)">🔻</span>}
+                            </span>
+                            <span className="flex items-center gap-1 text-vpv-text-muted">
+                              {s.position_tier && (
+                                <span className={`rounded px-1 text-[8px] font-bold ${TIER_COLORS[s.position_tier] ?? ""}`}>
+                                  {TIER_LABELS[s.position_tier] ?? s.position_tier}
+                                </span>
+                              )}
+                              <span className="truncate">{s.team_name}</span>
+                              <span>· {detail}</span>
+                            </span>
                           </span>
-                          <span className="ml-1 tabular-nums font-bold text-vpv-accent">{s.priority != null ? s.priority.toFixed(0) : "—"}</span>
+                          <span className="tabular-nums font-bold text-vpv-accent">
+                            {s.priority != null ? s.priority.toFixed(0) : "—"}
+                          </span>
                         </button>
                       );
                     })}

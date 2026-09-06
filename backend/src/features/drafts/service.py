@@ -949,6 +949,10 @@ class DraftService:
 
             players[str(p.player_id)] = PlayerDraftStats(
                 player_id=p.player_id,
+                display_name=p.display_name,
+                team_name=p.team_name,
+                position=p.position,
+                photo_path=p.photo_path,
                 priority=p.priority,
                 priority_base=p.priority_base,
                 position_tier=p.position_tier,
