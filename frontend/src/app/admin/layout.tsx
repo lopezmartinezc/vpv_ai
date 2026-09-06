@@ -10,6 +10,7 @@ import {
   adminLabelForPath,
   canSeeAdminItem,
   operationsItems,
+  resolveCompetitionContexts,
   seasonItems,
   systemItems,
 } from "@/lib/admin-nav";
@@ -22,7 +23,12 @@ export default function AdminLayout({
   const pathname = usePathname();
   const router = useRouter();
   const { user, loading } = useAuth();
-  const { activeLeague, activeTournament } = useSeason();
+  const { activeLeague, activeTournament, selectedSeason } = useSeason();
+  const { league, tournament } = resolveCompetitionContexts(
+    activeLeague,
+    activeTournament,
+    selectedSeason,
+  );
   const [mobileOpen, setMobileOpen] = useState(false);
 
   // Same 3-tier structure as the global sidebar, from the shared admin-nav:
@@ -38,22 +44,22 @@ export default function AdminLayout({
         : items;
 
     const sections: { group: string; items: AdminNavItem[] }[] = [];
-    if (activeLeague) {
+    if (league) {
       sections.push({
-        group: `⚽ ${activeLeague.name}`,
-        items: dropEconomy(visible(seasonItems("league")), activeLeague),
+        group: `⚽ ${league.name}`,
+        items: dropEconomy(visible(seasonItems("league")), league),
       });
     }
-    if (activeTournament) {
+    if (tournament) {
       sections.push({
-        group: `🏆 ${activeTournament.name}`,
-        items: dropEconomy(visible(seasonItems("tournament")), activeTournament),
+        group: `🏆 ${tournament.name}`,
+        items: dropEconomy(visible(seasonItems("tournament")), tournament),
       });
     }
     sections.push({ group: "Operaciones", items: visible(operationsItems) });
     sections.push({ group: "Sistema", items: visible(systemItems) });
     return sections.filter((s) => s.items.length > 0);
-  }, [user, activeLeague, activeTournament]);
+  }, [user, league, tournament]);
 
   if (loading) {
     return (

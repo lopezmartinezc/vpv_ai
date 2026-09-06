@@ -13,6 +13,7 @@ import {
   type AdminNavItem,
   canSeeAdminItem,
   operationsItems,
+  resolveCompetitionContexts,
   seasonItems,
   systemItems,
 } from "@/lib/admin-nav";
@@ -281,7 +282,14 @@ function AdminSubmenu({
   isAdmin: boolean;
   permissions: number;
 }) {
-  const { activeLeague, activeTournament, selectSeason } = useSeason();
+  const { activeLeague, activeTournament, selectedSeason, selectSeason } = useSeason();
+  // Fall back to the selected season so season pages stay reachable even when
+  // no competition is marked active (e.g. a pre-draft season).
+  const { league, tournament } = resolveCompetitionContexts(
+    activeLeague,
+    activeTournament,
+    selectedSeason,
+  );
   const isInAdmin = pathname.startsWith("/admin");
   const [expanded, setExpanded] = useState(isInAdmin);
 
@@ -296,14 +304,11 @@ function AdminSubmenu({
       ? items.filter((item) => item.href !== "/admin/economia")
       : items;
 
-  const ligaItems = activeLeague
-    ? dropEconomyIfDisabled(filterSeasonItems("league", isAdmin, permissions), activeLeague)
+  const ligaItems = league
+    ? dropEconomyIfDisabled(filterSeasonItems("league", isAdmin, permissions), league)
     : [];
-  const tournamentItems = activeTournament
-    ? dropEconomyIfDisabled(
-        filterSeasonItems("tournament", isAdmin, permissions),
-        activeTournament,
-      )
+  const tournamentItems = tournament
+    ? dropEconomyIfDisabled(filterSeasonItems("tournament", isAdmin, permissions), tournament)
     : [];
 
   // Cross-season "Operaciones" and super-admin "Sistema" sections.
@@ -351,21 +356,21 @@ function AdminSubmenu({
       </button>
       {expanded && (
         <div className="ml-4 mt-1 space-y-3 border-l border-vpv-border pl-3">
-          {activeLeague && ligaItems.length > 0 && (
+          {league && ligaItems.length > 0 && (
             <CompetitionAdminSection
               icon="⚽"
-              title={activeLeague.name}
-              seasonId={activeLeague.id}
+              title={league.name}
+              seasonId={league.id}
               items={ligaItems}
               pathname={pathname}
               onSelectSeason={selectSeason}
             />
           )}
-          {activeTournament && tournamentItems.length > 0 && (
+          {tournament && tournamentItems.length > 0 && (
             <CompetitionAdminSection
               icon="🏆"
-              title={activeTournament.name}
-              seasonId={activeTournament.id}
+              title={tournament.name}
+              seasonId={tournament.id}
               items={tournamentItems}
               pathname={pathname}
               onSelectSeason={selectSeason}
