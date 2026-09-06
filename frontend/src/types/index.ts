@@ -37,20 +37,22 @@ export interface PredictionsResponse {
 export interface PlayerDraftStats {
   player_id: number;
 
-  // Model output (Ensemble, Spearman 0.718 backtested)
-  ensemble_score: number;
-  signal: "strong_buy" | "buy" | "hold" | "avoid" | string;
-  signal_reasons: string[];
+  // Draft board parity — Priority is the master sort.
+  priority: number | null; // with admin tags (suggestions sorted by this)
+  priority_base: number | null; // pure model view (no tags)
 
-  // Scorecard heuristics (docs/DRAFT_SCORECARD.md)
-  position_tier: "elite" | "solid" | "normal" | "weak" | "team_dependent" | string;
-  survival_haircut_pct: number; // 0..1
-  effective_score: number; // ensemble_score * (1 - haircut)
-  is_mover: boolean;
+  position_tier: "elite" | "solid" | "normal" | "weak" | "team_dependent" | string | null;
+  vorp: number | null;
+  event_share: number | null; // 0..1 — reliability (Fiab)
+  team_goals_conceded: number | null; // DefEq (keepers)
+  overall_rank: number | null;
+
+  tags: string[];
+  is_bench_risk: boolean;
   is_peak_year: boolean;
-  is_likely_penalty_taker: boolean;
-  is_bench_risk: boolean; // Step 0: starter_pct < 0.79 OR games < 22
-  mover_penalty_hint: number | null; // pts hint shown when is_mover (POR 2.0, others 1.0)
+  is_penalty_taker: boolean;
+  is_new: boolean;
+  team_changed: boolean;
 
   // Supporting numbers shown in the card
   avg_pts: number;

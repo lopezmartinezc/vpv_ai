@@ -140,34 +140,35 @@ class DraftTeamOption(BaseModel):
 class PlayerDraftStats(BaseModel):
     """Snapshot served to the live-draft admin UI.
 
-    Combines the Ensemble model output (ensemble_score, signal,
-    reasons) with the heuristic overrides documented in
-    docs/DRAFT_SCORECARD.md: per-position tiers, survival haircut,
-    and warning flags for movers, year-peakers, and likely
-    penalty-takers (DEL).
+    Mirrors the draft board (``DraftValueService``): Priority is the master
+    sort (projected rest-of-season points, risk- and tag-adjusted),
+    ``priority_base`` is the model view without admin tags, plus VORP
+    scarcity, reliability (event_share), keeper team defense (DefEq),
+    positional tier, admin tags, and the risk flags.
     """
 
     player_id: int
 
-    # Raw model output
-    ensemble_score: float
-    signal: str  # "strong_buy" | "buy" | "hold" | "avoid"
-    signal_reasons: list[str]
+    # Master ordering (draft board parity).
+    priority: float | None  # with admin tags — suggestions are sorted by this
+    priority_base: float | None  # pure model view (no tags)
 
-    # Scorecard-derived
-    position_tier: str  # "elite" | "solid" | "normal" | "weak" | "team_dependent" (POR)
-    survival_haircut_pct: float  # 0..1 (0.22 = 22% trim)
-    effective_score: float  # ensemble_score * (1 - haircut)
-    is_mover: bool  # changed team since the previous season
-    is_peak_year: bool  # last season was their best (regression risk)
-    is_likely_penalty_taker: bool  # DEL only; ≥2 pen attempts last season
-    is_bench_risk: bool  # starter_pct < 0.79 OR games_played < 22 (p50)
-    # If is_mover: how many pts to mentally subtract when the team-quality
-    # jump is large (POR 2.0, others 1.0). UI shows it as a hint; the
-    # effective_score does NOT apply it automatically.
-    mover_penalty_hint: float | None
+    # Scarcity / context.
+    position_tier: str | None  # "elite" | "solid" | "normal" | "weak" | "team_dependent"
+    vorp: float | None
+    event_share: float | None  # 0..1 — reliability (Fiab)
+    team_goals_conceded: float | None  # DefEq: goals conceded/game (keepers)
+    overall_rank: int | None  # global draft rank / ADP
 
-    # Useful supporting numbers shown in the card
+    # Admin tags (titular/gol/penaltis/…) and risk flags.
+    tags: list[str] = []
+    is_bench_risk: bool = False
+    is_peak_year: bool = False
+    is_penalty_taker: bool = False
+    is_new: bool = False
+    team_changed: bool = False
+
+    # Useful supporting numbers shown in the card.
     avg_pts: float
     matchdays_played: int
     starter_pct: float

@@ -921,103 +921,57 @@ class DraftService:
         )
 
     async def get_player_stats_for_draft(self, draft_id: int) -> DraftPlayerStatsResponse:
-        """Admin-only: advanced stats + scorecard heuristics for the
-        live draft UI.
+        """Admin-only: draft-board model for the live draft UI.
 
-        Wraps the Ensemble model (``DraftValueService``) with the
-        documented overrides (``docs/DRAFT_SCORECARD.md``): per-
-        position tiers, survival haircuts, and warning flags for
-        movers, year-peakers, and likely penalty-takers. Suggestions
-        are ordered by ``effective_score`` (ensemble * (1 - haircut))
-        rather than the raw ensemble - gives the heaviest discount to
-        round 4-8 picks where bust risk is highest.
+        Mirrors the ``Estadísticas → Draft`` board (``DraftValueService``):
+        every player carries Priority (the validated master sort: projected
+        rest-of-season points, risk- and tag-adjusted), the model-only
+        ``priority_base``, VORP scarcity, reliability (event_share), keeper
+        team defense (DefEq), positional tier, admin tags and risk flags.
+        Suggestions are the top-5 per position by Priority.
         """
-        import statistics
+        from src.features.stats.service_draft import DraftValueService
 
-        from src.features.stats import scorecard
-        from src.features.stats.service_draft import DraftValueService, _PlayerSeason
-
-        # 1. Get draft + season + picked ids.
         draft = await self.repo.get_draft_by_id(draft_id)
         if draft is None:
             raise NotFoundError("Draft", draft_id)
         season_id = draft.season_id
         picked_ids = await self.repo.get_picked_player_ids(draft_id)
 
-        # 2. Run the Ensemble model — also gives us seasons of context
-        #    per player which we need for career_avg + previous_team.
-        dv_service = DraftValueService(self.repo.session)
-        dv_response = await dv_service.get_draft_values(season_id)
+        dv_response = await DraftValueService(self.repo.session).get_draft_values(season_id)
 
-        # Reload the raw history so we can read the previous team and
-        # the career baseline (the DraftValueResponse omits both). One
-        # extra query per draft session is cheap.
-        raw_seasons = await dv_service._load_seasons(current_season_id=season_id, min_games=1)
-        by_slug: dict[str, list[_PlayerSeason]] = {}
-        for ps in raw_seasons:
-            by_slug.setdefault(ps.slug, []).append(ps)
-        for lst in by_slug.values():
-            lst.sort(key=lambda s: s.season_id)
-
-        # 3. Build players + per-position ranking by effective_score.
         players: dict[str, PlayerDraftStats] = {}
         by_position: dict[str, list[tuple[int, float]]] = {}
 
-        for dv_player in dv_response.players:
-            if dv_player.player_id in picked_ids:
+        for p in dv_response.players:
+            if p.player_id in picked_ids:
                 continue
 
-            seasons = by_slug.get(dv_player.slug, [])
-            current = seasons[-1] if seasons else None
-            history = seasons[:-1] if len(seasons) >= 2 else []
-            previous = history[-1] if history else None
-            career_avg = statistics.mean(s.avg_pts for s in history) if history else None
-
-            # availability is 0..1 (games_45min / games); the scorecard
-            # uses the same scale for the bench-risk check.
-            ref_starter_pct = (
-                previous.games_45min / previous.games if previous else dv_player.availability
-            )
-            ref_games = previous.games if previous else dv_player.games_played
-
-            enrichment = scorecard.enrich(
-                position=dv_player.position,
-                ensemble_score=dv_player.ensemble_score,
-                avg_pts=previous.avg_pts if previous else dv_player.avg_points,
-                career_avg_pts=career_avg,
-                current_team=current.team_name if current else dv_player.team_name,
-                last_team=previous.team_name if previous else None,
-                penalty_goals=previous.penalty_goals if previous else 0,
-                penalties_missed=previous.penalties_missed if previous else 0,
-                starter_pct=ref_starter_pct,
-                games_played=ref_games,
+            players[str(p.player_id)] = PlayerDraftStats(
+                player_id=p.player_id,
+                priority=p.priority,
+                priority_base=p.priority_base,
+                position_tier=p.position_tier,
+                vorp=p.vorp,
+                event_share=p.event_share,
+                team_goals_conceded=p.team_goals_conceded,
+                overall_rank=p.overall_rank,
+                tags=p.tags,
+                is_bench_risk=p.is_bench_risk,
+                is_peak_year=p.is_peak_year,
+                is_penalty_taker=p.is_penalty_taker,
+                is_new=p.is_new,
+                team_changed=p.team_changed,
+                avg_pts=round(p.avg_points, 1),
+                matchdays_played=p.games_played,
+                starter_pct=round(p.availability * 100, 0),
             )
 
-            players[str(dv_player.player_id)] = PlayerDraftStats(
-                player_id=dv_player.player_id,
-                ensemble_score=dv_player.ensemble_score,
-                signal=dv_player.signal,
-                signal_reasons=dv_player.signal_reasons,
-                position_tier=enrichment.position_tier,
-                survival_haircut_pct=enrichment.survival_haircut_pct,
-                effective_score=enrichment.effective_score,
-                is_mover=enrichment.is_mover,
-                is_peak_year=enrichment.is_peak_year,
-                is_likely_penalty_taker=enrichment.is_likely_penalty_taker,
-                is_bench_risk=enrichment.is_bench_risk,
-                mover_penalty_hint=enrichment.mover_penalty_hint,
-                avg_pts=round(dv_player.avg_points, 1),
-                matchdays_played=dv_player.games_played,
-                starter_pct=round(dv_player.availability * 100, 0),
+            # Rank by Priority; players without a projection sort last.
+            by_position.setdefault(p.position, []).append(
+                (p.player_id, p.priority if p.priority is not None else -1.0)
             )
 
-            by_position.setdefault(dv_player.position, []).append(
-                (dv_player.player_id, enrichment.effective_score)
-            )
-
-        # 4. Suggestions: top-5 per position by effective_score
-        #    (the haircut already de-weights fragile picks, so this
-        #    ordering reflects the scorecard's risk-adjusted ranking).
         suggestions: dict[str, list[int]] = {}
         for pos in ["POR", "DEF", "MED", "DEL"]:
             pos_list = by_position.get(pos, [])
