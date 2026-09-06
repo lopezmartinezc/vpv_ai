@@ -417,14 +417,20 @@ export default function AdminTemporadasPage() {
     if (!selectedId) return;
     setMessage("Enviando prueba de Telegram…");
     try {
-      const res = await apiClient.post<{ sent: boolean; reason?: string | null }>(
-        `/telegram/admin/test/${selectedId}`,
-        { target },
-      );
+      const res = await apiClient.post<{
+        sent: boolean;
+        reason?: string | null;
+        chat_id?: string | null;
+        thread_id?: number | null;
+      }>(`/telegram/admin/test/${selectedId}`, { target });
+      const dest =
+        res.chat_id != null
+          ? ` [chat ${res.chat_id}${res.thread_id != null ? ` · thread ${res.thread_id}` : ""}]`
+          : "";
       setMessage(
         res.sent
-          ? `✅ Mensaje de prueba enviado (${target}). Míralo en Telegram.`
-          : `❌ No se envió (${target}): ${res.reason ?? "revisa la config"}`,
+          ? `✅ Mensaje de prueba enviado (${target})${dest}. Míralo en Telegram.`
+          : `❌ No se envió (${target})${dest}: ${res.reason ?? "revisa la config"}`,
       );
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Error al probar Telegram");
