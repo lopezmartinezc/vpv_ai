@@ -16,6 +16,11 @@ class SendMessageRequest(BaseModel):
     text: str
 
 
+class TestTelegramRequest(BaseModel):
+    # Which season target to test: "general", "draft" or "alerts".
+    target: str = "general"
+
+
 @router.get("/admin/status")
 async def get_telegram_status(
     _admin: dict = Depends(require_perm(Perm.TELEGRAM)),
@@ -47,3 +52,15 @@ async def send_message(
     notifier = TelegramNotifier(db)
     sent = await notifier.send_message(data.text)
     return {"sent": sent}
+
+
+@router.post("/admin/test/{season_id}")
+async def test_telegram(
+    season_id: int,
+    data: TestTelegramRequest,
+    _admin: dict = Depends(require_perm(Perm.TELEGRAM)),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Send a test message to a season's configured Telegram target."""
+    notifier = TelegramNotifier(db)
+    return await notifier.send_test(season_id, data.target)

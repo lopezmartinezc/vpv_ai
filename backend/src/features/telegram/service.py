@@ -178,6 +178,51 @@ class TelegramNotifier:
             logger.exception("Failed to send Telegram message")
             return False
 
+    async def send_test(self, season_id: int, target: str = "general") -> dict:
+        """Send a test message to a season's Telegram target and report back.
+
+        ``target``: "general", "draft" or "alerts". Returns whether it was
+        sent plus the resolved chat/thread so the admin can confirm the
+        season config, or a reason when it couldn't be sent.
+        """
+        if not telegram_settings.telegram_enabled:
+            return {"sent": False, "reason": "Telegram deshabilitado (TELEGRAM_ENABLED)"}
+
+        if target == "draft":
+            season = await self.repo.session.get(Season, season_id)
+            chat_id = season.draft_telegram_chat_id if season else None
+            thread_id = season.draft_telegram_thread_id if season else None
+        elif target == "alerts":
+            chat_id, thread_id = await resolve_alerts_target(self.repo.session, season_id)
+        else:
+            target = "general"
+            chat_id, thread_id = await resolve_chat_target(self.repo.session, season_id)
+
+        if not chat_id:
+            return {"sent": False, "target": target, "reason": "Sin chat_id configurado"}
+
+        labels = {"general": "General", "draft": "Draft", "alertas": "Alertas"}
+        text = (
+            f"✅ <b>Prueba de Telegram VPV</b> — {labels.get(target, target.title())}\n"
+            "Si ves este mensaje, la configuración de este canal funciona."
+        )
+        try:
+            async with TelegramClient() as client:
+                result = await client.send_message(
+                    chat_id=chat_id, text=text, message_thread_id=thread_id
+                )
+            ok = bool(result.get("ok"))
+            return {
+                "sent": ok,
+                "target": target,
+                "chat_id": chat_id,
+                "thread_id": thread_id,
+                "reason": None if ok else str(result.get("description") or result),
+            }
+        except Exception as exc:
+            logger.exception("Telegram test send failed")
+            return {"sent": False, "target": target, "reason": str(exc)}
+
     async def send_alert(self, text: str, season_id: int | None = None) -> bool:
         """Send a message to the alerts chat (deadline reminders, etc.).
 
