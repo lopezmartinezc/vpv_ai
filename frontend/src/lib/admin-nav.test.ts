@@ -8,6 +8,7 @@ import {
   operationsItems,
   systemItems,
   adminLabelForPath,
+  resolveCompetitionContexts,
 } from "@/lib/admin-nav";
 
 const item = (href: string) => ADMIN_ITEMS.find((i) => i.href === href)!;
@@ -63,6 +64,35 @@ describe("scope buckets", () => {
   it("system = Temporadas, Usuarios, Invitaciones, Backup (all super-admin)", () => {
     expect(systemItems.every((i) => i.perm === null)).toBe(true);
     expect(systemItems.map((i) => i.href)).toContain("/admin/backup");
+  });
+});
+
+describe("resolveCompetitionContexts", () => {
+  const liga = { id: 12, name: "Liga", kind: "league" };
+  const mundial = { id: 9, name: "Mundial", kind: "tournament" };
+
+  it("falls back to the selected league when nothing is active", () => {
+    const { league, tournament } = resolveCompetitionContexts(null, null, liga);
+    expect(league).toBe(liga);
+    expect(tournament).toBeNull();
+  });
+
+  it("falls back to the selected tournament when nothing is active", () => {
+    const { league, tournament } = resolveCompetitionContexts(null, null, mundial);
+    expect(tournament).toBe(mundial);
+    expect(league).toBeNull();
+  });
+
+  it("prefers active competitions over the selection", () => {
+    const active = { id: 1, name: "Liga activa", kind: "league" };
+    const { league } = resolveCompetitionContexts(active, null, liga);
+    expect(league).toBe(active);
+  });
+
+  it("treats a missing kind as league", () => {
+    const noKind: { id: number; name: string; kind?: string | null } = { id: 5, name: "X" };
+    const { league } = resolveCompetitionContexts(null, null, noKind);
+    expect(league?.id).toBe(5);
   });
 });
 

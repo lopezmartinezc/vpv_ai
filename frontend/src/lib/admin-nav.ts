@@ -78,6 +78,25 @@ export const operationsItems: AdminNavItem[] = ADMIN_ITEMS.filter(
 );
 export const systemItems: AdminNavItem[] = ADMIN_ITEMS.filter((i) => i.scope === "system");
 
+/**
+ * Resolve which league/tournament drive the per-competition "Temporada"
+ * sections. Prefer the active competitions, but fall back to the currently
+ * selected season so admin pages stay reachable even when nothing is marked
+ * active yet (e.g. a pre-draft season). Missing `kind` counts as league.
+ */
+export function resolveCompetitionContexts<T extends { kind?: string | null }>(
+  activeLeague: T | null,
+  activeTournament: T | null,
+  selectedSeason: T | null,
+): { league: T | null; tournament: T | null } {
+  const kindOf = (s: T | null) => (s?.kind ?? "league");
+  const selKind = selectedSeason ? kindOf(selectedSeason) : null;
+  return {
+    league: activeLeague ?? (selKind === "league" ? selectedSeason : null),
+    tournament: activeTournament ?? (selKind === "tournament" ? selectedSeason : null),
+  };
+}
+
 /** Label of the admin item matching a pathname (for the mobile header). */
 export function adminLabelForPath(pathname: string): string {
   const hit = ADMIN_ITEMS.find(
