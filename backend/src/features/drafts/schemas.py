@@ -148,6 +148,12 @@ class PlayerDraftStats(BaseModel):
     """
 
     player_id: int
+    # Identity (so the live-draft UI can render suggested players without a
+    # separate lookup — they aren't in the search results or picks).
+    display_name: str
+    team_name: str
+    position: str
+    photo_path: str | None
 
     # Master ordering (draft board parity).
     priority: float | None  # with admin tags — suggestions are sorted by this

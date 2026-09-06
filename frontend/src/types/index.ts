@@ -36,6 +36,10 @@ export interface PredictionsResponse {
 
 export interface PlayerDraftStats {
   player_id: number;
+  display_name: string;
+  team_name: string;
+  position: string;
+  photo_path: string | null;
 
   // Draft board parity — Priority is the master sort.
   priority: number | null; // with admin tags (suggestions sorted by this)
