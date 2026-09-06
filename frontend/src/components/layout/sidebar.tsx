@@ -9,7 +9,13 @@ import { useFetch } from "@/hooks/use-fetch";
 import { NavIcon } from "@/components/ui/nav-icon";
 import { Logo } from "@/components/ui/logo";
 import { SeasonSelector } from "./season-selector";
-import { PERM, userHasPerm } from "@/lib/permissions";
+import {
+  type AdminNavItem,
+  canSeeAdminItem,
+  operationsItems,
+  seasonItems,
+  systemItems,
+} from "@/lib/admin-nav";
 
 interface DeadlineCheck {
   has_lineup: boolean;
@@ -44,63 +50,6 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/economia", label: "Economia", icon: "coins" },
   { href: "/drafts", label: "Drafts", icon: "shuffle" },
 ];
-
-/** Permission required for each admin route. null = admin-only. */
-const ROUTE_PERM: Record<string, number | null> = {
-  "/admin/temporadas": null,
-  "/admin/jornadas": PERM.MATCHDAYS,
-  "/admin/jugadores": PERM.PLAYERS,
-  "/admin/estadisticas": PERM.STATS,
-  "/admin/usuarios": null,
-  "/admin/invitaciones": null,
-  "/admin/economia": PERM.ECONOMY,
-  "/admin/marca": PERM.MARCA,
-  "/admin/participantes": PERM.PARTICIPANTS,
-  "/admin/alineaciones": PERM.LINEUPS_ADMIN,
-  "/admin/scraping": PERM.SCRAPING,
-  "/admin/logros": PERM.ACHIEVEMENTS,
-  "/admin/predicciones": PERM.STATS,
-  "/admin/grupos": PERM.PLAYERS,
-  "/admin/telegram": PERM.TELEGRAM,
-  "/admin/backup": null,
-};
-
-/**
- * Items that operate on a specific season. Rendered once per active
- * competition (Liga + Tournament). Clicking switches the season context.
- */
-const PER_SEASON_ADMIN_ITEMS: { href: string; label: string; appliesTo?: "league" | "tournament" }[] = [
-  { href: "/admin/jornadas", label: "Jornadas" },
-  { href: "/admin/alineaciones", label: "Alineaciones" },
-  { href: "/admin/jugadores", label: "Jugadores" },
-  { href: "/admin/estadisticas", label: "Estadisticas" },
-  { href: "/admin/predicciones", label: "Predicciones" },
-  { href: "/admin/economia", label: "Economia" },
-  { href: "/admin/participantes", label: "Participantes" },
-  { href: "/admin/grupos", label: "Grupos", appliesTo: "tournament" },
-  { href: "/admin/logros", label: "Logros", appliesTo: "league" },
-  { href: "/admin/marca", label: "Notas Periódicos" },
-];
-
-/** Items global (no scoped por temporada). */
-const GLOBAL_ADMIN_SECTIONS = [
-  {
-    group: "Sistema",
-    items: [
-      { href: "/admin/temporadas", label: "Temporadas" },
-      { href: "/admin/usuarios", label: "Usuarios" },
-      { href: "/admin/invitaciones", label: "Invitaciones" },
-    ],
-  },
-  {
-    group: "Operaciones",
-    items: [
-      { href: "/admin/scraping", label: "Scraping" },
-      { href: "/admin/telegram", label: "Telegram" },
-      { href: "/admin/backup", label: "Backup" },
-    ],
-  },
-] as const;
 
 export function Sidebar({
   open,
@@ -302,21 +251,6 @@ export function Sidebar({
             <>
               <div className="my-3 border-t border-vpv-border" />
               <ul className="space-y-1">
-                {user && userHasPerm(user.isAdmin, user.permissions, PERM.DRAFT) && (
-                  <li>
-                    <Link
-                      href="/drafts/gestionar"
-                      className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                        pathname.startsWith("/drafts/gestionar")
-                          ? "bg-vpv-accent/10 text-vpv-accent"
-                          : "text-vpv-text-muted hover:bg-vpv-bg hover:text-vpv-text"
-                      }`}
-                    >
-                      <NavIcon name="clipboard" className="h-5 w-5" />
-                      Gestionar Draft
-                    </Link>
-                  </li>
-                )}
                 <AdminSubmenu pathname={pathname} isAdmin={user.isAdmin} permissions={user.permissions} />
               </ul>
             </>
@@ -328,22 +262,14 @@ export function Sidebar({
 }
 
 /**
- * Filter per-season items by user permissions and the season's kind.
+ * Season-scoped admin items for a competition kind, filtered by permissions.
  */
 function filterSeasonItems(
-  items: typeof PER_SEASON_ADMIN_ITEMS,
   kind: "league" | "tournament",
   isAdmin: boolean,
   permissions: number,
-) {
-  return items.filter((item) => {
-    // Filter by kind
-    if (item.appliesTo && item.appliesTo !== kind) return false;
-    if (isAdmin) return true;
-    const perm = ROUTE_PERM[item.href];
-    if (perm === null) return false;
-    return userHasPerm(isAdmin, permissions, perm);
-  });
+): AdminNavItem[] {
+  return seasonItems(kind).filter((item) => canSeeAdminItem(isAdmin, permissions, item));
 }
 
 function AdminSubmenu({
@@ -363,7 +289,7 @@ function AdminSubmenu({
   // per-season admin "Economia" entry when the season has no weekly
   // payments mechanic — the page would only show empty data.
   const dropEconomyIfDisabled = (
-    items: typeof PER_SEASON_ADMIN_ITEMS,
+    items: AdminNavItem[],
     season: typeof activeLeague,
   ) =>
     season?.weekly_payments_enabled === false
@@ -371,28 +297,25 @@ function AdminSubmenu({
       : items;
 
   const ligaItems = activeLeague
-    ? dropEconomyIfDisabled(
-        filterSeasonItems(PER_SEASON_ADMIN_ITEMS, "league", isAdmin, permissions),
-        activeLeague,
-      )
+    ? dropEconomyIfDisabled(filterSeasonItems("league", isAdmin, permissions), activeLeague)
     : [];
   const tournamentItems = activeTournament
     ? dropEconomyIfDisabled(
-        filterSeasonItems(PER_SEASON_ADMIN_ITEMS, "tournament", isAdmin, permissions),
+        filterSeasonItems("tournament", isAdmin, permissions),
         activeTournament,
       )
     : [];
 
-  const globalSections = isAdmin
-    ? GLOBAL_ADMIN_SECTIONS
-    : GLOBAL_ADMIN_SECTIONS.map((section) => ({
-        ...section,
-        items: section.items.filter((item) => {
-          const perm = ROUTE_PERM[item.href];
-          if (perm === null) return false;
-          return userHasPerm(isAdmin, permissions, perm);
-        }),
-      })).filter((section) => section.items.length > 0);
+  // Cross-season "Operaciones" and super-admin "Sistema" sections.
+  const globalSections = [
+    { group: "Operaciones", items: operationsItems },
+    { group: "Sistema", items: systemItems },
+  ]
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => canSeeAdminItem(isAdmin, permissions, item)),
+    }))
+    .filter((section) => section.items.length > 0);
 
   const hasAnyItems =
     ligaItems.length > 0 ||

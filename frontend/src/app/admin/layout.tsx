@@ -4,79 +4,15 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
-import { PERM, userHasPerm } from "@/lib/permissions";
-
-/** Permission required for each admin route. null = admin-only (no bitmap). */
-const ROUTE_PERM: Record<string, number | null> = {
-  "/admin/temporadas": null,
-  "/admin/jornadas": PERM.MATCHDAYS,
-  "/admin/jugadores": PERM.PLAYERS,
-  "/admin/estadisticas": PERM.STATS,
-  "/admin/usuarios": null,
-  "/admin/invitaciones": null,
-  "/admin/economia": PERM.ECONOMY,
-  "/admin/marca": PERM.MARCA,
-  "/admin/scraping": PERM.SCRAPING,
-  "/admin/telegram": PERM.TELEGRAM,
-  "/admin/backup": null,
-  "/admin/logros": PERM.ACHIEVEMENTS,
-  "/admin/predicciones": PERM.STATS,
-  "/plantillas": null,
-  "/drafts/gestionar": PERM.DRAFT,
-  "/admin/participantes": PERM.PARTICIPANTS,
-  "/admin/alineaciones": PERM.LINEUPS_ADMIN,
-};
-
-const ADMIN_NAV = [
-  {
-    group: "Liga",
-    items: [
-      { href: "/admin/temporadas", label: "Temporadas" },
-      { href: "/admin/jornadas", label: "Jornadas" },
-      { href: "/admin/alineaciones", label: "Alineaciones" },
-      { href: "/admin/jugadores", label: "Jugadores" },
-      { href: "/admin/estadisticas", label: "Estadisticas" },
-    ],
-  },
-  {
-    group: "Usuarios",
-    items: [
-      { href: "/admin/usuarios", label: "Usuarios" },
-      { href: "/admin/invitaciones", label: "Invitaciones" },
-      { href: "/admin/economia", label: "Economia" },
-      { href: "/admin/participantes", label: "Participantes" },
-    ],
-  },
-  {
-    group: "Operaciones",
-    items: [
-      { href: "/admin/scraping", label: "Scraping" },
-      { href: "/admin/marca", label: "Notas Periódicos" },
-      { href: "/admin/telegram", label: "Telegram" },
-      { href: "/admin/backup", label: "Backup" },
-      { href: "/admin/logros", label: "Logros" },
-      { href: "/admin/predicciones", label: "Predicciones" },
-    ],
-  },
-  {
-    group: "Gestion",
-    items: [
-      { href: "/plantillas", label: "Plantillas" },
-      { href: "/drafts/gestionar", label: "Drafts" },
-    ],
-  },
-];
-
-function getActiveLabel(pathname: string): string {
-  for (const section of ADMIN_NAV) {
-    for (const item of section.items) {
-      if (pathname === item.href || pathname.startsWith(item.href + "/")) {
-        return item.label;
-      }
-    }
-  }
-  return "Admin";
-}
+import { useSeason } from "@/contexts/season-context";
+import {
+  type AdminNavItem,
+  adminLabelForPath,
+  canSeeAdminItem,
+  operationsItems,
+  seasonItems,
+  systemItems,
+} from "@/lib/admin-nav";
 
 export default function AdminLayout({
   children,
@@ -86,21 +22,38 @@ export default function AdminLayout({
   const pathname = usePathname();
   const router = useRouter();
   const { user, loading } = useAuth();
+  const { activeLeague, activeTournament } = useSeason();
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  // Same 3-tier structure as the global sidebar, from the shared admin-nav:
+  // per-competition "Temporada" sections + "Operaciones" + "Sistema".
   const filteredNav = useMemo(() => {
     if (!user) return [];
-    if (user.isAdmin) return ADMIN_NAV;
+    const { isAdmin, permissions } = user;
+    const visible = (items: AdminNavItem[]) =>
+      items.filter((item) => canSeeAdminItem(isAdmin, permissions, item));
+    const dropEconomy = (items: AdminNavItem[], season: typeof activeLeague) =>
+      season?.weekly_payments_enabled === false
+        ? items.filter((i) => i.href !== "/admin/economia")
+        : items;
 
-    return ADMIN_NAV.map((section) => ({
-      ...section,
-      items: section.items.filter((item) => {
-        const perm = ROUTE_PERM[item.href];
-        if (perm === null) return false; // admin-only
-        return userHasPerm(user.isAdmin, user.permissions, perm);
-      }),
-    })).filter((section) => section.items.length > 0);
-  }, [user]);
+    const sections: { group: string; items: AdminNavItem[] }[] = [];
+    if (activeLeague) {
+      sections.push({
+        group: `⚽ ${activeLeague.name}`,
+        items: dropEconomy(visible(seasonItems("league")), activeLeague),
+      });
+    }
+    if (activeTournament) {
+      sections.push({
+        group: `🏆 ${activeTournament.name}`,
+        items: dropEconomy(visible(seasonItems("tournament")), activeTournament),
+      });
+    }
+    sections.push({ group: "Operaciones", items: visible(operationsItems) });
+    sections.push({ group: "Sistema", items: visible(systemItems) });
+    return sections.filter((s) => s.items.length > 0);
+  }, [user, activeLeague, activeTournament]);
 
   if (loading) {
     return (
@@ -157,7 +110,7 @@ export default function AdminLayout({
           onClick={() => setMobileOpen(!mobileOpen)}
           className="flex items-center gap-2 rounded-lg border border-vpv-border bg-vpv-card px-3 py-2 text-sm font-medium text-vpv-text transition-colors hover:bg-vpv-bg"
         >
-          {getActiveLabel(pathname)}
+          {adminLabelForPath(pathname)}
           <svg
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 20 20"
