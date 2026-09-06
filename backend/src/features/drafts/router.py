@@ -149,6 +149,19 @@ async def resume_draft(
     return {"id": draft.id, "status": draft.status}
 
 
+@router.post("/admin/{draft_id}/reset")
+async def reset_draft(
+    draft_id: int,
+    service: DraftService = Depends(_get_service),
+    user: dict = Depends(require_perm(Perm.DRAFT)),
+) -> dict:
+    """Wipe every pick and release all ownership, leaving a clean draft.
+
+    For testing the draft and then running the real one on the same row.
+    """
+    return await service.reset_draft(draft_id, user)
+
+
 @router.get("/{season_id}/{phase}", response_model=DraftDetailResponse)
 async def get_draft_detail(
     season_id: int,

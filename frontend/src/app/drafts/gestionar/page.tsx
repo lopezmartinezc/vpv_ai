@@ -600,12 +600,45 @@ export default function GestionarDraftPage() {
     }
   }
 
+  async function resetDraft() {
+    if (!currentDraft) return;
+    if (
+      !window.confirm(
+        "Esto BORRA todos los picks del draft y libera todos los jugadores " +
+          "(vuelve a empezar de cero). Úsalo para limpiar una prueba. ¿Reiniciar el draft?",
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    try {
+      const res = await apiClient.post<{ deleted_picks: number }>(
+        `/drafts/admin/${currentDraft.id}/reset`,
+        {},
+      );
+      showSuccess(`Draft reiniciado (${res.deleted_picks} picks borrados)`);
+      await loadDrafts();
+      await loadDraftDetail();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al reiniciar el draft");
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-bold text-vpv-text">Gestionar Draft</h1>
         <div className="flex items-center gap-2">
+          {currentDraft && (currentDraft.total_picks ?? 0) > 0 && (
+            <button
+              type="button"
+              onClick={resetDraft}
+              className="rounded-lg border border-red-500/50 bg-vpv-bg px-4 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/10"
+            >
+              Reiniciar draft
+            </button>
+          )}
           {currentDraft && !isCompleted && (
             <button
               type="button"
