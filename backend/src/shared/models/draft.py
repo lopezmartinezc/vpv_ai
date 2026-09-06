@@ -3,7 +3,15 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Index, SmallInteger, String, UniqueConstraint, func
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Index,
+    SmallInteger,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.shared.models.base import Base
@@ -24,9 +32,13 @@ class Draft(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
     current_round: Mapped[int] = mapped_column(SmallInteger, default=0, nullable=False)
     current_pick: Mapped[int] = mapped_column(SmallInteger, default=0, nullable=False)
-    started_at: Mapped[datetime | None] = mapped_column()
-    completed_at: Mapped[datetime | None] = mapped_column()
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
+    # Prod schema uses TIMESTAMPTZ; declare tz-aware so the model matches and
+    # datetime.now(UTC) writes (add_pick) don't clash on a naive column.
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
     season: Mapped[Season] = relationship(back_populates="drafts")
     picks: Mapped[list[DraftPick]] = relationship(
@@ -50,7 +62,9 @@ class DraftPick(Base):
     player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), nullable=False)
     round_number: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     pick_number: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    picked_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
+    picked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     dropped_player_id: Mapped[int | None] = mapped_column(ForeignKey("players.id"), nullable=True)
     origin: Mapped[str] = mapped_column(String(10), default="manual", nullable=False)
 
