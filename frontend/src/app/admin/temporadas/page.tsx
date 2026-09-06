@@ -413,6 +413,25 @@ export default function AdminTemporadasPage() {
     }
   }
 
+  async function testTelegram(target: "general" | "draft" | "alerts") {
+    if (!selectedId) return;
+    setMessage("Enviando prueba de Telegram…");
+    try {
+      const res = await apiClient.post<{ sent: boolean; reason?: string | null }>(
+        `/telegram/admin/test/${selectedId}`,
+        { target },
+      );
+      setMessage(
+        res.sent
+          ? `✅ Mensaje de prueba enviado (${target}). Míralo en Telegram.`
+          : `❌ No se envió (${target}): ${res.reason ?? "revisa la config"}`,
+      );
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Error al probar Telegram");
+    }
+    setTimeout(() => setMessage(null), 6000);
+  }
+
   async function handleSaveRules() {
     if (!selectedId) return;
     const changed = Object.entries(editedRules)
@@ -1018,6 +1037,13 @@ export default function AdminTemporadasPage() {
                     placeholder="(usa el global)"
                     className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
                   />
+                  <button
+                    type="button"
+                    onClick={() => testTelegram("general")}
+                    className="mt-1 rounded border border-vpv-border px-2 py-1 text-xs text-vpv-text-muted hover:text-vpv-text"
+                  >
+                    Probar (envía al canal guardado)
+                  </button>
                 </div>
                 <div>
                   <label className="mb-1 block text-xs text-vpv-text-muted">
@@ -1043,6 +1069,13 @@ export default function AdminTemporadasPage() {
                     placeholder="Canal específico del draft (opcional)"
                     className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
                   />
+                  <button
+                    type="button"
+                    onClick={() => testTelegram("draft")}
+                    className="mt-1 rounded border border-vpv-border px-2 py-1 text-xs text-vpv-text-muted hover:text-vpv-text"
+                  >
+                    Probar (canal del draft)
+                  </button>
                 </div>
                 <div>
                   <label className="mb-1 block text-xs text-vpv-text-muted">
@@ -1068,6 +1101,13 @@ export default function AdminTemporadasPage() {
                     placeholder="Canal específico para deadline reminders y warnings"
                     className="w-full rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text"
                   />
+                  <button
+                    type="button"
+                    onClick={() => testTelegram("alerts")}
+                    className="mt-1 rounded border border-vpv-border px-2 py-1 text-xs text-vpv-text-muted hover:text-vpv-text"
+                  >
+                    Probar (canal de alertas)
+                  </button>
                   <p className="mt-1 text-xs text-vpv-text-muted">
                     Si lo dejas vacío, las alertas van al chat general de la temporada (con su thread).
                   </p>
