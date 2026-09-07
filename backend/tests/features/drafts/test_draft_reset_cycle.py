@@ -170,3 +170,23 @@ async def test_reset_draft_wipes_everything_in_one_call(db_session: AsyncSession
         .all()
     )
     assert all(o is None for o in owners)
+
+
+def test_ordered_participant_ids_is_deterministic_with_null_or_dup_order() -> None:
+    """Turn order must not depend on DB row order: draft_order ties and NULLs
+    break deterministically by participant_id, so the sequence never shifts
+    between requests (regression: '0 or 999' + no tiebreak made it drift)."""
+    from types import SimpleNamespace
+
+    from src.features.drafts.service import _ordered_participant_ids
+
+    parts = [
+        SimpleNamespace(participant_id=30, draft_order=None),
+        SimpleNamespace(participant_id=10, draft_order=None),
+        SimpleNamespace(participant_id=20, draft_order=2),
+        SimpleNamespace(participant_id=5, draft_order=2),
+        SimpleNamespace(participant_id=7, draft_order=0),
+    ]
+    expected = [7, 5, 20, 10, 30]  # order 0, then 2 (id 5,20), then NULL (id 10,30)
+    assert _ordered_participant_ids(parts) == expected
+    assert _ordered_participant_ids(list(reversed(parts))) == expected

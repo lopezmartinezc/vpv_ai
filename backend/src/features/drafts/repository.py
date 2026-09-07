@@ -120,7 +120,10 @@ class DraftRepository:
                 SeasonParticipant.season_id == season_id,
                 SeasonParticipant.is_active.is_(True),
             )
-            .order_by(SeasonParticipant.draft_order.asc().nulls_last())
+            .order_by(
+                SeasonParticipant.draft_order.asc().nulls_last(),
+                SeasonParticipant.id.asc(),
+            )
         )
 
         result = await self.session.execute(stmt)
