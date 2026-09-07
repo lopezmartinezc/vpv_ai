@@ -10,6 +10,7 @@ import { apiClient } from "@/lib/api-client";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
 import { WishlistPanel } from "@/components/draft/wishlist-panel";
 import { RosterCounter } from "@/components/draft/roster-counter";
+import { TeamCounter } from "@/components/draft/team-counter";
 import { TIER_COLORS, TIER_LABELS } from "@/lib/draft-scorecard";
 import {
   PLAYER_TAG_CLASSES,
@@ -681,6 +682,15 @@ export default function LiveDraftPage() {
           positions={picks
             .filter((p) => p.participant_id === myParticipantId)
             .map((p) => p.position)}
+        />
+      )}
+
+      {/* Players drafted per real team (avoid over-loading a club) */}
+      {myParticipantId !== null && (
+        <TeamCounter
+          teams={picks
+            .filter((p) => p.participant_id === myParticipantId)
+            .map((p) => p.team_name)}
         />
       )}
 
