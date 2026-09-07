@@ -877,6 +877,9 @@ export interface AdvancedPlayerStat {
   trend: "rising" | "stable" | "falling";
 }
 
+/** This-season performance for a player: base row + (optional) advanced block. */
+export type SeasonPerf = PlayerStatRow & Partial<AdvancedPlayerStat>;
+
 export interface AdvancedPlayersResponse {
   season_id: number;
   players: AdvancedPlayerStat[];
