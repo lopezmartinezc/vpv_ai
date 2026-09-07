@@ -604,12 +604,12 @@ export default function LiveDraftPage() {
             {showSuggestions ? "Ocultar sugerencias" : "Sugerencias de pick (Admin)"}
           </button>
           {showSuggestions && (
-            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="mt-2 grid grid-cols-1 gap-2 lg:grid-cols-2">
               {(["POR", "DEF", "MED", "DEL"] as const).map((pos) => {
                 const ids = adminStats.suggestions[pos] ?? [];
                 return (
                   <div key={pos} className="rounded-lg border border-vpv-card-border bg-vpv-card p-2">
-                    <p className={`mb-1 text-center text-[10px] font-bold ${POS_COLORS[pos]?.split(" ")[1] ?? ""}`}>{pos}</p>
+                    <p className={`mb-1 text-[11px] font-bold uppercase tracking-wider ${POS_COLORS[pos]?.split(" ")[1] ?? ""}`}>{pos}</p>
                     {ids.map((pid) => {
                       const s = adminStats.players[String(pid)];
                       if (!s) return null;
