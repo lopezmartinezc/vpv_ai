@@ -65,6 +65,27 @@ def _get_participant_for_pick(
     return ordered_participant_ids[position_in_round]
 
 
+def _ordered_participant_ids(participants: list) -> list[int]:
+    """Deterministic draft order used everywhere turns are computed.
+
+    Sort by ``draft_order`` (unset sorts last) with ``participant_id`` as a
+    stable tiebreak, so NULL or duplicate draft_order values never make the
+    turn sequence vary between requests (which flips whose turn it is and
+    scrambles the displayed order). Note: uses an explicit ``is None`` check,
+    not ``or``, so a legitimate draft_order of 0 isn't treated as unset.
+    """
+    return [
+        p.participant_id
+        for p in sorted(
+            participants,
+            key=lambda x: (
+                x.draft_order if x.draft_order is not None else 10**9,
+                x.participant_id,
+            ),
+        )
+    ]
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -114,10 +135,7 @@ class DraftService:
         # Calculate next participant
         next_pid: int | None = None
         if participant_rows:
-            ordered_pids = [
-                p.participant_id
-                for p in sorted(participant_rows, key=lambda x: x.draft_order or 999)
-            ]
+            ordered_pids = _ordered_participant_ids(participant_rows)
             next_pick = len(pick_rows) + 1
             next_pid = _get_participant_for_pick(next_pick, draft.draft_type, ordered_pids)
 
@@ -307,9 +325,7 @@ class DraftService:
                 )
 
         # Auto-determine participant based on draft type + order
-        ordered_pids = [
-            p.participant_id for p in sorted(participants, key=lambda x: x.draft_order or 999)
-        ]
+        ordered_pids = _ordered_participant_ids(participants)
         auto_participant_id = _get_participant_for_pick(next_pick, draft.draft_type, ordered_pids)
 
         # Use provided participant_id if given, otherwise auto
@@ -536,9 +552,7 @@ class DraftService:
                 if pool_size and next_pick_number > len(participants) * pool_size:
                     return
 
-            ordered_pids = [
-                p.participant_id for p in sorted(participants, key=lambda x: x.draft_order or 999)
-            ]
+            ordered_pids = _ordered_participant_ids(participants)
             next_participant_id = _get_participant_for_pick(
                 next_pick_number, draft.draft_type, ordered_pids
             )
@@ -815,9 +829,7 @@ class DraftService:
         # Recompute the "next participant" so connected clients can show the
         # correct turn after the undo.
         participants = await self.repo.get_participants(draft.season_id)
-        ordered_pids = [
-            p.participant_id for p in sorted(participants, key=lambda x: x.draft_order or 999)
-        ]
+        ordered_pids = _ordered_participant_ids(participants)
         next_pid = (
             _get_participant_for_pick(pick_number, draft.draft_type, ordered_pids)
             if ordered_pids
@@ -1017,7 +1029,10 @@ class DraftService:
             ]
         else:
             pick_map = {p.id: p for p in existing_picks}
-            participant_order = {p.participant_id: (p.draft_order or 999) for p in participants}
+            participant_order = {
+                p.participant_id: (p.draft_order if p.draft_order is not None else 999)
+                for p in participants
+            }
 
             # Assign rounds based on position in input order
             rounds: dict[int, list[int]] = {}
