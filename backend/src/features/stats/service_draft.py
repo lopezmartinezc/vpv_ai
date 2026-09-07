@@ -268,6 +268,16 @@ class DraftValueService:
         current_data = [ps for ps in all_data if ps.season_id == season_id]
         history_data = [ps for ps in all_data if ps.season_id != season_id]
 
+        # Per-season total-matchdays proxy: the most games any single player
+        # logged that season (a nailed-on starter). Used to turn "games played"
+        # into a PARTICIPATION rate for the rest-of-season projection —
+        # availability (45-min share of appearances) alone treats a 15/38 player
+        # as a full starter and massively over-projects his season total.
+        season_total_md: dict[int, int] = {}
+        for ps in all_data:
+            if ps.games > season_total_md.get(ps.season_id, 0):
+                season_total_md[ps.season_id] = ps.games
+
         # Organize. all_data is ordered by (slug, season_id) from the query,
         # so history[slug] stays ascending and hist[-1] is the most recent.
         history: dict[str, list[_PlayerSeason]] = defaultdict(list)
@@ -372,7 +382,15 @@ class DraftValueService:
             effective_value = manual_value if manual_value is not None else auto_projection
 
             # F2: durability — expected games + rest-of-season points.
-            exp_games_remaining = round(remaining_md * availability, 1)
+            # Use PARTICIPATION (games / season total matchdays), not the 45-min
+            # availability: a player who featured in half the league last season
+            # must project for ~half the remaining games, not a full season.
+            participation = (
+                min(1.0, ref.games / max(1, season_total_md.get(ref.season_id, ref.games)))
+                if ref
+                else 0.0
+            )
+            exp_games_remaining = round(remaining_md * participation, 1)
             proj_rest_points = (
                 round(effective_value * exp_games_remaining, 1)
                 if effective_value is not None

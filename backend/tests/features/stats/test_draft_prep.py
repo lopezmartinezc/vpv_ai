@@ -591,3 +591,43 @@ async def test_tags_adjust_priority(db_session) -> None:
     await svc.upsert_override(current.id, pid, None, None, ["bogus"])
     row = {p.slug: p for p in (await svc.get_draft_values(current.id)).players}["star"]
     assert row.tags == []
+
+
+@pytest.mark.asyncio
+async def test_participation_scales_rest_of_season_projection(db_session) -> None:
+    """A player who featured in HALF the season projects for ~half the
+    rest-of-season total of an ever-present with the same per-game value.
+
+    Regression: exp_games_remaining used the 45-min availability (share of
+    APPEARANCES that were 45+ min), so a 15/38 starter was treated as a full
+    starter and hugely over-projected. It must use the participation rate
+    (games / season total matchdays).
+    """
+    prior = Season(name="2025-2026", matchday_start=1, matchday_current=38, kind="league")
+    current = Season(
+        name="2026-2027", matchday_start=1, matchday_current=1, matchday_end=38, kind="league"
+    )
+    db_session.add_all([prior, current])
+    await db_session.flush()
+    p_team = Team(season_id=prior.id, name="Alfa", slug="alfa")
+    c_team = Team(season_id=current.id, name="Alfa", slug="alfa")
+    db_session.add_all([p_team, c_team])
+    await db_session.flush()
+    prior_mds = [Matchday(season_id=prior.id, number=n) for n in range(1, 11)]
+    db_session.add_all(prior_mds)
+    await db_session.flush()
+
+    # Same per-game value (avg 6); "full" played all 10, "half" only 5.
+    await _prior_player(db_session, prior, p_team, "full", "MED", avg=6, mds=prior_mds, games=10)
+    await _prior_player(db_session, prior, p_team, "half", "MED", avg=6, mds=prior_mds, games=5)
+    _roster_player(db_session, current, c_team, "full", "MED")
+    _roster_player(db_session, current, c_team, "half", "MED")
+    await db_session.flush()
+
+    resp = await DraftValueService(db_session).get_draft_values(current.id)
+    by = {p.slug: p for p in resp.players}
+    full, half = by["full"], by["half"]
+    assert full.proj_rest_points and half.proj_rest_points
+    assert half.proj_rest_points == pytest.approx(full.proj_rest_points * 0.5, rel=0.15)
+    assert half.priority is not None and full.priority is not None
+    assert half.priority < full.priority
