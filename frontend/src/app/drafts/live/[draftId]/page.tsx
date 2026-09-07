@@ -319,11 +319,21 @@ export default function LiveDraftPage() {
           dropped_player_name: null,
         };
         setPicks((prev) => [...prev, fakePick]);
-        // Advance turn (simplified — doesn't handle snake perfectly)
-        const participants = draft?.participants.sort((a, b) => (a.draft_order ?? 99) - (b.draft_order ?? 99)) ?? [];
-        const currentIdx = participants.findIndex((p) => p.participant_id === nextParticipantId);
-        const nextIdx = (currentIdx + 1) % participants.length;
-        setNextParticipantId(participants[nextIdx]?.participant_id ?? null);
+        // Advance the turn deterministically, mirroring the backend snake
+        // logic (don't mutate draft.participants; tiebreak by participant_id).
+        const ordered = [...(draft?.participants ?? [])]
+          .sort(
+            (a, b) =>
+              (a.draft_order ?? 1e9) - (b.draft_order ?? 1e9) ||
+              a.participant_id - b.participant_id,
+          )
+          .map((p) => p.participant_id);
+        const n = ordered.length || 1;
+        const nextPickNo = picks.length + 2; // 1-based, after this fake pick
+        const round = Math.floor((nextPickNo - 1) / n) + 1;
+        let pos = (nextPickNo - 1) % n;
+        if (draft?.draft_type === "snake" && round % 2 === 0) pos = n - 1 - pos;
+        setNextParticipantId(ordered[pos] ?? null);
         setLastPickFlash(fakePick.pick_number);
         setTimeout(() => setLastPickFlash(null), 2000);
       } else {
