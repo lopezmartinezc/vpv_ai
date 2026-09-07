@@ -18,11 +18,15 @@ export function PlayersTab({ players }: { players: PlayerStatRow[] }) {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [posFilter, setPosFilter] = useState<string>("Todos");
   const [search, setSearch] = useState("");
+  const [minPlayed, setMinPlayed] = useState(0);
 
   const filtered = useMemo(() => {
     let list = players;
     if (posFilter !== "Todos") {
       list = list.filter((p) => p.position === posFilter);
+    }
+    if (minPlayed > 0) {
+      list = list.filter((p) => p.matchdays_played >= minPlayed);
     }
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -33,7 +37,7 @@ export function PlayersTab({ players }: { players: PlayerStatRow[] }) {
       );
     }
     return sorted(list, sortKey, sortDir);
-  }, [players, posFilter, search, sortKey, sortDir]);
+  }, [players, posFilter, minPlayed, search, sortKey, sortDir]);
 
   function handleSort(key: keyof PlayerStatRow) {
     if (sortKey === key) {
@@ -132,8 +136,8 @@ export function PlayersTab({ players }: { players: PlayerStatRow[] }) {
     { key: "minutes_played", label: "Min", short: "Min" },
     {
       key: "avg_points",
-      label: "Media",
-      short: "Med",
+      label: "Pts/partido",
+      short: "Pts/j",
       render: (p) => (
         <span className="text-vpv-text">{p.avg_points.toFixed(1)}</span>
       ),
@@ -222,6 +226,17 @@ export function PlayersTab({ players }: { players: PlayerStatRow[] }) {
           placeholder="Buscar jugador o equipo..."
           className="rounded border border-vpv-border bg-vpv-bg px-3 py-1.5 text-sm text-vpv-text placeholder:text-vpv-text-muted"
         />
+        <label className="flex items-center gap-1 text-xs text-vpv-text-muted">
+          Mín. PJ
+          <input
+            type="number"
+            min={0}
+            value={minPlayed || ""}
+            onChange={(e) => setMinPlayed(Math.max(0, Number(e.target.value) || 0))}
+            placeholder="0"
+            className="w-14 rounded border border-vpv-border bg-vpv-bg px-2 py-1.5 text-sm text-vpv-text placeholder:text-vpv-text-muted"
+          />
+        </label>
         <span className="text-xs text-vpv-text-muted">
           {filtered.length} jugadores
         </span>
