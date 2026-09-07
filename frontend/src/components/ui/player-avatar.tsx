@@ -24,10 +24,12 @@ export function PlayerAvatar({
   const [failed, setFailed] = useState(false);
 
   if (!photoPath || failed) {
-    // Fallback: initials circle
-    const initials = name
+    // Fallback: initials circle. Guard against a missing/empty name so a
+    // stale/partial API row can never crash the render.
+    const initials = (name ?? "")
       .split(" ")
       .map((w) => w[0])
+      .filter(Boolean)
       .slice(0, 2)
       .join("")
       .toUpperCase();
