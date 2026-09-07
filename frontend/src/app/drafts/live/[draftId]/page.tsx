@@ -18,10 +18,14 @@ import {
   PLAYER_TAGS,
 } from "@/lib/player-tags";
 import type {
+  AdvancedPlayersResponse,
   DraftDetailResponse,
   DraftPickEntry,
   DraftPlayerStatsResponse,
   DraftTeamOption,
+  PlayerDraftStats,
+  PlayerStatsResponse,
+  SeasonPerf,
 } from "@/types";
 
 interface PlayerSearchItem {
@@ -82,6 +86,42 @@ export default function LiveDraftPage() {
   const [adminStats, setAdminStats] = useState<DraftPlayerStatsResponse | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showScoreHelp, setShowScoreHelp] = useState(false);
+  // This-season performance, lazy-loaded once and cached (for the player detail).
+  const [seasonPerf, setSeasonPerf] = useState<Record<number, SeasonPerf> | null>(null);
+  const [perfLoading, setPerfLoading] = useState(false);
+  const [openDetailId, setOpenDetailId] = useState<number | null>(null);
+
+  // Fetch this-season base + advanced stats once, merged by player_id. Pre-draft
+  // matchdays are counts=false, so include_noncounting=true to see J1-J3.
+  const ensureSeasonPerf = useCallback(async () => {
+    if (seasonPerf || perfLoading || !selectedSeason) return;
+    setPerfLoading(true);
+    try {
+      const sid = selectedSeason.id;
+      const [base, adv] = await Promise.all([
+        apiClient.get<PlayerStatsResponse>(`/stats/${sid}/players?include_noncounting=true`),
+        apiClient.get<AdvancedPlayersResponse>(
+          `/stats/${sid}/players/advanced?include_noncounting=true&min_played=1`,
+        ),
+      ]);
+      const map: Record<number, SeasonPerf> = {};
+      for (const r of base.players) map[r.player_id] = { ...r };
+      for (const a of adv.players) map[a.player_id] = { ...(map[a.player_id] ?? a), ...a };
+      setSeasonPerf(map);
+    } catch {
+      setSeasonPerf({}); // avoid a refetch loop; detail shows "sin datos"
+    } finally {
+      setPerfLoading(false);
+    }
+  }, [seasonPerf, perfLoading, selectedSeason]);
+
+  const toggleDetail = useCallback(
+    (playerId: number) => {
+      void ensureSeasonPerf();
+      setOpenDetailId((cur) => (cur === playerId ? null : playerId));
+    },
+    [ensureSeasonPerf],
+  );
 
   // Find my participant_id. Prefer matching by user_id (added in
   // c1cfd57) — fall back to display_name when the backend/bundle hasn't
@@ -578,40 +618,53 @@ export default function LiveDraftPage() {
                           ? `DefEq ${s.team_goals_conceded.toFixed(1)}`
                           : `${s.avg_pts} pts/j · T${s.starter_pct.toFixed(0)}%`;
                       return (
-                        <button
-                          key={pid}
-                          onClick={() => handlePick(pid)}
-                          disabled={picking}
-                          className="mb-1 flex w-full items-center gap-1.5 rounded border border-transparent px-1 py-1 text-left text-[10px] transition-colors hover:border-vpv-border hover:bg-vpv-accent/10 disabled:opacity-50"
-                          title={`Prioridad ${s.priority?.toFixed(0) ?? "—"}${s.priority_base != null ? ` (modelo ${s.priority_base.toFixed(0)})` : ""}${s.vorp != null ? ` · VORP ${s.vorp.toFixed(1)}` : ""}${s.event_share != null ? ` · Fiab ${(s.event_share * 100).toFixed(0)}%` : ""} · Pincha para fichar`}
-                        >
-                          <PlayerAvatar photoPath={s.photo_path} name={s.display_name} size={24} />
-                          <span className="min-w-0 flex-1">
-                            <span className="flex items-center gap-1">
-                              <span className="truncate font-medium text-vpv-text">{s.display_name}</span>
-                              {s.tags?.map((t) => (
-                                <span key={t} title={PLAYER_TAG_LABELS[t] ?? t}>
-                                  {PLAYER_TAG_EMOJI[t] ?? "🏷️"}
+                        <div key={pid} className="mb-1">
+                          <div className="flex items-center gap-0.5">
+                            <button
+                              onClick={() => handlePick(pid)}
+                              disabled={picking}
+                              className="flex min-w-0 flex-1 items-center gap-1.5 rounded border border-transparent px-1 py-1 text-left text-[10px] transition-colors hover:border-vpv-border hover:bg-vpv-accent/10 disabled:opacity-50"
+                              title={`Prioridad ${s.priority?.toFixed(0) ?? "—"}${s.priority_base != null ? ` (modelo ${s.priority_base.toFixed(0)})` : ""}${s.vorp != null ? ` · VORP ${s.vorp.toFixed(1)}` : ""}${s.event_share != null ? ` · Fiab ${(s.event_share * 100).toFixed(0)}%` : ""} · Pincha para fichar`}
+                            >
+                              <PlayerAvatar photoPath={s.photo_path} name={s.display_name} size={24} />
+                              <span className="min-w-0 flex-1">
+                                <span className="flex items-center gap-1">
+                                  <span className="truncate font-medium text-vpv-text">{s.display_name}</span>
+                                  {s.tags?.map((t) => (
+                                    <span key={t} title={PLAYER_TAG_LABELS[t] ?? t}>
+                                      {PLAYER_TAG_EMOJI[t] ?? "🏷️"}
+                                    </span>
+                                  ))}
+                                  {s.is_bench_risk && !s.tags?.includes("titular") && <span title="Riesgo de banquillo">📌</span>}
+                                  {s.is_new && <span title="Sin histórico">🆕</span>}
+                                  {s.is_peak_year && <span title="Pico de forma (riesgo regresión)">🔻</span>}
                                 </span>
-                              ))}
-                              {s.is_bench_risk && !s.tags?.includes("titular") && <span title="Riesgo de banquillo">📌</span>}
-                              {s.is_new && <span title="Sin histórico">🆕</span>}
-                              {s.is_peak_year && <span title="Pico de forma (riesgo regresión)">🔻</span>}
-                            </span>
-                            <span className="flex items-center gap-1 text-vpv-text-muted">
-                              {s.position_tier && (
-                                <span className={`rounded px-1 text-[8px] font-bold ${TIER_COLORS[s.position_tier] ?? ""}`}>
-                                  {TIER_LABELS[s.position_tier] ?? s.position_tier}
+                                <span className="flex items-center gap-1 text-vpv-text-muted">
+                                  {s.position_tier && (
+                                    <span className={`rounded px-1 text-[8px] font-bold ${TIER_COLORS[s.position_tier] ?? ""}`}>
+                                      {TIER_LABELS[s.position_tier] ?? s.position_tier}
+                                    </span>
+                                  )}
+                                  <span className="truncate">{s.team_name}</span>
+                                  <span>· {detail}</span>
                                 </span>
-                              )}
-                              <span className="truncate">{s.team_name}</span>
-                              <span>· {detail}</span>
-                            </span>
-                          </span>
-                          <span className="tabular-nums font-bold text-vpv-accent">
-                            {s.priority != null ? s.priority.toFixed(0) : "—"}
-                          </span>
-                        </button>
+                              </span>
+                              <span className="tabular-nums font-bold text-vpv-accent">
+                                {s.priority != null ? s.priority.toFixed(0) : "—"}
+                              </span>
+                            </button>
+                            <button
+                              onClick={() => toggleDetail(pid)}
+                              title="Ver detalle (no ficha)"
+                              className={`shrink-0 rounded px-1 py-1 text-[11px] transition-colors hover:bg-vpv-accent/10 ${openDetailId === pid ? "text-vpv-accent" : "text-vpv-text-muted"}`}
+                            >
+                              ⓘ
+                            </button>
+                          </div>
+                          {openDetailId === pid && (
+                            <PlayerDetail d={s} perf={seasonPerf?.[pid]} loading={perfLoading} />
+                          )}
+                        </div>
                       );
                     })}
                   </div>
@@ -666,6 +719,10 @@ export default function LiveDraftPage() {
             onPick={handlePick}
             adminStats={isAdmin ? adminStats : null}
             suggestions={isAdmin ? adminStats?.suggestions ?? null : null}
+            seasonPerf={seasonPerf}
+            perfLoading={perfLoading}
+            openDetailId={openDetailId}
+            onToggleDetail={toggleDetail}
           />
         </div>
       ) : (
@@ -701,6 +758,10 @@ export default function LiveDraftPage() {
               onPick={handlePick}
               adminStats={adminStats}
               suggestions={adminStats?.suggestions ?? null}
+              seasonPerf={seasonPerf}
+              perfLoading={perfLoading}
+              openDetailId={openDetailId}
+              onToggleDetail={toggleDetail}
               compact
             />
           </div>
@@ -874,6 +935,95 @@ function SearchFilters({
   );
 }
 
+function DetailCell({ k, v }: { k: string; v: string | number }) {
+  return (
+    <div>
+      <span className="text-vpv-text-muted">{k}: </span>
+      <span className="font-medium tabular-nums text-vpv-text">{v}</span>
+    </div>
+  );
+}
+
+/** Merged player detail: draft-board model + this-season performance. */
+function PlayerDetail({
+  d,
+  perf,
+  loading,
+}: {
+  d: PlayerDraftStats;
+  perf: SeasonPerf | undefined;
+  loading: boolean;
+}) {
+  const consistency = perf?.cv != null ? 1 - perf.cv : null;
+  const trendArrow =
+    perf?.trend === "rising" ? "↑ sube" : perf?.trend === "falling" ? "↓ baja" : "→ estable";
+  return (
+    <div className="mt-1 rounded-lg border border-vpv-border bg-vpv-bg/40 p-2 text-[10px]">
+      <p className="mb-1 text-[9px] font-bold uppercase tracking-wider text-vpv-accent">Draft</p>
+      <div className="grid grid-cols-3 gap-x-3 gap-y-0.5 sm:grid-cols-4">
+        <DetailCell k="Prioridad" v={d.priority != null ? d.priority.toFixed(0) : "—"} />
+        <DetailCell k="Modelo (base)" v={d.priority_base != null ? d.priority_base.toFixed(0) : "—"} />
+        <DetailCell k="Ronda" v={d.overall_rank != null ? `#${d.overall_rank}` : "—"} />
+        <DetailCell k="Tier" v={d.position_tier ? (TIER_LABELS[d.position_tier] ?? d.position_tier) : "—"} />
+        <DetailCell k="VORP" v={d.vorp != null ? d.vorp.toFixed(1) : "—"} />
+        <DetailCell k="Fiab" v={d.event_share != null ? `${(d.event_share * 100).toFixed(0)}%` : "—"} />
+        {d.position === "POR" && (
+          <DetailCell k="DefEq" v={d.team_goals_conceded != null ? d.team_goals_conceded.toFixed(1) : "—"} />
+        )}
+      </div>
+      {(d.tags?.length > 0 || d.is_bench_risk || d.is_new || d.team_changed || d.is_peak_year || d.is_penalty_taker) && (
+        <div className="mt-1 flex flex-wrap items-center gap-1">
+          {d.tags?.map((t) => (
+            <span key={t} className={`rounded px-1 py-px text-[9px] ${PLAYER_TAG_CLASSES[t] ?? ""}`}>
+              {PLAYER_TAG_LABELS[t] ?? t}
+            </span>
+          ))}
+          {d.is_bench_risk && !d.tags?.includes("titular") && <span title="Riesgo de banquillo">📌</span>}
+          {d.is_new && <span title="Sin histórico">🆕</span>}
+          {d.team_changed && <span title="Cambió de equipo">🔄</span>}
+          {d.is_peak_year && <span title="Pico de forma">🔻</span>}
+          {d.is_penalty_taker && <span title="Lanzó penaltis">⚽</span>}
+        </div>
+      )}
+
+      <p className="mb-1 mt-2 text-[9px] font-bold uppercase tracking-wider text-sky-300">
+        Esta temporada
+      </p>
+      {loading && !perf ? (
+        <p className="text-vpv-text-muted">Cargando…</p>
+      ) : !perf ? (
+        <p className="text-vpv-text-muted">Sin datos esta temporada.</p>
+      ) : (
+        <div className="grid grid-cols-3 gap-x-3 gap-y-0.5 sm:grid-cols-4">
+          <DetailCell k="PJ" v={perf.matchdays_played} />
+          <DetailCell k="Titular" v={perf.started_count} />
+          <DetailCell k="Min" v={perf.minutes_played} />
+          <DetailCell k="Goles" v={perf.goals} />
+          <DetailCell k="Asist" v={perf.assists} />
+          <DetailCell k="TA/TR" v={`${perf.yellow_cards}/${perf.red_cards}`} />
+          <DetailCell k="Pts/j" v={perf.avg_points.toFixed(1)} />
+          <DetailCell k="Pts tot" v={perf.total_points.toFixed(0)} />
+          {perf.avg_marca != null && <DetailCell k="Marca" v={perf.avg_marca.toFixed(1)} />}
+          {perf.avg_as != null && <DetailCell k="AS" v={perf.avg_as.toFixed(1)} />}
+          {perf.pp90 != null && <DetailCell k="pp90" v={perf.pp90.toFixed(1)} />}
+          {perf.p50 != null && (
+            <DetailCell
+              k="Suelo/Med/Techo"
+              v={`${perf.p10?.toFixed(0) ?? "—"}/${perf.p50.toFixed(0)}/${perf.p90?.toFixed(0) ?? "—"}`}
+            />
+          )}
+          {consistency != null && <DetailCell k="Consistencia" v={consistency.toFixed(2)} />}
+          {perf.form_5 != null && <DetailCell k="Forma (5)" v={perf.form_5.toFixed(1)} />}
+          {perf.trend && <DetailCell k="Tendencia" v={trendArrow} />}
+          {perf.ci_lower != null && perf.ci_upper != null && (
+            <DetailCell k="IC95" v={`${perf.ci_lower.toFixed(1)}–${perf.ci_upper.toFixed(1)}`} />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SearchResults({
   results,
   searching,
@@ -881,6 +1031,10 @@ function SearchResults({
   onPick,
   adminStats,
   suggestions,
+  seasonPerf,
+  perfLoading,
+  openDetailId,
+  onToggleDetail,
   compact,
 }: {
   results: PlayerSearchItem[];
@@ -889,6 +1043,10 @@ function SearchResults({
   onPick: (id: number) => void;
   adminStats: DraftPlayerStatsResponse | null;
   suggestions: Record<string, number[]> | null;
+  seasonPerf?: Record<number, SeasonPerf> | null;
+  perfLoading?: boolean;
+  openDetailId?: number | null;
+  onToggleDetail?: (id: number) => void;
   compact?: boolean;
 }) {
   const suggestedIds = new Set(
@@ -907,12 +1065,13 @@ function SearchResults({
         const stats = adminStats?.players[String(player.id)];
         const isTop = suggestedIds.has(player.id);
         return (
-          <button
-            key={player.id}
-            onClick={() => onPick(player.id)}
-            disabled={picking}
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-vpv-accent/20 disabled:opacity-50"
-          >
+          <div key={player.id}>
+           <div className="flex items-center gap-1">
+            <button
+              onClick={() => onPick(player.id)}
+              disabled={picking}
+              className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-vpv-accent/20 disabled:opacity-50"
+            >
             <PlayerAvatar
               photoPath={player.photo_path}
               name={player.display_name}
@@ -987,7 +1146,21 @@ function SearchResults({
             <span className="text-xs text-vpv-text-muted">
               {player.team_name}
             </span>
-          </button>
+            </button>
+            {stats && onToggleDetail && (
+              <button
+                onClick={() => onToggleDetail(player.id)}
+                title="Ver detalle (no ficha)"
+                className={`shrink-0 rounded px-1.5 py-1 text-sm transition-colors hover:bg-vpv-accent/10 ${openDetailId === player.id ? "text-vpv-accent" : "text-vpv-text-muted"}`}
+              >
+                ⓘ
+              </button>
+            )}
+           </div>
+           {openDetailId === player.id && stats && (
+              <PlayerDetail d={stats} perf={seasonPerf?.[player.id]} loading={!!perfLoading} />
+           )}
+          </div>
         );
       })}
     </div>
