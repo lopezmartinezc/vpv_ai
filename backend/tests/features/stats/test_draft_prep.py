@@ -638,9 +638,10 @@ async def test_starter_replacement_and_next_gap(db_session) -> None:
     """VORP replacement = the first keeper you'd be LEFT with (participants x
     starting slots), and next_gap = Priority drop to the next-best at the
     position (None for the last one)."""
+    from itertools import pairwise
+
     from src.shared.models.participant import SeasonParticipant
     from src.shared.models.user import User
-    from itertools import pairwise
 
     prior = Season(name="2025-2026", matchday_start=1, matchday_current=38, kind="league")
     current = Season(
