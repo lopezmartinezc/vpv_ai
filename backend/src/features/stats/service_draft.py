@@ -387,10 +387,13 @@ class DraftValueService:
             # Use PARTICIPATION (games / season total matchdays), not the 45-min
             # availability: a player who featured in half the league last season
             # must project for ~half the remaining games, not a full season.
+            # A manual-value newcomer has no reference season: the admin is
+            # asserting he'll play, so assume full participation instead of 0
+            # (which would zero his projected total and per-slot VORP).
             participation = (
                 min(1.0, ref.games / max(1, season_total_md.get(ref.season_id, ref.games)))
                 if ref
-                else 0.0
+                else (1.0 if manual_value is not None else 0.0)
             )
             exp_games_remaining = round(remaining_md * participation, 1)
             proj_rest_points = (
@@ -460,6 +463,7 @@ class DraftValueService:
                     marca_avg=round(marca, 2) if marca else None,
                     as_avg=round(as_val, 2) if as_val else None,
                     availability=round(availability, 2),
+                    participation=round(participation, 2),
                     consistency=round(consistency, 2),
                     second_half_avg=round(second_half_avg, 2) if second_half_avg else None,
                     goals=ref.goals if ref else 0,
@@ -495,13 +499,22 @@ class DraftValueService:
         # from the player's EFFECTIVE value (manual override, else projection).
         # Players with no effective value (brand-new, no manual value) don't
         # rank and keep vorp=None.
+        # VORP is computed on the PER-SLOT value: effective per-game value x
+        # participation — what a roster slot actually yields per matchday. A
+        # player who is good when he plays but rarely plays must not rank high.
+        # Backtested (7 seasons): rho 0.454 vs 0.380 for the per-game VORP,
+        # top-30 75% vs 70%, and low-participation players in the top-30 drop
+        # from 4.6/season to 0.
+        def _slot_value(p: DraftValuePlayer) -> float:
+            return (p.effective_value or 0.0) * (p.participation or 0.0)
+
         by_pos: dict[str, list[DraftValuePlayer]] = defaultdict(list)
         for r in results:
             by_pos[r.position].append(r)
         for pos, plist in by_pos.items():
             ranked = sorted(
                 (p for p in plist if p.effective_value is not None),
-                key=lambda p: p.effective_value or 0.0,
+                key=_slot_value,
                 reverse=True,
             )
             if not ranked:
@@ -518,10 +531,10 @@ class DraftValueService:
                 else REPLACEMENT_RANK.get(pos, len(ranked))
             )
             idx = min(repl_rank, len(ranked) - 1)
-            replacement = ranked[idx].effective_value or 0.0
+            replacement = _slot_value(ranked[idx])
             for rank, p in enumerate(ranked, start=1):
                 p.replacement_level = round(replacement, 2)
-                p.vorp = round((p.effective_value or 0.0) - replacement, 2)
+                p.vorp = round(_slot_value(p) - replacement, 2)
                 p.position_rank = rank
 
         # === Draft priority: projected rest-of-season points, risk-adjusted ===

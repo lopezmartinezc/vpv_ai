@@ -670,18 +670,31 @@ async def test_starter_replacement_and_next_gap(db_session) -> None:
     for slug, avg in (("k1", 8), ("k2", 7), ("k3", 6), ("k4", 5)):
         await _prior_player(db_session, prior, p_t, slug, "POR", avg=avg, mds=prior_mds)
         _roster_player(db_session, current, c_t, slug, "POR")
+    # k5: best per-game keeper (9) but featured in only 4/10 matchdays.
+    await _prior_player(db_session, prior, p_t, "k5", "POR", avg=9, mds=prior_mds, games=4)
+    _roster_player(db_session, current, c_t, "k5", "POR")
     await db_session.flush()
 
     resp = await DraftValueService(db_session).get_draft_values(current.id)
     assert resp.participant_count == 2
-    keepers = sorted(
-        (p for p in resp.players if p.position == "POR"),
-        key=lambda p: -(p.effective_value or 0),
-    )
-    third = keepers[2]
-    assert keepers[0].replacement_level == pytest.approx(third.effective_value)
-    assert keepers[0].vorp is not None and keepers[0].vorp > 0
-    assert third.vorp == pytest.approx(0.0)
+    keepers = {p.slug: p for p in resp.players if p.position == "POR"}
+    k1, k5 = keepers["k1"], keepers["k5"]
+
+    # VORP is per SLOT (effective x participation): k5 has the best per-game
+    # value but low participation -> negative VORP, must not rank high.
+    assert (k5.effective_value or 0) > (k1.effective_value or 0)
+    assert k5.participation == pytest.approx(0.4)
+    assert k1.vorp is not None and k1.vorp > 0
+    assert k5.vorp is not None and k5.vorp < 0
+
+    # Replacement = 3rd-best PER-SLOT keeper (2 participants x 1 slot).
+    def slot(p):
+        return (p.effective_value or 0) * (p.participation or 0)
+
+    ranked = sorted(keepers.values(), key=lambda p: -slot(p))
+    third = ranked[2]
+    assert k1.replacement_level == pytest.approx(slot(third), abs=0.02)
+    assert third.vorp == pytest.approx(0.0, abs=0.02)
 
     by_prio = sorted(keepers, key=lambda p: -(p.priority or 0))
     for a, b in pairwise(by_prio):
