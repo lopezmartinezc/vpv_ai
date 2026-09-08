@@ -1135,6 +1135,9 @@ export interface DraftValuePlayer {
   // priority includes admin tags; priority_base is the pure model view.
   priority?: number | null;
   priority_base?: number | null;
+  // Tactical cliff: Priority lost if you skip this player for the next-best
+  // at the same position.
+  next_gap?: number | null;
   // 1-based rank across all positions by priority (draft order / ADP).
   overall_rank?: number | null;
 }

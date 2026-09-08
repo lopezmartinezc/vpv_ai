@@ -631,3 +631,58 @@ async def test_participation_scales_rest_of_season_projection(db_session) -> Non
     assert half.proj_rest_points == pytest.approx(full.proj_rest_points * 0.5, rel=0.15)
     assert half.priority is not None and full.priority is not None
     assert half.priority < full.priority
+
+
+@pytest.mark.asyncio
+async def test_starter_replacement_and_next_gap(db_session) -> None:
+    """VORP replacement = the first keeper you'd be LEFT with (participants x
+    starting slots), and next_gap = Priority drop to the next-best at the
+    position (None for the last one)."""
+    from src.shared.models.participant import SeasonParticipant
+    from src.shared.models.user import User
+    from itertools import pairwise
+
+    prior = Season(name="2025-2026", matchday_start=1, matchday_current=38, kind="league")
+    current = Season(
+        name="2026-2027", matchday_start=1, matchday_current=1, matchday_end=38, kind="league"
+    )
+    db_session.add_all([prior, current])
+    await db_session.flush()
+    p_t = Team(season_id=prior.id, name="Alfa", slug="alfa")
+    c_t = Team(season_id=current.id, name="Alfa", slug="alfa")
+    db_session.add_all([p_t, c_t])
+    await db_session.flush()
+    prior_mds = [Matchday(season_id=prior.id, number=n) for n in range(1, 11)]
+    db_session.add_all(prior_mds)
+    await db_session.flush()
+
+    # 2 participants x 1 POR slot -> replacement is the 3rd-best keeper.
+    users = [User(username=f"u{i}", password_hash="x", display_name=f"U{i}") for i in range(2)]
+    db_session.add_all(users)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            SeasonParticipant(season_id=current.id, user_id=u.id, draft_order=i + 1)
+            for i, u in enumerate(users)
+        ]
+    )
+    for slug, avg in (("k1", 8), ("k2", 7), ("k3", 6), ("k4", 5)):
+        await _prior_player(db_session, prior, p_t, slug, "POR", avg=avg, mds=prior_mds)
+        _roster_player(db_session, current, c_t, slug, "POR")
+    await db_session.flush()
+
+    resp = await DraftValueService(db_session).get_draft_values(current.id)
+    assert resp.participant_count == 2
+    keepers = sorted(
+        (p for p in resp.players if p.position == "POR"),
+        key=lambda p: -(p.effective_value or 0),
+    )
+    third = keepers[2]
+    assert keepers[0].replacement_level == pytest.approx(third.effective_value)
+    assert keepers[0].vorp is not None and keepers[0].vorp > 0
+    assert third.vorp == pytest.approx(0.0)
+
+    by_prio = sorted(keepers, key=lambda p: -(p.priority or 0))
+    for a, b in pairwise(by_prio):
+        assert a.next_gap == pytest.approx((a.priority or 0) - (b.priority or 0), abs=0.11)
+    assert by_prio[-1].next_gap is None

@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.features.stats.schemas_draft import DraftValuePlayer, DraftValueResponse
 from src.features.stats.scorecard import (
     REPLACEMENT_RANK,
+    STARTER_SLOTS,
     is_bench_risk,
     is_likely_penalty_taker,
     is_mover,
@@ -505,7 +506,17 @@ class DraftValueService:
             )
             if not ranked:
                 continue
-            repl_rank = REPLACEMENT_RANK.get(pos, len(ranked))
+            # Replacement = the first player you'd be LEFT with if you didn't
+            # draft one: participants x starting slots (1-4-3-3), i.e. the first
+            # non-starter. Backtested: same predictive power as the fixed depth
+            # but far better calibrated (keepers no longer inflated by comparing
+            # to the 35th). Fixed depth is the fallback when league size unknown.
+            n_parts = int(season_info.get("participant_count") or 0)
+            repl_rank = (
+                n_parts * STARTER_SLOTS.get(pos, 1)
+                if n_parts > 0
+                else REPLACEMENT_RANK.get(pos, len(ranked))
+            )
             idx = min(repl_rank, len(ranked) - 1)
             replacement = ranked[idx].effective_value or 0.0
             for rank, p in enumerate(ranked, start=1):
@@ -552,6 +563,19 @@ class DraftValueService:
             if p.priority is not None:
                 overall += 1
                 p.overall_rank = overall
+
+        # Tactical "cliff": Priority you lose if you skip this player and take
+        # the next-best at the same position. Big gap = grab now; small = can
+        # wait a round. Not a predictor — a pick-moment decision aid.
+        by_pos_prio: dict[str, list[DraftValuePlayer]] = defaultdict(list)
+        for p in results:
+            if p.priority is not None:
+                by_pos_prio[p.position].append(p)
+        for plist in by_pos_prio.values():
+            plist.sort(key=lambda p: p.priority or 0.0, reverse=True)
+            for i, p in enumerate(plist):
+                nxt = plist[i + 1].priority if i + 1 < len(plist) else None
+                p.next_gap = round((p.priority or 0.0) - nxt, 1) if nxt is not None else None
 
         # Season-level summary of how much the current partial season weighs
         # for a typical full-window candidate (n = md_played).

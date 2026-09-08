@@ -122,6 +122,9 @@ class DraftValuePlayer(BaseModel):
     # None for players without a projection. Combined with
     # ``DraftValueResponse.participant_count`` gives the estimated round.
     overall_rank: int | None = None
+    # Tactical cliff: Priority lost if you skip this player for the next-best at
+    # the same position. None for the last player of a position.
+    next_gap: float | None = None
 
 
 class DraftValueResponse(BaseModel):
