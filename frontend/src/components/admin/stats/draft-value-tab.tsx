@@ -194,7 +194,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
   );
   // Table needs a wider min-width when the model columns are shown so nothing
   // cramps; narrower otherwise so the core view fits without scrolling.
-  const tableMinW = showModels ? "md:min-w-[1450px]" : "md:min-w-[860px]";
+  const tableMinW = showModels ? "md:min-w-[1450px]" : "md:min-w-[780px]";
 
   const handleSort = (key: DraftSortKey) => {
     if (sortKey === key) {
@@ -418,8 +418,8 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
         {/* Desktop header */}
         <div className={`hidden ${tableMinW} border-b border-vpv-border bg-vpv-bg px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted md:flex`}>
           <span className="w-8 shrink-0">#</span>
-          <span className="w-52 shrink-0">Jugador</span>
-          <span className="w-32 shrink-0" title="Alertas: nuevo, cambio de equipo/posición, pico de forma, penaltis, riesgo banquillo">Alertas</span>
+          <span className="w-44 shrink-0">Jugador</span>
+          <span className="w-24 shrink-0" title="Alertas: nuevo, cambio de equipo/posición, pico de forma, penaltis, riesgo banquillo">Alertas</span>
           <span className="w-10 shrink-0 text-center">Pos</span>
           <button
             onClick={() => handleSort("position_tier")}
@@ -502,11 +502,11 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
                   {/* Desktop: full row */}
                   <div className={`hidden ${tableMinW} items-center md:flex`}>
                     <span className="w-8 shrink-0 text-[10px] text-vpv-text-muted">{i + 1}</span>
-                    <span className="w-52 shrink-0 truncate text-xs font-medium text-vpv-text">
+                    <span className="w-44 shrink-0 truncate text-xs font-medium text-vpv-text">
                       {p.display_name}
                       <span className="ml-1 text-[10px] font-normal text-vpv-text-muted">{p.team_name}</span>
                     </span>
-                    <span className="flex w-32 shrink-0 items-center gap-0.5 overflow-hidden">
+                    <span className="flex w-24 shrink-0 items-center gap-0.5 overflow-hidden">
                       {p.is_new && (
                         <span className="rounded bg-amber-500/15 px-1 text-[8px] text-amber-400">NUEVO</span>
                       )}
