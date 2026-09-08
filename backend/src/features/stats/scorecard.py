@@ -51,6 +51,13 @@ _TIER_THRESHOLDS: dict[str, dict[str, float]] = {
 # they agree. Tuned to the ~11-13 participant x 26-pick league.
 REPLACEMENT_RANK: dict[str, int] = {"POR": 35, "DEF": 90, "MED": 90, "DEL": 70}
 
+# Starting slots per position (best formation 1-4-3-3). The draft board's VORP
+# replacement is participants x slots — the first player you'd be LEFT with if
+# you didn't draft one. Backtested (7 seasons): same predictive power as the
+# fixed depth above, but far better calibrated (keepers were inflated by being
+# compared to the 35th). The fixed depth stays as the fallback / PAR reference.
+STARTER_SLOTS: dict[str, int] = {"POR": 1, "DEF": 4, "MED": 3, "DEL": 3}
+
 # Survival haircut applied to the ensemble score before ranking.
 # Same brackets used across positions — they refer to avg_pts of the
 # previous season (the most-recent reliable signal we have).

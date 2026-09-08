@@ -65,6 +65,7 @@ const DRAFT_COLS: { key: DraftSortKey; label: string; title: string; w: string; 
   { key: "proj_rest_points", label: "PtsRes", title: "Puntos proyectados resto de temporada = valor efectivo × partidos esperados restantes (jornadas restantes × participación).", w: "w-16", group: "core" },
   { key: "event_share", label: "Fiab", title: "Fiabilidad: % de puntos por eventos concretos (goles, asistencias, portería a cero...) vs nota mediática Marca/AS. Alto = más repetible.", w: "w-12", group: "core" },
   { key: "team_goals_conceded", label: "DefEq", title: "Defensa del equipo: goles que encaja por partido (temporada pasada; prior neutro para ascendidos). Menos = mejor. El factor clave para porteros (corr −0.83 con sus puntos).", w: "w-14", group: "core" },
+  { key: "next_gap", label: "Salto", title: "Salto al siguiente: Prioridad que pierdes si NO lo coges ahora y esperas al siguiente mejor de su posición. Salto grande = cógelo ya (se acaba la tanda); pequeño = puedes esperar una ronda.", w: "w-14", group: "core" },
   { key: "ensemble_score", label: "Ens", title: "Ensemble: valor proyectado (histórico + actual, shrinkage k=4)", w: "w-14", group: "models" },
   { key: "simple_avg", label: "Avg", title: "Media simple: pts/partido temporada anterior (baseline)", w: "w-14", group: "models" },
   { key: "second_half_score", label: "Form", title: "Forma 2a mitad: rendimiento J20-J38 (predice siguiente temporada)", w: "w-14", group: "models" },
@@ -194,7 +195,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
   );
   // Table needs a wider min-width when the model columns are shown so nothing
   // cramps; narrower otherwise so the core view fits without scrolling.
-  const tableMinW = showModels ? "md:min-w-[1450px]" : "md:min-w-[1040px]";
+  const tableMinW = showModels ? "md:min-w-[1500px]" : "md:min-w-[1100px]";
 
   const handleSort = (key: DraftSortKey) => {
     if (sortKey === key) {

@@ -215,9 +215,18 @@ export function StatsGuide() {
         </Metric>
         <Metric name="VORP (escasez)" good="alto = posición escasa">
           Valor sobre reemplazo posicional = valor proyectado − valor del jugador de
-          reemplazo en su posición (el Nº 35 en POR, 90 en DEF/MED, 70 en DEL). Ya no es
-          el orden maestro (lo es Prioridad), pero sí el diagnóstico de <i>escasez</i>:
-          pocas opciones con VORP &gt; 0 en una posición = draftéala antes.
+          reemplazo en su posición. El reemplazo es <b className="text-vpv-text">el primero que te
+          quedaría si no draftearas uno</b>: participantes × plazas titulares (1-4-3-3 → POR 1,
+          DEF 4, MED 3, DEL 3). Backtest 7 temporadas: misma capacidad predictiva que una
+          profundidad fija, pero mucho mejor calibrado (los porteros ya no se inflan por
+          compararse con el 35º). No es el orden maestro (lo es Prioridad), sino el
+          diagnóstico de <i>escasez</i>: pocas opciones con VORP &gt; 0 = draftéala antes.
+        </Metric>
+        <Metric name="Salto (al siguiente)" good="grande = cógelo ya">
+          Prioridad que pierdes si NO coges a este jugador ahora y esperas al siguiente
+          mejor de su posición. Un salto grande marca el <i>fin de una tanda</i> (quedan
+          pocos buenos): cógelo. Un salto pequeño te permite esperar una ronda sin perder
+          casi nada. Es una ayuda táctica en el momento del pick, no un predictor.
         </Metric>
         <Metric name="PtsRes" good="alto">
           Puntos proyectados del resto de temporada = valor por partido × partidos
