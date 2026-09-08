@@ -60,9 +60,9 @@ const DRAFT_COLS: { key: DraftSortKey; label: string; title: string; w: string; 
   { key: "priority", label: "Prio", title: "Prioridad de draft (columna maestra), CON tus tags: puntos proyectados el resto de temporada, ajustados por riesgo (pico, banquillo, fiabilidad) y por los tags. Es el orden por defecto.", w: "w-16", group: "core" },
   { key: "priority_base", label: "Base", title: "Prioridad del MODELO, sin tus tags. Compárala con Prio: si difieren, es por tus etiquetas (Objetivo/Evitar/Lesión/…).", w: "w-16", group: "core" },
   { key: "vorp", label: "VORP", title: "Valor sobre reemplazo posicional: valor efectivo por encima del jugador de reemplazo en su posición. Compara DEF/MED/DEL/POR en un solo eje. Diagnóstico de escasez.", w: "w-14", group: "core" },
-  { key: "effective_value", label: "Efect", title: "Valor efectivo usado para el ranking = valor manual si lo has puesto, si no la proyección automática.", w: "w-14", group: "core" },
-  { key: "manual_value", label: "Manual", title: "Tu valor manual (pts/partido). Sobrescribe la proyección. Edítalo abriendo la fila. Imprescindible para jugadores nuevos sin histórico.", w: "w-14", group: "core" },
-  { key: "proj_rest_points", label: "PtsRes", title: "Puntos proyectados resto de temporada = valor efectivo × partidos esperados restantes (jornadas restantes × disponibilidad).", w: "w-16", group: "core" },
+  { key: "effective_value", label: "Efect", title: "Valor efectivo usado para el ranking = valor manual si lo has puesto, si no la proyección automática.", w: "w-14", group: "models" },
+  { key: "manual_value", label: "Manual", title: "Tu valor manual (pts/partido). Sobrescribe la proyección. Edítalo abriendo la fila. Imprescindible para jugadores nuevos sin histórico.", w: "w-14", group: "models" },
+  { key: "proj_rest_points", label: "PtsRes", title: "Puntos proyectados resto de temporada = valor efectivo × partidos esperados restantes (jornadas restantes × participación).", w: "w-16", group: "models" },
   { key: "event_share", label: "Fiab", title: "Fiabilidad: % de puntos por eventos concretos (goles, asistencias, portería a cero...) vs nota mediática Marca/AS. Alto = más repetible.", w: "w-12", group: "core" },
   { key: "team_goals_conceded", label: "DefEq", title: "Defensa del equipo: goles que encaja por partido (temporada pasada; prior neutro para ascendidos). Menos = mejor. El factor clave para porteros (corr −0.83 con sus puntos).", w: "w-14", group: "core" },
   { key: "ensemble_score", label: "Ens", title: "Ensemble: valor proyectado (histórico + actual, shrinkage k=4)", w: "w-14", group: "models" },
@@ -194,7 +194,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
   );
   // Table needs a wider min-width when the model columns are shown so nothing
   // cramps; narrower otherwise so the core view fits without scrolling.
-  const tableMinW = showModels ? "md:min-w-[1450px]" : "md:min-w-[1024px]";
+  const tableMinW = showModels ? "md:min-w-[1450px]" : "md:min-w-[860px]";
 
   const handleSort = (key: DraftSortKey) => {
     if (sortKey === key) {
@@ -402,12 +402,12 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
         <span className="text-[10px] text-vpv-text-muted">{players.length} jug.</span>
         <button
           onClick={() => setShowModels((v) => !v)}
-          title="Muestra u oculta las columnas de sub-modelos (Ens, Avg, Form, Stab, Prod, Trend, Disp, Cons). Siguen siendo ordenables."
+          title="Muestra u oculta las columnas adicionales (Efect, Manual, PtsRes y los sub-modelos Ens, Avg, Form, Stab, Prod, Trend, Disp, Cons). Siguen siendo ordenables."
           className={`rounded px-2 py-1 text-[10px] font-medium transition ${
             showModels ? "bg-vpv-accent text-white" : "border border-vpv-border text-vpv-text-muted hover:text-vpv-text"
           }`}
         >
-          {showModels ? "− Modelos" : "+ Modelos"}
+          {showModels ? "− Columnas" : "+ Columnas"}
         </button>
         <span className="text-[10px] text-vpv-text-muted">Click columna para ordenar</span>
       </div>
