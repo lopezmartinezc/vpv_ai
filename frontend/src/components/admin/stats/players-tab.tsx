@@ -8,13 +8,21 @@ import type {
 
 const POS_FILTERS = ["Todos", "POR", "DEF", "MED", "DEL"] as const;
 
+/** Combined newspaper rating: mean of the available Marca / AS averages. */
+function mediaPeriodicos(p: PlayerStatRow): number | null {
+  const vals = [p.avg_marca, p.avg_as].filter((v): v is number => v !== null);
+  return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+}
+
+type SortKey = keyof PlayerStatRow | "media_periodicos";
+
 /**
  * PlayersTab — Sortable table of per-player season stats.
  * Features: position filter chips, text search (name/team), top stats cards,
  * responsive column headers (full label on desktop, abbreviation on mobile).
  */
 export function PlayersTab({ players }: { players: PlayerStatRow[] }) {
-  const [sortKey, setSortKey] = useState<keyof PlayerStatRow>("total_points");
+  const [sortKey, setSortKey] = useState<SortKey>("total_points");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [posFilter, setPosFilter] = useState<string>("Todos");
   const [search, setSearch] = useState("");
@@ -36,10 +44,16 @@ export function PlayersTab({ players }: { players: PlayerStatRow[] }) {
           p.team_name.toLowerCase().includes(q),
       );
     }
+    if (sortKey === "media_periodicos") {
+      const dir = sortDir === "asc" ? 1 : -1;
+      return [...list].sort(
+        (a, b) => dir * ((mediaPeriodicos(a) ?? -1) - (mediaPeriodicos(b) ?? -1)),
+      );
+    }
     return sorted(list, sortKey, sortDir);
   }, [players, posFilter, minPlayed, search, sortKey, sortDir]);
 
-  function handleSort(key: keyof PlayerStatRow) {
+  function handleSort(key: SortKey) {
     if (sortKey === key) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
@@ -81,7 +95,7 @@ export function PlayersTab({ players }: { players: PlayerStatRow[] }) {
   );
 
   type ColDef = {
-    key: keyof PlayerStatRow;
+    key: SortKey;
     label: string;
     short: string;
     render?: (p: PlayerStatRow) => React.ReactNode;
@@ -103,12 +117,12 @@ export function PlayersTab({ players }: { players: PlayerStatRow[] }) {
     },
     { key: "team_name", label: "Equipo", short: "Eq" },
     { key: "matchdays_played", label: "PJ", short: "PJ" },
-    { key: "started_count", label: "Titular", short: "TI" },
-    { key: "goals", label: "Goles", short: "G" },
+    { key: "started_count", label: "Tit.", short: "TI" },
+    { key: "goals", label: "Gol", short: "G" },
     { key: "penalty_goals", label: "G.Pen", short: "GP" },
     { key: "own_goals", label: "PP", short: "PP" },
-    { key: "assists", label: "Asist.", short: "A" },
-    { key: "penalties_saved", label: "P.Parad", short: "PS" },
+    { key: "assists", label: "Asist", short: "A" },
+    { key: "penalties_saved", label: "P.Par", short: "PS" },
     {
       key: "yellow_cards",
       label: "TA",
@@ -133,10 +147,23 @@ export function PlayersTab({ players }: { players: PlayerStatRow[] }) {
       short: "AS",
       render: (p) => (p.avg_as !== null ? p.avg_as.toFixed(1) : "\u2014"),
     },
+    {
+      key: "media_periodicos",
+      label: "Media P.",
+      short: "MP",
+      render: (p) => {
+        const m = mediaPeriodicos(p);
+        return m !== null ? (
+          <span className="text-vpv-text">{m.toFixed(1)}</span>
+        ) : (
+          "\u2014"
+        );
+      },
+    },
     { key: "minutes_played", label: "Min", short: "Min" },
     {
       key: "avg_points",
-      label: "Pts/partido",
+      label: "Pts/j",
       short: "Pts/j",
       render: (p) => (
         <span className="text-vpv-text">{p.avg_points.toFixed(1)}</span>
@@ -144,7 +171,7 @@ export function PlayersTab({ players }: { players: PlayerStatRow[] }) {
     },
     {
       key: "total_points",
-      label: "Puntos",
+      label: "Pts",
       short: "Pts",
       render: (p) => (
         <span className="font-medium text-vpv-accent">{p.total_points}</span>
@@ -245,13 +272,13 @@ export function PlayersTab({ players }: { players: PlayerStatRow[] }) {
       {/* Table */}
       <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-vpv-border bg-vpv-bg text-left text-xs text-vpv-text-muted">
+              <tr className="border-b border-vpv-border bg-vpv-bg text-left text-[11px] text-vpv-text-muted">
                 {columns.map((col) => (
                   <th
                     key={col.key}
-                    className={`cursor-pointer whitespace-nowrap px-2 py-2 hover:text-vpv-text ${!isTextCol(col.key) ? "text-right" : ""}`}
+                    className={`cursor-pointer whitespace-nowrap px-1.5 py-2 hover:text-vpv-text ${!isTextCol(col.key) ? "text-right" : ""}`}
                     onClick={() => handleSort(col.key)}
                   >
                     <span className="hidden sm:inline">{col.label}</span>
@@ -274,11 +301,11 @@ export function PlayersTab({ players }: { players: PlayerStatRow[] }) {
                   {columns.map((col) => (
                     <td
                       key={col.key}
-                      className={`whitespace-nowrap px-2 py-1.5 ${!isTextCol(col.key) ? "text-right" : ""} ${col.key === "display_name" ? "font-medium text-vpv-text" : "text-vpv-text-muted"}`}
+                      className={`whitespace-nowrap px-1.5 py-1.5 ${!isTextCol(col.key) ? "text-right" : ""} ${col.key === "display_name" ? "font-medium text-vpv-text" : "text-vpv-text-muted"}`}
                     >
                       {col.render
                         ? col.render(p)
-                        : (p[col.key] as React.ReactNode)}
+                        : (p[col.key as keyof PlayerStatRow] as React.ReactNode)}
                     </td>
                   ))}
                 </tr>
