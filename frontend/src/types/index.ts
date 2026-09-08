@@ -1129,6 +1129,8 @@ export interface DraftValuePlayer {
   team_goals_conceded?: number | null;
   // Positional tier (elite | solid | normal | weak; "team_dependent" for POR).
   position_tier?: string | null;
+  // Already owned/picked in the draft (owner_id set).
+  is_drafted?: boolean;
   // Draft priority: projected rest-of-season points, risk-adjusted. Master sort.
   // priority includes admin tags; priority_base is the pure model view.
   priority?: number | null;

@@ -235,6 +235,7 @@ class _RosterPlayer:
     position: str
     photo_path: str | None
     team_name: str
+    is_drafted: bool  # already owned/picked in the draft (owner_id set)
 
 
 class DraftValueService:
@@ -475,6 +476,7 @@ class DraftValueService:
                     if effective_value is not None
                     else None,
                     is_new=is_new,
+                    is_drafted=rp.is_drafted,
                     team_changed=team_changed,
                     position_changed=position_changed,
                     is_peak_year=peak_year,
@@ -689,7 +691,7 @@ class DraftValueService:
         result = await self.session.execute(
             text(
                 "SELECT p.id, p.slug, p.display_name, p.position, p.photo_path, "
-                "       t.name AS team_name "
+                "       t.name AS team_name, p.owner_id "
                 "FROM players p JOIN teams t ON p.team_id = t.id "
                 "WHERE p.season_id = :sid AND p.is_available = TRUE "
                 "ORDER BY p.slug"
@@ -704,6 +706,7 @@ class DraftValueService:
                 position=r.position,
                 photo_path=r.photo_path,
                 team_name=r.team_name or "",
+                is_drafted=r.owner_id is not None,
             )
             for r in result.all()
         ]

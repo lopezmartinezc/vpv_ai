@@ -94,6 +94,7 @@ class DraftValuePlayer(BaseModel):
     tags: list[str] = Field(default_factory=list)
     effective_value: float | None = None
     is_new: bool = False  # no prior-season history
+    is_drafted: bool = False  # already owned/picked in the draft (owner_id set)
     team_changed: bool = False  # roster team differs from last historical season
     position_changed: bool = False  # roster position differs from last historical season
     # Risk flags (scorecard). is_peak_year: last season well above career avg
