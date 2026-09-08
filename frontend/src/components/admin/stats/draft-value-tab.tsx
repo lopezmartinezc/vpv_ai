@@ -60,7 +60,7 @@ const DRAFT_COLS: { key: DraftSortKey; label: string; title: string; w: string; 
   { key: "priority", label: "Prio", title: "Prioridad de draft (columna maestra), CON tus tags: puntos proyectados el resto de temporada, ajustados por riesgo (pico, banquillo, fiabilidad) y por los tags. Es el orden por defecto.", w: "w-16", group: "core" },
   { key: "priority_base", label: "Base", title: "Prioridad del MODELO, sin tus tags. Compárala con Prio: si difieren, es por tus etiquetas (Objetivo/Evitar/Lesión/…).", w: "w-16", group: "core" },
   { key: "vorp", label: "VORP", title: "Valor sobre reemplazo posicional: valor efectivo por encima del jugador de reemplazo en su posición. Compara DEF/MED/DEL/POR en un solo eje. Diagnóstico de escasez.", w: "w-14", group: "core" },
-  { key: "effective_value", label: "Efect", title: "Valor efectivo usado para el ranking = valor manual si lo has puesto, si no la proyección automática.", w: "w-14", group: "models" },
+  { key: "effective_value", label: "Efect", title: "Valor efectivo usado para el ranking = valor manual si lo has puesto, si no la proyección automática.", w: "w-14", group: "core" },
   { key: "manual_value", label: "Manual", title: "Tu valor manual (pts/partido). Sobrescribe la proyección. Edítalo abriendo la fila. Imprescindible para jugadores nuevos sin histórico.", w: "w-14", group: "models" },
   { key: "proj_rest_points", label: "PtsRes", title: "Puntos proyectados resto de temporada = valor efectivo × partidos esperados restantes (jornadas restantes × participación).", w: "w-16", group: "core" },
   { key: "event_share", label: "Fiab", title: "Fiabilidad: % de puntos por eventos concretos (goles, asistencias, portería a cero...) vs nota mediática Marca/AS. Alto = más repetible.", w: "w-12", group: "core" },
@@ -70,9 +70,9 @@ const DRAFT_COLS: { key: DraftSortKey; label: string; title: string; w: string; 
   { key: "second_half_score", label: "Form", title: "Forma 2a mitad: rendimiento J20-J38 (predice siguiente temporada)", w: "w-14", group: "models" },
   { key: "stability_score", label: "Stab", title: "Estabilidad: minutos altos y constantes (menor riesgo busto)", w: "w-14", group: "models" },
   { key: "productivity_score", label: "Prod", title: "Productividad: bonificado por G+A por 90 minutos", w: "w-14", group: "models" },
-  { key: "career_trend_pct", label: "Trend", title: "Tendencia interanual: % mejora o declive", w: "w-14", group: "models" },
+  { key: "career_trend_pct", label: "Trend", title: "Tendencia interanual: % mejora o declive", w: "w-14", group: "core" },
   { key: "availability", label: "Disp", title: "Disponibilidad: % partidos con 45+ min jugados", w: "w-12", group: "core" },
-  { key: "consistency", label: "Cons", title: "Consistencia: 1-CV (1=muy fiable, 0=impredecible)", w: "w-12", group: "models" },
+  { key: "consistency", label: "Cons", title: "Consistencia: 1-CV (1=muy fiable, 0=impredecible)", w: "w-12", group: "core" },
 ];
 
 function ManualOverrideEditor({
@@ -194,7 +194,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
   );
   // Table needs a wider min-width when the model columns are shown so nothing
   // cramps; narrower otherwise so the core view fits without scrolling.
-  const tableMinW = showModels ? "md:min-w-[1450px]" : "md:min-w-[920px]";
+  const tableMinW = showModels ? "md:min-w-[1450px]" : "md:min-w-[1060px]";
 
   const handleSort = (key: DraftSortKey) => {
     if (sortKey === key) {
