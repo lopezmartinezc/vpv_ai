@@ -62,7 +62,7 @@ const DRAFT_COLS: { key: DraftSortKey; label: string; title: string; w: string; 
   { key: "vorp", label: "VORP", title: "Valor sobre reemplazo posicional: valor efectivo por encima del jugador de reemplazo en su posición. Compara DEF/MED/DEL/POR en un solo eje. Diagnóstico de escasez.", w: "w-14", group: "core" },
   { key: "effective_value", label: "Efect", title: "Valor efectivo usado para el ranking = valor manual si lo has puesto, si no la proyección automática.", w: "w-14", group: "models" },
   { key: "manual_value", label: "Manual", title: "Tu valor manual (pts/partido). Sobrescribe la proyección. Edítalo abriendo la fila. Imprescindible para jugadores nuevos sin histórico.", w: "w-14", group: "models" },
-  { key: "proj_rest_points", label: "PtsRes", title: "Puntos proyectados resto de temporada = valor efectivo × partidos esperados restantes (jornadas restantes × participación).", w: "w-16", group: "models" },
+  { key: "proj_rest_points", label: "PtsRes", title: "Puntos proyectados resto de temporada = valor efectivo × partidos esperados restantes (jornadas restantes × participación).", w: "w-16", group: "core" },
   { key: "event_share", label: "Fiab", title: "Fiabilidad: % de puntos por eventos concretos (goles, asistencias, portería a cero...) vs nota mediática Marca/AS. Alto = más repetible.", w: "w-12", group: "core" },
   { key: "team_goals_conceded", label: "DefEq", title: "Defensa del equipo: goles que encaja por partido (temporada pasada; prior neutro para ascendidos). Menos = mejor. El factor clave para porteros (corr −0.83 con sus puntos).", w: "w-14", group: "core" },
   { key: "ensemble_score", label: "Ens", title: "Ensemble: valor proyectado (histórico + actual, shrinkage k=4)", w: "w-14", group: "models" },
@@ -71,7 +71,7 @@ const DRAFT_COLS: { key: DraftSortKey; label: string; title: string; w: string; 
   { key: "stability_score", label: "Stab", title: "Estabilidad: minutos altos y constantes (menor riesgo busto)", w: "w-14", group: "models" },
   { key: "productivity_score", label: "Prod", title: "Productividad: bonificado por G+A por 90 minutos", w: "w-14", group: "models" },
   { key: "career_trend_pct", label: "Trend", title: "Tendencia interanual: % mejora o declive", w: "w-14", group: "models" },
-  { key: "availability", label: "Disp", title: "Disponibilidad: % partidos con 45+ min jugados", w: "w-12", group: "models" },
+  { key: "availability", label: "Disp", title: "Disponibilidad: % partidos con 45+ min jugados", w: "w-12", group: "core" },
   { key: "consistency", label: "Cons", title: "Consistencia: 1-CV (1=muy fiable, 0=impredecible)", w: "w-12", group: "models" },
 ];
 
@@ -194,7 +194,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
   );
   // Table needs a wider min-width when the model columns are shown so nothing
   // cramps; narrower otherwise so the core view fits without scrolling.
-  const tableMinW = showModels ? "md:min-w-[1450px]" : "md:min-w-[780px]";
+  const tableMinW = showModels ? "md:min-w-[1450px]" : "md:min-w-[920px]";
 
   const handleSort = (key: DraftSortKey) => {
     if (sortKey === key) {
