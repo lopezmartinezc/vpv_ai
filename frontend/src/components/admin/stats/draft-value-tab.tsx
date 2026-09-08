@@ -62,20 +62,20 @@ const TIER_RANK: Record<string, number> = {
 const DRAFT_COLS: { key: DraftSortKey; label: string; title: string; w: string; group: "core" | "models"; order?: number }[] = [
   { key: "priority", label: "Prio", title: "Prioridad de draft (columna maestra), CON tus tags: puntos proyectados el resto de temporada, ajustados por riesgo (pico, banquillo, fiabilidad) y por los tags. Es el orden por defecto.", w: "w-16", group: "core", order: 1 },
   { key: "priority_base", label: "Base", title: "Prioridad del MODELO, sin tus tags. Compárala con Prio: si difieren, es por tus etiquetas (Objetivo/Evitar/Lesión/…).", w: "w-16", group: "core" },
-  { key: "vorp", label: "VORP", title: "Valor sobre reemplazo POR PLAZA: (valor por partido × participación) − el mismo valor del jugador de reemplazo de su posición. Así un jugador bueno que apenas juega no sale arriba. Compara DEF/MED/DEL/POR en un solo eje. Diagnóstico de escasez.", w: "w-14", group: "core", order: 6 },
+  { key: "vorp", label: "VORP", title: "Valor sobre reemplazo POR PLAZA: (valor por partido × participación) − el mismo valor del jugador de reemplazo de su posición. Así un jugador bueno que apenas juega no sale arriba. Compara DEF/MED/DEL/POR en un solo eje. Diagnóstico de escasez.", w: "w-14", group: "core", order: 2 },
   { key: "effective_value", label: "Efect", title: "Valor efectivo usado para el ranking = valor manual si lo has puesto, si no la proyección automática.", w: "w-14", group: "core" },
   { key: "manual_value", label: "Manual", title: "Tu valor manual (pts/partido). Sobrescribe la proyección. Edítalo abriendo la fila. Imprescindible para jugadores nuevos sin histórico.", w: "w-14", group: "models" },
   { key: "proj_rest_points", label: "PtsRes", title: "Puntos proyectados resto de temporada = valor efectivo × partidos esperados restantes (jornadas restantes × participación).", w: "w-16", group: "core" },
   { key: "event_share", label: "Fiab", title: "Fiabilidad: % de puntos por eventos concretos (goles, asistencias, portería a cero...) vs nota mediática Marca/AS. Alto = más repetible.", w: "w-12", group: "core", order: 8 },
   { key: "team_goals_conceded", label: "DefEq", title: "Defensa del equipo: goles que encaja por partido (temporada pasada; prior neutro para ascendidos). Menos = mejor. El factor clave para porteros (corr −0.83 con sus puntos).", w: "w-14", group: "core", order: 7 },
-  { key: "next_gap", label: "Salto", title: "Salto al siguiente: Prioridad que pierdes si NO lo coges ahora y esperas al siguiente mejor de su posición. Salto grande = cógelo ya (se acaba la tanda); pequeño = puedes esperar una ronda.", w: "w-14", group: "core", order: 2 },
+  { key: "next_gap", label: "Salto", title: "Salto al siguiente: Prioridad que pierdes si NO lo coges ahora y esperas al siguiente mejor de su posición. Salto grande = cógelo ya (se acaba la tanda); pequeño = puedes esperar una ronda.", w: "w-14", group: "core", order: 3 },
   { key: "ensemble_score", label: "Ens", title: "Ensemble: valor proyectado (histórico + actual, shrinkage k=4)", w: "w-14", group: "models" },
   { key: "simple_avg", label: "Avg", title: "Media simple: pts/partido temporada anterior (baseline)", w: "w-14", group: "models" },
   { key: "second_half_score", label: "Form", title: "Forma 2a mitad: rendimiento J20-J38 (predice siguiente temporada)", w: "w-14", group: "models" },
   { key: "stability_score", label: "Stab", title: "Estabilidad: minutos altos y constantes (menor riesgo busto)", w: "w-14", group: "models" },
   { key: "productivity_score", label: "Prod", title: "Productividad: bonificado por G+A por 90 minutos", w: "w-14", group: "models" },
   { key: "career_trend_pct", label: "Trend", title: "Tendencia interanual: % mejora o declive", w: "w-14", group: "core" },
-  { key: "availability", label: "Disp", title: "Disponibilidad: % partidos con 45+ min jugados. El suelo real: los bustos vienen de no jugar, no de la varianza.", w: "w-12", group: "core", order: 4 },
+  { key: "availability", label: "Disp", title: "Disponibilidad: % partidos con 45+ min jugados. El suelo real: los bustos vienen de no jugar, no de la varianza.", w: "w-12", group: "core", order: 5 },
   { key: "consistency", label: "Cons", title: "Consistencia: 1-CV (1=muy fiable, 0=impredecible)", w: "w-12", group: "core" },
 ];
 
@@ -415,7 +415,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
         </button>
         <span className="text-[10px] text-vpv-text-muted">Click columna para ordenar</span>
         <span className="text-[10px] text-vpv-text-muted" title="El superíndice de cada cabecera es el orden recomendado de lectura al fichar">
-          Orden para fichar: <b className="text-vpv-accent">¹</b>Prio <b className="text-vpv-accent">²</b>Salto <b className="text-vpv-accent">³</b>Ronda <b className="text-vpv-accent">⁴</b>Disp <b className="text-vpv-accent">⁵</b>Tier <b className="text-vpv-accent">⁶</b>VORP <b className="text-vpv-accent">⁷</b>DefEq <b className="text-vpv-accent">⁸</b>Fiab
+          Orden para fichar: <b className="text-vpv-accent">¹</b>Prio <b className="text-vpv-accent">²</b>VORP <b className="text-vpv-accent">³</b>Salto <b className="text-vpv-accent">⁴</b>Ronda <b className="text-vpv-accent">⁵</b>Disp <b className="text-vpv-accent">⁶</b>Tier <b className="text-vpv-accent">⁷</b>DefEq <b className="text-vpv-accent">⁸</b>Fiab
         </span>
       </div>
 
@@ -434,7 +434,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
             className={`w-16 shrink-0 text-center hover:text-vpv-text ${sortKey === "position_tier" ? "text-vpv-accent" : ""}`}
           >
             Tier
-            <sup className="ml-0.5 text-[8px] font-bold text-vpv-accent" title="Orden de lectura para fichar: 5">5</sup>
+            <sup className="ml-0.5 text-[8px] font-bold text-vpv-accent" title="Orden de lectura para fichar: 6">6</sup>
             {sortKey === "position_tier" && (
               <span className="ml-0.5">{sortDir === "desc" ? "▼" : "▲"}</span>
             )}
@@ -445,7 +445,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
             className={`w-12 shrink-0 text-center hover:text-vpv-text ${sortKey === "overall_rank" ? "text-vpv-accent" : ""}`}
           >
             Ronda
-            <sup className="ml-0.5 text-[8px] font-bold text-vpv-accent" title="Orden de lectura para fichar: 3">3</sup>
+            <sup className="ml-0.5 text-[8px] font-bold text-vpv-accent" title="Orden de lectura para fichar: 4">4</sup>
             {sortKey === "overall_rank" && (
               <span className="ml-0.5">{sortDir === "desc" ? "▼" : "▲"}</span>
             )}
