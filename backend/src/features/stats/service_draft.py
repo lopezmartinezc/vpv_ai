@@ -64,14 +64,37 @@ N_HISTORY_SEASONS = 4
 # Admin player tags (fixed set) and how they adjust the draft Priority.
 # "titular" has no multiplier — it cancels the bench-risk discount instead
 # (the admin confirms the player starts). Tuneable.
-ALLOWED_TAGS = {"titular", "suplente", "penaltis", "gol", "lesion", "objetivo", "evitar"}
+ALLOWED_TAGS = {
+    "titular",
+    "rotacion",
+    "suplente",
+    "duda",
+    "penaltis",
+    "gol",
+    "lesion",
+    "objetivo",
+    "evitar",
+}
+
+# Role tags are AUTHORITATIVE: the admin knows the current pecking order better
+# than a projection from last season, so any of these REPLACES the model's
+# bench-risk guess instead of stacking with it (marking "suplente" on a player
+# the model already flagged used to compound to 0.75 x 0.75 = 0.56).
+ROLE_MULTIPLIER: dict[str, float] = {
+    "titular": 1.00,  # nailed-on starter
+    "rotacion": 0.88,  # rotates / first off the bench
+    "suplente": 0.75,  # bench
+}
+
 TAG_MULTIPLIER: dict[str, float] = {
-    "suplente": 0.75,
     "penaltis": 1.05,
     "gol": 1.10,  # natural goalscorer — ceiling bonus
     "lesion": 0.55,
     "objetivo": 1.20,
     "evitar": 0.40,
+    # "duda" is a visual to-do marker (check the news before drafting): no
+    # multiplier, because guessing a penalty for uncertainty is worse than
+    # flagging it and looking it up.
 }
 
 
@@ -555,10 +578,14 @@ class DraftValueService:
             # Base = pure model view (no tags): bench risk applies as detected.
             base_mult = risk * (0.75 if p.is_bench_risk else 1.0)
             p.priority_base = round(p.proj_rest_points * base_mult, 1)
-            # Adjusted = with admin tags: "titular" cancels the bench discount,
-            # the rest multiply. This is the master sort.
+            # Adjusted = with admin tags. A role tag (titular/rotacion/suplente)
+            # is authoritative and REPLACES the model's bench-risk discount;
+            # without one, the model's guess stands. Other tags then multiply.
             adj = risk
-            if p.is_bench_risk and "titular" not in p.tags:
+            role = next((t for t in p.tags if t in ROLE_MULTIPLIER), None)
+            if role is not None:
+                adj *= ROLE_MULTIPLIER[role]
+            elif p.is_bench_risk:
                 adj *= 0.75
             for tag in p.tags:
                 adj *= TAG_MULTIPLIER.get(tag, 1.0)

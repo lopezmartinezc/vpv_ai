@@ -8,7 +8,9 @@
  */
 export const PLAYER_TAGS: { key: string; label: string; cls: string }[] = [
   { key: "titular", label: "Titular", cls: "bg-green-500/20 text-green-300" },
+  { key: "rotacion", label: "Rotación", cls: "bg-teal-500/15 text-teal-300" },
   { key: "suplente", label: "Suplente", cls: "bg-amber-500/15 text-amber-300" },
+  { key: "duda", label: "Duda", cls: "bg-violet-500/15 text-violet-300" },
   { key: "penaltis", label: "Penaltis", cls: "bg-emerald-500/15 text-emerald-300" },
   { key: "gol", label: "Gol", cls: "bg-lime-500/15 text-lime-300" },
   { key: "lesion", label: "Lesión", cls: "bg-red-500/20 text-red-300" },
@@ -26,6 +28,8 @@ export const PLAYER_TAG_CLASSES: Record<string, string> = Object.fromEntries(
 /** Small emoji per tag, for compact rows where a full chip doesn't fit. */
 export const PLAYER_TAG_EMOJI: Record<string, string> = {
   titular: "⭐",
+  rotacion: "🔁",
+  duda: "❓",
   gol: "🥅",
   penaltis: "⚽",
   objetivo: "🎯",
