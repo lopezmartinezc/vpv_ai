@@ -106,6 +106,7 @@ interface MatchdayDetail {
 export default function AdminMarcaPage() {
   const { selectedSeason } = useSeason();
   const [matchdays, setMatchdays] = useState<MatchdaySummary[]>([]);
+  const [includePre, setIncludePre] = useState(false);
   const [selectedMatchdayNumber, setSelectedMatchdayNumber] = useState<number | null>(null);
   const [matchdayDetail, setMatchdayDetail] = useState<MatchdayDetail | null>(null);
   const [selectedMatchId, setSelectedMatchId] = useState<number | null>(null);
@@ -147,7 +148,7 @@ export default function AdminMarcaPage() {
         `/matchdays/${selectedSeason.id}?stats_ok_only=false`,
       )
       .then((d) => {
-        setMatchdays(d.matchdays.filter((m) => m.counts));
+        setMatchdays(d.matchdays);
         setSelectedMatchdayNumber(null);
         setMatchdayDetail(null);
         setSelectedMatchId(null);
@@ -382,12 +383,21 @@ export default function AdminMarcaPage() {
           className="rounded border border-vpv-border bg-vpv-bg px-2 py-1 text-xs text-vpv-text"
         >
           <option value="">— elige jornada —</option>
-          {matchdays.map((m) => (
+          {(includePre ? matchdays : matchdays.filter((m) => m.counts)).map((m) => (
             <option key={m.number} value={m.number}>
               J{m.number}
+              {!m.counts ? " (pre-draft)" : ""}
             </option>
           ))}
         </select>
+        <label className="flex items-center gap-1 text-xs text-vpv-text-muted">
+          <input
+            type="checkbox"
+            checked={includePre}
+            onChange={(e) => setIncludePre(e.target.checked)}
+          />
+          Incluir jornadas pre-draft
+        </label>
 
         {matchdayDetail && matchdayDetail.matches.length > 0 && (
           <>
