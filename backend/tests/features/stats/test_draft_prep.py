@@ -696,7 +696,7 @@ async def test_starter_replacement_and_next_gap(db_session) -> None:
     assert k1.replacement_level == pytest.approx(slot(third), abs=0.02)
     assert third.vorp == pytest.approx(0.0, abs=0.02)
 
-    by_prio = sorted(keepers, key=lambda p: -(p.priority or 0))
+    by_prio = sorted(keepers.values(), key=lambda p: -(p.priority or 0))
     for a, b in pairwise(by_prio):
         assert a.next_gap == pytest.approx((a.priority or 0) - (b.priority or 0), abs=0.11)
     assert by_prio[-1].next_gap is None
