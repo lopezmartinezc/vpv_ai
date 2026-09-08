@@ -179,6 +179,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
   const [loading, setLoading] = useState(true);
   const [posFilter, setPosFilter] = useState("");
   const [search, setSearch] = useState("");
+  const [hideDrafted, setHideDrafted] = useState(false);
   const [sortKey, setSortKey] = useState<DraftSortKey>("priority");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -225,6 +226,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
     if (!data) return [];
     let list = data.players;
     if (posFilter) list = list.filter((p) => p.position === posFilter);
+    if (hideDrafted) list = list.filter((p) => !p.is_drafted);
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(
@@ -244,7 +246,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
       );
     }
     return sorted(list, sortKey, sortDir);
-  }, [data, posFilter, search, sortKey, sortDir]);
+  }, [data, posFilter, search, hideDrafted, sortKey, sortDir]);
 
   // Positional scarcity: how deep the draftable pool runs per position.
   // Fewer players above replacement (vorp > 0) => scarcer => draft earlier.
@@ -389,6 +391,14 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
           placeholder="Buscar jugador o equipo..."
           className="rounded border border-vpv-border bg-vpv-bg px-3 py-1 text-xs text-vpv-text placeholder:text-vpv-text-muted"
         />
+        <label className="flex items-center gap-1 text-[10px] text-vpv-text-muted">
+          <input
+            type="checkbox"
+            checked={hideDrafted}
+            onChange={(e) => setHideDrafted(e.target.checked)}
+          />
+          Solo no seleccionados
+        </label>
         <span className="text-[10px] text-vpv-text-muted">{players.length} jug.</span>
         <button
           onClick={() => setShowModels((v) => !v)}
