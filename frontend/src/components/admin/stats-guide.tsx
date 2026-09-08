@@ -188,11 +188,16 @@ export function StatsGuide() {
           (Objetivo/Evitar/Lesión/…). Útil para ver cuánto estás moviendo tú el orden.
         </Metric>
         <Metric name="Tags (etiquetas de admin)" good="ajustan la Prioridad">
-          Abre la fila para marcarlas. <b className="text-vpv-text">Titular</b> anula el descuento
-          de banquillo; <b className="text-vpv-text">Objetivo</b> ×1.20, <b className="text-vpv-text">
-          Gol</b> ×1.10 (goleador nato), <b className="text-vpv-text">Penaltis</b> ×1.05,{" "}
-          <b className="text-vpv-text">Suplente</b> ×0.75, <b className="text-vpv-text">
-          Lesión</b> ×0.55, <b className="text-vpv-text">Evitar</b> ×0.40. No tocan VORP ni el valor
+          Abre la fila para marcarlas. Los tags de <b className="text-vpv-text">rol</b> mandan sobre
+          la estimación del modelo (la sustituyen, no se suman):{" "}
+          <b className="text-vpv-text">Titular</b> ×1.00, <b className="text-vpv-text">Rotación</b>{" "}
+          ×0.88 (juega pero rota / primer cambio), <b className="text-vpv-text">Suplente</b> ×0.75.
+          El resto multiplican: <b className="text-vpv-text">Objetivo</b> ×1.20,{" "}
+          <b className="text-vpv-text">Gol</b> ×1.10 (goleador nato),{" "}
+          <b className="text-vpv-text">Penaltis</b> ×1.05, <b className="text-vpv-text">Lesión</b>{" "}
+          ×0.55, <b className="text-vpv-text">Evitar</b> ×0.40.{" "}
+          <b className="text-vpv-text">Duda</b> no altera nada: es una marca para revisar al
+          jugador antes de ficharlo. No tocan VORP ni el valor
           efectivo, solo la Prioridad. Compartidas por temporada (solo admin).
         </Metric>
         <Metric name="+ Columnas (columnas adicionales)">

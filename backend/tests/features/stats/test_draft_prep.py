@@ -700,3 +700,53 @@ async def test_starter_replacement_and_next_gap(db_session) -> None:
     for a, b in pairwise(by_prio):
         assert a.next_gap == pytest.approx((a.priority or 0) - (b.priority or 0), abs=0.11)
     assert by_prio[-1].next_gap is None
+
+
+@pytest.mark.asyncio
+async def test_role_tags_are_authoritative(db_session) -> None:
+    """Role tags REPLACE the model's bench-risk guess instead of stacking:
+    'suplente' on an already-flagged player no longer compounds to x0.56, and
+    'rotacion' fills the gap between titular and suplente. 'duda' is inert."""
+    prior = Season(name="2025-2026", matchday_start=1, matchday_current=38, kind="league")
+    current = Season(
+        name="2026-2027", matchday_start=1, matchday_current=1, matchday_end=38, kind="league"
+    )
+    db_session.add_all([prior, current])
+    await db_session.flush()
+    p_team = Team(season_id=prior.id, name="A", slug="a")
+    c_team = Team(season_id=current.id, name="A", slug="a")
+    db_session.add_all([p_team, c_team])
+    await db_session.flush()
+    prior_mds = [Matchday(season_id=prior.id, number=n) for n in range(1, 11)]
+    db_session.add_all(prior_mds)
+    await db_session.flush()
+    # 10 games (< 22) -> is_bench_risk True -> baseline already carries x0.75.
+    await _prior_player(db_session, prior, p_team, "star", "MED", avg=6, mds=prior_mds)
+    _roster_player(db_session, current, c_team, "star", "MED")
+    await db_session.flush()
+
+    svc = DraftValueService(db_session)
+    base = {p.slug: p for p in (await svc.get_draft_values(current.id)).players}["star"]
+    assert base.is_bench_risk is True and base.priority is not None
+    base_prio = base.priority
+    pid = base.player_id
+    no_bench = base_prio / 0.75  # priority with the model discount removed
+
+    async def prio_with(tags: list[str]) -> float:
+        await svc.upsert_override(current.id, pid, None, None, tags)
+        row = {p.slug: p for p in (await svc.get_draft_values(current.id)).players}["star"]
+        assert row.tags == tags  # new tags round-trip (are allowed)
+        assert row.priority is not None
+        return row.priority
+
+    # suplente REPLACES the model's 0.75 (no longer 0.75 x 0.75 = 0.56).
+    assert await prio_with(["suplente"]) == pytest.approx(no_bench * 0.75, rel=1e-3)
+    assert await prio_with(["suplente"]) == pytest.approx(base_prio, rel=1e-3)
+    # rotacion sits between suplente and titular.
+    rot = await prio_with(["rotacion"])
+    assert rot == pytest.approx(no_bench * 0.88, rel=1e-3)
+    assert base_prio < rot < no_bench
+    # duda is a visual marker only.
+    assert await prio_with(["duda"]) == pytest.approx(base_prio, rel=1e-3)
+    # a role tag still combines with the value tags.
+    assert await prio_with(["rotacion", "gol"]) == pytest.approx(no_bench * 0.88 * 1.10, rel=1e-3)
