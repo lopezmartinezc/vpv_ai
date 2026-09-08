@@ -1110,6 +1110,8 @@ export interface DraftValuePlayer {
   position_rank?: number | null;
   // F2: reliability + durability.
   event_share?: number | null;
+  // Share of the reference season's matchdays the player featured in (0..1).
+  participation?: number | null;
   exp_games_remaining?: number | null;
   proj_rest_points?: number | null;
   // Preseason draft board.

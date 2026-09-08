@@ -80,6 +80,10 @@ class DraftValuePlayer(BaseModel):
     event_share: float | None = None
     exp_games_remaining: float | None = None
     proj_rest_points: float | None = None
+    # Share of the reference season's matchdays the player featured in (0..1).
+    # Drives exp_games_remaining and the per-slot VORP. 1.0 for a manual-value
+    # newcomer with no history (the admin asserts he will play).
+    participation: float | None = None
 
     # Preseason draft board.
     # auto_projection: value the model projects (None for a brand-new player

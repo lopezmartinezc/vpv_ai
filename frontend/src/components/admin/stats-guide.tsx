@@ -213,14 +213,16 @@ export function StatsGuide() {
           Tier posicional (elite / sólido / normal / flojo). Los porteros salen «Equipo»:
           su valor depende del equipo, no de una escala de puntos.
         </Metric>
-        <Metric name="VORP (escasez)" good="alto = posición escasa">
-          Valor sobre reemplazo posicional = valor proyectado − valor del jugador de
-          reemplazo en su posición. El reemplazo es <b className="text-vpv-text">el primero que te
-          quedaría si no draftearas uno</b>: participantes × plazas titulares (1-4-3-3 → POR 1,
-          DEF 4, MED 3, DEL 3). Backtest 7 temporadas: misma capacidad predictiva que una
-          profundidad fija, pero mucho mejor calibrado (los porteros ya no se inflan por
-          compararse con el 35º). No es el orden maestro (lo es Prioridad), sino el
-          diagnóstico de <i>escasez</i>: pocas opciones con VORP &gt; 0 = draftéala antes.
+        <Metric name="VORP (escasez, por plaza)" good="alto = posición escasa">
+          Valor sobre reemplazo <b className="text-vpv-text">por plaza</b>: (valor por partido ×
+          participación) − el mismo valor del jugador de reemplazo en su posición. La
+          participación (fracción de jornadas que jugó) evita que un jugador bueno-cuando-juega
+          pero que apenas juega salga arriba. El reemplazo es <b className="text-vpv-text">el primero
+          que te quedaría si no draftearas uno</b>: participantes × plazas titulares (1-4-3-3 →
+          POR 1, DEF 4, MED 3, DEL 3). Backtest 7 temporadas: ρ 0.45 (vs 0.38 del VORP por
+          partido) y cero jugadores de baja participación en el top-30. No es el orden maestro
+          (lo es Prioridad), sino el diagnóstico de <i>escasez</i>: pocas opciones con
+          VORP &gt; 0 = draftéala antes.
         </Metric>
         <Metric name="Salto (al siguiente)" good="grande = cógelo ya">
           Prioridad que pierdes si NO coges a este jugador ahora y esperas al siguiente
