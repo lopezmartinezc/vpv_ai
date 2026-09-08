@@ -195,10 +195,10 @@ export function StatsGuide() {
           Lesión</b> ×0.55, <b className="text-vpv-text">Evitar</b> ×0.40. No tocan VORP ni el valor
           efectivo, solo la Prioridad. Compartidas por temporada (solo admin).
         </Metric>
-        <Metric name="+ Modelos (columnas de sub-modelos)">
-          Las columnas Ens, Avg, Form, Stab, Prod, Trend, Disp y Cons están ocultas por defecto
-          para que la tabla quepa; muéstralas con el botón <b className="text-vpv-text">+ Modelos</b>.
-          Siguen siendo ordenables. Las de abajo describen cada una.
+        <Metric name="+ Columnas (columnas adicionales)">
+          La vista por defecto muestra lo esencial y cabe sin scroll. Las columnas Efect, Manual,
+          PtsRes y los sub-modelos (Ens, Avg, Form, Stab, Prod, Trend, Disp, Cons) están ocultas;
+          muéstralas con el botón <b className="text-vpv-text">+ Columnas</b>. Siguen siendo ordenables.
         </Metric>
         <Metric name="DefEq (defensa del equipo)" good="< 1.1 goles/partido">
           Goles que encaja el equipo por partido (temporada pasada; media de la liga como
