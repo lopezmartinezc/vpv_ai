@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { useSeason } from "@/contexts/season-context";
@@ -87,6 +87,24 @@ export default function LiveDraftPage() {
   const [adminStats, setAdminStats] = useState<DraftPlayerStatsResponse | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showScoreHelp, setShowScoreHelp] = useState(false);
+  // Suggestion ordering. Backtested (7 seasons): Priority predicts season
+  // totals best (rho 0.464); per-slot VORP (scarcity) builds a better real XI
+  // in recent seasons. They're complementary, so let the admin choose.
+  const [suggestOrder, setSuggestOrder] = useState<"priority" | "vorp">("priority");
+  // Top-5 per position by the chosen metric, computed client-side from the
+  // full unpicked pool (adminStats.players), so switching order is instant.
+  const liveSuggestions = useMemo<Record<string, number[]>>(() => {
+    if (!adminStats) return {};
+    const out: Record<string, number[]> = {};
+    for (const pos of ["POR", "DEF", "MED", "DEL"]) {
+      out[pos] = Object.values(adminStats.players)
+        .filter((s) => s.position === pos && s[suggestOrder] != null)
+        .sort((a, b) => (b[suggestOrder] ?? -1e9) - (a[suggestOrder] ?? -1e9))
+        .slice(0, 5)
+        .map((s) => s.player_id);
+    }
+    return out;
+  }, [adminStats, suggestOrder]);
   // This-season performance, lazy-loaded once and cached (for the player detail).
   const [seasonPerf, setSeasonPerf] = useState<Record<number, SeasonPerf> | null>(null);
   const [perfLoading, setPerfLoading] = useState(false);
@@ -615,15 +633,41 @@ export default function LiveDraftPage() {
             {showSuggestions ? "Ocultar sugerencias" : "Sugerencias de pick (Admin)"}
           </button>
           {showSuggestions && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-vpv-text-muted">
+              <span>Ordenar por:</span>
+              {(
+                [
+                  ["priority", "Prioridad", "Total proyectado ajustado por riesgo y tags. Predice mejor los puntos (ρ 0.46). Ideal para rondas iniciales."],
+                  ["vorp", "VORP (escasez)", "Valor por plaza sobre el reemplazo de su posición. Tiene en cuenta la escasez: construye mejor el XI cuando una posición se agota."],
+                ] as const
+              ).map(([key, label, title]) => (
+                <button
+                  key={key}
+                  onClick={() => setSuggestOrder(key)}
+                  title={title}
+                  className={`rounded px-2 py-0.5 font-medium transition-colors ${
+                    suggestOrder === key
+                      ? "bg-vpv-accent text-white"
+                      : "border border-vpv-border text-vpv-text-muted hover:text-vpv-text"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+              <span className="text-vpv-text-muted/70">— el número de cada fila es el de la métrica elegida</span>
+            </div>
+          )}
+          {showSuggestions && (
             <div className="mt-2 grid grid-cols-1 gap-2 lg:grid-cols-2">
               {(["POR", "DEF", "MED", "DEL"] as const).map((pos) => {
-                const ids = adminStats.suggestions[pos] ?? [];
+                const ids = liveSuggestions[pos] ?? [];
                 return (
                   <div key={pos} className="rounded-lg border border-vpv-card-border bg-vpv-card p-2">
                     <p className={`mb-1 text-[11px] font-bold uppercase tracking-wider ${POS_COLORS[pos]?.split(" ")[1] ?? ""}`}>{pos}</p>
                     {ids.map((pid) => {
                       const s = adminStats.players[String(pid)];
                       if (!s) return null;
+                      const metric = s[suggestOrder];
                       const detail =
                         pos === "POR" && s.team_goals_conceded != null
                           ? `DefEq ${s.team_goals_conceded.toFixed(1)}`
@@ -661,7 +705,7 @@ export default function LiveDraftPage() {
                                 </span>
                               </span>
                               <span className="tabular-nums font-bold text-vpv-accent">
-                                {s.priority != null ? s.priority.toFixed(0) : "—"}
+                                {metric != null ? metric.toFixed(suggestOrder === "vorp" ? 1 : 0) : "—"}
                               </span>
                             </button>
                             <button
@@ -738,7 +782,7 @@ export default function LiveDraftPage() {
             picking={picking}
             onPick={handlePick}
             adminStats={isAdmin ? adminStats : null}
-            suggestions={isAdmin ? adminStats?.suggestions ?? null : null}
+            suggestions={isAdmin ? liveSuggestions : null}
             seasonPerf={seasonPerf}
             perfLoading={perfLoading}
             openDetailId={openDetailId}
@@ -777,7 +821,7 @@ export default function LiveDraftPage() {
               picking={picking}
               onPick={handlePick}
               adminStats={adminStats}
-              suggestions={adminStats?.suggestions ?? null}
+              suggestions={liveSuggestions}
               seasonPerf={seasonPerf}
               perfLoading={perfLoading}
               openDetailId={openDetailId}
