@@ -1,4 +1,4 @@
-"""The six tools the draft assistant can call.
+"""The tools the draft assistant can call.
 
 Every one of them reads through the services the UI already uses
 (``DraftValueService``, ``DraftService``), so the chat and the board can never
@@ -11,11 +11,13 @@ tokens for the same information and the model reads it just as well.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.draft_assistant.tools import ToolSpec
+from src.features.draft_assistant.turn_math import next_pick_for, upcoming_picks
 from src.features.drafts.schemas import DraftDetailResponse
 from src.features.drafts.service import DraftService
 from src.features.stats.schemas_draft import DraftValuePlayer, DraftValueResponse
@@ -53,26 +55,39 @@ el acierto al elegir. Los porteros son mas predecibles (juegan todo, siguen a la
 defensa del equipo), lo que juega ligeramente a su favor frente a la tabla."""
 
 
+# The board aggregates every player_stats row of the last N seasons (~400ms of
+# SQL plus the projection in Python), and none of that changes while a draft is
+# running — only who owns whom, which is read fresh from the picks below. So it
+# is cached briefly across requests to keep follow-up questions snappy.
+#
+# The staleness that IS possible: an admin tag or manual value edited on the
+# board takes up to BOARD_TTL_SECONDS to reach the assistant.
+_BOARD_CACHE: dict[int, tuple[float, DraftValueResponse]] = {}
+BOARD_TTL_SECONDS = 60.0
+
+
 @dataclass
 class AssistantContext:
     """Everything the tools are allowed to touch, fixed by the caller.
 
-    The model can influence the arguments of a tool, never these. Memoised
-    because the board is a heavy computation and one question can trigger
-    several tool calls.
+    The model can influence the arguments of a tool, never these.
     """
 
     session: AsyncSession
     season_id: int
     phase: str
     anonymize_participants: bool = True
-    _board: DraftValueResponse | None = field(default=None, init=False, repr=False)
     _draft: DraftDetailResponse | None = field(default=None, init=False, repr=False)
+    _picked: set[int] | None = field(default=None, init=False, repr=False)
 
     async def board(self) -> DraftValueResponse:
-        if self._board is None:
-            self._board = await DraftValueService(self.session).get_draft_values(self.season_id)
-        return self._board
+        now = time.monotonic()
+        cached = _BOARD_CACHE.get(self.season_id)
+        if cached is not None and now - cached[0] < BOARD_TTL_SECONDS:
+            return cached[1]
+        board = await DraftValueService(self.session).get_draft_values(self.season_id)
+        _BOARD_CACHE[self.season_id] = (now, board)
+        return board
 
     async def draft(self) -> DraftDetailResponse:
         if self._draft is None:
@@ -80,6 +95,18 @@ class AssistantContext:
                 self.season_id, self.phase
             )
         return self._draft
+
+    async def picked_ids(self) -> set[int]:
+        """Players already taken, read from the live picks.
+
+        Deliberately NOT ``DraftValuePlayer.is_drafted``: that flag rides along
+        with the cached board and would go stale exactly when it matters most —
+        the assistant would keep recommending a player somebody just took.
+        """
+        if self._picked is None:
+            draft = await self.draft()
+            self._picked = {pk.player_id for pk in draft.picks}
+        return self._picked
 
     def participant_label(self, participant_id: int, display_name: str) -> str:
         """Names of other people are not needed for the reasoning, so by default
@@ -89,14 +116,29 @@ class AssistantContext:
             return display_name
         return f"Participante {participant_id}"
 
+    def ordered_participant_ids(self, draft: DraftDetailResponse) -> list[int]:
+        """Draft order, with the same deterministic tiebreak the draft itself
+        uses — id — so a missing or duplicated draft_order cannot make the
+        assistant project a different order than the board shows."""
+        return [
+            p.participant_id
+            for p in sorted(
+                draft.participants,
+                key=lambda x: (
+                    x.draft_order if x.draft_order is not None else 10**9,
+                    x.participant_id,
+                ),
+            )
+        ]
+
 
 def _fmt(value: float | None, digits: int = 1) -> str:
     return "-" if value is None else f"{value:.{digits}f}"
 
 
-def _player_row(p: DraftValuePlayer) -> str:
+def _player_row(p: DraftValuePlayer, drafted: bool) -> str:
     flags = []
-    if p.is_drafted:
+    if drafted:
         flags.append("FICHADO")
     if p.is_bench_risk:
         flags.append("banquillo")
@@ -116,6 +158,20 @@ def _player_row(p: DraftValuePlayer) -> str:
 
 
 def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
+    def _find_participant(draft: DraftDetailResponse, needle: str) -> int | None:
+        """Resolve a participant by whatever the model was shown.
+
+        With anonymisation on, the model only ever sees "Participante 7", so it
+        can only ask by that; with it off it sees real names. Matching both means
+        the tool works either way without the model knowing which mode is on.
+        """
+        want = needle.lower().strip()
+        for p in draft.participants:
+            label = ctx.participant_label(p.participant_id, p.display_name).lower()
+            if want in label or want in p.display_name.lower():
+                return p.participant_id
+        return None
+
     async def buscar_jugadores(
         posicion: str | None = None,
         equipo: str | None = None,
@@ -124,6 +180,7 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
         limite: int = 20,
     ) -> str:
         board = await ctx.board()
+        picked = await ctx.picked_ids()
         rows = list(board.players)
         if posicion:
             rows = [p for p in rows if p.position == posicion.upper()]
@@ -131,7 +188,7 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
             needle = equipo.lower()
             rows = [p for p in rows if needle in p.team_name.lower()]
         if solo_disponibles:
-            rows = [p for p in rows if not p.is_drafted]
+            rows = [p for p in rows if p.player_id not in picked]
 
         key = (lambda p: p.vorp or -1e9) if orden == "vorp" else (lambda p: p.priority or -1e9)
         rows.sort(key=key, reverse=True)
@@ -140,10 +197,11 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
         if not rows:
             return "Sin resultados con esos filtros."
         header = f"{len(rows)} jugadores (orden: {orden}):"
-        return header + "\n" + "\n".join(_player_row(p) for p in rows)
+        return header + "\n" + "\n".join(_player_row(p, p.player_id in picked) for p in rows)
 
     async def detalle_jugador(nombre: str) -> str:
         board = await ctx.board()
+        picked = await ctx.picked_ids()
         needle = nombre.lower().strip()
         matches = [p for p in board.players if needle in p.display_name.lower()]
         if not matches:
@@ -171,8 +229,8 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
                 f"  Valor manual {_fmt(p.manual_value)} | nota: {p.note or '-'} | "
                 f"tags: {', '.join(p.tags) or '-'}\n"
                 f"  Flags: pico={p.is_peak_year} banquillo={p.is_bench_risk} "
-                f"penaltis={p.is_penalty_taker} nuevo={p.is_new} fichado={p.is_drafted} "
-                f"cambio_equipo={p.team_changed}"
+                f"penaltis={p.is_penalty_taker} nuevo={p.is_new} "
+                f"fichado={p.player_id in picked} cambio_equipo={p.team_changed}"
             )
         return "\n\n".join(out)
 
@@ -180,37 +238,137 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
         draft = await ctx.draft()
         total = len(draft.picks)
         by_id = {p.participant_id: p for p in draft.participants}
+        n = len(draft.participants)
         turn = "draft no iniciado o terminado"
         if draft.next_participant_id is not None:
             p = by_id.get(draft.next_participant_id)
             if p is not None:
                 turn = ctx.participant_label(p.participant_id, p.display_name)
-        recent = draft.picks[-10:]
         lines = [
             f"Draft {draft.phase} ({draft.draft_type}), estado {draft.status}.",
-            f"{total} picks hechos. Siguiente pick: #{total + 1}, le toca a {turn}.",
-            f"{len(draft.participants)} participantes.",
+            f"{n} participantes, {total} picks hechos.",
+            f"Siguiente pick: #{total + 1}"
+            + (f" (ronda {total // n + 1})" if n else "")
+            + f", le toca a {turn}.",
         ]
+        recent = draft.picks[-10:]
         if recent:
-            lines.append("Ultimos picks:")
+            lines.append(f"Ultimos {len(recent)} picks (usa picks_realizados para el resto):")
             for pick in recent:
                 who = ctx.participant_label(pick.participant_id, pick.display_name)
                 lines.append(
-                    f"  #{pick.pick_number} (ronda {pick.round_number}) {who} -> "
+                    f"  #{pick.pick_number} (R{pick.round_number}) {who} -> "
                     f"{pick.player_name} ({pick.position}, {pick.team_name})"
                 )
+        return "\n".join(lines)
+
+    async def picks_realizados(
+        participante: str | None = None,
+        posicion: str | None = None,
+        equipo: str | None = None,
+        ronda: int | None = None,
+        limite: int = 40,
+    ) -> str:
+        draft = await ctx.draft()
+        rows = list(draft.picks)
+        if participante:
+            target = _find_participant(draft, participante)
+            if target is None:
+                return f"No encuentro al participante '{participante}'."
+            rows = [pk for pk in rows if pk.participant_id == target]
+        if posicion:
+            rows = [pk for pk in rows if pk.position == posicion.upper()]
+        if equipo:
+            needle = equipo.lower()
+            rows = [pk for pk in rows if needle in (pk.team_name or "").lower()]
+        if ronda is not None:
+            rows = [pk for pk in rows if pk.round_number == ronda]
+
+        total = len(rows)
+        if total == 0:
+            return "Ningun pick coincide con esos filtros."
+        # Most recent first: mid-draft the question is almost always "what just
+        # went", not "what went in round 1".
+        rows = sorted(rows, key=lambda pk: pk.pick_number, reverse=True)[:limite]
+        header = f"{total} picks coinciden" + (
+            f", mostrando {len(rows)}" if total > len(rows) else ""
+        )
+        lines = [header + " (mas reciente primero):"]
+        for pk in rows:
+            who = ctx.participant_label(pk.participant_id, pk.display_name)
+            dropped = f" (suelta a {pk.dropped_player_name})" if pk.dropped_player_name else ""
+            lines.append(
+                f"  #{pk.pick_number} (R{pk.round_number}) {who} -> "
+                f"{pk.player_name} ({pk.position}, {pk.team_name}){dropped}"
+            )
+        return "\n".join(lines)
+
+    async def proximos_turnos(cuantos: int = 12) -> str:
+        """Who picks next, and how long each participant waits for their turn."""
+        draft = await ctx.draft()
+        ordered = ctx.ordered_participant_ids(draft)
+        if not ordered:
+            return "El draft no tiene participantes con orden asignado."
+        next_pick = len(draft.picks) + 1
+        by_id = {p.participant_id: p for p in draft.participants}
+
+        def label(pid: int) -> str:
+            p = by_id.get(pid)
+            return ctx.participant_label(pid, p.display_name if p else str(pid))
+
+        lines = [
+            f"Tipo de draft: {draft.draft_type} "
+            f"({'serpiente: las rondas pares van al reves' if draft.draft_type == 'snake' else 'lineal: todas las rondas en el mismo orden'})."
+        ]
+        upcoming = upcoming_picks(next_pick, draft.draft_type, ordered, cuantos)
+        lines.append(f"Proximos {len(upcoming)} picks:")
+        for i, up in enumerate(upcoming):
+            marker = "  <- AHORA" if i == 0 else ""
+            lines.append(
+                f"  #{up.pick_number} (R{up.round_number}) {label(up.participant_id)}{marker}"
+            )
+
+        lines.append("Cuanto espera cada uno hasta su siguiente turno:")
+        for pid in ordered:
+            mine = next(
+                (u.pick_number for u in upcoming if u.participant_id == pid),
+                next_pick_for(pid, next_pick - 1, draft.draft_type, ordered),
+            )
+            if mine is None:
+                continue
+            following = next_pick_for(pid, mine, draft.draft_type, ordered)
+            gap = (
+                f", y luego el #{following} ({following - mine - 1} picks de espera)"
+                if following
+                else ""
+            )
+            lines.append(f"  {label(pid)}: elige en el #{mine}{gap}")
+        return "\n".join(lines)
+
+    async def plantillas_todas() -> str:
+        """Every participant's shape at once — who is short of what."""
+        draft = await ctx.draft()
+        lines = [
+            "Reparto por participante (POR/DEF/MED/DEL = total). "
+            "Plazas de titular: POR 1, DEF 4, MED 3, DEL 3."
+        ]
+        for p in draft.participants:
+            owned = [pk for pk in draft.picks if pk.participant_id == p.participant_id]
+            counts = {pos: sum(1 for pk in owned if pk.position == pos) for pos in POSITIONS}
+            short = [pos for pos in POSITIONS if counts[pos] < STARTER_SLOTS[pos]]
+            gap = f"  <- sin cubrir titulares en {', '.join(short)}" if short else ""
+            lines.append(
+                f"  {ctx.participant_label(p.participant_id, p.display_name)}: "
+                + "/".join(str(counts[pos]) for pos in POSITIONS)
+                + f" = {len(owned)} de 26{gap}"
+            )
         return "\n".join(lines)
 
     async def plantilla(participante: str | None = None) -> str:
         draft = await ctx.draft()
         target_id: int | None = None
         if participante:
-            needle = participante.lower()
-            for p in draft.participants:
-                label = ctx.participant_label(p.participant_id, p.display_name).lower()
-                if needle in label or needle in p.display_name.lower():
-                    target_id = p.participant_id
-                    break
+            target_id = _find_participant(draft, participante)
             if target_id is None:
                 return f"No encuentro al participante '{participante}'."
         else:
@@ -234,7 +392,8 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
 
     async def escasez_posicional() -> str:
         board = await ctx.board()
-        available = [p for p in board.players if not p.is_drafted]
+        picked = await ctx.picked_ids()
+        available = [p for p in board.players if p.player_id not in picked]
         lines = ["Escasez AHORA MISMO entre los disponibles (Prioridad y VORP del tablero):"]
         for pos in POSITIONS:
             rows = sorted(
@@ -332,6 +491,66 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
             ),
             parameters={"type": "object", "properties": {}, "required": []},
             handler=estado_draft,
+        ),
+        ToolSpec(
+            name="picks_realizados",
+            description=(
+                "Consulta el historico COMPLETO de picks del draft, filtrable por participante, "
+                "posicion, equipo o ronda. Llamala cuando pregunten que se ha fichado ya, quien "
+                "cogio a alguien, cuantos de un equipo han salido, o que paso en una ronda. "
+                "estado_draft solo enseña los 10 ultimos; para el resto usa esta."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "participante": {
+                        "type": "string",
+                        "description": "Nombre o etiqueta del participante. Omitir para todos.",
+                    },
+                    "posicion": {"type": "string", "enum": list(POSITIONS)},
+                    "equipo": {
+                        "type": "string",
+                        "description": "Equipo de La Liga (coincidencia parcial).",
+                    },
+                    "ronda": {"type": "integer", "minimum": 1, "maximum": 30},
+                    "limite": {"type": "integer", "minimum": 1, "maximum": 100},
+                },
+                "required": [],
+            },
+            handler=picks_realizados,
+        ),
+        ToolSpec(
+            name="proximos_turnos",
+            description=(
+                "Orden de los proximos picks y, para cada participante, en que pick elige y "
+                "cuantos picks espera hasta el siguiente. Llamala SIEMPRE que la pregunta sea "
+                "si conviene esperar a un jugador, a quien le toca, cuanto falta para volver a "
+                "elegir, o quien queda por elegir en esta ronda. En draft serpiente la espera "
+                "es muy desigual: en el giro se elige dos veces seguidas."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "cuantos": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 60,
+                        "description": "Cuantos picks futuros listar (por defecto 12).",
+                    }
+                },
+                "required": [],
+            },
+            handler=proximos_turnos,
+        ),
+        ToolSpec(
+            name="plantillas_todas",
+            description=(
+                "Reparto por posicion de TODOS los participantes de un vistazo, señalando a "
+                "quien le faltan titulares. Llamala para ver quien va corto de que, o para "
+                "anticipar que posicion van a atacar los demas antes de tu proximo turno."
+            ),
+            parameters={"type": "object", "properties": {}, "required": []},
+            handler=plantillas_todas,
         ),
         ToolSpec(
             name="plantilla",

@@ -74,7 +74,8 @@ que el chat y el tablero no pueden discrepar.
 | Ruta | Qué hace |
 |---|---|
 | `backend/src/features/draft_assistant/tools.py` | `ToolSpec`, adaptadores por proveedor, `run_tool` (la frontera de seguridad) |
-| `backend/src/features/draft_assistant/board_tools.py` | Las 6 herramientas sobre los servicios existentes |
+| `backend/src/features/draft_assistant/board_tools.py` | Las 9 herramientas sobre los servicios existentes + caché del tablero |
+| `backend/src/features/draft_assistant/turn_math.py` | Proyección del orden serpiente (próximos turnos, espera hasta el siguiente) |
 | `backend/src/features/draft_assistant/providers/base.py` | Contrato común (`AssistantProvider`, `ChatMessage`, `AssistantReply`) |
 | `backend/src/features/draft_assistant/providers/anthropic_provider.py` | Messages API + bucle manual |
 | `backend/src/features/draft_assistant/providers/openai_provider.py` | Responses API + bucle manual |
@@ -103,6 +104,22 @@ justo el objetivo de la abstracción.
 La de OpenAI es la **Responses API** del SDK 3.x, no la vieja chat-completions:
 la forma de la herramienta es plana, no anidada bajo `"function"`.
 
+### Velocidad
+
+El tablero agrega todas las filas de `player_stats` de las últimas temporadas
+(~400 ms de SQL medidos, más la proyección en Python). Nada de eso cambia
+mientras corre un draft, así que se **cachea 60 s** por temporada
+(`BOARD_TTL_SECONDS`) y las preguntas seguidas no lo recalculan.
+
+Lo que **no** se cachea es quién está fichado: se lee siempre de los picks en
+vivo (`ctx.picked_ids()`), nunca del `is_drafted` que viaja con el tablero
+cacheado. Si se confiara en ese flag, el asistente seguiría recomendando a un
+jugador que acaban de coger — el peor fallo posible en mitad de un draft. Hay un
+test que lo fija.
+
+La caducidad que sí existe: un tag o un valor manual editados en el tablero
+tardan hasta 60 s en llegar al asistente.
+
 ### Limitación conocida del historial
 
 La conversación se guarda como texto plano usuario/asistente. Las llamadas a
@@ -121,14 +138,31 @@ cuesta una vuelta más pero nunca da un dato viejo.
 |---|---|
 | `buscar_jugadores(posicion?, equipo?, solo_disponibles?, orden?, limite?)` | Filas del tablero: Prio, Base, VORP, Salto, Tier, Disp, tags, banderas |
 | `detalle_jugador(nombre)` | Ficha completa: métricas, histórico, Marca/AS, flags, valor manual y nota |
-| `estado_draft()` | Picks hechos, siguiente pick, a quién le toca, últimos 10 picks |
+| `estado_draft()` | Resumen: picks hechos, siguiente pick, a quién le toca, últimos 10 |
+| `picks_realizados(participante?, posicion?, equipo?, ronda?, limite?)` | El histórico **completo** de picks, filtrable |
+| `proximos_turnos(cuantos?)` | Orden de los próximos picks y **cuántos picks espera cada uno** hasta su siguiente turno |
 | `plantilla(participante?)` | Reparto por posición vs. plazas de titular. Sin argumento, el del turno |
+| `plantillas_todas()` | El reparto de **todos** los participantes de un vistazo, señalando a quién le faltan titulares |
 | `escasez_posicional()` | Por posición y entre los disponibles AHORA: mejor, caída al 3º, cuántos superan el reemplazo |
 | `escasez_historica()` | La tabla de 8 temporadas de la sección 7 (dato fijo) |
 
 Preguntas como *"con el pick 5, ¿me interesa un portero top o espero?"* se
-responden encadenando `estado_draft` → `escasez_posicional` →
+responden encadenando `proximos_turnos` → `escasez_posicional` →
 `buscar_jugadores(POR)` → `escasez_historica`, con números reales en cada paso.
+
+### Por qué `proximos_turnos` es la clave
+
+"¿Puedo esperar a este jugador?" no depende del jugador, depende de **cuántos
+picks pasan hasta que vuelves a elegir**. En serpiente esa distancia es muy
+desigual: quien está en el giro elige **dos veces seguidas**, quien está arriba
+del orden espera **casi dos rondas enteras**. Sin ese número, el consejo de
+esperar puede ser justo el contrario del correcto — por eso el prompt obliga a
+consultarlo antes de responder nada sobre timing.
+
+La matemática vive en `turn_math.py` y se apoya en el
+`_get_participant_for_pick` del servicio de drafts, así que la regla de la
+serpiente está definida en un solo sitio y el asistente no puede proyectar un
+orden distinto del que muestra la pantalla.
 
 ---
 
@@ -266,10 +300,10 @@ resuelta en el backend.
 - **Streaming.** Ahora la respuesta llega de golpe: con 2-3 vueltas de
   herramientas son 10-20 segundos de spinner. Funciona, pero en mitad de un draft
   se hace largo. SSE por turno sería la mejora obvia.
-- **Aritmética de serpiente.** Conocida la posición de pick, la app sabe los turnos
-  (5 → 18 → 31…) y ya tiene la columna Salto; cruzarlas daría *"si esperas al pick
-  18, en portería pierdes ~X"* sin coste por token. Es la pregunta que originó
-  todo esto y merece ser una herramienta propia (o directamente una columna).
+- **Aritmética de serpiente en la UI.** El asistente ya la tiene
+  (`proximos_turnos`), pero seguiría siendo útil como columna o aviso en el
+  tablero, sin coste por token: *"si esperas al pick 18, en portería pierdes ~X"*.
+- **Invalidar la caché al editar un tag**, en vez de esperar los 60 s.
 - **Comparar proveedores.** El toggle existe; falta usarlo en un draft real y ver
   si uno responde mejor que el otro para este trabajo.
 
