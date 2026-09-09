@@ -12,11 +12,29 @@ that is a good trade.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
 from src.features.draft_assistant.tools import ToolSpec
+
+
+@dataclass(frozen=True)
+class ProgressEvent:
+    """Something worth showing the user while a question is still running.
+
+    A question spends its 10-20 seconds in tool rounds, not in writing the
+    answer, so "consultando buscar_jugadores…" as it happens is most of the
+    perceived wait. ``kind`` is "tool" for now; the shape leaves room for
+    token streaming later without changing the contract.
+    """
+
+    kind: Literal["tool"]
+    name: str
+    arguments: dict[str, Any] = field(default_factory=dict)
+
+
+ProgressCallback = Callable[[ProgressEvent], Awaitable[None]]
 
 
 @dataclass(frozen=True)
@@ -55,4 +73,5 @@ class AssistantProvider(Protocol):
         system: str,
         messages: Sequence[ChatMessage],
         tools: Sequence[ToolSpec],
+        on_progress: ProgressCallback | None = None,
     ) -> AssistantReply: ...

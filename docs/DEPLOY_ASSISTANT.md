@@ -83,7 +83,7 @@ cat >> /opt/vpv/backend/.env <<'EOF'
 # --- Asistente de draft ---
 ASSISTANT_ENABLED=true
 # Proveedor y modelos por defecto; el chat deja cambiarlos en caliente
-ASSISTANT_PROVIDER=anthropic
+ASSISTANT_PROVIDER=openai
 ANTHROPIC_API_KEY=sk-ant-PON-AQUI-LA-TUYA
 OPENAI_API_KEY=sk-PON-AQUI-LA-TUYA
 ASSISTANT_ANTHROPIC_MODEL=claude-opus-5
@@ -166,7 +166,7 @@ puedes comparar en la misma conversación.
 Para cambiar el **valor por defecto** al abrir el panel:
 
 ```bash
-sed -i 's/^ASSISTANT_PROVIDER=.*/ASSISTANT_PROVIDER=openai/' /opt/vpv/backend/.env
+sed -i 's/^ASSISTANT_PROVIDER=.*/ASSISTANT_PROVIDER=anthropic/' /opt/vpv/backend/.env
 sudo systemctl restart vpv-backend
 ```
 

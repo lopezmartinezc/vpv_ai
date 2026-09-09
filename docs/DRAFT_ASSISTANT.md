@@ -1,8 +1,8 @@
 # Asistente de draft — chat sobre el tablero en vivo
 
 > Estado: **implementado**, desactivado por defecto (`ASSISTANT_ENABLED=false`).
-> Solo admin. Funciona con **Anthropic (Claude)** o **OpenAI (GPT)**, elegible
-> por variable de entorno.
+> Solo admin. Funciona con **OpenAI (GPT)** por defecto o **Anthropic (Claude)**,
+> elegible desde el propio chat.
 
 Panel de chat dentro del draft en vivo (`/drafts/live/[draftId]`) que tiene como
 base de conocimiento las estadísticas que ya calcula la app y **consulta la BD en
@@ -24,7 +24,7 @@ sus propias webs, no una app propia. Hace falta una **API key** de
 ```bash
 # /opt/vpv/backend/.env
 ASSISTANT_ENABLED=true
-ASSISTANT_PROVIDER=anthropic          # o "openai"
+ASSISTANT_PROVIDER=openai             # o "anthropic"
 ANTHROPIC_API_KEY=sk-ant-...          # solo la del proveedor que uses
 OPENAI_API_KEY=
 ASSISTANT_ANTHROPIC_MODEL=claude-opus-5
@@ -119,6 +119,18 @@ test que lo fija.
 
 La caducidad que sí existe: un tag o un valor manual editados en el tablero
 tardan hasta 60 s en llegar al asistente.
+
+### Progreso en vivo
+
+`POST .../ask/stream` responde por **Server-Sent Events**: un evento `tool` por
+cada consulta según ocurre, y un único `done` con la respuesta completa (o
+`error`). El panel muestra *"Consultando buscar_jugadores…"* mientras trabaja,
+que es donde se va casi todo el tiempo de una pregunta. `/ask` sigue existiendo
+con la respuesta JSON de golpe.
+
+El frontend lo lee con `fetch` a mano (`lib/sse.ts`), no con `EventSource`, que
+no puede mandar cuerpo ni cabecera `Authorization`. La respuesta lleva
+`X-Accel-Buffering: no` para que Nginx no la retenga entera hasta el final.
 
 ### Limitación conocida del historial
 
@@ -319,9 +331,10 @@ resuelta en el backend.
 
 ## 9. Pendiente
 
-- **Streaming.** Ahora la respuesta llega de golpe: con 2-3 vueltas de
-  herramientas son 10-20 segundos de spinner. Funciona, pero en mitad de un draft
-  se hace largo. SSE por turno sería la mejora obvia.
+- **Streaming token a token** de la respuesta final. El progreso ya va en vivo
+  (sección *Progreso en vivo*); lo que falta es que el texto final aparezca según
+  se escribe. Con herramientas en el bucle ahorra poco y cuesta una ruta distinta
+  por proveedor, así que se ha dejado para después.
 - **Aritmética de serpiente en la UI.** El asistente ya la tiene
   (`proximos_turnos`), pero seguiría siendo útil como columna o aviso en el
   tablero, sin coste por token: *"si esperas al pick 18, en portería pierdes ~X"*.

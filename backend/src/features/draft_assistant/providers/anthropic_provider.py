@@ -16,6 +16,8 @@ from typing import Any
 from src.features.draft_assistant.providers.base import (
     AssistantReply,
     ChatMessage,
+    ProgressCallback,
+    ProgressEvent,
     ToolCallTrace,
 )
 from src.features.draft_assistant.tools import ToolSpec, run_tool, to_anthropic_tools
@@ -49,6 +51,7 @@ class AnthropicProvider:
         system: str,
         messages: Sequence[ChatMessage],
         tools: Sequence[ToolSpec],
+        on_progress: ProgressCallback | None = None,
     ) -> AssistantReply:
         # The rules prompt is identical on every question, so mark it cacheable:
         # cache reads bill at ~10% of input. Anything volatile must stay OUT of
@@ -57,6 +60,22 @@ class AnthropicProvider:
         system_blocks = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
         tool_params = to_anthropic_tools(tools)
         wire: list[dict[str, Any]] = [{"role": m.role, "content": m.content} for m in messages]
+        # Second breakpoint on the current question, so the whole conversation
+        # up to here is served from cache on every tool round and on the next
+        # question. Without it only the rules were cached and a long draft
+        # chat re-paid ~12k history tokens per round — four times the cost.
+        if wire:
+            last = wire[-1]
+            wire[-1] = {
+                "role": last["role"],
+                "content": [
+                    {
+                        "type": "text",
+                        "text": last["content"],
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+            }
         trace: list[ToolCallTrace] = []
 
         for _ in range(self._max_iterations):
@@ -79,6 +98,8 @@ class AnthropicProvider:
             results: list[dict[str, Any]] = []
             for block in tool_uses:
                 arguments = dict(block.input or {})
+                if on_progress is not None:
+                    await on_progress(ProgressEvent("tool", block.name, arguments))
                 output = await run_tool(tools, block.name, arguments)
                 trace.append(ToolCallTrace(name=block.name, arguments=arguments))
                 results.append(

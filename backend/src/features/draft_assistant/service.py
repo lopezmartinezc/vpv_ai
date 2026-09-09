@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
@@ -17,6 +18,7 @@ from src.features.draft_assistant.providers.base import (
     AssistantProvider,
     AssistantReply,
     ChatMessage,
+    ProgressCallback,
 )
 from src.features.draft_assistant.providers.openai_provider import OpenAIProvider
 
@@ -76,6 +78,23 @@ REGLAS DE LA LIGA:
 - 26 jugadores por plantilla. Alineacion: 1 portero + 10 de campo.
 - Draft serpiente en pretemporada, lineal en el de invierno.
 - Reparto objetivo habitual: 2 POR, 8 DEF, 7 MED, 6 DEL.
+
+LO QUE SE HA MEDIDO EN ESTA LIGA (8 temporadas reales; cita estos datos cuando
+toque, estan tambien en escasez_historica):
+- El pick de primera ronda rinde ~200 puntos de excedente en delantero y ~118 en
+  portero. Un portero top NO es pick de primera ronda; el año pasado los dos
+  mejores salieron en los picks 4 y 6, detras de tres delanteros.
+- En la primera ronda nadie coge defensas (0 de 11), y luego entran cuatro en la
+  segunda. Si sobra un pick temprano, ahi hay valor.
+- Con 13 participantes solo hay 13-15 porteros que jueguen toda la liga: uno por
+  cabeza y sin margen. Cerrar el portero titular entre la ronda 5 y la 7.
+- El segundo portero debe ser el SUPLENTE del titular (mismo equipo). Dos
+  titulares de equipos distintos realizan 172 puntos; titular + suplente, 194.
+  El ultimo portero draftado vale ~32 puntos: ese hueco es para el suplente.
+- Un defensa de Madrid/Barca/Atletico puntua mas cuando juega (6,5 vs 4,9 por
+  jornada) pero es MENOS probable que sea fijo (34% vs 48%): rota mas. Disp y
+  DefEq ya lo ponderan; lo que el modelo no sabe es la noticia de plantilla,
+  y para eso estan los tags del admin.
 
 QUIEN TE HABLA:
 Hablas con UNA persona concreta, que puede ser o no participante del draft.
@@ -258,6 +277,7 @@ class DraftAssistantService:
         provider_name: str | None = None,
         model: str | None = None,
         provider: AssistantProvider | None = None,
+        on_progress: ProgressCallback | None = None,
     ) -> AssistantReply:
         question = question.strip()
         if not question:
@@ -280,6 +300,7 @@ class DraftAssistantService:
             system=SYSTEM_PROMPT,
             messages=messages,
             tools=build_tools(ctx),
+            on_progress=on_progress,
         )
         # Report which backend actually answered, not which one is configured —
         # they differ as soon as the chat's toggle is used.
@@ -293,3 +314,9 @@ class DraftAssistantService:
             reply.truncated,
         )
         return reply
+
+
+def sse_line(event: str, data: dict[str, object]) -> str:
+    """One Server-Sent Event. ``json.dumps`` escapes newlines, so a multi-line
+    reply cannot terminate the frame early."""
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"

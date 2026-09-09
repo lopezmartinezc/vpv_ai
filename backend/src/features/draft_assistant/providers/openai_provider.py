@@ -24,6 +24,8 @@ from typing import Any
 from src.features.draft_assistant.providers.base import (
     AssistantReply,
     ChatMessage,
+    ProgressCallback,
+    ProgressEvent,
     ToolCallTrace,
 )
 from src.features.draft_assistant.tools import ToolSpec, run_tool, to_openai_tools
@@ -54,6 +56,7 @@ class OpenAIProvider:
         system: str,
         messages: Sequence[ChatMessage],
         tools: Sequence[ToolSpec],
+        on_progress: ProgressCallback | None = None,
     ) -> AssistantReply:
         tool_params = to_openai_tools(tools)
         items: list[Any] = [{"role": m.role, "content": m.content} for m in messages]
@@ -83,6 +86,8 @@ class OpenAIProvider:
                 except json.JSONDecodeError:
                     logger.warning("draft_assistant: bad JSON args for %s", call.name)
                     arguments = {}
+                if on_progress is not None:
+                    await on_progress(ProgressEvent("tool", call.name, arguments))
                 result = await run_tool(tools, call.name, arguments)
                 trace.append(ToolCallTrace(name=call.name, arguments=arguments))
                 items.append(
