@@ -44,9 +44,13 @@ const OVER_TARGET_PENALTY = 0.3;
  * if his raw value never made him attractive. */
 const HANDCUFF_LAST_ROUNDS = 6;
 
-/** How much of a round-1 shove an elite keeper gets. Large on purpose: in this
- * league the big three's keepers always go in the first round. */
-const ROUND1_KEEPER_SHOVE = 1.8;
+/** Round-1 shove for an elite keeper. Enough to make him a first-round pick,
+ * NOT enough to go first: the observed order is the top forwards and
+ * midfielders of the big teams, with the big three's keepers following inside
+ * the same round. At 1.8 a 250-point keeper scored 450 and outranked every
+ * forward, so picks 1-3 were always keepers and the best forward survived to
+ * the fourth slot — which is how "my first pick never changes" showed up. */
+const ROUND1_KEEPER_SHOVE = 1.25;
 
 /** How many keepers are "the ones that go in round one". Observed: the starters
  * of Madrid, Barça and Atlético — three, not one per manager. Shoving every
@@ -54,8 +58,21 @@ const ROUND1_KEEPER_SHOVE = 1.8;
  * and left no understudies for the handcuff. */
 const ELITE_KEEPERS = 3;
 
-/** Candidates a bot chooses between. Bigger = more chaotic drafts. */
-const BOT_SHORTLIST = 4;
+/** How many names a bot chooses between. Small early, wider later: in the first
+ * rounds the board is obvious and everyone takes one of the same two or three
+ * players, while by the middle rounds managers genuinely disagree. A flat width
+ * made round 1 so noisy that the best player survived to the sixth pick, which
+ * is not what happens. */
+function shortlistFor(round: number): number {
+  if (round <= 2) return 2;
+  if (round <= 5) return 3;
+  return 5;
+}
+
+/** Round-1 penalty for keepers who are NOT one of the big three's. Nobody
+ * spends a first-round pick on the ninth-best keeper; without this the noise
+ * put four keepers in round 1. */
+const ROUND1_OTHER_KEEPER_PENALTY = 0.25;
 
 export interface SimOptions {
   participants: number;
@@ -266,9 +283,12 @@ function pickForBot(
   const scored = candidates.map((x) => {
     let score = (x.priority ?? 0) * positionAppetite(squad, x.position);
     if (isBigTeam(x.team_name)) score *= 1 + bigTeamBias;
-    // First round: one of the big three's keepers is a status pick here.
-    if (round === 1 && eliteKeeperIds.has(x.player_id)) {
-      score *= ROUND1_KEEPER_SHOVE;
+    // First round: one of the big three's keepers is a status pick here — and
+    // any other keeper is not a first-round pick at all.
+    if (round === 1 && x.position === "POR") {
+      score *= eliteKeeperIds.has(x.player_id)
+        ? ROUND1_KEEPER_SHOVE
+        : ROUND1_OTHER_KEEPER_PENALTY;
     }
     return { player: x, score };
   });
@@ -276,6 +296,6 @@ function pickForBot(
   scored.sort((a, b) => b.score - a.score);
   // Not always the top name: real managers disagree, and that disagreement is
   // what makes a simulated draft informative rather than a fixed list.
-  const shortlist = scored.slice(0, BOT_SHORTLIST);
+  const shortlist = scored.slice(0, shortlistFor(round));
   return shortlist[Math.floor(rand() * shortlist.length)].player;
 }
