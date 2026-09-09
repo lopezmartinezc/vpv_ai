@@ -9,6 +9,7 @@ import { useDraftWebSocket, type DraftWSEvent } from "@/hooks/use-draft-websocke
 import { apiClient } from "@/lib/api-client";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
 import { WishlistPanel } from "@/components/draft/wishlist-panel";
+import { AssistantPanel } from "@/components/draft/assistant-panel";
 import { RosterCounter } from "@/components/draft/roster-counter";
 import { TeamCounter } from "@/components/draft/team-counter";
 import { TIER_COLORS, TIER_LABELS } from "@/lib/draft-scorecard";
@@ -728,6 +729,11 @@ export default function LiveDraftPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* Claude/GPT assistant over the live board (admin only) */}
+      {isAdmin && selectedSeason && draft && (
+        <AssistantPanel seasonId={selectedSeason.id} phase={draft.phase} />
       )}
 
       {/* Roster composition vs target (for actual participants) */}
