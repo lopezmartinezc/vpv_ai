@@ -54,7 +54,37 @@ Lecturas:
 
 Caveats: son puntos reales (retrospectiva), asi que mide la FORMA de la curva, no
 el acierto al elegir. Los porteros son mas predecibles (juegan todo, siguen a la
-defensa del equipo), lo que juega ligeramente a su favor frente a la tabla."""
+defensa del equipo), lo que juega ligeramente a su favor frente a la tabla.
+
+PUNTOS REALIZADOS EN LA PORTERIA (lo que de verdad se alineo, 8 temporadas):
+- Con un portero top 1-3 en propiedad: 230. Top 4-6: 193. Top 7-11: 173.
+  12o o peor: 142.
+- Titular + su SUPLENTE (mismo equipo): 194 realizados, solo 13 pts perdidos por
+  elegir mal la jornada. Dos titulares de equipos DISTINTOS: 172 realizados y 63
+  perdidos por elegir mal. La opcionalidad de dos titulares es una trampa.
+- Un portero top se pierde ~3 jornadas de 33; su suplente cubre justo esas.
+
+CON 13 PARTICIPANTES:
+- Solo hay 13-15 porteros que jueguen el 75%+ de la liga: uno por cabeza, sin
+  margen. El 13o portero (reemplazo) vale 138; el 26o (ultimo draftado), 32.
+- Excedente del pick de primera ronda: DEL 200, DEF 120, POR 118, MED 99.
+- Cerrar el portero titular entre la ronda 5 y la 7; su suplente en las ultimas.
+
+DRAFT REAL DEL AÑO PASADO (11 participantes), por ronda:
+  R1: 6 DEL, 3 MED, 0 DEF, 2 POR (picks 4 y 6) - 90% de Madrid/Barca/Atletico
+  R2: 3 DEL, 3 MED, 4 DEF, 1 POR (pick 18)      - 81%
+  R3: 3 DEL, 4 MED, 3 DEF, 1 POR (pick 25)      - 54%
+  R4: 7 DEL, 4 MED, 0 DEF, 0 POR                - 27%
+Nadie coge defensas en la primera ronda; el tiron del equipo grande se desploma a
+partir de la tercera.
+
+FORMA PRE-DRAFT (lo visible al elegir) vs RESULTADO FINAL, top-3 por posicion:
+  POR: 172 pts finales, 58% acaban top-6 (la posicion mas predecible)
+  DEL: 227 pts finales, 46% acaban top-6, cuartil bajo 186, peor caso 83
+  DEF/MED: ~160 pts finales, 17% acaban top-6
+El delantero identificable en el draft gana al portero en media, en cuartil bajo
+y en peor caso (el del portero es 14). La "seguridad" del portero no esta en los
+datos: la seguridad real es tener UN titular claro y no tener que elegir."""
 
 
 # The board aggregates every player_stats row of the last N seasons (~400ms of

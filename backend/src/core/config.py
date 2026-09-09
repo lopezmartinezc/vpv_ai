@@ -70,7 +70,7 @@ class Settings(BaseSettings):
     # Keys live here and NEVER reach the frontend — a NEXT_PUBLIC_* copy would
     # be bundled into the browser JS and become public.
     assistant_enabled: bool = False
-    assistant_provider: str = "anthropic"  # "anthropic" | "openai"
+    assistant_provider: str = "openai"  # "anthropic" | "openai"
     anthropic_api_key: str = ""
     openai_api_key: str = ""
     assistant_anthropic_model: str = "claude-opus-5"

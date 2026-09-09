@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { apiClient, ApiClientError } from "@/lib/api-client";
+import { API_BASE_URL, apiClient, ApiClientError } from "@/lib/api-client";
+import { readSse } from "@/lib/sse";
 
 interface Message {
   role: "user" | "assistant";
@@ -61,6 +62,9 @@ export function AssistantPanel({
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  // Tools consulted so far for the question in flight, in order. A question
+  // spends its 10-20 seconds here, so showing it is most of the perceived wait.
+  const [progress, setProgress] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -113,25 +117,60 @@ export function AssistantPanel({
     setMessages((prev) => [...prev, { role: "user", content: trimmed }]);
     setInput("");
     setLoading(true);
+    setProgress([]);
     setError(null);
 
     try {
-      const res = await apiClient.post<AskResponse>(
-        `/draft-assistant/${seasonId}/${phase}/ask`,
+      // Streamed over SSE by hand: EventSource cannot POST a body or carry
+      // the Authorization header. One `tool` event per consultation as it
+      // happens, then a single `done` (or `error`).
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      const token = localStorage.getItem("vpv_token");
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const response = await fetch(
+        `${API_BASE_URL}/draft-assistant/${seasonId}/${phase}/ask/stream`,
         {
-          question: trimmed,
-          history,
-          provider: provider || null,
-          model: model || null,
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            question: trimmed,
+            history,
+            provider: provider || null,
+            model: model || null,
+          }),
         },
       );
+      if (!response.ok) {
+        const err = (await response.json().catch(() => null)) as
+          | { message?: string }
+          | null;
+        throw new ApiClientError(response.status, {
+          code: "STREAM",
+          message: err?.message ?? response.statusText,
+        });
+      }
+
+      let res: AskResponse | null = null;
+      for await (const frame of readSse(response)) {
+        if (frame.event === "tool") {
+          const { name } = JSON.parse(frame.data) as { name: string };
+          setProgress((prev) => [...prev, name]);
+        } else if (frame.event === "done") {
+          res = JSON.parse(frame.data) as AskResponse;
+        } else if (frame.event === "error") {
+          const { message } = JSON.parse(frame.data) as { message: string };
+          throw new ApiClientError(500, { code: "ASSISTANT", message });
+        }
+      }
+      if (!res) throw new Error("stream ended without a reply");
+
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: res.reply,
-          tools: res.tool_calls.map((t) => t.name),
-          model: `${PROVIDER_LABEL[res.provider] ?? res.provider} · ${res.model}`,
+          content: res!.reply,
+          tools: res!.tool_calls.map((t) => t.name),
+          model: `${PROVIDER_LABEL[res!.provider] ?? res!.provider} · ${res!.model}`,
         },
       ]);
     } catch (err) {
@@ -142,6 +181,7 @@ export function AssistantPanel({
       setError(message);
     } finally {
       setLoading(false);
+      setProgress([]);
       requestAnimationFrame(() =>
         endRef.current?.scrollIntoView({ behavior: "smooth" }),
       );
@@ -237,7 +277,23 @@ export function AssistantPanel({
           ))}
 
           {loading && (
-            <p className="text-xs text-vpv-text-muted">Consultando el tablero…</p>
+            <div className="text-xs text-vpv-text-muted">
+              {progress.length === 0 ? (
+                <p>Pensando…</p>
+              ) : (
+                <p>
+                  Consultando{" "}
+                  <span className="text-vpv-text">{progress[progress.length - 1]}</span>…
+                  {progress.length > 1 && (
+                    <span className="opacity-70">
+                      {" "}
+                      ({Array.from(new Set(progress.slice(0, -1))).join(", ")} ya
+                      consultado)
+                    </span>
+                  )}
+                </p>
+              )}
+            </div>
           )}
           {error && <p className="text-xs text-red-400">{error}</p>}
           <div ref={endRef} />

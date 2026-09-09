@@ -69,9 +69,7 @@ async def test_truncated_reply_names_the_tools_it_managed_to_consult() -> None:
     client = _FakeAnthropic()
     provider = AnthropicProvider(client=client, model="m", max_iterations=2)
 
-    reply = await provider.run(
-        system="s", messages=[ChatMessage("user", "?")], tools=[_tool()]
-    )
+    reply = await provider.run(system="s", messages=[ChatMessage("user", "?")], tools=[_tool()])
 
     assert reply.truncated is True
     assert "t" in reply.text
