@@ -210,3 +210,31 @@ describe("players with a value but no position", () => {
     expect(row?.reason).toBe("sin-posicion");
   });
 });
+
+describe("players already owned", () => {
+  const owned = () => {
+    const x = p("DEL", "Barcelona", 999);
+    x.display_name = "Fichado en la prueba";
+    (x as { is_drafted: boolean }).is_drafted = true;
+    return x;
+  };
+
+  it("drafts the whole pool by default, ignoring leftover ownership", () => {
+    // Ownership left over from a rehearsal draft was quietly removing the best
+    // players: the simulation started at the 8th by Prioridad and nothing said
+    // why. A planning tool has to work from the full pool.
+    const r = simulateDraft([...pool(), owned()], opts());
+    expect(r.picks.some((x) => x.player.display_name === "Fichado en la prueba")).toBe(
+      true,
+    );
+    expect(r.excluded).toEqual([]);
+  });
+
+  it("reports them by name when asked to respect ownership", () => {
+    const r = simulateDraft([...pool(), owned()], opts({ ignoreDrafted: false }));
+    expect(r.picks.some((x) => x.player.display_name === "Fichado en la prueba")).toBe(
+      false,
+    );
+    expect(r.excluded[0]).toMatchObject({ reason: "ya-fichado" });
+  });
+});

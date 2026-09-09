@@ -33,6 +33,11 @@ export function DraftSimulator({
   const [myOrder, setMyOrder] = useState<"priority" | "vorp">("priority");
   const [seed, setSeed] = useState(1);
   const [view, setView] = useState<"mine" | "all">("mine");
+  const [ignoreDrafted, setIgnoreDrafted] = useState(true);
+  const ownedCount = useMemo(
+    () => players.filter((x) => x.is_drafted).length,
+    [players],
+  );
 
   const result = useMemo(
     () =>
@@ -43,8 +48,9 @@ export function DraftSimulator({
         seed,
         bigTeamBias,
         myOrder,
+        ignoreDrafted,
       }),
-    [players, participants, myPosition, rounds, seed, bigTeamBias, myOrder],
+    [players, participants, myPosition, rounds, seed, bigTeamBias, myOrder, ignoreDrafted],
   );
 
   const mySquad = result.squads.find((s) => s.isMe);
@@ -132,6 +138,17 @@ export function DraftSimulator({
               className="w-40"
             />
           </label>
+          <label className="flex items-center gap-2 text-vpv-text-muted">
+            <input
+              type="checkbox"
+              checked={ignoreDrafted}
+              onChange={(e) => setIgnoreDrafted(e.target.checked)}
+            />
+            Draftear desde cero
+            {ownedCount > 0 && (
+              <span className="opacity-70">({ownedCount} con dueño ahora)</span>
+            )}
+          </label>
           <button
             type="button"
             onClick={() => setSeed((s) => s + 1)}
@@ -148,16 +165,18 @@ export function DraftSimulator({
             </b>{" "}
             — si falta alguien que esperabas ver elegido pronto, es esto y no el
             simulador.
-            {(["sin-posicion", "sin-prioridad"] as const).map((reason) => {
+            {(["ya-fichado", "sin-posicion", "sin-prioridad"] as const).map((reason) => {
               const rows = result.excluded.filter((x) => x.reason === reason);
               if (rows.length === 0) return null;
               return (
                 <div key={reason}>
                   <span className="font-medium">
                     {rows.length}{" "}
-                    {reason === "sin-posicion"
-                      ? "sin posición (POR/DEF/MED/DEL vacío): no hay hueco donde encajarlos. Se arregla con sync-rosters + refresh-positions."
-                      : "sin Prioridad: el modelo no los proyecta. Ponles valor manual o revisa su histórico."}
+                    {reason === "ya-fichado"
+                      ? "ya tienen dueño (owner_id). Marca «Draftear desde cero», o reinicia el draft de prueba para liberarlos."
+                      : reason === "sin-posicion"
+                        ? "sin posición (POR/DEF/MED/DEL vacío): no hay hueco donde encajarlos. Se arregla con sync-rosters + refresh-positions."
+                        : "sin Prioridad: el modelo no los proyecta. Ponles valor manual o revisa su histórico."}
                   </span>
                   <div className="opacity-80">
                     {rows

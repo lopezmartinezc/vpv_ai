@@ -66,6 +66,10 @@ export interface SimOptions {
   /** 0 = bots follow the board; 0.4 = they clearly favour the big three. */
   bigTeamBias: number;
   myOrder: "priority" | "vorp";
+  /** Ignore who currently owns whom and draft the whole pool. On by default:
+   * this is a planning tool, and ownership left over from a rehearsal draft
+   * would quietly remove the best players from the simulation. */
+  ignoreDrafted?: boolean;
 }
 
 export interface SimPick {
@@ -95,7 +99,7 @@ export interface SimResult {
   excluded: ExcludedPlayer[];
 }
 
-export type ExclusionReason = "sin-prioridad" | "sin-posicion";
+export type ExclusionReason = "ya-fichado" | "sin-prioridad" | "sin-posicion";
 
 export interface ExcludedPlayer {
   player: DraftValuePlayer;
@@ -145,17 +149,25 @@ export function simulateDraft(
   players: DraftValuePlayer[],
   options: SimOptions,
 ): SimResult {
-  const { participants, myPosition, rounds, seed, bigTeamBias, myOrder } = options;
+  const {
+    participants,
+    myPosition,
+    rounds,
+    seed,
+    bigTeamBias,
+    myOrder,
+    ignoreDrafted = true,
+  } = options;
   const rand = mulberry32(seed);
 
-  const draftable = players.filter((x) => !x.is_drafted);
-  // Two independent gaps, both fatal to the simulation and both invisible
-  // without this: no projection at all, or a projection with no position to
-  // slot the player into (a roster scraped before positions were synced).
+  // Every reason a player cannot take part is recorded. Nothing is dropped in
+  // silence: a name missing from the simulated draft has to be explainable, or
+  // it reads as a broken simulator when it is really a gap in the data.
   const excluded: ExcludedPlayer[] = [];
   const available: DraftValuePlayer[] = [];
-  for (const x of draftable) {
-    if (x.priority == null) excluded.push({ player: x, reason: "sin-prioridad" });
+  for (const x of players) {
+    if (!ignoreDrafted && x.is_drafted) excluded.push({ player: x, reason: "ya-fichado" });
+    else if (x.priority == null) excluded.push({ player: x, reason: "sin-prioridad" });
     else if (ROSTER_TARGET[x.position] == null)
       excluded.push({ player: x, reason: "sin-posicion" });
     else available.push(x);
