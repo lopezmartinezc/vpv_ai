@@ -41,7 +41,12 @@ function pool(): DraftValuePlayer[] {
   const out: DraftValuePlayer[] = [];
   for (const [pos, n] of Object.entries(depth)) {
     for (let i = 0; i < n; i++) {
-      out.push(p(pos, teams[i % teams.length], 300 - i * 2));
+      // Keepers: one clear starter per team, then cheap understudies. That is
+      // what the real board looks like, and it is what makes a handcuff a
+      // handcuff — a backup nobody else wants.
+      const prio =
+        pos === "POR" ? (i < teams.length ? 250 - i * 3 : 60 - i) : 300 - i * 2;
+      out.push(p(pos, teams[i % teams.length], prio));
     }
   }
   return out;
@@ -236,5 +241,48 @@ describe("players already owned", () => {
       false,
     );
     expect(r.excluded[0]).toMatchObject({ reason: "ya-fichado" });
+  });
+});
+
+describe("the draft slot has to matter", () => {
+  /** Board shaped like the real one: forwards and mids on top, keepers below. */
+  function realistic(): DraftValuePlayer[] {
+    nextId = 1;
+    const teams = ["Real Madrid", "Barcelona", "Atlético", "Alavés", "Getafe", "Celta"];
+    const base: Record<string, number> = { DEL: 320, MED: 300, DEF: 280, POR: 250 };
+    const depth: Record<string, number> = { POR: 30, DEF: 100, MED: 90, DEL: 80 };
+    const out: DraftValuePlayer[] = [];
+    for (const [pos, n] of Object.entries(depth)) {
+      for (let i = 0; i < n; i++) {
+        const prio =
+          pos === "POR" && i >= teams.length ? 60 - i : base[pos] - i * 3;
+        out.push(p(pos, teams[i % teams.length], prio));
+      }
+    }
+    return out;
+  }
+
+  it("gives different first picks from different slots", () => {
+    // Reported: "si cambio mi posición me sigue eligiendo el mismo primer
+    // pick". The keeper shove was so strong that picks 1-3 were always the
+    // three elite keepers, leaving the best forward on the board until the
+    // fourth slot.
+    const first = (slot: number) =>
+      simulateDraft(realistic(), opts({ myPosition: slot })).myPicks[0].player
+        .display_name;
+    expect(new Set([1, 2, 3].map(first)).size).toBeGreaterThan(1);
+  });
+
+  it("opens with forwards and midfielders, not with keepers", () => {
+    // Observed: "normalmente salen los dos o tres DEL y MED top de equipos
+    // top". Keepers belong in round 1, but not at picks 1-3.
+    const r = simulateDraft(realistic(), opts({ myPosition: 11 }));
+    expect(r.picks[0].player.position).not.toBe("POR");
+
+    const round1 = r.picks.filter((x) => x.round === 1);
+    const keepers = round1.filter((x) => x.player.position === "POR").length;
+    expect(keepers).toBeGreaterThan(0); // they do go in round 1...
+    // ...but outfielders own it. Three elite keepers, eight of everyone else.
+    expect(keepers).toBeLessThan(round1.length - keepers);
   });
 });
