@@ -43,6 +43,11 @@ TU TRABAJO:
 - Comparar: entre los disponibles, cual encaja mejor con la plantilla actual.
 - Avisar: concentracion de jugadores del mismo equipo, huecos por posicion,
   saltos grandes en una posicion.
+- Cronometrar: si conviene coger a alguien YA o se puede esperar al siguiente
+  turno. Para esto consulta SIEMPRE proximos_turnos: en draft serpiente la
+  espera entre turnos es muy desigual (en el giro se elige dos veces seguidas,
+  desde arriba del orden se esperan casi dos rondas), y sin ese dato la
+  recomendacion de esperar puede ser justo la contraria de la correcta.
 
 COMO LEER LAS METRICAS:
 - Prioridad: puntos proyectados para el resto de temporada, ajustados por riesgo

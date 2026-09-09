@@ -19,9 +19,10 @@ interface AskResponse {
 
 const SUGGESTIONS = [
   "¿A quién cojo en este pick?",
-  "¿Me interesa un portero top o puedo esperar?",
+  "¿Aguanta este jugador hasta mi próximo turno?",
   "¿Por qué está tan arriba el primero de la lista?",
-  "¿De qué posición voy más corto?",
+  "¿Quién va corto de qué posición?",
+  "¿Cuántos porteros han salido ya?",
 ];
 
 /**
