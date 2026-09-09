@@ -231,6 +231,7 @@ def build_provider(name: str | None = None, model: str | None = None) -> Assista
         return AnthropicProvider(
             client=anthropic.AsyncAnthropic(api_key=key),
             model=chosen,
+            max_iterations=settings.assistant_max_tool_rounds,
         )
 
     import openai
@@ -238,6 +239,7 @@ def build_provider(name: str | None = None, model: str | None = None) -> Assista
     return OpenAIProvider(
         client=openai.AsyncOpenAI(api_key=key),
         model=chosen,
+        max_iterations=settings.assistant_max_tool_rounds,
     )
 
 
