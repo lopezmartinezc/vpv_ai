@@ -297,11 +297,13 @@ class DraftRepository:
             )
         return deleted
 
-    async def reset_draft(self, draft_id: int) -> int:
-        """Delete every pick of a draft and release the players' ownership.
+    async def reset_draft(self, draft_id: int) -> tuple[int, int]:
+        """Wipe a draft: picks, ownership and auto-pick wishlists.
 
         Releases ``players.owner_id`` for every player picked in this draft,
-        then removes all its ``draft_picks`` rows. Returns how many picks were
+        removes all its ``draft_picks``, and deletes the ``draft_wishlists``
+        (and their entries) so a rehearsal leaves nothing behind that could
+        auto-pick during the real draft. Returns ``(picks, wishlists)``
         deleted. Does not touch the draft row's status (the service does).
         """
         picked = (
@@ -320,7 +322,30 @@ class DraftRepository:
         result = await self.session.execute(
             delete(DraftPick).where(DraftPick.draft_id == draft_id)
         )
-        return result.rowcount or 0  # type: ignore[attr-defined]
+
+        # Entries first, then the lists. The FK is ON DELETE CASCADE, but a
+        # bulk delete bypasses the ORM cascade, so do not rely on the database
+        # having been migrated with it.
+        wishlist_ids = (
+            (
+                await self.session.execute(
+                    select(DraftWishlist.id).where(DraftWishlist.draft_id == draft_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if wishlist_ids:
+            await self.session.execute(
+                delete(DraftWishlistPlayer).where(
+                    DraftWishlistPlayer.wishlist_id.in_(wishlist_ids)
+                )
+            )
+            await self.session.execute(
+                delete(DraftWishlist).where(DraftWishlist.id.in_(wishlist_ids))
+            )
+
+        return result.rowcount or 0, len(wishlist_ids)  # type: ignore[attr-defined]
 
     async def reorder_picks(
         self,

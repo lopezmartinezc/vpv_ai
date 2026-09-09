@@ -190,3 +190,85 @@ def test_ordered_participant_ids_is_deterministic_with_null_or_dup_order() -> No
     expected = [7, 5, 20, 10, 30]  # order 0, then 2 (id 5,20), then NULL (id 10,30)
     assert _ordered_participant_ids(parts) == expected
     assert _ordered_participant_ids(list(reversed(parts))) == expected
+
+
+@pytest.mark.asyncio
+async def test_reset_draft_also_wipes_the_wishlists(db_session: AsyncSession) -> None:
+    """A reset must clear auto-pick wishlists, not just picks.
+
+    The whole point of reset is "the test draft never happened". Wishlists
+    left behind would auto-pick in the REAL draft from lists people built for
+    a rehearsal — silently, on someone else's turn, and irreversibly.
+    """
+    from src.shared.models.draft_wishlist import DraftWishlist, DraftWishlistPlayer
+
+    season = Season(
+        name="2026-2027",
+        status="active",
+        matchday_start=1,
+        matchday_end=38,
+        draft_pool_size=2,
+        lineup_deadline_min=30,
+        total_participants=2,
+        kind="league",
+    )
+    db_session.add(season)
+    await db_session.flush()
+
+    users = [User(username=f"w{i}", password_hash="x", display_name=f"W{i}") for i in range(2)]
+    db_session.add_all(users)
+    await db_session.flush()
+    parts = [
+        SeasonParticipant(season_id=season.id, user_id=users[i].id, draft_order=i + 1)
+        for i in range(2)
+    ]
+    db_session.add_all(parts)
+    await db_session.flush()
+
+    team = Team(season_id=season.id, name="T", slug="t")
+    db_session.add(team)
+    await db_session.flush()
+    players = [
+        Player(
+            season_id=season.id,
+            team_id=team.id,
+            name=f"W{i}",
+            display_name=f"W{i}",
+            slug=f"w{i}",
+            position="MED",
+        )
+        for i in range(4)
+    ]
+    db_session.add_all(players)
+    await db_session.flush()
+
+    svc = DraftService(db_session)
+    created = await svc.create_draft(season.id, "preseason", "snake")
+    draft_id = created.id
+
+    # Both participants set up an auto-pick list for the rehearsal.
+    for part in parts:
+        wl = DraftWishlist(draft_id=draft_id, participant_id=part.id, enabled=True)
+        db_session.add(wl)
+        await db_session.flush()
+        db_session.add_all(
+            [
+                DraftWishlistPlayer(wishlist_id=wl.id, player_id=players[0].id, priority=1),
+                DraftWishlistPlayer(wishlist_id=wl.id, player_id=players[1].id, priority=2),
+            ]
+        )
+    await db_session.flush()
+    await svc.add_pick(draft_id, players[2].id, ADMIN)
+
+    result = await svc.reset_draft(draft_id, ADMIN)
+
+    assert result["deleted_wishlists"] == 2
+    left = (
+        (await db_session.execute(select(DraftWishlist).where(DraftWishlist.draft_id == draft_id)))
+        .scalars()
+        .all()
+    )
+    assert left == []
+    # The entries must go too, not just the parent rows.
+    entries = (await db_session.execute(select(DraftWishlistPlayer))).scalars().all()
+    assert entries == []
