@@ -186,10 +186,27 @@ describe("players the board cannot value", () => {
     const r = simulateDraft([...pool(), noPrio], opts());
 
     expect(r.picks.some((x) => x.player.display_name === "Sin proyección")).toBe(false);
-    expect(r.excluded.map((x) => x.display_name)).toContain("Sin proyección");
+    expect(r.excluded.map((x) => x.player.display_name)).toContain("Sin proyección");
+    expect(r.excluded[0].reason).toBe("sin-prioridad");
   });
 
   it("reports nothing when every player has a value", () => {
     expect(simulateDraft(pool(), opts()).excluded).toEqual([]);
+  });
+});
+
+describe("players with a value but no position", () => {
+  it("reports the top of the board when positions have not been synced", () => {
+    // The real report: the six best by Prioridad were never picked and nothing
+    // said why. Their position was empty, so no slot could hold them.
+    const orphan = p("", "Barcelona", 999);
+    orphan.display_name = "Estrella sin posición";
+    const r = simulateDraft([...pool(), orphan], opts());
+
+    expect(r.picks.some((x) => x.player.display_name === "Estrella sin posición")).toBe(
+      false,
+    );
+    const row = r.excluded.find((x) => x.player.display_name === "Estrella sin posición");
+    expect(row?.reason).toBe("sin-posicion");
   });
 });
