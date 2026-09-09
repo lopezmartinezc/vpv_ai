@@ -7,6 +7,7 @@ import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
 import { useDraftWebSocket, type DraftWSEvent } from "@/hooks/use-draft-websocket";
 import { apiClient } from "@/lib/api-client";
+import { buildSuggestions } from "@/lib/draft-suggestions";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
 import { WishlistPanel } from "@/components/draft/wishlist-panel";
 import { AssistantPanel } from "@/components/draft/assistant-panel";
@@ -92,20 +93,22 @@ export default function LiveDraftPage() {
   // totals best (rho 0.464); per-slot VORP (scarcity) builds a better real XI
   // in recent seasons. They're complementary, so let the admin choose.
   const [suggestOrder, setSuggestOrder] = useState<"priority" | "vorp">("priority");
-  // Top-5 per position by the chosen metric, computed client-side from the
-  // full unpicked pool (adminStats.players), so switching order is instant.
-  const liveSuggestions = useMemo<Record<string, number[]>>(() => {
-    if (!adminStats) return {};
-    const out: Record<string, number[]> = {};
-    for (const pos of ["POR", "DEF", "MED", "DEL"]) {
-      out[pos] = Object.values(adminStats.players)
-        .filter((s) => s.position === pos && s[suggestOrder] != null)
-        .sort((a, b) => (b[suggestOrder] ?? -1e9) - (a[suggestOrder] ?? -1e9))
-        .slice(0, 5)
-        .map((s) => s.player_id);
-    }
-    return out;
-  }, [adminStats, suggestOrder]);
+  // Who is already gone, from the live pick stream. The stats payload is
+  // fetched once when the page opens, so it is the picks — not anything in
+  // that payload — that say who is still available.
+  const pickedIds = useMemo(
+    () => new Set(picks.map((p) => p.player_id)),
+    [picks],
+  );
+  // Top-5 available per position by the chosen metric, computed client-side so
+  // both switching order and reacting to a pick are instant (no refetch).
+  const liveSuggestions = useMemo<Record<string, number[]>>(
+    () =>
+      adminStats
+        ? buildSuggestions(adminStats.players, suggestOrder, pickedIds)
+        : {},
+    [adminStats, suggestOrder, pickedIds],
+  );
   // This-season performance, lazy-loaded once and cached (for the player detail).
   const [seasonPerf, setSeasonPerf] = useState<Record<number, SeasonPerf> | null>(null);
   const [perfLoading, setPerfLoading] = useState(false);
