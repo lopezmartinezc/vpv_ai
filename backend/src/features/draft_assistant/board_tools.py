@@ -76,6 +76,9 @@ class AssistantContext:
     session: AsyncSession
     season_id: int
     phase: str
+    # Who is asking, from the JWT. Never from the model: it decides what to ask,
+    # never on whose behalf.
+    user_id: int = 0
     anonymize_participants: bool = True
     _draft: DraftDetailResponse | None = field(default=None, init=False, repr=False)
     _picked: set[int] | None = field(default=None, init=False, repr=False)
@@ -107,6 +110,18 @@ class AssistantContext:
             draft = await self.draft()
             self._picked = {pk.player_id for pk in draft.picks}
         return self._picked
+
+    async def caller_participant_id(self) -> int | None:
+        """The asker's participant row in this draft, or None if they only run it.
+
+        Without this, "de que voy corto?" answers about whoever holds the turn —
+        the same words, a different squad, and nothing on screen saying so.
+        """
+        draft = await self.draft()
+        return next(
+            (p.participant_id for p in draft.participants if p.user_id == self.user_id),
+            None,
+        )
 
     def participant_label(self, participant_id: int, display_name: str) -> str:
         """Names of other people are not needed for the reasoning, so by default
@@ -244,12 +259,24 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
             p = by_id.get(draft.next_participant_id)
             if p is not None:
                 turn = ctx.participant_label(p.participant_id, p.display_name)
+        caller_id = await ctx.caller_participant_id()
+        if caller_id is None:
+            who = "Quien pregunta no participa en este draft (solo lo administra)."
+        else:
+            me = by_id.get(caller_id)
+            label = ctx.participant_label(caller_id, me.display_name if me else str(caller_id))
+            mine = caller_id == draft.next_participant_id
+            who = f"Quien pregunta es {label}" + (
+                " y ES SU TURNO ahora." if mine else " y NO es su turno ahora."
+            )
+
         lines = [
             f"Draft {draft.phase} ({draft.draft_type}), estado {draft.status}.",
             f"{n} participantes, {total} picks hechos.",
             f"Siguiente pick: #{total + 1}"
             + (f" (ronda {total // n + 1})" if n else "")
             + f", le toca a {turn}.",
+            who,
         ]
         recent = draft.picks[-10:]
         if recent:
@@ -372,7 +399,9 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
             if target_id is None:
                 return f"No encuentro al participante '{participante}'."
         else:
-            target_id = draft.next_participant_id
+            # "Mi plantilla" means the ASKER's, not the turn holder's. Falling
+            # back to the turn only when the asker does not play at all.
+            target_id = await ctx.caller_participant_id() or draft.next_participant_id
             if target_id is None:
                 return "No hay turno activo; indica un participante."
 
@@ -486,8 +515,9 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
             name="estado_draft",
             description=(
                 "Estado del draft en vivo: picks hechos, numero del siguiente pick, a quien le "
-                "toca y los ultimos picks. Llamala cuando la pregunta dependa del momento del "
-                "draft ('a quien cojo ahora', 'que queda', 'cuando me toca')."
+                "toca, los ultimos picks y QUIEN TE ESTA PREGUNTANDO (y si es su turno). "
+                "Llamala cuando la pregunta dependa del momento del draft ('a quien cojo ahora', "
+                "'que queda', 'cuando me toca') o de quien habla contigo ('yo', 'mi plantilla')."
             ),
             parameters={"type": "object", "properties": {}, "required": []},
             handler=estado_draft,
@@ -564,7 +594,11 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
                 "properties": {
                     "participante": {
                         "type": "string",
-                        "description": "Nombre o etiqueta del participante. Omitir para el del turno.",
+                        "description": (
+                            "Nombre o etiqueta del participante. OMITIR para la plantilla de "
+                            "quien te esta preguntando (lo que quiere decir con 'mi plantilla' "
+                            "o 'de que voy corto')."
+                        ),
                     }
                 },
                 "required": [],

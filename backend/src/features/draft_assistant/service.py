@@ -77,6 +77,12 @@ REGLAS DE LA LIGA:
 - Draft serpiente en pretemporada, lineal en el de invierno.
 - Reparto objetivo habitual: 2 POR, 8 DEF, 7 MED, 6 DEL.
 
+QUIEN TE HABLA:
+Hablas con UNA persona concreta, que puede ser o no participante del draft.
+Cuando diga "yo", "mi plantilla", "de que voy corto" o "cuando me toca", se
+refiere a SI MISMA, no a quien tenga el turno. Consulta estado_draft para saber
+quien es y si le toca; plantilla() sin argumento ya devuelve la suya.
+
 ESTILO:
 Responde en espanol, breve y con numeros concretos del tablero. Cita el nombre
 del jugador y la metrica que sostiene lo que dices. Si la respuesta depende del
@@ -245,6 +251,7 @@ class DraftAssistantService:
         season_id: int,
         phase: str,
         question: str,
+        user_id: int = 0,
         history: Sequence[ChatMessage] = (),
         provider_name: str | None = None,
         model: str | None = None,
@@ -258,6 +265,7 @@ class DraftAssistantService:
             session=self.session,
             season_id=season_id,
             phase=phase,
+            user_id=user_id,
             anonymize_participants=settings.assistant_anonymize_participants,
         )
         active = provider or build_provider(provider_name, model)

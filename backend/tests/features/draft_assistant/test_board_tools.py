@@ -53,6 +53,7 @@ class _Participant:
     participant_id: int
     display_name: str
     draft_order: int | None
+    user_id: int = 0
 
 
 @dataclass
@@ -65,8 +66,13 @@ class _Draft:
     next_participant_id: int | None
 
 
-def _ctx(board_players: list[Any], draft: _Draft) -> AssistantContext:
-    ctx = AssistantContext(session=None, season_id=1, phase="preseason")  # type: ignore[arg-type]
+def _ctx(board_players: list[Any], draft: _Draft, user_id: int = 0) -> AssistantContext:
+    ctx = AssistantContext(
+        session=None,  # type: ignore[arg-type]
+        season_id=1,
+        phase="preseason",
+        user_id=user_id,
+    )
 
     class _Board:
         players = board_players
@@ -89,8 +95,8 @@ def _draft_with(picks: list[_Pick]) -> _Draft:
         draft_type="snake",
         status="active",
         participants=[
-            _Participant(1, "Ana", 1),
-            _Participant(2, "Beto", 2),
+            _Participant(1, "Ana", 1, user_id=101),
+            _Participant(2, "Beto", 2, user_id=102),
         ],
         picks=picks,
         next_participant_id=2,
@@ -190,3 +196,73 @@ def test_every_tool_is_uniquely_named_and_documented() -> None:
         # moment, so an empty one is a real defect, not a style nit.
         assert len(t.description) > 40, t.name
         assert t.parameters["type"] == "object"
+
+
+# --------------------------------------------------------------------------
+# Who is asking
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_plantilla_defaults_to_the_caller_not_the_turn() -> None:
+    """ "¿De qué voy corto?" must answer about YOU.
+
+    Defaulting to whoever holds the turn quietly answers about somebody else
+    whenever it is not your turn — the same words, a different squad, and
+    nothing on screen says so.
+    """
+    draft = _draft_with(
+        [
+            _Pick(1, 1, 1, "Ana", 7, "Portero Ana", "POR", "E"),
+            _Pick(2, 1, 2, "Beto", 8, "Delantero Beto", "DEL", "E"),
+        ]
+    )
+    # Ana (user 101) asks, but the turn belongs to Beto (next_participant_id=2).
+    tools = build_tools(_ctx([], draft, user_id=101))
+
+    out = await run_tool(tools, "plantilla", {})
+
+    assert "Portero Ana" in out
+    assert "Delantero Beto" not in out
+
+
+@pytest.mark.asyncio
+async def test_plantilla_falls_back_to_the_turn_for_a_non_participant() -> None:
+    """An admin who does not play still gets a useful answer."""
+    draft = _draft_with([_Pick(2, 1, 2, "Beto", 8, "Delantero Beto", "DEL", "E")])
+    tools = build_tools(_ctx([], draft, user_id=999))  # not a participant
+
+    out = await run_tool(tools, "plantilla", {})
+
+    assert "Delantero Beto" in out
+
+
+@pytest.mark.asyncio
+async def test_estado_draft_says_who_is_asking_and_whether_it_is_their_turn() -> None:
+    draft = _draft_with([])
+    tools = build_tools(_ctx([], draft, user_id=101))  # Ana; turn is Beto's
+
+    out = await run_tool(tools, "estado_draft", {})
+
+    assert "Quien pregunta" in out
+    assert "Participante 1" in out
+    assert "no es su turno" in out.lower()
+
+
+@pytest.mark.asyncio
+async def test_estado_draft_flags_the_callers_own_turn() -> None:
+    draft = _draft_with([])
+    tools = build_tools(_ctx([], draft, user_id=102))  # Beto has the turn
+
+    out = await run_tool(tools, "estado_draft", {})
+
+    assert "es su turno" in out.lower()
+
+
+@pytest.mark.asyncio
+async def test_estado_draft_says_when_the_asker_does_not_play() -> None:
+    tools = build_tools(_ctx([], _draft_with([]), user_id=999))
+
+    out = await run_tool(tools, "estado_draft", {})
+
+    assert "no participa" in out.lower()
