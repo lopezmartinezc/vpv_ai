@@ -273,16 +273,30 @@ describe("the draft slot has to matter", () => {
     expect(new Set([1, 2, 3].map(first)).size).toBeGreaterThan(1);
   });
 
-  it("opens with forwards and midfielders, not with keepers", () => {
-    // Observed: "normalmente salen los dos o tres DEL y MED top de equipos
-    // top". Keepers belong in round 1, but not at picks 1-3.
+  it("reproduces last season's real first round", () => {
+    // Ground truth, 11 managers: 6 DEL, 3 MED, 0 DEF, 2 POR, and 10 of the 11
+    // from Madrid/Barça/Atlético. The keepers went at #4 and #6 — inside the
+    // round, behind the forwards.
     const r = simulateDraft(realistic(), opts({ myPosition: 11 }));
-    expect(r.picks[0].player.position).not.toBe("POR");
-
     const round1 = r.picks.filter((x) => x.round === 1);
-    const keepers = round1.filter((x) => x.player.position === "POR").length;
-    expect(keepers).toBeGreaterThan(0); // they do go in round 1...
-    // ...but outfielders own it. Three elite keepers, eight of everyone else.
-    expect(keepers).toBeLessThan(round1.length - keepers);
+    const n = (pos: string) => round1.filter((x) => x.player.position === pos).length;
+
+    expect(n("DEF")).toBe(0); // not one defender went in round 1
+    expect(n("POR")).toBeGreaterThanOrEqual(1);
+    expect(n("POR")).toBeLessThanOrEqual(3);
+    expect(n("DEL") + n("MED")).toBeGreaterThanOrEqual(8);
+    expect(r.picks[0].player.position).not.toBe("POR"); // keepers never open it
+
+    const big = round1.filter((x) =>
+      BIG_TEAMS.some((t) => x.player.team_name.includes(t)),
+    ).length;
+    expect(big / round1.length).toBeGreaterThan(0.7);
+  });
+
+  it("lets defenders in from round 2", () => {
+    // The taboo is the opening round only: four defenders went in round 2.
+    const r = simulateDraft(realistic(), opts({ myPosition: 11 }));
+    const round2 = r.picks.filter((x) => x.round === 2);
+    expect(round2.filter((x) => x.player.position === "DEF").length).toBeGreaterThan(0);
   });
 });
