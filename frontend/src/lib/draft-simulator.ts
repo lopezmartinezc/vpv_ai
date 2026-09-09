@@ -89,11 +89,17 @@ export interface SimResult {
   /** True when the board ran out of eligible players before the last round —
    * a real possibility at keeper, where the pool is genuinely shallow. */
   exhausted: boolean;
-  /** Players the simulation could not consider because the board gives them no
-   * Prioridad. Surfaced, never silent: a star missing from the draft looks like
-   * a broken simulator when it is really a gap in the board (a roster not yet
-   * synced, a player with no projection). */
-  excluded: DraftValuePlayer[];
+  /** Players the simulation could not consider, and why. Surfaced, never
+   * silent: a star missing from the draft looks like a broken simulator when it
+   * is really a gap in the board. */
+  excluded: ExcludedPlayer[];
+}
+
+export type ExclusionReason = "sin-prioridad" | "sin-posicion";
+
+export interface ExcludedPlayer {
+  player: DraftValuePlayer;
+  reason: ExclusionReason;
 }
 
 /** Deterministic PRNG so a seed always replays the same draft. */
@@ -143,8 +149,17 @@ export function simulateDraft(
   const rand = mulberry32(seed);
 
   const draftable = players.filter((x) => !x.is_drafted);
-  const available = draftable.filter((x) => x.priority != null);
-  const excluded = draftable.filter((x) => x.priority == null);
+  // Two independent gaps, both fatal to the simulation and both invisible
+  // without this: no projection at all, or a projection with no position to
+  // slot the player into (a roster scraped before positions were synced).
+  const excluded: ExcludedPlayer[] = [];
+  const available: DraftValuePlayer[] = [];
+  for (const x of draftable) {
+    if (x.priority == null) excluded.push({ player: x, reason: "sin-prioridad" });
+    else if (ROSTER_TARGET[x.position] == null)
+      excluded.push({ player: x, reason: "sin-posicion" });
+    else available.push(x);
+  }
   // The specific keepers that go early: the best of the big three, by value.
   const eliteKeeperIds = new Set(
     available

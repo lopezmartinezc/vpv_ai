@@ -142,19 +142,40 @@ export function DraftSimulator({
         </div>
 
         {result.excluded.length > 0 && (
-          <div className="rounded-md bg-red-500/10 px-3 py-2 text-xs text-red-300">
-            <b>{result.excluded.length} jugadores quedan fuera del simulador</b> porque
-            el tablero no les da Prioridad (columna Prio en blanco). Si falta alguien
-            que esperabas ver elegido pronto, es esto y no el simulador. Suele
-            arreglarse con <code>sync-rosters</code> + <code>refresh-positions</code>,
-            o poniéndole un valor manual.
-            <div className="mt-1 opacity-80">
-              {result.excluded
-                .slice(0, 12)
-                .map((x) => `${x.display_name} (${x.position}, ${x.team_name})`)
-                .join(" · ")}
-              {result.excluded.length > 12 ? ` … y ${result.excluded.length - 12} más` : ""}
-            </div>
+          <div className="space-y-2 rounded-md bg-red-500/10 px-3 py-2 text-xs text-red-300">
+            <b>
+              {result.excluded.length} jugadores quedan fuera del simulador
+            </b>{" "}
+            — si falta alguien que esperabas ver elegido pronto, es esto y no el
+            simulador.
+            {(["sin-posicion", "sin-prioridad"] as const).map((reason) => {
+              const rows = result.excluded.filter((x) => x.reason === reason);
+              if (rows.length === 0) return null;
+              return (
+                <div key={reason}>
+                  <span className="font-medium">
+                    {rows.length}{" "}
+                    {reason === "sin-posicion"
+                      ? "sin posición (POR/DEF/MED/DEL vacío): no hay hueco donde encajarlos. Se arregla con sync-rosters + refresh-positions."
+                      : "sin Prioridad: el modelo no los proyecta. Ponles valor manual o revisa su histórico."}
+                  </span>
+                  <div className="opacity-80">
+                    {rows
+                      .slice(0, 12)
+                      .map(
+                        (x) =>
+                          `${x.player.display_name} (${x.player.team_name}${
+                            x.player.priority != null
+                              ? `, Prio ${x.player.priority.toFixed(1)}`
+                              : ""
+                          })`,
+                      )
+                      .join(" · ")}
+                    {rows.length > 12 ? ` … y ${rows.length - 12} más` : ""}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
 
