@@ -138,10 +138,10 @@ cuesta una vuelta más pero nunca da un dato viejo.
 |---|---|
 | `buscar_jugadores(posicion?, equipo?, solo_disponibles?, orden?, limite?)` | Filas del tablero: Prio, Base, VORP, Salto, Tier, Disp, tags, banderas |
 | `detalle_jugador(nombre)` | Ficha completa: métricas, histórico, Marca/AS, flags, valor manual y nota |
-| `estado_draft()` | Resumen: picks hechos, siguiente pick, a quién le toca, últimos 10 |
+| `estado_draft()` | Resumen: picks hechos, siguiente pick, a quién le toca, últimos 10, y **quién está preguntando** |
 | `picks_realizados(participante?, posicion?, equipo?, ronda?, limite?)` | El histórico **completo** de picks, filtrable |
 | `proximos_turnos(cuantos?)` | Orden de los próximos picks y **cuántos picks espera cada uno** hasta su siguiente turno |
-| `plantilla(participante?)` | Reparto por posición vs. plazas de titular. Sin argumento, el del turno |
+| `plantilla(participante?)` | Reparto por posición vs. plazas de titular. **Sin argumento, la de quien pregunta** |
 | `plantillas_todas()` | El reparto de **todos** los participantes de un vistazo, señalando a quién le faltan titulares |
 | `escasez_posicional()` | Por posición y entre los disponibles AHORA: mejor, caída al 3º, cuántos superan el reemplazo |
 | `escasez_historica()` | La tabla de 8 temporadas de la sección 7 (dato fijo) |
@@ -149,6 +149,17 @@ cuesta una vuelta más pero nunca da un dato viejo.
 Preguntas como *"con el pick 5, ¿me interesa un portero top o espero?"* se
 responden encadenando `proximos_turnos` → `escasez_posicional` →
 `buscar_jugadores(POR)` → `escasez_historica`, con números reales en cada paso.
+
+### Sabe con quién habla
+
+El `user_id` sale del JWT y nunca del modelo: el asistente decide *qué* preguntar,
+nunca *en nombre de quién*. Con eso, `estado_draft` dice quién pregunta y si es su
+turno, y `plantilla()` sin argumento devuelve **la suya**.
+
+Antes devolvía la del turno actual, así que "¿de qué posición voy corto?" respondía
+sobre otra persona siempre que no fuera tu turno — las mismas palabras, otra
+plantilla, y nada en pantalla que lo indicara. Si quien pregunta solo administra y
+no juega, se dice y se cae a la del turno.
 
 ### Por qué `proximos_turnos` es la clave
 

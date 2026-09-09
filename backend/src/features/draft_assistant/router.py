@@ -19,6 +19,16 @@ from src.shared.dependencies import get_current_admin, get_db
 router = APIRouter(prefix="/draft-assistant", tags=["draft-assistant"])
 
 
+def _user_id(user: dict) -> int:
+    """The asker's id, from the JWT. The chat must know who it is talking to:
+    "de que voy corto?" has to answer about them, not about whoever holds the
+    turn."""
+    try:
+        return int(user.get("sub") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 class AssistantMessage(BaseModel):
     role: str = Field(pattern="^(user|assistant)$")
     content: str = Field(max_length=8000)
@@ -92,6 +102,7 @@ async def ask(
         phase=phase,
         question=payload.question,
         history=[ChatMessage(role=m.role, content=m.content) for m in payload.history],  # type: ignore[arg-type]
+        user_id=_user_id(user),
         provider_name=payload.provider,
         model=payload.model,
     )
