@@ -47,9 +47,10 @@ export function AssistantPanel({
     const trimmed = question.trim();
     if (!trimmed || loading) return;
 
-    // The backend caps history at 20 messages; sending the tail keeps the
-    // request small without losing the thread of the conversation.
-    const history = messages.slice(-10).map((m) => ({
+    // Send the whole conversation; the backend keeps the last 80 messages.
+    // Slicing here to 10 made the assistant forget the thread after five
+    // exchanges — during a draft that is most of the session.
+    const history = messages.slice(-80).map((m) => ({
       role: m.role,
       content: m.content,
     }));
@@ -150,7 +151,7 @@ export function AssistantPanel({
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            maxLength={2000}
+            maxLength={4000}
             placeholder="Pregunta algo sobre el draft…"
             className="flex-1 rounded-md border border-vpv-card-border bg-vpv-bg px-3 py-2 text-sm text-vpv-text"
           />

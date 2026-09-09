@@ -144,9 +144,7 @@ async def test_picks_realizados_filters_by_participant() -> None:
 @pytest.mark.asyncio
 async def test_picks_realizados_covers_more_than_the_last_ten() -> None:
     """estado_draft only shows 10; this is the tool that sees the whole draft."""
-    picks = [
-        _Pick(i, 1, 1, "Ana", 100 + i, f"Jugador{i}", "MED", "Equipo") for i in range(1, 26)
-    ]
+    picks = [_Pick(i, 1, 1, "Ana", 100 + i, f"Jugador{i}", "MED", "Equipo") for i in range(1, 26)]
     tools = build_tools(_ctx([], _draft_with(picks)))
 
     out = await run_tool(tools, "picks_realizados", {"limite": 40})

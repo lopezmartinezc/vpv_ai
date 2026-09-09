@@ -20,7 +20,11 @@ from src.features.draft_assistant.providers.openai_provider import OpenAIProvide
 
 logger = logging.getLogger(__name__)
 
-MAX_HISTORY_MESSAGES = 20
+# Conversation kept for the whole draft rather than a handful of turns. Not
+# unbounded, and not for rationing: every question resends the history, so cost
+# grows quadratically with it. 80 messages is ~40 exchanges — more than a draft
+# needs — and past that the oldest turns drop off while the chat keeps working.
+MAX_HISTORY_MESSAGES = 80
 
 # The single most important line in this feature. The draft order is already
 # computed and backtested over 7 seasons (Spearman 0.464); an LLM's own opinion

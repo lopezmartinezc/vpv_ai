@@ -200,11 +200,18 @@ los acepta como parámetro.
   empaqueta en el JS del navegador y sería público. El `.env` ya está fuera de git.
 - **Solo admin** (`Depends(get_current_admin)`). No es delegable por el bit
   `Perm.DRAFT`.
-- **Rate limit** de 30 preguntas/hora por IP (`@limiter.limit("30/hour")`).
-- **Tope de 8 vueltas** de herramientas por pregunta: un modelo atascado en bucle
-  no puede sangrar tokens.
-- **Entrada acotada**: pregunta ≤ 2.000 caracteres, historial ≤ 20 mensajes.
-- **Límite de gasto** en la consola del proveedor.
+- **Sin límite de consultas.** Durante un draft se pregunta lo que haga falta, y
+  un tope que salta a mitad de un pick es peor que el gasto que evita. La app no
+  registra `SlowAPIMiddleware`, así que sin decorador la ruta queda realmente sin
+  límite (los `default_limits` globales no se aplican a rutas sin decorar). Hay
+  un test que lo fija, y otro que avisa si alguien añade el middleware.
+- **Tope de 8 vueltas de herramientas POR PREGUNTA**: es lo único que queda, y no
+  limita cuántas preguntas haces — evita que un modelo atascado en bucle sangre
+  tokens en una sola.
+- **Entrada acotada**: pregunta ≤ 4.000 caracteres, historial ≤ 80 mensajes. Es
+  para que un cliente roto no mande un megabyte, no para racionar la conversación.
+- **Límite de gasto** en la consola del proveedor. Es el sitio correcto para un
+  límite de dinero: corta el gasto sin cortarte a ti a mitad de draft.
 
 ### Qué datos salen del servidor
 
