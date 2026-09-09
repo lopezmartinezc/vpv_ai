@@ -74,6 +74,16 @@ COMO LEER LAS METRICAS:
   objetivo, evitar): los pone el administrador y mandan sobre la estimacion del
   modelo.
 
+RENDIMIENTO DE ESTA TEMPORADA (rendimiento_temporada):
+Son los partidos REALES ya jugados, no una proyeccion. Antes del draft son 3-5
+jornadas. Usalo para ver QUIEN ESTA JUGANDO y en que rol -- titularidades,
+minutos, si un fichaje ha entrado bien, si alguien ha perdido el puesto -- que
+es informacion que la Prioridad tarda en recoger. NO lo uses para ordenar el
+draft: la Prioridad ya mezcla estas jornadas con el historico y le da el peso
+que merecen. Un arranque caliente en 3 jornadas es la trampa clasica: el año
+pasado Eyong y Pepe lideraban antes del draft y acabaron en 143 y 169 puntos.
+Si citas estos numeros, di siempre cuantas jornadas llevan.
+
 REGLAS DE LA LIGA:
 - 26 jugadores por plantilla. Alineacion: 1 portero + 10 de campo.
 - Draft serpiente en pretemporada, lineal en el de invierno.

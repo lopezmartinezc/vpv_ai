@@ -22,8 +22,11 @@ from src.features.draft_assistant.tools import ToolHandler, ToolSpec
 from src.features.draft_assistant.turn_math import next_pick_for, upcoming_picks
 from src.features.drafts.schemas import DraftDetailResponse
 from src.features.drafts.service import DraftService
+from src.features.stats.repository import PlayerStatRow, StatsRepository
+from src.features.stats.schemas_advanced import AdvancedPlayerStat
 from src.features.stats.schemas_draft import DraftValuePlayer, DraftValueResponse
 from src.features.stats.scorecard import STARTER_SLOTS
+from src.features.stats.service_advanced import AdvancedStatsService
 from src.features.stats.service_draft import DraftValueService
 
 POSITIONS = ("POR", "DEF", "MED", "DEL")
@@ -114,6 +117,9 @@ class AssistantContext:
     anonymize_participants: bool = True
     _draft: DraftDetailResponse | None = field(default=None, init=False, repr=False)
     _picked: set[int] | None = field(default=None, init=False, repr=False)
+    _perf: dict[int, tuple[PlayerStatRow, AdvancedPlayerStat | None]] | None = field(
+        default=None, init=False, repr=False
+    )
 
     async def board(self) -> DraftValueResponse:
         now = time.monotonic()
@@ -142,6 +148,29 @@ class AssistantContext:
             draft = await self.draft()
             self._picked = {pk.player_id for pk in draft.picks}
         return self._picked
+
+    async def season_perf(self) -> dict[int, tuple[PlayerStatRow, AdvancedPlayerStat | None]]:
+        """This season's RAW output per player, keyed by player id.
+
+        ``include_noncounting`` because before the draft every matchday is
+        ``counts=false`` — without it this returns nothing at all, which is
+        precisely the window the admin cares about. ``min_played=1`` for the
+        same reason: the advanced view defaults to 3 and would drop everyone
+        after two matchdays.
+
+        Memoised per request: two aggregate queries over player_stats, and one
+        question can ask for several players.
+        """
+        if self._perf is None:
+            rows = await StatsRepository(self.session).get_player_stats(
+                self.season_id, include_noncounting=True
+            )
+            advanced = await AdvancedStatsService(self.session).get_advanced_players(
+                self.season_id, min_played=1, include_noncounting=True
+            )
+            by_id = {a.player_id: a for a in advanced.players}
+            self._perf = {r.player_id: (r, by_id.get(r.player_id)) for r in rows}
+        return self._perf
 
     async def caller_participant_id(self) -> int | None:
         """The asker's participant row in this draft, or None if they only run it.
@@ -177,6 +206,40 @@ class AssistantContext:
                 ),
             )
         ]
+
+
+# Pre-draft this is three matchdays. Eyong and Pepe topped it and finished at
+# 143 and 169 — good, but nothing like the pace suggested. The caveat travels
+# with the data so the model cannot read a hot start as a projection.
+SEASON_SAMPLE_CAVEAT = (
+    "OJO: son los partidos REALES jugados hasta ahora; NO es una proyeccion. "
+    "Antes del draft son 3-5 jornadas: sirve para ver quien esta jugando y en "
+    "que rol, NO para ordenar el draft. Para eso esta la Prioridad, que ya "
+    "mezcla esto con el historico. Un arranque caliente en 3 jornadas es la "
+    "trampa clasica (Eyong y Pepe el año pasado)."
+)
+
+
+def _season_numbers(row: PlayerStatRow, adv: AdvancedPlayerStat | None) -> str:
+    """Just the figures, so the detail and the listing agree on wording."""
+    extra = ""
+    if adv is not None:
+        extra = (
+            f" | pp90 {_fmt(adv.pp90, 2)} | suelo/mediana/techo "
+            f"{_fmt(adv.p10)}/{_fmt(adv.p50)}/{_fmt(adv.p90)} | forma "
+            f"{_fmt(adv.form_5)} ({adv.trend})"
+        )
+    return (
+        f"{row.matchdays_played} PJ ({row.started_count} titular) | "
+        f"{row.minutes_played} min | {row.total_points} pts "
+        f"({_fmt(row.avg_points)}/jornada) | {row.goals} goles | "
+        f"{row.assists} asist | {row.yellow_cards} amarillas | "
+        f"Marca {_fmt(row.avg_marca, 2)} | AS {_fmt(row.avg_as, 2)}{extra}"
+    )
+
+
+def _season_line(row: PlayerStatRow, adv: AdvancedPlayerStat | None) -> str:
+    return f"{row.display_name} | {row.position} | {row.team_name} | {_season_numbers(row, adv)}"
 
 
 def _fmt(value: float | None, digits: int = 1) -> str:
@@ -269,6 +332,7 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
     async def detalle_jugador(nombre: str) -> str:
         board = await ctx.board()
         picked = await ctx.picked_ids()
+        perf = await ctx.season_perf()
         needle = nombre.lower().strip()
         matches = [p for p in board.players if needle in p.display_name.lower()]
         if not matches:
@@ -297,7 +361,13 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
                 f"tags: {', '.join(p.tags) or '-'}\n"
                 f"  Flags: pico={p.is_peak_year} banquillo={p.is_bench_risk} "
                 f"penaltis={p.is_penalty_taker} nuevo={p.is_new} "
-                f"fichado={p.player_id in picked} cambio_equipo={p.team_changed}"
+                f"fichado={p.player_id in picked} cambio_equipo={p.team_changed}\n"
+                f"  Esta temporada: "
+                + (
+                    _season_numbers(*perf[p.player_id])
+                    if p.player_id in perf
+                    else "sin datos todavia (no ha jugado ninguna jornada)"
+                )
             )
         return "\n\n".join(out)
 
@@ -500,6 +570,39 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
             )
         return "\n".join(lines)
 
+    async def rendimiento_temporada(
+        posicion: str | None = None,
+        equipo: str | None = None,
+        orden: str = "puntos",
+        limite: int = 20,
+    ) -> str:
+        perf = await ctx.season_perf()
+        rows = [pair for pair in perf.values()]
+        if posicion:
+            rows = [r for r in rows if r[0].position == posicion.upper()]
+        if equipo:
+            needle = equipo.lower()
+            rows = [r for r in rows if needle in (r[0].team_name or "").lower()]
+        if not rows:
+            return f"Sin datos de esta temporada con esos filtros.\n{SEASON_SAMPLE_CAVEAT}"
+
+        keys = {
+            "puntos": lambda r: r[0].total_points,
+            "media": lambda r: r[0].avg_points,
+            "goles": lambda r: r[0].goals,
+            "asistencias": lambda r: r[0].assists,
+            "minutos": lambda r: r[0].minutes_played,
+        }
+        rows.sort(key=keys.get(orden, keys["puntos"]), reverse=True)
+        rows = rows[:limite]
+        jornadas = max((r[0].matchdays_played for r in rows), default=0)
+        head = (
+            f"Rendimiento REAL de esta temporada, {len(rows)} jugadores "
+            f"(orden: {orden}; llevamos {jornadas} jornadas):"
+        )
+        body = "\n".join(_season_line(row, adv) for row, adv in rows)
+        return f"{head}\n{body}\n\n{SEASON_SAMPLE_CAVEAT}"
+
     async def escasez_historica() -> str:
         return HISTORICAL_SCARCITY
 
@@ -666,6 +769,35 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
             ),
             parameters={"type": "object", "properties": {}, "required": []},
             handler=_guarded(ctx, escasez_posicional),
+        ),
+        ToolSpec(
+            name="rendimiento_temporada",
+            description=(
+                "Rendimiento REAL de esta temporada jugado hasta ahora: partidos, "
+                "titularidades, minutos, goles, asistencias, notas Marca/AS, puntos por "
+                "jornada y avanzadas (pp90, suelo/mediana/techo, forma, tendencia). "
+                "Llamala cuando pregunten como esta arrancando alguien, quien esta en "
+                "forma, quien esta jugando de titular, o quien lleva mas goles. NO es "
+                "una proyeccion y antes del draft son pocas jornadas: para ordenar el "
+                "draft usa siempre la Prioridad del tablero."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "posicion": {"type": "string", "enum": list(POSITIONS)},
+                    "equipo": {
+                        "type": "string",
+                        "description": "Equipo de La Liga (coincidencia parcial).",
+                    },
+                    "orden": {
+                        "type": "string",
+                        "enum": ["puntos", "media", "goles", "asistencias", "minutos"],
+                    },
+                    "limite": {"type": "integer", "minimum": 1, "maximum": 50},
+                },
+                "required": [],
+            },
+            handler=_guarded(ctx, rendimiento_temporada),
         ),
         ToolSpec(
             name="escasez_historica",

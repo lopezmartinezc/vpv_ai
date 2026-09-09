@@ -74,7 +74,7 @@ que el chat y el tablero no pueden discrepar.
 | Ruta | Qué hace |
 |---|---|
 | `backend/src/features/draft_assistant/tools.py` | `ToolSpec`, adaptadores por proveedor, `run_tool` (la frontera de seguridad) |
-| `backend/src/features/draft_assistant/board_tools.py` | Las 9 herramientas sobre los servicios existentes + caché del tablero |
+| `backend/src/features/draft_assistant/board_tools.py` | Las 10 herramientas sobre los servicios existentes + caché del tablero |
 | `backend/src/features/draft_assistant/turn_math.py` | Proyección del orden serpiente (próximos turnos, espera hasta el siguiente) |
 | `backend/src/features/draft_assistant/providers/base.py` | Contrato común (`AssistantProvider`, `ChatMessage`, `AssistantReply`) |
 | `backend/src/features/draft_assistant/providers/anthropic_provider.py` | Messages API + bucle manual |
@@ -156,11 +156,29 @@ cuesta una vuelta más pero nunca da un dato viejo.
 | `plantilla(participante?)` | Reparto por posición vs. plazas de titular. **Sin argumento, la de quien pregunta** |
 | `plantillas_todas()` | El reparto de **todos** los participantes de un vistazo, señalando a quién le faltan titulares |
 | `escasez_posicional()` | Por posición y entre los disponibles AHORA: mejor, caída al 3º, cuántos superan el reemplazo |
+| `rendimiento_temporada(posicion?, equipo?, orden?, limite?)` | El rendimiento **real ya jugado** de esta temporada: PJ, titularidades, minutos, goles, asistencias, Marca/AS, pp90, suelo/mediana/techo, forma y tendencia |
 | `escasez_historica()` | La tabla de 8 temporadas de la sección 7 (dato fijo) |
 
 Preguntas como *"con el pick 5, ¿me interesa un portero top o espero?"* se
 responden encadenando `proximos_turnos` → `escasez_posicional` →
 `buscar_jugadores(POR)` → `escasez_historica`, con números reales en cada paso.
+
+### Rendimiento de esta temporada
+
+`rendimiento_temporada` y el bloque «Esta temporada» de `detalle_jugador` leen
+`StatsRepository.get_player_stats` y `AdvancedStatsService`, ambos con
+`include_noncounting=True` — antes del draft **todas** las jornadas son
+`counts=false`, así que sin eso no devuelven nada, y es justo la ventana que
+interesa. El avanzado va con `min_played=1`, porque su defecto de 3 dejaría
+fuera a todo el mundo tras dos jornadas.
+
+Sirve para ver **quién está jugando y en qué rol** —titularidades, minutos, si
+un fichaje ha entrado bien, si alguien perdió el puesto—, que es información que
+la Prioridad tarda en recoger. **No** sirve para ordenar el draft: la Prioridad
+ya mezcla estas jornadas con el histórico. Todas las respuestas de la
+herramienta llevan pegado ese aviso y el número de jornadas jugadas, porque el
+arranque caliente en 3 jornadas es la trampa clásica — el año pasado Eyong y
+Pépé lideraban antes del draft y acabaron en 143 y 169.
 
 ### Sabe con quién habla
 
