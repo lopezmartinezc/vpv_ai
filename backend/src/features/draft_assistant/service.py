@@ -82,29 +82,42 @@ momento del draft, consulta primero el estado. No inventes datos.
 """
 
 
+def _clean_setting(raw: str | None) -> str:
+    """Strip a trailing ``# comment`` and surrounding whitespace.
+
+    The backend is started by systemd with ``EnvironmentFile=``, and systemd
+    only ignores comments on their OWN line — ``KEY=value  # note`` yields the
+    comment as part of the value. Tolerating that here turns a baffling
+    "provider not valid" into a working deploy.
+    """
+    return (raw or "").split("#", 1)[0].strip()
+
+
 def build_provider() -> AssistantProvider:
     """Pick the configured backend. Raises if it is not usable, so the error
     surfaces as a clear 400 instead of a confusing failure mid-conversation."""
-    provider = (settings.assistant_provider or "").lower()
+    provider = _clean_setting(settings.assistant_provider).lower()
 
     if provider == "anthropic":
-        if not settings.anthropic_api_key:
+        key = _clean_setting(settings.anthropic_api_key)
+        if not key:
             raise BusinessRuleError("Falta ANTHROPIC_API_KEY en el backend")
         import anthropic
 
         return AnthropicProvider(
-            client=anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key),
-            model=settings.assistant_anthropic_model,
+            client=anthropic.AsyncAnthropic(api_key=key),
+            model=_clean_setting(settings.assistant_anthropic_model),
         )
 
     if provider == "openai":
-        if not settings.openai_api_key:
+        key = _clean_setting(settings.openai_api_key)
+        if not key:
             raise BusinessRuleError("Falta OPENAI_API_KEY en el backend")
         import openai
 
         return OpenAIProvider(
-            client=openai.AsyncOpenAI(api_key=settings.openai_api_key),
-            model=settings.assistant_openai_model,
+            client=openai.AsyncOpenAI(api_key=key),
+            model=_clean_setting(settings.assistant_openai_model),
         )
 
     raise BusinessRuleError(
