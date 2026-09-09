@@ -175,3 +175,21 @@ describe("simulateDraft", () => {
     expect(r.exhausted).toBe(true);
   });
 });
+
+describe("players the board cannot value", () => {
+  it("reports them instead of dropping them silently", () => {
+    // A star missing from the simulated draft looks like a broken simulator.
+    // It is usually a gap in the board — a roster not yet synced, or a player
+    // with no projection — and the UI has to be able to say so.
+    const noPrio = { ...p("DEL", "Barcelona", 0), display_name: "Sin proyección" };
+    (noPrio as { priority: number | null }).priority = null;
+    const r = simulateDraft([...pool(), noPrio], opts());
+
+    expect(r.picks.some((x) => x.player.display_name === "Sin proyección")).toBe(false);
+    expect(r.excluded.map((x) => x.display_name)).toContain("Sin proyección");
+  });
+
+  it("reports nothing when every player has a value", () => {
+    expect(simulateDraft(pool(), opts()).excluded).toEqual([]);
+  });
+});
