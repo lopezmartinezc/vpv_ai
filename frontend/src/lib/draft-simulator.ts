@@ -44,19 +44,21 @@ const OVER_TARGET_PENALTY = 0.3;
  * if his raw value never made him attractive. */
 const HANDCUFF_LAST_ROUNDS = 6;
 
-/** Round-1 shove for an elite keeper. Enough to make him a first-round pick,
- * NOT enough to go first: the observed order is the top forwards and
- * midfielders of the big teams, with the big three's keepers following inside
- * the same round. At 1.8 a 250-point keeper scored 450 and outranked every
- * forward, so picks 1-3 were always keepers and the best forward survived to
- * the fourth slot — which is how "my first pick never changes" showed up. */
-const ROUND1_KEEPER_SHOVE = 1.25;
+/** Where an elite keeper sits in round 1: just under the third-best outfielder.
+ *
+ * Last year Courtois went #4 and Joan Garcia #6, behind three forwards. A
+ * multiplier cannot express that — it depends on how far keeper values happen
+ * to sit below forward values on a given board, and every value I tried either
+ * put keepers at picks 1-3 or out of the round entirely. Pinning them to a rank
+ * says what was actually observed and holds whatever the board's scale. */
+const ROUND1_KEEPER_RANK = 3;
 
-/** How many keepers are "the ones that go in round one". Observed: the starters
- * of Madrid, Barça and Atlético — three, not one per manager. Shoving every
+/** How many keepers are "the ones that go in round one". Last year: two —
+ * Courtois at #4 and Joan Garcia at #6. Oblak followed at #18 and Unai Simon at
+ * #25, both on their own merit rather than on the round-1 rush. Shoving every
  * big-team keeper instead sent all eleven managers after a keeper in round 1
  * and left no understudies for the handcuff. */
-const ELITE_KEEPERS = 3;
+const ELITE_KEEPERS = 2;
 
 /** How many names a bot chooses between. Small early, wider later: in the first
  * rounds the board is obvious and everyone takes one of the same two or three
@@ -73,6 +75,50 @@ function shortlistFor(round: number): number {
  * spends a first-round pick on the ninth-best keeper; without this the noise
  * put four keepers in round 1. */
 const ROUND1_OTHER_KEEPER_PENALTY = 0.25;
+
+/*
+ * Calibrated against last season's real draft (11 managers, 26 rounds):
+ *
+ *   R  | DEL MED DEF POR | from the big three
+ *   1  |  6   3   0   2  | 90%
+ *   2  |  3   3   4   1  | 81%
+ *   3  |  3   4   3   1  | 54%
+ *   4  |  7   4   0   0  | 27%
+ *
+ * Two effects the earlier model missed entirely: nobody takes a defender in
+ * round 1, and the pull of a big-team badge is enormous at the top of the
+ * draft and mostly gone by round 4.
+ */
+
+/** Multiplier on the configured big-team bias, by round. */
+function starPower(round: number): number {
+  if (round <= 1) return 3;
+  if (round <= 2) return 1.8;
+  if (round <= 3) return 1.4;
+  if (round <= 4) return 0.35;
+  return 0.15;
+}
+
+/** Appetite by position in the opening rounds, fading to neutral by round 4.
+ *
+ * Only defenders are adjusted. Round 1 last year had six forwards and three
+ * midfielders, but that split is already in their Prioridad — boosting forwards
+ * on top of it double-counted and produced ten in a round. What the board does
+ * NOT explain is the zero: not one defender went in round 1 and four went in
+ * round 2, which is a habit, not a valuation. */
+const EARLY_POSITION_BIAS: Record<string, number> = {
+  DEL: 1.0,
+  MED: 1.0,
+  DEF: 0.5,
+  POR: 1.0,
+};
+
+function positionBias(position: string, round: number): number {
+  // Round 1 only. Defenders were shut out of round 1 and then went four deep in
+  // round 2, so this is an opening-round taboo rather than a fading preference.
+  if (round > 1) return 1;
+  return EARLY_POSITION_BIAS[position] ?? 1;
+}
 
 export interface SimOptions {
   participants: number;
@@ -197,6 +243,18 @@ export function simulateDraft(
       .slice(0, ELITE_KEEPERS)
       .map((x) => x.player_id),
   );
+  // What an elite keeper is "worth" in round 1: the score of the player just
+  // below the opening stars. Computed once, on the full board.
+  const openingOutfield = available
+    .filter((x) => x.position !== "POR")
+    .map(
+      (x) =>
+        (x.priority ?? 0) *
+        positionBias(x.position, 1) *
+        (isBigTeam(x.team_name) ? 1 + bigTeamBias * starPower(1) : 1),
+    )
+    .sort((a, b) => b - a);
+  const eliteKeeperScore = (openingOutfield[ROUND1_KEEPER_RANK] ?? 0) * 0.99;
   const taken = new Set<number>();
   const squads = new Map<number, DraftValuePlayer[]>();
   for (let i = 1; i <= participants; i++) squads.set(i, []);
@@ -221,7 +279,16 @@ export function simulateDraft(
 
     const chosen = isMe
       ? pickForMe(pool, squad, myOrder)
-      : pickForBot(pool, squad, round, rounds, bigTeamBias, eliteKeeperIds, rand);
+      : pickForBot(
+          pool,
+          squad,
+          round,
+          rounds,
+          bigTeamBias,
+          eliteKeeperIds,
+          eliteKeeperScore,
+          rand,
+        );
 
     taken.add(chosen.player_id);
     squad.push(chosen);
@@ -263,6 +330,7 @@ function pickForBot(
   rounds: number,
   bigTeamBias: number,
   eliteKeeperIds: ReadonlySet<number>,
+  eliteKeeperScore: number,
   rand: () => number,
 ): DraftValuePlayer {
   const keepers = squad.filter((x) => x.position === "POR");
@@ -282,16 +350,23 @@ function pickForBot(
 
   const scored = candidates.map((x) => {
     let score = (x.priority ?? 0) * positionAppetite(squad, x.position);
-    if (isBigTeam(x.team_name)) score *= 1 + bigTeamBias;
-    // First round: one of the big three's keepers is a status pick here — and
-    // any other keeper is not a first-round pick at all.
-    if (round === 1 && x.position === "POR") {
-      score *= eliteKeeperIds.has(x.player_id)
-        ? ROUND1_KEEPER_SHOVE
-        : ROUND1_OTHER_KEEPER_PENALTY;
-    }
+    score *= positionBias(x.position, round);
+    if (isBigTeam(x.team_name)) score *= 1 + bigTeamBias * starPower(round);
     return { player: x, score };
   });
+
+  if (round === 1) {
+    // Elite keepers slot in behind the top outfielders of the OPENING board;
+    // everyone else's keeper is simply not a first-round pick. The threshold is
+    // fixed rather than recomputed against the shrinking pool — otherwise the
+    // keeper stays perpetually fourth and is never actually taken.
+    for (const row of scored) {
+      if (row.player.position !== "POR") continue;
+      row.score = eliteKeeperIds.has(row.player.player_id)
+        ? eliteKeeperScore
+        : row.score * ROUND1_OTHER_KEEPER_PENALTY;
+    }
+  }
 
   scored.sort((a, b) => b.score - a.score);
   // Not always the top name: real managers disagree, and that disagreement is
