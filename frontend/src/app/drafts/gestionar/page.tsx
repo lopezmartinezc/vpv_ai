@@ -604,19 +604,24 @@ export default function GestionarDraftPage() {
     if (!currentDraft) return;
     if (
       !window.confirm(
-        "Esto BORRA todos los picks del draft y libera todos los jugadores " +
-          "(vuelve a empezar de cero). Úsalo para limpiar una prueba. ¿Reiniciar el draft?",
+        "Esto BORRA todos los picks del draft, libera todos los jugadores y " +
+          "ELIMINA LAS LISTAS DE AUTO-PICK de todos los participantes " +
+          "(vuelve a empezar de cero). Úsalo para limpiar una prueba. " +
+          "¿Reiniciar el draft?",
       )
     ) {
       return;
     }
     setError(null);
     try {
-      const res = await apiClient.post<{ deleted_picks: number }>(
-        `/drafts/admin/${currentDraft.id}/reset`,
-        {},
+      const res = await apiClient.post<{
+        deleted_picks: number;
+        deleted_wishlists: number;
+      }>(`/drafts/admin/${currentDraft.id}/reset`, {});
+      showSuccess(
+        `Draft reiniciado: ${res.deleted_picks} picks y ` +
+          `${res.deleted_wishlists} listas de auto-pick borradas`,
       );
-      showSuccess(`Draft reiniciado (${res.deleted_picks} picks borrados)`);
       await loadDrafts();
       await loadDraftDetail();
     } catch (e) {
@@ -630,7 +635,7 @@ export default function GestionarDraftPage() {
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-bold text-vpv-text">Gestionar Draft</h1>
         <div className="flex items-center gap-2">
-          {currentDraft && (currentDraft.total_picks ?? 0) > 0 && (
+          {currentDraft && (
             <button
               type="button"
               onClick={resetDraft}

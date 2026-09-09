@@ -858,12 +858,17 @@ class DraftService:
         return DeletePickResponse(deleted_pick_number=pick_number)
 
     async def reset_draft(self, draft_id: int, user: dict) -> dict:
-        """Wipe every pick of a draft and release all ownership (admin only).
+        """Wipe a draft back to untouched (admin only).
 
         For the "test the draft, then run the real one" workflow: deletes all
         ``draft_picks``, sets each picked player's ``owner_id`` back to NULL,
-        and returns the draft row to a clean ``pending`` state. Broadcasts a
-        ``draft_reset`` event so any connected client resyncs.
+        deletes the auto-pick wishlists, and returns the draft row to a clean
+        ``pending`` state. Broadcasts a ``draft_reset`` event so any connected
+        client resyncs.
+
+        Wishlists go too because a reset means "the rehearsal never happened":
+        a list left over from a test would auto-pick during the REAL draft,
+        silently and on someone else's turn.
         """
         draft = await self.repo.get_draft_by_id(draft_id)
         if draft is None:
@@ -875,7 +880,7 @@ class DraftService:
         if not is_privileged:
             raise AuthorizationError("Solo un administrador puede reiniciar el draft")
 
-        deleted = await self.repo.reset_draft(draft_id)
+        deleted, wishlists = await self.repo.reset_draft(draft_id)
         draft.status = "pending"
         draft.started_at = None
         draft.completed_at = None
@@ -888,7 +893,11 @@ class DraftService:
             draft_id,
             {"type": "draft_reset", "status": "pending"},
         )
-        return {"deleted_picks": deleted, "status": draft.status}
+        return {
+            "deleted_picks": deleted,
+            "deleted_wishlists": wishlists,
+            "status": draft.status,
+        }
 
     async def list_teams(self, draft_id: int) -> list[DraftTeamOption]:
         """Return the teams of the draft's season for the search filter."""
