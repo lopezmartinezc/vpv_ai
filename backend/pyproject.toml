@@ -25,6 +25,10 @@ dependencies = [
     "slowapi>=0.1.9",
     "pywebpush>=2.0.0",
     "mysql-connector-python>=9.0.0",
+    # Draft assistant (admin chat over the live board). Imported lazily in
+    # draft_assistant/service.py, so the app still boots without them.
+    "anthropic>=1.4.0",
+    "openai>=3.10.0",
 ]
 
 [project.optional-dependencies]

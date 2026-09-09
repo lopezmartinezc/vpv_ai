@@ -66,6 +66,19 @@ class Settings(BaseSettings):
     )
     telegram_enabled: bool = False
 
+    # Draft assistant (LLM chat in the live draft, admin only).
+    # Keys live here and NEVER reach the frontend — a NEXT_PUBLIC_* copy would
+    # be bundled into the browser JS and become public.
+    assistant_enabled: bool = False
+    assistant_provider: str = "anthropic"  # "anthropic" | "openai"
+    anthropic_api_key: str = ""
+    openai_api_key: str = ""
+    assistant_anthropic_model: str = "claude-opus-5"
+    assistant_openai_model: str = "gpt-5"
+    # Other participants' real names add nothing to the reasoning, so by default
+    # they do not leave the server. Set false to send them.
+    assistant_anonymize_participants: bool = True
+
     # Legacy MySQL (for reverse sync PG → MySQL)
     mysql_host: str = ""
     mysql_port: int = 3306
