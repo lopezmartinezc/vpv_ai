@@ -43,7 +43,7 @@ class OpenAIProvider:
         max_iterations: int = DEFAULT_MAX_ITERATIONS,
     ) -> None:
         self._client = client
-        self._model = model
+        self.model = model
         self._max_iterations = max_iterations
 
     async def run(
@@ -59,7 +59,7 @@ class OpenAIProvider:
 
         for _ in range(self._max_iterations):
             response = await self._client.responses.create(
-                model=self._model,
+                model=self.model,
                 instructions=system,
                 tools=tool_params,
                 input=items,
