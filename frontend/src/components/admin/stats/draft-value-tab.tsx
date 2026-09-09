@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { apiClient } from "@/lib/api-client";
 import { sorted, SortDir, POS_COLOR } from "@/components/admin/stats/common";
+import { DraftSimulator } from "@/components/admin/stats/draft-simulator";
 import {
   PLAYER_TAGS,
   PLAYER_TAG_CLASSES as TAG_CLS,
@@ -291,6 +292,9 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
 
   return (
     <div className="space-y-3">
+      {/* Sandbox: run a whole draft against this league's habits */}
+      <DraftSimulator players={data.players} participantCount={data.participant_count} />
+
       {/* Header info */}
       <div className="rounded-lg border border-vpv-card-border bg-vpv-card px-4 py-2.5">
         <div className="flex flex-wrap items-center gap-3 text-xs text-vpv-text-muted">
