@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
 from src.core.exceptions import BusinessRuleError
-from src.core.rate_limit import limiter
 from src.features.draft_assistant.providers.base import ChatMessage
 from src.features.draft_assistant.service import DraftAssistantService
 from src.shared.dependencies import get_current_admin, get_db
@@ -20,8 +19,10 @@ class AssistantMessage(BaseModel):
 
 
 class AssistantAskRequest(BaseModel):
-    question: str = Field(min_length=1, max_length=2000)
-    history: list[AssistantMessage] = Field(default_factory=list, max_length=20)
+    # Generous rather than tight: these exist so a malformed client cannot post
+    # a megabyte, not to ration the conversation.
+    question: str = Field(min_length=1, max_length=4000)
+    history: list[AssistantMessage] = Field(default_factory=list, max_length=80)
 
 
 class AssistantToolCall(BaseModel):
@@ -36,8 +37,14 @@ class AssistantAskResponse(BaseModel):
     truncated: bool
 
 
+# Deliberately NOT rate limited: during a draft the admin asks as often as he
+# needs to, and a cap that trips mid-pick is worse than the spend it prevents.
+# The app registers no SlowAPIMiddleware, so with no decorator here there is no
+# limit at all - the global default_limits never apply to undecorated routes.
+# The runaway-cost guard that remains is per QUESTION, not per session: a
+# question can trigger at most ASSISTANT_MAX_TOOL_ROUNDS tool calls. Put a spend
+# cap on the provider console; that is the right place for a money limit.
 @router.post("/{season_id}/{phase}/ask", response_model=AssistantAskResponse)
-@limiter.limit("30/hour")
 async def ask(
     request: Request,
     season_id: int,
