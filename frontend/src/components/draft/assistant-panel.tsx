@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { apiClient, ApiClientError } from "@/lib/api-client";
 
@@ -8,14 +8,32 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   tools?: string[];
+  model?: string;
 }
 
 interface AskResponse {
   reply: string;
   provider: string;
+  model: string;
   tool_calls: { name: string; arguments: Record<string, unknown> }[];
   truncated: boolean;
 }
+
+interface ProviderInfo {
+  name: string;
+  models: string[];
+  default_model: string;
+}
+
+interface ProvidersResponse {
+  providers: ProviderInfo[];
+  default: string;
+}
+
+const PROVIDER_LABEL: Record<string, string> = {
+  anthropic: "Claude",
+  openai: "ChatGPT",
+};
 
 const SUGGESTIONS = [
   "¿A quién cojo en este pick?",
@@ -37,11 +55,48 @@ export function AssistantPanel({
   seasonId: number;
   phase: string;
 }) {
+  const [providers, setProviders] = useState<ProviderInfo[]>([]);
+  const [provider, setProvider] = useState<string>("");
+  const [model, setModel] = useState<string>("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+
+  // Which backends have a key, and what models each one offers. Model lists come
+  // live from the vendor, so a new release shows up without a deploy.
+  useEffect(() => {
+    let cancelled = false;
+    apiClient
+      .get<ProvidersResponse>("/draft-assistant/providers")
+      .then((res) => {
+        if (cancelled) return;
+        setProviders(res.providers);
+        const initial =
+          res.providers.find((p) => p.name === res.default) ?? res.providers[0];
+        if (initial) {
+          setProvider(initial.name);
+          setModel(initial.default_model || initial.models[0] || "");
+        }
+      })
+      .catch(() => {
+        // Assistant disabled or unreachable: the chat still works on the
+        // backend defaults, it just cannot offer a choice.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const current = providers.find((p) => p.name === provider);
+
+  function pickProvider(name: string) {
+    setProvider(name);
+    // Models do not carry across vendors — reset to that provider's default.
+    const next = providers.find((p) => p.name === name);
+    setModel(next?.default_model || next?.models[0] || "");
+  }
 
   async function send(question: string) {
     const trimmed = question.trim();
@@ -63,7 +118,12 @@ export function AssistantPanel({
     try {
       const res = await apiClient.post<AskResponse>(
         `/draft-assistant/${seasonId}/${phase}/ask`,
-        { question: trimmed, history },
+        {
+          question: trimmed,
+          history,
+          provider: provider || null,
+          model: model || null,
+        },
       );
       setMessages((prev) => [
         ...prev,
@@ -71,6 +131,7 @@ export function AssistantPanel({
           role: "assistant",
           content: res.reply,
           tools: res.tool_calls.map((t) => t.name),
+          model: `${PROVIDER_LABEL[res.provider] ?? res.provider} · ${res.model}`,
         },
       ]);
     } catch (err) {
@@ -94,6 +155,43 @@ export function AssistantPanel({
       </summary>
 
       <div className="border-t border-vpv-card-border px-4 py-3">
+        {providers.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+            {providers.length > 1 && (
+              <div className="flex overflow-hidden rounded-md border border-vpv-card-border">
+                {providers.map((p) => (
+                  <button
+                    key={p.name}
+                    type="button"
+                    onClick={() => pickProvider(p.name)}
+                    className={
+                      p.name === provider
+                        ? "bg-vpv-accent px-3 py-1 font-medium text-white"
+                        : "px-3 py-1 text-vpv-text-muted hover:text-vpv-text"
+                    }
+                  >
+                    {PROVIDER_LABEL[p.name] ?? p.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            {current && current.models.length > 0 && (
+              <select
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                className="rounded-md border border-vpv-card-border bg-vpv-bg px-2 py-1 text-vpv-text"
+                aria-label="Modelo"
+              >
+                {current.models.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
+
         <div className="max-h-96 space-y-3 overflow-y-auto">
           {messages.length === 0 && (
             <div className="space-y-2">
@@ -126,9 +224,13 @@ export function AssistantPanel({
               }
             >
               <p className="whitespace-pre-wrap">{m.content}</p>
-              {m.tools && m.tools.length > 0 && (
+              {m.role === "assistant" && (m.model || m.tools?.length) && (
                 <p className="mt-1 text-[10px] text-vpv-text-muted">
-                  consultó: {Array.from(new Set(m.tools)).join(", ")}
+                  {m.model}
+                  {m.model && m.tools?.length ? " · " : ""}
+                  {m.tools?.length
+                    ? `consultó: ${Array.from(new Set(m.tools)).join(", ")}`
+                    : ""}
                 </p>
               )}
             </div>

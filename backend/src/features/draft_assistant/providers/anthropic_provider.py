@@ -37,7 +37,7 @@ class AnthropicProvider:
         max_iterations: int = DEFAULT_MAX_ITERATIONS,
     ) -> None:
         self._client = client
-        self._model = model
+        self.model = model
         self._max_tokens = max_tokens
         self._max_iterations = max_iterations
 
@@ -59,7 +59,7 @@ class AnthropicProvider:
 
         for _ in range(self._max_iterations):
             response = await self._client.messages.create(
-                model=self._model,
+                model=self.model,
                 max_tokens=self._max_tokens,
                 system=system_blocks,
                 tools=tool_params,

@@ -72,20 +72,30 @@ Añade el bloque al final de `/opt/vpv/backend/.env`.
 > recorta lo que va tras `#`, pero no te fíes: con una API key el resultado
 > sería una key corrupta y un error críptico.)
 
+**Pon las dos keys.** El chat trae un selector de proveedor y otro de modelo, y
+solo ofrece los proveedores que tengan key. Con una sola key el selector no
+aparece y siempre responde ese. `ASSISTANT_PROVIDER` y los `*_MODEL` son solo el
+valor **por defecto** al abrir el panel; desde ahí se cambia sin tocar nada.
+
 ```bash
 cat >> /opt/vpv/backend/.env <<'EOF'
 
 # --- Asistente de draft ---
 ASSISTANT_ENABLED=true
-# anthropic | openai
+# Proveedor y modelos por defecto; el chat deja cambiarlos en caliente
 ASSISTANT_PROVIDER=anthropic
 ANTHROPIC_API_KEY=sk-ant-PON-AQUI-LA-TUYA
-OPENAI_API_KEY=
+OPENAI_API_KEY=sk-PON-AQUI-LA-TUYA
 ASSISTANT_ANTHROPIC_MODEL=claude-opus-5
 ASSISTANT_OPENAI_MODEL=gpt-5
 ASSISTANT_ANONYMIZE_PARTICIPANTS=true
 EOF
 ```
+
+La lista de modelos del desplegable **se pide en vivo a cada proveedor**
+(`models.list()`, cacheada 10 min), así que un modelo nuevo aparece solo, sin
+tocar código. Si esa llamada falla, el desplegable se queda con el modelo por
+defecto — nunca deja el chat sin funcionar.
 
 Ajusta permisos si hiciera falta (el fichero lleva secretos):
 
@@ -147,14 +157,23 @@ mira si se coló un comentario inline en el `.env`.
 
 ---
 
-## 6. Cambiar de proveedor
+## 6. Cambiar de proveedor o de modelo
 
-Sin redespliegue: edita `.env` y reinicia.
+**Desde el chat**, sin tocar el servidor: los dos selectores en la cabecera del
+panel. Cada respuesta lleva debajo qué proveedor y modelo la generó, así que
+puedes comparar en la misma conversación.
+
+Para cambiar el **valor por defecto** al abrir el panel:
 
 ```bash
 sed -i 's/^ASSISTANT_PROVIDER=.*/ASSISTANT_PROVIDER=openai/' /opt/vpv/backend/.env
-# asegúrate de que OPENAI_API_KEY está puesta
 sudo systemctl restart vpv-backend
+```
+
+Comprobar qué ofrece (como admin, con tu token):
+
+```bash
+curl -s localhost:8000/api/draft-assistant/providers -H "Authorization: Bearer $TOKEN" | head -c 500
 ```
 
 ---

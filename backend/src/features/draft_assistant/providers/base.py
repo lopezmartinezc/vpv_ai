@@ -39,10 +39,15 @@ class AssistantReply:
     tool_calls: list[ToolCallTrace] = field(default_factory=list)
     # True when the iteration cap stopped the loop before the model answered.
     truncated: bool = False
+    # Which backend and model actually answered. Filled in by the service, since
+    # the chat picks both per question.
+    provider: str = ""
+    model: str = ""
 
 
 class AssistantProvider(Protocol):
     name: str
+    model: str
 
     async def run(
         self,
