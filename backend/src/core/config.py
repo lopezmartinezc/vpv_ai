@@ -78,6 +78,11 @@ class Settings(BaseSettings):
     # Other participants' real names add nothing to the reasoning, so by default
     # they do not leave the server. Set false to send them.
     assistant_anonymize_participants: bool = True
+    # Tool rounds one question may take. A broad "who do I pick?" legitimately
+    # chains estado_draft -> proximos_turnos -> plantilla -> escasez_posicional
+    # -> buscar_jugadores per position, so a low cap cuts it off just before it
+    # answers. Still bounded, so a model stuck in a loop cannot bleed tokens.
+    assistant_max_tool_rounds: int = 20
 
     # Legacy MySQL (for reverse sync PG → MySQL)
     mysql_host: str = ""

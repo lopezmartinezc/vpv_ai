@@ -30,7 +30,9 @@ from src.features.draft_assistant.tools import ToolSpec, run_tool, to_openai_too
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MAX_ITERATIONS = 8
+# Overridable per provider; the real default lives in settings so it can be
+# raised in production without a deploy.
+DEFAULT_MAX_ITERATIONS = 20
 
 
 class OpenAIProvider:
@@ -91,11 +93,17 @@ class OpenAIProvider:
                     }
                 )
 
-        logger.warning("draft_assistant: openai hit the %d-iteration cap", self._max_iterations)
+        consulted = ", ".join(dict.fromkeys(t.name for t in trace)) or "ninguna"
+        logger.warning(
+            "draft_assistant: openai hit the %d-round cap after consulting %s",
+            self._max_iterations,
+            consulted,
+        )
         return AssistantReply(
             text=(
-                "Me he quedado sin vueltas consultando datos y no he llegado a una "
-                "respuesta. Prueba a preguntar algo mas concreto."
+                f"Me he quedado sin vueltas ({self._max_iterations}) consultando datos y no "
+                f"he llegado a una respuesta. Ya habia consultado: {consulted}. "
+                "Prueba a preguntar algo mas concreto, o sube ASSISTANT_MAX_TOOL_ROUNDS."
             ),
             tool_calls=trace,
             truncated=True,

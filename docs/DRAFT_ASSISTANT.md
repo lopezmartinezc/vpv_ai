@@ -216,9 +216,13 @@ los acepta como parámetro.
   registra `SlowAPIMiddleware`, así que sin decorador la ruta queda realmente sin
   límite (los `default_limits` globales no se aplican a rutas sin decorar). Hay
   un test que lo fija, y otro que avisa si alguien añade el middleware.
-- **Tope de 8 vueltas de herramientas POR PREGUNTA**: es lo único que queda, y no
-  limita cuántas preguntas haces — evita que un modelo atascado en bucle sangre
-  tokens en una sola.
+- **Tope de vueltas de herramientas POR PREGUNTA** (`ASSISTANT_MAX_TOOL_ROUNDS`,
+  por defecto 20): es lo único que queda, y no limita cuántas preguntas haces —
+  evita que un modelo atascado en bucle sangre tokens en una sola. Estuvo en 8 y
+  se quedaba corto: *"¿a quién cojo en este pick?"* encadena `estado_draft` →
+  `proximos_turnos` → `plantilla` → `escasez_posicional` → `buscar_jugadores` en
+  las 4 posiciones = 8 llamadas, y se cortaba justo antes de responder. Si vuelve
+  a pasar, el mensaje dice qué llegó a consultar y se sube por `.env` sin desplegar.
 - **Entrada acotada**: pregunta ≤ 4.000 caracteres, historial ≤ 80 mensajes. Es
   para que un cliente roto no mande un megabyte, no para racionar la conversación.
 - **Límite de gasto** en la consola del proveedor. Es el sitio correcto para un

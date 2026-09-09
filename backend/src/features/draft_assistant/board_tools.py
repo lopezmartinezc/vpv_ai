@@ -12,11 +12,13 @@ tokens for the same information and the model reads it just as well.
 from __future__ import annotations
 
 import time
+from contextlib import suppress
 from dataclasses import dataclass, field
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.features.draft_assistant.tools import ToolSpec
+from src.features.draft_assistant.tools import ToolHandler, ToolSpec
 from src.features.draft_assistant.turn_math import next_pick_for, upcoming_picks
 from src.features.drafts.schemas import DraftDetailResponse
 from src.features.drafts.service import DraftService
@@ -170,6 +172,26 @@ def _player_row(p: DraftValuePlayer, drafted: bool) -> str:
         f"Tier {p.position_tier or '-'} | Disp {_fmt(p.participation, 2)}"
         f"{tags}{extra}"
     )
+
+
+def _guarded(ctx: AssistantContext, fn: ToolHandler) -> ToolHandler:
+    """Roll the DB session back if a tool blows up.
+
+    A failed query leaves the transaction aborted, so without this the FIRST
+    failure poisons every later tool: the model burns its whole round budget on
+    errors and answers nothing. Rolling back is safe here because these tools
+    only read.
+    """
+
+    async def wrapped(**kwargs: Any) -> str:
+        try:
+            return await fn(**kwargs)
+        except Exception:
+            with suppress(Exception):
+                await ctx.session.rollback()
+            raise
+
+    return wrapped
 
 
 def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
@@ -490,7 +512,7 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
                 },
                 "required": [],
             },
-            handler=buscar_jugadores,
+            handler=_guarded(ctx, buscar_jugadores),
         ),
         ToolSpec(
             name="detalle_jugador",
@@ -509,7 +531,7 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
                 },
                 "required": ["nombre"],
             },
-            handler=detalle_jugador,
+            handler=_guarded(ctx, detalle_jugador),
         ),
         ToolSpec(
             name="estado_draft",
@@ -520,7 +542,7 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
                 "'que queda', 'cuando me toca') o de quien habla contigo ('yo', 'mi plantilla')."
             ),
             parameters={"type": "object", "properties": {}, "required": []},
-            handler=estado_draft,
+            handler=_guarded(ctx, estado_draft),
         ),
         ToolSpec(
             name="picks_realizados",
@@ -547,7 +569,7 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
                 },
                 "required": [],
             },
-            handler=picks_realizados,
+            handler=_guarded(ctx, picks_realizados),
         ),
         ToolSpec(
             name="proximos_turnos",
@@ -570,7 +592,7 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
                 },
                 "required": [],
             },
-            handler=proximos_turnos,
+            handler=_guarded(ctx, proximos_turnos),
         ),
         ToolSpec(
             name="plantillas_todas",
@@ -580,7 +602,7 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
                 "anticipar que posicion van a atacar los demas antes de tu proximo turno."
             ),
             parameters={"type": "object", "properties": {}, "required": []},
-            handler=plantillas_todas,
+            handler=_guarded(ctx, plantillas_todas),
         ),
         ToolSpec(
             name="plantilla",
@@ -603,7 +625,7 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
                 },
                 "required": [],
             },
-            handler=plantilla,
+            handler=_guarded(ctx, plantilla),
         ),
         ToolSpec(
             name="escasez_posicional",
@@ -613,7 +635,7 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
                 "reemplazo. Llamala para decidir que posicion atacar en este pick."
             ),
             parameters={"type": "object", "properties": {}, "required": []},
-            handler=escasez_posicional,
+            handler=_guarded(ctx, escasez_posicional),
         ),
         ToolSpec(
             name="escasez_historica",
@@ -623,6 +645,6 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
                 "para preguntas de estrategia general ('conviene portero pronto?')."
             ),
             parameters={"type": "object", "properties": {}, "required": []},
-            handler=escasez_historica,
+            handler=_guarded(ctx, escasez_historica),
         ),
     ]
