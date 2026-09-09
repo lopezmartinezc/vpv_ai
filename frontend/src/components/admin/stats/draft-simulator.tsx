@@ -141,6 +141,23 @@ export function DraftSimulator({
           </button>
         </div>
 
+        {result.excluded.length > 0 && (
+          <div className="rounded-md bg-red-500/10 px-3 py-2 text-xs text-red-300">
+            <b>{result.excluded.length} jugadores quedan fuera del simulador</b> porque
+            el tablero no les da Prioridad (columna Prio en blanco). Si falta alguien
+            que esperabas ver elegido pronto, es esto y no el simulador. Suele
+            arreglarse con <code>sync-rosters</code> + <code>refresh-positions</code>,
+            o poniéndole un valor manual.
+            <div className="mt-1 opacity-80">
+              {result.excluded
+                .slice(0, 12)
+                .map((x) => `${x.display_name} (${x.position}, ${x.team_name})`)
+                .join(" · ")}
+              {result.excluded.length > 12 ? ` … y ${result.excluded.length - 12} más` : ""}
+            </div>
+          </div>
+        )}
+
         {result.exhausted && (
           <p className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
             El tablero se quedó sin jugadores elegibles antes de acabar. Baja las

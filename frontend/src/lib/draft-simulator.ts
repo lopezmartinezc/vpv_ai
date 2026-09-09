@@ -89,6 +89,11 @@ export interface SimResult {
   /** True when the board ran out of eligible players before the last round —
    * a real possibility at keeper, where the pool is genuinely shallow. */
   exhausted: boolean;
+  /** Players the simulation could not consider because the board gives them no
+   * Prioridad. Surfaced, never silent: a star missing from the draft looks like
+   * a broken simulator when it is really a gap in the board (a roster not yet
+   * synced, a player with no projection). */
+  excluded: DraftValuePlayer[];
 }
 
 /** Deterministic PRNG so a seed always replays the same draft. */
@@ -137,7 +142,9 @@ export function simulateDraft(
   const { participants, myPosition, rounds, seed, bigTeamBias, myOrder } = options;
   const rand = mulberry32(seed);
 
-  const available = players.filter((x) => !x.is_drafted && x.priority != null);
+  const draftable = players.filter((x) => !x.is_drafted);
+  const available = draftable.filter((x) => x.priority != null);
+  const excluded = draftable.filter((x) => x.priority == null);
   // The specific keepers that go early: the best of the big three, by value.
   const eliteKeeperIds = new Set(
     available
@@ -186,6 +193,7 @@ export function simulateDraft(
     })),
     myPicks: picks.filter((x) => x.isMe),
     exhausted,
+    excluded,
   };
 }
 
