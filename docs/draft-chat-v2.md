@@ -57,10 +57,18 @@ de la evidencia reutilizado). La línea de modo (rápido/detallado) va al final
 del sistema, para que las dos modalidades compartan reglas y evidencia.
 
 En OpenAI cada request lleva además `prompt_cache_key`, estable por draft y
-revisión: OpenAI enruta por un hash del prefijo que *influye* en la máquina
-sin fijarla, y medido en producción dos preguntas con prefijo byte a byte
-idéntico no compartían caché. La clave fija el enrutado y cambia exactamente
-cuando cambia el estado del draft.
+revisión. Según la documentación de OpenAI la clave **particiona** la
+reutilización de caché entre grupos de peticiones (el enrutado lo gestiona
+OpenAI) y conviene que las peticiones relacionadas compartan una. Una clave por
+estado del draft mantiene todas las preguntas de ese estado en la misma
+partición; el primer acierto cruzado medido en producción (0 → 17 280 tokens
+en caché, 83 %) llegó con ella. Cambia exactamente cuando cambia el draft.
+
+Los campos de `usage` no significan lo mismo en los dos proveedores y se
+normalizan: *entrada* es todo lo enviado (en Anthropic, `input_tokens` es solo
+lo no cacheado y hay que sumar lecturas y escrituras de caché), *en caché* lo
+leído de caché, y se acumulan aparte las escrituras (`cache_write_tokens` en
+OpenAI, `cache_creation_input_tokens` en Anthropic, que las cobra a 1,25×).
 
 En Anthropic el sistema, las herramientas y el último bloque de cada mensaje
 van marcados con `cache_control: ephemeral`, como en el chat actual, de modo

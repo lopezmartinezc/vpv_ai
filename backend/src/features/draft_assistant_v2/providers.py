@@ -50,6 +50,7 @@ class Turn(BaseModel):
     output: list[dict[str, JsonValue]] = Field(default_factory=list)
     input_tokens: int = 0
     cached_tokens: int = 0
+    cache_write_tokens: int = 0
     output_tokens: int = 0
     incomplete: bool = False
 
@@ -96,14 +97,42 @@ def tokens(data: dict[str, JsonValue], key: str) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
+def input_total(provider: ProviderName, data: dict[str, JsonValue]) -> int:
+    """Everything sent, under one meaning for both providers.
+
+    OpenAI's input_tokens already is the whole prompt. Anthropic's is only the
+    uncached part, with cache reads and writes reported alongside — read as a
+    total it shows 24 tokens of input against 6,000 cached, which is what
+    production displayed before this existed.
+    """
+    total = tokens(data, "input_tokens")
+    if provider == "anthropic":
+        total += tokens(data, "cache_creation_input_tokens") + tokens(
+            data, "cache_read_input_tokens"
+        )
+    return total
+
+
+def detail(data: dict[str, JsonValue], key: str) -> int:
+    """An integer under usage.input_tokens_details, OpenAI's home for cache figures."""
+    usage = data.get("usage")
+    details = usage.get("input_tokens_details") if isinstance(usage, dict) else None
+    value = details.get(key) if isinstance(details, dict) else None
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
 def cached_tokens(provider: ProviderName, data: dict[str, JsonValue]) -> int:
     """Prefix-cache reads, reported under a different key by each provider."""
     if provider == "anthropic":
         return tokens(data, "cache_read_input_tokens")
-    usage = data.get("usage")
-    details = usage.get("input_tokens_details") if isinstance(usage, dict) else None
-    value = details.get("cached_tokens") if isinstance(details, dict) else None
-    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+    return detail(data, "cached_tokens")
+
+
+def cache_write_tokens(provider: ProviderName, data: dict[str, JsonValue]) -> int:
+    """Stored into cache this request. Anthropic bills these at a premium."""
+    if provider == "anthropic":
+        return tokens(data, "cache_creation_input_tokens")
+    return detail(data, "cache_write_tokens")
 
 
 def parse_turn(provider: ProviderName, data: dict[str, JsonValue]) -> Turn:
@@ -119,8 +148,9 @@ def parse_turn(provider: ProviderName, data: dict[str, JsonValue]) -> Turn:
     return Turn(
         calls=calls,
         output=output,
-        input_tokens=tokens(data, "input_tokens"),
+        input_tokens=input_total(provider, data),
         cached_tokens=cached_tokens(provider, data),
+        cache_write_tokens=cache_write_tokens(provider, data),
         output_tokens=tokens(data, "output_tokens"),
         incomplete=data.get("status") == "incomplete" or data.get("stop_reason") == "max_tokens",
     )
@@ -141,10 +171,11 @@ class Gateway:
         # OpenAI reasoning effort; empty leaves it to the provider. Anthropic
         # ignores it: V2 does not enable thinking there, so it is already quick.
         self.effort = effort
-        # OpenAI routes a request by a hash of its prefix, which influences the
-        # machine it lands on without fixing it; a key pins it, so the next
-        # question at the same draft state reaches the cache the last one
-        # filled. Anthropic's cache is explicit and needs nothing here.
+        # OpenAI partitions cache reuse by prompt_cache_key on top of a prefix
+        # hash, and asks that related requests share one key. One key per draft
+        # state keeps every question at that state in the same partition; the
+        # first cross-question hit measured in production came with it.
+        # Anthropic's cache is explicit and needs nothing here.
         self.cache_key = cache_key
 
     def payload(
