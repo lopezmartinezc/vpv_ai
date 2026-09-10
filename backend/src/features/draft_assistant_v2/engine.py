@@ -48,6 +48,33 @@ def conversation(history: History, question: str) -> list[dict[str, JsonValue]]:
     return messages
 
 
+STOP_TRUNCATED = "truncated"
+STOP_NO_CALLS = "no_calls"
+STOP_ROUNDS = "rounds"
+STOP_TOOL_CALLS = "tool_calls"
+
+# What to tell the admin for each wall. The fixes are different, so the message
+# has to be too: a budget one is an env var, a prose one is the prompt.
+STOP_MESSAGES = {
+    STOP_TRUNCATED: (
+        "El modelo agotó su presupuesto de salida antes de responder "
+        "(ASSISTANT_V2_MAX_OUTPUT_TOKENS). Con modelos de razonamiento ese "
+        "presupuesto incluye lo que piensa, no solo lo que escribe."
+    ),
+    STOP_NO_CALLS: (
+        "El modelo contestó sin usar la herramienta de respuesta, así que su "
+        "texto no llegó a validarse. Reintenta; si se repite, es el prompt."
+    ),
+    STOP_ROUNDS: (
+        "Se agotaron las rondas de consulta (ASSISTANT_V2_MAX_ROUNDS) antes de cerrar el análisis."
+    ),
+    STOP_TOOL_CALLS: (
+        "Se agotaron las llamadas a herramientas (ASSISTANT_V2_MAX_TOOL_CALLS) "
+        "antes de cerrar el análisis."
+    ),
+}
+
+
 async def run_engine(
     gateway: Gateway,
     tools: Toolset,
@@ -70,13 +97,16 @@ async def run_engine(
         usage.input_tokens += turn.input_tokens
         usage.output_tokens += turn.output_tokens
         if turn.incomplete or not turn.calls:
+            usage.stop_reason = STOP_TRUNCATED if turn.incomplete else STOP_NO_CALLS
             return None
         final, outputs = await execute_calls(turn, tools, progress, usage, seen)
         if final is not None:
             return final
         gateway.append_results(messages, turn, outputs)
         if usage.tool_calls >= config.max_tool_calls:
+            usage.stop_reason = STOP_TOOL_CALLS
             return None
+    usage.stop_reason = STOP_ROUNDS
     return None
 
 
