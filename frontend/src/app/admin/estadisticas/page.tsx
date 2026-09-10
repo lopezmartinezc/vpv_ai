@@ -89,10 +89,12 @@ function ErrorBanner({ message }: { message: string }) {
 
 export default function AdminEstadisticasPage() {
   const [seasons, setSeasons] = useState<SeasonOption[]>([]);
-  // Names the exported file, so a folder of them says which season each is.
-  const seasonName =
-    seasons.find((s) => s.id === selectedSeasonId)?.name ?? "";
   const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
+  // Names the exported file, so a folder of them says which season each is.
+  // Must come AFTER selectedSeasonId: .find() runs its callback immediately,
+  // so reading it above the declaration is a temporal dead zone at render —
+  // and TypeScript does not flag it, because the reference sits in a closure.
+  const seasonName = seasons.find((s) => s.id === selectedSeasonId)?.name ?? "";
   const [activeTab, setActiveTab] = useState<MainTab>("rendimiento");
   const [perfLens, setPerfLens] = useState<PerfLens>("jugadores");
   const [includeNoncounting, setIncludeNoncounting] = useState(false);
