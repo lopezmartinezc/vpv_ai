@@ -113,7 +113,9 @@ class Toolset:
             "participant": self.target,
             "turn": turn_context(self.snapshot, self.target),
             "pool_size": self.snapshot.pool_size,
-            "revision": self.snapshot.revision().model_dump(),
+            # Hashes and pick count only. The capture time would make every
+            # bootstrap unique and defeat prefix caching across questions.
+            "revision": self.snapshot.revision().model_dump(exclude={"at"}),
             "selected_player_ids": self.view.selected_player_ids,
             # Summarised, not listed: every pick by name is 286 rows by the end
             # of a draft, resent on every round, and `plantillas` already
