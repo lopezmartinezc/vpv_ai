@@ -7,6 +7,9 @@ import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
 import { useDraftWebSocket, type DraftWSEvent } from "@/hooks/use-draft-websocket";
 import { ParticipationToggle } from "@/components/admin/stats/participation-toggle";
+import type { Formation, RosterPlayer } from "@/lib/roster-gain";
+import { rosterGain } from "@/lib/roster-gain";
+import type { SuggestOrder } from "@/lib/draft-suggestions";
 import { participationQuery, useParticipationModel } from "@/lib/participation-model";
 import { apiClient } from "@/lib/api-client";
 import { buildSuggestions } from "@/lib/draft-suggestions";
@@ -89,6 +92,15 @@ export default function LiveDraftPage() {
 
   // Admin stats (loaded once)
   const [adminStats, setAdminStats] = useState<DraftPlayerStatsResponse | null>(null);
+  // Valid formations drive "what would actually improve my XI". They come from
+  // the league config, not a constant here, because that is where they live.
+  const [formations, setFormations] = useState<Formation[]>([]);
+  useEffect(() => {
+    apiClient
+      .get<Formation[]>("/seasons/formations")
+      .then(setFormations)
+      .catch(() => setFormations([]));
+  }, []);
   // Which participation model the board in front of you is using. Stored, so
   // it survives a reload mid-draft; defaults to the pre-existing behaviour.
   const [participation, setParticipation] = useParticipationModel();
@@ -97,7 +109,7 @@ export default function LiveDraftPage() {
   // Suggestion ordering. Backtested (7 seasons): Priority predicts season
   // totals best (rho 0.464); per-slot VORP (scarcity) builds a better real XI
   // in recent seasons. They're complementary, so let the admin choose.
-  const [suggestOrder, setSuggestOrder] = useState<"priority" | "vorp">("priority");
+  const [suggestOrder, setSuggestOrder] = useState<SuggestOrder>("priority");
   // Who is already gone, from the live pick stream. The stats payload is
   // fetched once when the page opens, so it is the picks — not anything in
   // that payload — that say who is still available.
@@ -107,13 +119,6 @@ export default function LiveDraftPage() {
   );
   // Top-5 available per position by the chosen metric, computed client-side so
   // both switching order and reacting to a pick are instant (no refetch).
-  const liveSuggestions = useMemo<Record<string, number[]>>(
-    () =>
-      adminStats
-        ? buildSuggestions(adminStats.players, suggestOrder, pickedIds)
-        : {},
-    [adminStats, suggestOrder, pickedIds],
-  );
   // This-season performance, lazy-loaded once and cached (for the player detail).
   const [seasonPerf, setSeasonPerf] = useState<Record<number, SeasonPerf> | null>(null);
   const [perfLoading, setPerfLoading] = useState(false);
@@ -165,6 +170,37 @@ export default function LiveDraftPage() {
     null;
 
   const isMyTurn = myParticipantId !== null && nextParticipantId === myParticipantId;
+
+  // What I have already drafted, in the shape the roster-gain maths wants.
+  // Positions come from the stats payload; a pick with no stats row is skipped
+  // rather than guessed at.
+  const myRoster = useMemo<RosterPlayer[]>(() => {
+    if (!adminStats || myParticipantId === null) return [];
+    return picks
+      .filter((pick) => pick.participant_id === myParticipantId)
+      .map((pick) => adminStats.players[String(pick.player_id)])
+      .filter((row): row is NonNullable<typeof row> => row != null)
+      .map((row) => ({ position: row.position, priority: row.priority }));
+  }, [adminStats, picks, myParticipantId]);
+  const gainOf = useCallback(
+    (position: string, priority: number | null) =>
+      rosterGain({ position, priority }, myRoster, formations),
+    [myRoster, formations],
+  );
+  const liveSuggestions = useMemo<Record<string, number[]>>(
+    () =>
+      adminStats
+        ? buildSuggestions(
+            adminStats.players,
+            suggestOrder,
+            pickedIds,
+            // "gain" is not a column of the payload: it only exists relative to
+            // MY roster, which the server has no view of.
+            suggestOrder === "gain" ? (p) => gainOf(p.position, p.priority) : undefined,
+          )
+        : {},
+    [adminStats, suggestOrder, pickedIds, gainOf],
+  );
   const isAdmin = user?.isAdmin ?? false;
   const hasDraftPerm =
     isAdmin || (((user?.permissions ?? 0) & 0b1000) !== 0); // bit DRAFT = 8
@@ -541,7 +577,7 @@ export default function LiveDraftPage() {
                 <ul className="mt-1 ml-3 list-disc text-vpv-text-muted">
                   <li><span className="text-vpv-text">modelo</span> — la Prioridad sin tus tags (Base), para comparar.</li>
                   <li><span className="text-vpv-text">VORP</span> — valor sobre el reemplazo de su posición (escasez).</li>
-                  <li><span className="text-vpv-text">Fiab</span> — % de puntos por eventos concretos vs nota (más = repetible).</li>
+                  <li><span className="text-vpv-text">Comp</span> — composición: % de puntos por eventos concretos vs nota Marca/AS. Describe de dónde salen sus puntos, no si son repetibles.</li>
                   <li><span className="text-vpv-text">DefEq</span> (porteros) — goles que encaja su equipo/partido; menos = mejor.</li>
                 </ul>
               </div>
@@ -656,6 +692,7 @@ export default function LiveDraftPage() {
                 [
                   ["priority", "Prioridad", "Total proyectado ajustado por riesgo y tags. Predice mejor los puntos (ρ 0.46). Ideal para rondas iniciales."],
                   ["vorp", "VORP (escasez)", "Valor por plaza sobre el reemplazo de su posición. Tiene en cuenta la escasez: construye mejor el XI cuando una posición se agota."],
+                  ["gain", "Ganas (tu plantilla)", "Puntos alineables que ganas DE VERDAD con este fichaje: tu mejor once posible con él menos tu mejor once actual. Cero = hoy no entraría en tu once (sigue valiendo como cobertura). El mejor disponible no siempre es el que más te mejora."],
                 ] as const
               ).map(([key, label, title]) => (
                 <button
@@ -684,7 +721,10 @@ export default function LiveDraftPage() {
                     {ids.map((pid) => {
                       const s = adminStats.players[String(pid)];
                       if (!s) return null;
-                      const metric = s[suggestOrder];
+                      // "gain" is not a payload field: it only exists against
+                      // my roster, so it is computed here like the ordering is.
+                      const metric =
+                        suggestOrder === "gain" ? gainOf(s.position, s.priority) : s[suggestOrder];
                       const detail =
                         pos === "POR" && s.team_goals_conceded != null
                           ? `DefEq ${s.team_goals_conceded.toFixed(1)}`
@@ -696,7 +736,7 @@ export default function LiveDraftPage() {
                               onClick={() => handlePick(pid)}
                               disabled={picking}
                               className="flex min-w-0 flex-1 items-center gap-1.5 rounded border border-transparent px-1 py-1 text-left text-[10px] transition-colors hover:border-vpv-border hover:bg-vpv-accent/10 disabled:opacity-50"
-                              title={`Prioridad ${s.priority?.toFixed(0) ?? "—"}${s.priority_base != null ? ` (modelo ${s.priority_base.toFixed(0)})` : ""}${s.vorp != null ? ` · VORP ${s.vorp.toFixed(1)}` : ""}${s.event_share != null ? ` · Fiab ${(s.event_share * 100).toFixed(0)}%` : ""} · Pincha para fichar`}
+                              title={`Prioridad ${s.priority?.toFixed(0) ?? "—"}${s.priority_base != null ? ` (modelo ${s.priority_base.toFixed(0)})` : ""}${s.vorp != null ? ` · VORP ${s.vorp.toFixed(1)}` : ""}${s.event_share != null ? ` · Comp ${(s.event_share * 100).toFixed(0)}%` : ""} · Pincha para fichar`}
                             >
                               <PlayerAvatar photoPath={s.photo_path} name={s.display_name} size={24} />
                               <span className="min-w-0 flex-1">
@@ -1052,7 +1092,7 @@ function PlayerDetail({
         <DetailCell k="Ronda" v={d.overall_rank != null ? `#${d.overall_rank}` : "—"} />
         <DetailCell k="Tier" v={d.position_tier ? (TIER_LABELS[d.position_tier] ?? d.position_tier) : "—"} />
         <DetailCell k="VORP" v={d.vorp != null ? d.vorp.toFixed(1) : "—"} />
-        <DetailCell k="Fiab" v={d.event_share != null ? `${(d.event_share * 100).toFixed(0)}%` : "—"} />
+        <DetailCell k="Comp" v={d.event_share != null ? `${(d.event_share * 100).toFixed(0)}%` : "—"} />
         {d.position === "POR" && (
           <DetailCell k="DefEq" v={d.team_goals_conceded != null ? d.team_goals_conceded.toFixed(1) : "—"} />
         )}
@@ -1217,7 +1257,7 @@ function SearchResults({
                   {/* Priority \u2014 the master number */}
                   <span
                     className="ml-auto font-bold text-vpv-accent tabular-nums"
-                    title={`Prioridad ${stats.priority?.toFixed(0) ?? "\u2014"}${stats.priority_base != null ? ` (modelo ${stats.priority_base.toFixed(0)})` : ""}${stats.vorp != null ? ` \u00b7 VORP ${stats.vorp.toFixed(1)}` : ""}${stats.event_share != null ? ` \u00b7 Fiab ${(stats.event_share * 100).toFixed(0)}%` : ""}${player.position === "POR" && stats.team_goals_conceded != null ? ` \u00b7 DefEq ${stats.team_goals_conceded.toFixed(1)}` : ""}`}
+                    title={`Prioridad ${stats.priority?.toFixed(0) ?? "\u2014"}${stats.priority_base != null ? ` (modelo ${stats.priority_base.toFixed(0)})` : ""}${stats.vorp != null ? ` \u00b7 VORP ${stats.vorp.toFixed(1)}` : ""}${stats.event_share != null ? ` \u00b7 Comp ${(stats.event_share * 100).toFixed(0)}%` : ""}${player.position === "POR" && stats.team_goals_conceded != null ? ` \u00b7 DefEq ${stats.team_goals_conceded.toFixed(1)}` : ""}`}
                   >
                     Prio {stats.priority != null ? stats.priority.toFixed(0) : "\u2014"}
                   </span>
