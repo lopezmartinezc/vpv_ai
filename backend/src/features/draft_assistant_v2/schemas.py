@@ -66,6 +66,9 @@ class Card(StrictModel):
 
 class Usage(StrictModel):
     input_tokens: int = 0
+    # Of the input, how much the provider served from its prefix cache. The
+    # total is not the bill; this is what makes the bill legible.
+    cached_tokens: int = 0
     output_tokens: int = 0
     rounds: int = 0
     tool_calls: int = 0

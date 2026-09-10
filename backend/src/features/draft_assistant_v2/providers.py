@@ -49,6 +49,7 @@ class Turn(BaseModel):
     calls: list[Call] = Field(default_factory=list)
     output: list[dict[str, JsonValue]] = Field(default_factory=list)
     input_tokens: int = 0
+    cached_tokens: int = 0
     output_tokens: int = 0
     incomplete: bool = False
 
@@ -95,6 +96,16 @@ def tokens(data: dict[str, JsonValue], key: str) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
+def cached_tokens(provider: ProviderName, data: dict[str, JsonValue]) -> int:
+    """Prefix-cache reads, reported under a different key by each provider."""
+    if provider == "anthropic":
+        return tokens(data, "cache_read_input_tokens")
+    usage = data.get("usage")
+    details = usage.get("input_tokens_details") if isinstance(usage, dict) else None
+    value = details.get("cached_tokens") if isinstance(details, dict) else None
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
 def parse_turn(provider: ProviderName, data: dict[str, JsonValue]) -> Turn:
     output = records(data.get("output" if provider == "openai" else "content"))
     calls = []
@@ -109,16 +120,22 @@ def parse_turn(provider: ProviderName, data: dict[str, JsonValue]) -> Turn:
         calls=calls,
         output=output,
         input_tokens=tokens(data, "input_tokens"),
+        cached_tokens=cached_tokens(provider, data),
         output_tokens=tokens(data, "output_tokens"),
         incomplete=data.get("status") == "incomplete" or data.get("stop_reason") == "max_tokens",
     )
 
 
 class Gateway:
-    def __init__(self, client: httpx.AsyncClient, provider: ProviderName, model: str) -> None:
+    def __init__(
+        self, client: httpx.AsyncClient, provider: ProviderName, model: str, effort: str = ""
+    ) -> None:
         self.client = client
         self.provider = provider
         self.model = model
+        # OpenAI reasoning effort; empty leaves it to the provider. Anthropic
+        # ignores it: V2 does not enable thinking there, so it is already quick.
+        self.effort = effort
 
     def payload(
         self, system: str, messages: Sequence[dict[str, JsonValue]]
@@ -126,8 +143,12 @@ class Gateway:
         definitions: JsonValue = json.loads(tool_definitions(self.provider))
         common: dict[str, JsonValue] = {"model": self.model, "tools": definitions}
         if self.provider == "openai":
+            reasoning: dict[str, JsonValue] = (
+                {"reasoning": {"effort": self.effort}} if self.effort else {}
+            )
             return {
                 **common,
+                **reasoning,
                 "instructions": system,
                 "input": list(messages),
                 "store": False,

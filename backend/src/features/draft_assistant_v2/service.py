@@ -75,7 +75,8 @@ async def analyze(draft_id: int, user_id: int, request: AskRequest, progress: Pr
     usage = Usage()
     started = time.monotonic()
     async with httpx.AsyncClient(timeout=config.provider_timeout_seconds) as client:
-        gateway = Gateway(client, request.provider, request.model)
+        effort = config.quick_effort if request.mode == "quick" else ""
+        gateway = Gateway(client, request.provider, request.model, effort)
         try:
             async with asyncio.timeout(max(1, config.timeout_seconds - 20)):
                 final = await run_engine(gateway, tools, request, previous, progress, usage)

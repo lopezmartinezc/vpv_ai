@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -24,6 +26,11 @@ class AssistantSettings(BaseSettings):
     # which is exactly how V2 failed on its first real question with gpt-5.
     # See tests/test_output_budget.py.
     max_output_tokens: int = Field(default=8000, ge=256, le=32000)
+    # Reasoning effort asked of OpenAI in "Rápido" mode. The first production
+    # answer took 77 s at default effort — half a pick clock — on a question
+    # the admin had marked quick. Detailed mode leaves it to the provider.
+    # Empty disables the parameter (for a model that does not accept it).
+    quick_effort: Literal["low", "medium", "high", ""] = "low"
     openai_models: list[str] = Field(default_factory=list)
     anthropic_models: list[str] = Field(default_factory=list)
 
