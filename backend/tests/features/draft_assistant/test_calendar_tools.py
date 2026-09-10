@@ -9,7 +9,7 @@ strength graded for the position being asked about.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -58,7 +58,7 @@ def _ctx() -> AssistantContext:
     ctx = AssistantContext(session=None, season_id=1, phase="preseason")  # type: ignore[arg-type]
 
     class _Board:
-        players: list[Any] = []
+        players: ClassVar[list[Any]] = []
         participant_count = 13
 
     async def board() -> Any:
@@ -94,8 +94,11 @@ async def test_difficulty_is_reported_for_the_position_asked_about() -> None:
     por = await run_tool(
         build_tools(_ctx()), "calendario", {"equipo": "Getafe", "posicion": "POR"}
     )
-    j11 = [line for line in por.splitlines() if "J11" in line][0]
-    j12 = [line for line in por.splitlines() if "J12" in line][0]
+    # The header now states the loaded range ("J11-J12"), so match the fixture
+    # lines themselves rather than the first line mentioning a matchday.
+    lineas = [line for line in por.splitlines() if line.startswith("J")]
+    j11 = next(line for line in lineas if line.startswith("J11 "))
+    j12 = next(line for line in lineas if line.startswith("J12 "))
     assert "dificil" in j11
     assert "facil" in j12
 
@@ -109,10 +112,10 @@ async def test_alternativas_answers_the_keeper_question() -> None:
         {"equipo": "Getafe", "posicion": "POR"},
     )
     # J11 is Getafe's hard one; Alavés play toothless Elche that week.
-    assert "J11" in out
+    assert "J11 —" in out
     assert "Alavés" in out
-    # J12 is easy for Getafe, so it is not a matchday needing cover.
-    assert "J12" not in out
+    # J12 is easy for Getafe, so it is not listed as a matchday needing cover.
+    assert "J12 —" not in out
 
 
 @pytest.mark.asyncio
@@ -126,6 +129,41 @@ async def test_alternativas_says_so_when_nothing_is_hard() -> None:
 
 
 @pytest.mark.asyncio
-async def test_an_unknown_team_says_so_rather_than_returning_nothing() -> None:
+async def test_a_team_with_no_loaded_fixtures_blames_the_calendar_not_the_team() -> None:
+    """A missing fixture and a non-existent team look identical in the data —
+    ``matches`` simply has no row — so the tool must not let the model conclude
+    the team does not exist."""
     out = await run_tool(build_tools(_ctx()), "calendario", {"equipo": "Cadiz"})
-    assert "no encuentro" in out.lower()
+    assert "calendario cargado" in out.lower()
+    assert "update-calendar" in out
+    assert "no existe" not in out.lower().replace("no afirmes que el equipo no existe", "")
+
+
+# ---------------------------------------------------------------------------
+# Coverage: the calendar can simply not be loaded yet
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_calendario_states_which_matchdays_it_actually_has() -> None:
+    """Reported from production: the assistant said "aun no tengo esas jornadas"
+    without saying which it did have, so nobody could tell a missing fixture
+    from a broken tool."""
+    out = await run_tool(build_tools(_ctx()), "calendario", {"equipo": "Getafe"})
+    assert "J11" in out and "J12" in out
+    # The covered range is stated, so a short horizon is visible.
+    assert "cargado" in out.lower()
+
+
+@pytest.mark.asyncio
+async def test_a_team_absent_from_the_loaded_range_says_why() -> None:
+    ctx = _ctx()
+
+    async def only_getafe() -> Any:
+        return [f for f in FIXTURES if f.team_name == "Getafe"]
+
+    ctx.fixtures = only_getafe  # type: ignore[method-assign]
+    out = await run_tool(build_tools(ctx), "calendario", {"equipo": "Alavés"})
+
+    assert "calendario" in out.lower()
+    assert "update-calendar" in out
