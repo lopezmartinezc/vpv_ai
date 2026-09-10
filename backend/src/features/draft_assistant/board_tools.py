@@ -22,6 +22,7 @@ from src.features.draft_assistant.tools import ToolHandler, ToolSpec
 from src.features.draft_assistant.turn_math import next_pick_for, upcoming_picks
 from src.features.drafts.schemas import DraftDetailResponse
 from src.features.drafts.service import DraftService
+from src.features.stats.fixtures import Fixture, FixtureStrengthService, difficulty
 from src.features.stats.repository import PlayerStatRow, StatsRepository
 from src.features.stats.schemas_advanced import AdvancedPlayerStat
 from src.features.stats.schemas_draft import DraftValuePlayer, DraftValueResponse
@@ -30,6 +31,11 @@ from src.features.stats.service_advanced import AdvancedStatsService
 from src.features.stats.service_draft import DraftValueService
 
 POSITIONS = ("POR", "DEF", "MED", "DEL")
+
+#: How many matchdays ahead the calendar tools look. Long enough to plan a
+#: keeper rotation, short enough that the opponent strengths still mean
+#: something.
+FIXTURE_HORIZON = 12
 
 # Measured over the 8 real seasons in the migrated history (final points,
 # matchdays.counts AND matches.counts respected). Replacement = participants x
@@ -120,6 +126,7 @@ class AssistantContext:
     _perf: dict[int, tuple[PlayerStatRow, AdvancedPlayerStat | None]] | None = field(
         default=None, init=False, repr=False
     )
+    _fixtures: list[Fixture] | None = field(default=None, init=False, repr=False)
 
     async def board(self) -> DraftValueResponse:
         now = time.monotonic()
@@ -172,6 +179,20 @@ class AssistantContext:
             self._perf = {r.player_id: (r, by_id.get(r.player_id)) for r in rows}
         return self._perf
 
+    async def fixtures(self) -> list[Fixture]:
+        """Upcoming fixtures with each opponent's attack and defence attached.
+
+        Memoised: one question can ask about several teams, and the strength
+        query aggregates every match of the season plus the history.
+        """
+        if self._fixtures is None:
+            draft = await self.draft()
+            desde = max(1, len(draft.picks) // max(1, len(draft.participants) or 1))
+            self._fixtures = await FixtureStrengthService(self.session).fixtures(
+                self.season_id, from_matchday=desde, count=FIXTURE_HORIZON
+            )
+        return self._fixtures
+
     async def caller_participant_id(self) -> int | None:
         """The asker's participant row in this draft, or None if they only run it.
 
@@ -211,6 +232,14 @@ class AssistantContext:
 # Pre-draft this is three matchdays. Eyong and Pepe topped it and finished at
 # 143 and 169 — good, but nothing like the pace suggested. The caveat travels
 # with the data so the model cannot read a hot start as a projection.
+FIXTURE_NOTE = (
+    "Dificultad medida sobre 8 temporadas: un POR o DEF pierde hasta 2,6 y 1,6 "
+    "puntos por jornada segun el ATAQUE del rival; un MED o DEL pierde hasta 1,6 "
+    "y 2,0 segun su DEFENSA. Por eso el mismo partido puede ser facil para un "
+    "delantero y dificil para un portero. Sirve para decidir alineacion semanal, "
+    "no para ordenar el draft."
+)
+
 SEASON_SAMPLE_CAVEAT = (
     "OJO: son los partidos REALES jugados hasta ahora; NO es una proyeccion. "
     "Antes del draft son 3-5 jornadas: sirve para ver quien esta jugando y en "
@@ -603,6 +632,83 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
         body = "\n".join(_season_line(row, adv) for row, adv in rows)
         return f"{head}\n{body}\n\n{SEASON_SAMPLE_CAVEAT}"
 
+    def _fixture_line(f: Fixture, posicion: str | None) -> str:
+        donde = "casa" if f.home else "fuera"
+        grado = f" [{difficulty(posicion, f)}]" if posicion else ""
+        return (
+            f"J{f.matchday} {f.team_name} vs {f.opponent_name} ({donde}) | "
+            f"ataque rival {f.opponent_attack:.2f} | defensa rival "
+            f"{f.opponent_defence:.2f}{grado}"
+        )
+
+    async def calendario(
+        equipo: str | None = None,
+        posicion: str | None = None,
+        jornada: int | None = None,
+        limite: int = 15,
+    ) -> str:
+        rows = await ctx.fixtures()
+        if equipo:
+            needle = equipo.lower()
+            rows = [f for f in rows if needle in f.team_name.lower()]
+            if not rows:
+                return f"No encuentro ningun equipo que contenga '{equipo}'."
+        if jornada is not None:
+            rows = [f for f in rows if f.matchday == jornada]
+        if not rows:
+            return "Sin partidos con esos filtros."
+        rows = sorted(rows, key=lambda f: (f.matchday, f.team_name))[:limite]
+        pos = posicion.upper() if posicion else None
+        head = f"{len(rows)} partidos" + (f" (dificultad para {pos})" if pos else "") + ":"
+        return head + "\n" + "\n".join(_fixture_line(f, pos) for f in rows) + "\n\n" + FIXTURE_NOTE
+
+    async def alternativas_calendario(
+        equipo: str,
+        posicion: str = "POR",
+        limite: int = 4,
+    ) -> str:
+        """The jornadas where this team has it hard, and who has it easy then."""
+        rows = await ctx.fixtures()
+        pos = posicion.upper()
+        needle = equipo.lower()
+        mios = [f for f in rows if needle in f.team_name.lower()]
+        if not mios:
+            return f"No encuentro ningun equipo que contenga '{equipo}'."
+
+        duras = [f for f in mios if difficulty(pos, f) == "dificil"]
+        if not duras:
+            return (
+                f"Ninguna de las proximas {FIXTURE_HORIZON} jornadas es dificil para un "
+                f"{pos} de {mios[0].team_name}. No necesitas alternativa."
+            )
+
+        out = [
+            f"Jornadas duras de {mios[0].team_name} para un {pos}, y quien juega "
+            f"facil esas mismas jornadas:"
+        ]
+        for dura in sorted(duras, key=lambda f: f.matchday):
+            out.append(
+                f"\nJ{dura.matchday} — {dura.team_name} vs {dura.opponent_name} "
+                f"(ataque rival {dura.opponent_attack:.2f})"
+            )
+            faciles = [
+                f
+                for f in rows
+                if f.matchday == dura.matchday
+                and f.team_id != dura.team_id
+                and difficulty(pos, f) == "facil"
+            ]
+            key = (
+                (lambda f: f.opponent_attack)
+                if pos in ("POR", "DEF")
+                else (lambda f: -f.opponent_defence)
+            )
+            for alt in sorted(faciles, key=key)[:limite]:
+                out.append(f"  {_fixture_line(alt, pos)}")
+            if not faciles:
+                out.append("  (nadie tiene partido facil esa jornada)")
+        return "\n".join(out) + "\n\n" + FIXTURE_NOTE
+
     async def escasez_historica() -> str:
         return HISTORICAL_SCARCITY
 
@@ -798,6 +904,53 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
                 "required": [],
             },
             handler=_guarded(ctx, rendimiento_temporada),
+        ),
+        ToolSpec(
+            name="calendario",
+            description=(
+                "Proximos partidos con la fuerza del rival (lo que marca y lo que encaja) "
+                "y, si le pasas una posicion, si el partido es facil o dificil PARA ESA "
+                "posicion. Llamala cuando pregunten por el calendario, por a quien se "
+                "enfrenta un equipo, o por si a alguien le viene una racha suave o dura."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "equipo": {"type": "string", "description": "Equipo de La Liga."},
+                    "posicion": {"type": "string", "enum": list(POSITIONS)},
+                    "jornada": {"type": "integer", "minimum": 1, "maximum": 38},
+                    "limite": {"type": "integer", "minimum": 1, "maximum": 40},
+                },
+                "required": [],
+            },
+            handler=_guarded(ctx, calendario),
+        ),
+        ToolSpec(
+            name="alternativas_calendario",
+            description=(
+                "Para un equipo y una posicion: en que jornadas lo tiene DIFICIL y quien "
+                "juega FACIL esas mismas jornadas. Llamala para preguntas del tipo 'tengo "
+                "a Soria, quien me cubre cuando el Getafe visite a los grandes' o para "
+                "planificar rotaciones de portero."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "equipo": {
+                        "type": "string",
+                        "description": "Tu equipo, el que tiene el hueco.",
+                    },
+                    "posicion": {"type": "string", "enum": list(POSITIONS)},
+                    "limite": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10,
+                        "description": "Cuantas alternativas listar por jornada.",
+                    },
+                },
+                "required": ["equipo"],
+            },
+            handler=_guarded(ctx, alternativas_calendario),
         ),
         ToolSpec(
             name="escasez_historica",

@@ -144,3 +144,31 @@ class LeagueStatsResponse(BaseModel):
     most_lined_up: list[MostLinedUpPlayer]
     matchday_averages: list[MatchdayAverage]
     records: list[RecordEntry]
+
+
+# ---------------------------------------------------------------------------
+# Fixtures — opponent strength for the weekly lineup
+# ---------------------------------------------------------------------------
+
+
+class FixtureRow(BaseModel):
+    """One team's fixture on one matchday, with the opponent's strength.
+
+    Both sides are returned rather than a single difficulty score: a keeper is
+    graded on the opponent's attack and a forward on its defence, so the same
+    fixture can be easy for one and hard for the other.
+    """
+
+    matchday: int
+    team_id: int
+    team_name: str
+    opponent_id: int
+    opponent_name: str
+    home: bool
+    opponent_attack: float  # goals the opponent scores per match
+    opponent_defence: float  # goals the opponent concedes per match
+
+
+class FixtureListResponse(BaseModel):
+    season_id: int
+    fixtures: list[FixtureRow]
