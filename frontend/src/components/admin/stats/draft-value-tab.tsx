@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { ParticipationToggle } from "@/components/admin/stats/participation-toggle";
+import { confidenceDots, confidenceFor } from "@/lib/draft-confidence";
 import { participationQuery, useParticipationModel } from "@/lib/participation-model";
 import { apiClient } from "@/lib/api-client";
 import { sorted, SortDir, POS_COLOR } from "@/components/admin/stats/common";
@@ -45,7 +46,11 @@ function roundOf(p: DraftValuePlayer, participants: number): number | null {
   return Math.ceil(p.overall_rank / participants);
 }
 
-type DraftSortKey = keyof DraftValuePlayer;
+/** A board row plus what we derive from it. `confidence` is not a server
+ *  field: it is computed here from the signals the row already carries, so it
+ *  sorts and renders through the same machinery as everything else. */
+type DraftRow = DraftValuePlayer & { confidence: number };
+type DraftSortKey = keyof DraftRow;
 
 // Order in which positional tiers sort (higher = better) when sorting by Tier.
 const TIER_RANK: Record<string, number> = {
@@ -69,7 +74,8 @@ const DRAFT_COLS: { key: DraftSortKey; label: string; title: string; w: string; 
   { key: "effective_value", label: "Efect", title: "Valor efectivo usado para el ranking = valor manual si lo has puesto, si no la proyección automática.", w: "w-14", group: "core" },
   { key: "manual_value", label: "Manual", title: "Tu valor manual (pts/partido). Sobrescribe la proyección. Edítalo abriendo la fila. Imprescindible para jugadores nuevos sin histórico.", w: "w-14", group: "models" },
   { key: "proj_rest_points", label: "PtsRes", title: "Puntos proyectados resto de temporada = valor efectivo × partidos esperados restantes (jornadas restantes × participación).", w: "w-16", group: "core" },
-  { key: "event_share", label: "Fiab", title: "Fiabilidad: % de puntos por eventos concretos (goles, asistencias, portería a cero...) vs nota mediática Marca/AS. Alto = más repetible.", w: "w-12", group: "core", order: 8 },
+  { key: "confidence", label: "Conf", title: "Confianza en la proyección: cuánta evidencia hay detrás. Baja por falta de histórico, cambio de equipo o de posición, y rol rotatorio. No mide cuánto puntuará, mide cuánto fiarte. Pasa el ratón por los puntos para ver el motivo principal.", w: "w-12", group: "core", order: 6 },
+  { key: "event_share", label: "Comp", title: "Composición de puntos: % que viene de eventos concretos (goles, asistencias, portería a cero...) frente a la nota Marca/AS. Describe DE DÓNDE salen sus puntos. No está validado que un valor alto sea más repetible, así que léelo como composición, no como fiabilidad.", w: "w-12", group: "core", order: 8 },
   { key: "team_goals_conceded", label: "DefEq", title: "Defensa del equipo: goles que encaja por partido (temporada pasada; prior neutro para ascendidos). Menos = mejor. El factor clave para porteros (corr −0.83 con sus puntos).", w: "w-14", group: "core", order: 7 },
   { key: "next_gap", label: "Salto", title: "Salto al siguiente: Prioridad que pierdes si NO lo coges ahora y esperas al siguiente mejor de su posición. Salto grande = cógelo ya (se acaba la tanda); pequeño = puedes esperar una ronda.", w: "w-14", group: "core", order: 3 },
   { key: "ensemble_score", label: "Ens", title: "Ensemble: valor proyectado (histórico + actual, shrinkage k=4)", w: "w-14", group: "models" },
@@ -236,7 +242,10 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
 
   const players = useMemo(() => {
     if (!data) return [];
-    let list = data.players;
+    let list: DraftRow[] = data.players.map((p) => ({
+      ...p,
+      confidence: confidenceFor(p).score,
+    }));
     if (posFilter) list = list.filter((p) => p.position === posFilter);
     if (hideDrafted) list = list.filter((p) => !p.is_drafted);
     if (search.trim()) {
@@ -587,6 +596,21 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
                             val != null && (val as number) < -0.05 ? "text-red-400" : "text-vpv-text-muted"
                           } ${isActive ? "font-bold" : ""}`}>
                             {val != null ? `${(val as number) > 0 ? "+" : ""}${((val as number) * 100).toFixed(0)}%` : "—"}
+                          </span>
+                        );
+                      }
+                      if (col.key === "confidence") {
+                        const c = confidenceFor(p);
+                        return (
+                          <span
+                            key={col.key}
+                            title={`Confianza ${c.level}: ${c.reason}`}
+                            className={`${col.w} shrink-0 text-right text-xs tracking-tight ${
+                              c.level === "alta" ? "text-green-400" :
+                              c.level === "media" ? "text-amber-400" : "text-red-400"
+                            } ${isActive ? "font-bold" : ""}`}
+                          >
+                            {confidenceDots(c.level)}
                           </span>
                         );
                       }

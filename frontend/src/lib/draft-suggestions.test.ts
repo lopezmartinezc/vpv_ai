@@ -91,3 +91,35 @@ describe("buildSuggestions", () => {
     expect(Object.keys(out).sort()).toEqual(["DEF", "DEL", "MED", "POR"]);
   });
 });
+
+describe("buildSuggestions with an external score", () => {
+  const players = {
+    "1": { player_id: 1, position: "DEF", priority: 100, vorp: 1 },
+    "2": { player_id: 2, position: "DEF", priority: 400, vorp: 2 },
+    "3": { player_id: 3, position: "DEF", priority: 250, vorp: 3 },
+  } as unknown as Record<string, PlayerDraftStats>;
+
+  it("orders by what the pick is worth to YOU, not by Prioridad", () => {
+    // The 400-point player would displace someone you already have; the
+    // 100-point one walks into an empty slot. Your board should say so.
+    const gains = new Map([
+      [1, 90],
+      [2, 10],
+      [3, 50],
+    ]);
+    const out = buildSuggestions(players, "gain", new Set(), (p) => gains.get(p.player_id) ?? null);
+    expect(out.DEF).toEqual([1, 3, 2]);
+  });
+
+  it("drops players the scorer cannot value", () => {
+    const out = buildSuggestions(players, "gain", new Set(), (p) =>
+      p.player_id === 2 ? null : 10,
+    );
+    expect(out.DEF).not.toContain(2);
+  });
+
+  it("still reads the payload field when no scorer is given", () => {
+    const out = buildSuggestions(players, "priority", new Set());
+    expect(out.DEF).toEqual([2, 3, 1]);
+  });
+});
