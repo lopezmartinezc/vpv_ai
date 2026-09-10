@@ -241,21 +241,37 @@ class DraftService:
     ) -> Draft:
         """Pause or resume a draft.
 
-        ``action`` is "pause" or "resume". Both are idempotent:
+        ``action`` is "start", "pause" or "resume". All are idempotent:
+            * start: pending -> in_progress, then resolves any auto-picks
+              waiting on the opening turn.
             * pause: any non-completed status -> paused. Completed
               drafts cannot be paused.
             * resume: paused -> in_progress (or pending if never
-              started). Pending and in_progress are returned as-is.
+              started), then resolves the turn it stopped on.
+
+        "start" exists because auto-picks used to be reachable only from
+        the end of ``add_pick``, so the chain could be *continued* but
+        never *opened*: with the first manager away and an auto-pick list
+        ready, pick #1 had nothing before it to set it off and the draft
+        sat there until an admin picked by hand.
 
         Broadcasts ``draft_status_changed`` on the live WebSocket so
         connected clients update their banner without a full reload.
         """
-        if action not in ("pause", "resume"):
-            raise BusinessRuleError("Accion no soportada (usa 'pause' o 'resume')")
+        if action not in ("start", "pause", "resume"):
+            raise BusinessRuleError("Accion no soportada (usa 'start', 'pause' o 'resume')")
         draft = await self.repo.get_draft_by_id(draft_id)
         if draft is None:
             raise NotFoundError("Draft", draft_id)
-        if action == "pause":
+        if action == "start":
+            if draft.status == "completed":
+                raise BusinessRuleError("No se puede iniciar un draft ya finalizado")
+            if draft.status == "paused":
+                raise BusinessRuleError("El draft esta pausado: reanudalo en vez de iniciarlo")
+            draft.status = "in_progress"
+            if draft.started_at is None:
+                draft.started_at = datetime.now(UTC)
+        elif action == "pause":
             if draft.status == "completed":
                 raise BusinessRuleError("No se puede pausar un draft ya finalizado")
             draft.status = "paused"
@@ -272,6 +288,11 @@ class DraftService:
             draft_id,
             {"type": "draft_status_changed", "status": draft.status},
         )
+        # A turn can be sitting there waiting for someone who is not coming.
+        # Never on pause: that would defeat the pause.
+        if action in ("start", "resume") and draft.status != "paused":
+            await self._maybe_auto_pick(draft_id)
+            await self.repo.session.refresh(draft)
         return draft
 
     async def add_pick(
@@ -682,6 +703,8 @@ class DraftService:
             player_ids=payload.player_ids,
         )
         await self.repo.session.commit()
+        if payload.enabled:
+            await self._auto_pick_if_my_turn(draft_id, participant_id)
 
         return WishlistResponse(
             draft_id=row.draft_id,
@@ -700,6 +723,25 @@ class DraftService:
                 for p in row.players
             ],
         )
+
+    async def _auto_pick_if_my_turn(self, draft_id: int, participant_id: int) -> None:
+        """Resolve auto-picks when the list just saved belongs to the turn.
+
+        Without this, enabling auto-pick on your own turn does nothing until
+        somebody else picks — and nobody else can, because the turn is yours.
+        """
+        draft = await self.repo.get_draft_by_id(draft_id)
+        if draft is None or draft.status in ("completed", "paused"):
+            return
+        participants = await self.repo.get_participants(draft.season_id)
+        if not participants:
+            return
+        next_pick = await self.repo.get_max_pick_number(draft_id) + 1
+        turn = _get_participant_for_pick(
+            next_pick, draft.draft_type, _ordered_participant_ids(participants)
+        )
+        if turn == participant_id:
+            await self._maybe_auto_pick(draft_id)
 
     async def toggle_my_wishlist(
         self,
@@ -723,6 +765,8 @@ class DraftService:
         else:
             await wishlist_repo.set_enabled(draft_id, participant_id, enabled)
         await self.repo.session.commit()
+        if enabled:
+            await self._auto_pick_if_my_turn(draft_id, participant_id)
         return await self.get_my_wishlist(draft_id, user)
 
     async def get_all_wishlists_admin(

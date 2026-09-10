@@ -127,6 +127,22 @@ async def list_all_wishlists_admin(
     return await service.get_all_wishlists_admin(draft_id)
 
 
+@router.post("/admin/{draft_id}/start")
+async def start_draft(
+    draft_id: int,
+    service: DraftService = Depends(_get_service),
+    _user: dict = Depends(require_perm(Perm.DRAFT)),
+) -> dict:
+    """Open the draft and resolve any auto-picks waiting on the first turn.
+
+    Auto-picks were reachable only from the end of ``add_pick``, so the chain
+    could be continued but never opened: with the first manager away and a list
+    ready, pick #1 had nothing before it to set it off.
+    """
+    draft = await service.set_draft_status(draft_id, "start")
+    return {"id": draft.id, "status": draft.status}
+
+
 @router.post("/admin/{draft_id}/pause")
 async def pause_draft(
     draft_id: int,
