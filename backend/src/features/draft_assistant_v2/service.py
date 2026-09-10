@@ -21,6 +21,12 @@ from .tools import Final, Toolset
 logger = logging.getLogger(__name__)
 
 
+def cache_key(draft_id: int, snapshot: Snapshot) -> str:
+    """Stable while the draft state is; different the moment it moves."""
+    revision = snapshot.revision()
+    return f"vpv-v2-{draft_id}-{revision.draft[:12]}-{revision.board[:12]}"
+
+
 def build_answer(
     snapshot: Snapshot, tools: Toolset, final: Final | None, request: AskRequest, usage: Usage
 ) -> Answer:
@@ -76,7 +82,9 @@ async def analyze(draft_id: int, user_id: int, request: AskRequest, progress: Pr
     started = time.monotonic()
     async with httpx.AsyncClient(timeout=config.provider_timeout_seconds) as client:
         effort = config.quick_effort if request.mode == "quick" else ""
-        gateway = Gateway(client, request.provider, request.model, effort)
+        gateway = Gateway(
+            client, request.provider, request.model, effort, cache_key(draft_id, snapshot)
+        )
         try:
             async with asyncio.timeout(max(1, config.timeout_seconds - 20)):
                 final = await run_engine(gateway, tools, request, previous, progress, usage)
