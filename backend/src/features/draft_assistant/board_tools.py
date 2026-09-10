@@ -16,6 +16,7 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.draft_assistant.tools import ToolHandler, ToolSpec
@@ -186,10 +187,16 @@ class AssistantContext:
         query aggregates every match of the season plus the history.
         """
         if self._fixtures is None:
-            draft = await self.draft()
-            desde = max(1, len(draft.picks) // max(1, len(draft.participants) or 1))
+            # From the season's CURRENT matchday. This used to divide picks by
+            # participants — the draft ROUND, not the matchday — which aimed the
+            # horizon at the wrong stretch of the calendar.
+            row = await self.session.execute(
+                text("SELECT matchday_current FROM seasons WHERE id = :sid"),
+                {"sid": self.season_id},
+            )
+            current = int(row.scalar_one_or_none() or 0)
             self._fixtures = await FixtureStrengthService(self.session).fixtures(
-                self.season_id, from_matchday=desde, count=FIXTURE_HORIZON
+                self.season_id, from_matchday=max(1, current), count=FIXTURE_HORIZON
             )
         return self._fixtures
 
@@ -641,25 +648,53 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
             f"{f.opponent_defence:.2f}{grado}"
         )
 
+    def _cobertura(todos: list[Fixture]) -> str:
+        """What the calendar actually holds, so a gap reads as a gap.
+
+        ``matches`` has NO ROW at all for a fixture whose teams are not yet
+        confirmed, so an unscraped matchday looks exactly like one that does not
+        exist. Stating the range outright is the only way the model can tell the
+        difference — and it reported "aun no tengo esas jornadas" without it.
+        """
+        if not todos:
+            return "(calendario vacio: no hay ninguna jornada cargada)"
+        jornadas = sorted({f.matchday for f in todos})
+        equipos = len({f.team_name for f in todos})
+        return (
+            f"(calendario cargado: J{jornadas[0]}-J{jornadas[-1]}, "
+            f"{len(jornadas)} jornadas, {equipos} equipos)"
+        )
+
     async def calendario(
         equipo: str | None = None,
         posicion: str | None = None,
         jornada: int | None = None,
         limite: int = 15,
     ) -> str:
-        rows = await ctx.fixtures()
+        todos = await ctx.fixtures()
+        cobertura = _cobertura(todos)
+        rows = todos
         if equipo:
             needle = equipo.lower()
             rows = [f for f in rows if needle in f.team_name.lower()]
             if not rows:
-                return f"No encuentro ningun equipo que contenga '{equipo}'."
+                return (
+                    f"No hay partidos de '{equipo}' en el calendario cargado. "
+                    f"{cobertura}. Si el equipo juega en la liga, lo que falta son "
+                    f"jornadas por cargar en el servidor (update-calendar). Dilo "
+                    f"asi: NO afirmes que el equipo no existe."
+                )
         if jornada is not None:
             rows = [f for f in rows if f.matchday == jornada]
         if not rows:
-            return "Sin partidos con esos filtros."
+            return f"Sin partidos con esos filtros. {cobertura}"
         rows = sorted(rows, key=lambda f: (f.matchday, f.team_name))[:limite]
         pos = posicion.upper() if posicion else None
-        head = f"{len(rows)} partidos" + (f" (dificultad para {pos})" if pos else "") + ":"
+        head = (
+            f"{len(rows)} partidos"
+            + (f" (dificultad para {pos})" if pos else "")
+            + f" {cobertura}:"
+        )
         return head + "\n" + "\n".join(_fixture_line(f, pos) for f in rows) + "\n\n" + FIXTURE_NOTE
 
     async def alternativas_calendario(
@@ -669,17 +704,23 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
     ) -> str:
         """The jornadas where this team has it hard, and who has it easy then."""
         rows = await ctx.fixtures()
+        cobertura = _cobertura(rows)
         pos = posicion.upper()
         needle = equipo.lower()
         mios = [f for f in rows if needle in f.team_name.lower()]
         if not mios:
-            return f"No encuentro ningun equipo que contenga '{equipo}'."
+            return (
+                f"No hay partidos de '{equipo}' en el calendario cargado. "
+                f"{cobertura}. Faltan jornadas por cargar en el servidor "
+                f"(update-calendar); no es que el equipo no exista."
+            )
 
         duras = [f for f in mios if difficulty(pos, f) == "dificil"]
         if not duras:
             return (
-                f"Ninguna de las proximas {FIXTURE_HORIZON} jornadas es dificil para un "
-                f"{pos} de {mios[0].team_name}. No necesitas alternativa."
+                f"Ninguna jornada CARGADA es dificil para un {pos} de "
+                f"{mios[0].team_name}. {cobertura}. Si el calendario llega a pocas "
+                f"jornadas, di que faltan por cargar antes de concluir nada."
             )
 
         out = [
@@ -707,6 +748,7 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
                 out.append(f"  {_fixture_line(alt, pos)}")
             if not faciles:
                 out.append("  (nadie tiene partido facil esa jornada)")
+        out.append(f"\n{cobertura}")
         return "\n".join(out) + "\n\n" + FIXTURE_NOTE
 
     async def escasez_historica() -> str:
