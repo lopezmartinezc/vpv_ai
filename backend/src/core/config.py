@@ -11,6 +11,12 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        # The .env is shared with other settings classes — the V2 assistant
+        # keeps its own under ASSISTANT_V2_*, and .env.example documents them.
+        # pydantic-settings forbids extras by default, and this class is built
+        # at import time, so one foreign key in the file stopped the whole
+        # backend from booting rather than the feature it belonged to.
+        extra="ignore",
     )
 
     # App
