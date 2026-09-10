@@ -45,6 +45,12 @@ proveedor desde su caché de prefijo** (`cached_tokens` en OpenAI,
 `cache_read_input_tokens` en Anthropic). El total no es la factura; la
 parte en caché se cobra a una fracción.
 
+El último mensaje lleva la evidencia **antes** de la pregunta. La evidencia es
+idéntica para toda pregunta sobre la misma revisión del draft; la pregunta es
+lo que cambia. Como los proveedores cachean por prefijo exacto, así la
+evidencia queda en la parte reutilizable entre consultas consecutivas en un
+mismo pick, y la pregunta acaba al final, junto a la generación.
+
 En Anthropic el sistema, las herramientas y el último bloque de cada mensaje
 van marcados con `cache_control: ephemeral`, como en el chat actual, de modo
 que cada ronda reutiliza el prefijo de la anterior. OpenAI cachea prefijos
