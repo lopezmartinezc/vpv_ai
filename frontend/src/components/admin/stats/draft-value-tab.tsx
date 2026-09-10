@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { ParticipationToggle } from "@/components/admin/stats/participation-toggle";
+import { downloadCsv, exportFilename, toCsv } from "@/lib/draft-export";
 import { confidenceDots, confidenceFor } from "@/lib/draft-confidence";
 import { participationQuery, useParticipationModel } from "@/lib/participation-model";
 import { apiClient } from "@/lib/api-client";
@@ -424,6 +425,19 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
           Solo no seleccionados
         </label>
         <span className="text-[10px] text-vpv-text-muted">{players.length} jug.</span>
+        <button
+          onClick={() =>
+            downloadCsv(
+              exportFilename(data?.season_name ?? ""),
+              toCsv(players),
+            )
+          }
+          disabled={players.length === 0}
+          title="Descarga la tabla tal y como la estás viendo (mismos filtros y orden) con TODAS las columnas, incluidas las ocultas y las que no caben en pantalla: goles, asistencias, notas Marca/AS, tags, notas y banderas. CSV preparado para Excel: se abre con doble clic."
+          className="rounded px-2 py-1 text-[10px] font-medium text-vpv-text-muted transition-colors hover:text-vpv-text disabled:opacity-40 border border-vpv-border"
+        >
+          ↓ Exportar ({players.length})
+        </button>
         <ParticipationToggle
           value={participation}
           disabled={loading}
