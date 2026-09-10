@@ -17,7 +17,13 @@ Configuración adicional (backend, prefijo independiente):
 - `ASSISTANT_V2_OPENAI_MODELS='["modelo-permitido"]'` y
   `ASSISTANT_V2_ANTHROPIC_MODELS='["modelo-permitido"]'`: listas adicionales.
 - `ASSISTANT_V2_TIMEOUT_SECONDS=75`, `ASSISTANT_V2_MAX_ROUNDS=20`,
-  `ASSISTANT_V2_MAX_TOOL_CALLS=30`, `ASSISTANT_V2_MAX_OUTPUT_TOKENS=2000`.
+  `ASSISTANT_V2_MAX_TOOL_CALLS=30`, `ASSISTANT_V2_MAX_OUTPUT_TOKENS=8000`.
+
+  `MAX_OUTPUT_TOKENS` incluye los **tokens de razonamiento**, no solo el texto
+  visible. Con gpt-5 el valor inicial de 2000 se agotaba pensando y la
+  respuesta volvía truncada y vacía: "Análisis incompleto" sin una línea de
+  texto. Si vuelve a pasar, el propio aviso en pantalla dice ahora qué límite
+  se ha tocado.
 
   El presupuesto de rondas arranca donde acabó V1, no donde empezó: "¿a quién
   cojo en este pick?" encadena ocho o más llamadas a herramientas, V1 salió con

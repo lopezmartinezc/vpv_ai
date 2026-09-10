@@ -8,7 +8,7 @@ import httpx
 
 from . import history
 from .config import config
-from .engine import Progress, run_engine
+from .engine import STOP_MESSAGES, Progress, run_engine
 from .errors import AssistantError
 from .evaluation import sorted_players
 from .gain import roster_gain
@@ -31,6 +31,9 @@ def build_answer(
         warnings.append(
             "Análisis incompleto. Las tarjetas son opciones del tablero, no una elección personalizada."
         )
+        detail = STOP_MESSAGES.get(usage.stop_reason or "")
+        if detail:
+            warnings.append(detail)
     ids = (
         final.player_ids
         if final

@@ -60,6 +60,10 @@ class Usage(StrictModel):
     rounds: int = 0
     tool_calls: int = 0
     latency_ms: int = 0
+    # Why the engine stopped without an answer. None when it finished normally.
+    # Three different walls with three different fixes, and the person who can
+    # act on it is the one looking at the screen.
+    stop_reason: str | None = None
 
 
 class Answer(StrictModel):
