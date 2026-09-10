@@ -91,7 +91,14 @@ async def run_engine(
 ) -> Final | None:
     messages = conversation(history, request.question)
     bootstrap = tools.state() + "\n" + tools.evaluate()
-    messages[-1]["content"] = request.question + "\nEVIDENCIA ACTUAL DEL SERVIDOR:\n" + bootstrap
+    # Evidence first, question last. The bootstrap is identical for every
+    # question at the same draft revision; the question is what changes.
+    # Providers cache on exact prefix, so this side of the cut is the one that
+    # gets reused across consecutive questions at a pick — and the question
+    # ends up next to generation, where a long context serves it best.
+    messages[-1]["content"] = (
+        "EVIDENCIA ACTUAL DEL SERVIDOR:\n" + bootstrap + "\n\nPREGUNTA:\n" + request.question
+    )
     # The model already holds both; asking again must not cost another ten
     # thousand tokens of the same thing.
     seen: set[str] = {"estado_draft{}", "evaluar_pick{}"}
