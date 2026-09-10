@@ -94,3 +94,14 @@ DEBUG=false VPV_V2_CONTAINER_TESTS=1 .venv/bin/pytest src/features/draft_assista
 ```
 El contenedor valida la tabla de historial y las leases; no sustituye una prueba del
 upgrade completo de Alembic ni de consultas estadísticas contra datos representativos.
+
+## Comparar jugadores
+
+Hasta tres, elegidos con un buscador (nombre o equipo, mejor Prioridad
+primero; `Enter` toma el primer resultado). Cuando la respuesta trae dos o
+tres tarjetas se muestra una tabla comparativa: métricas en filas, jugadores
+en columnas, el mejor valor de cada fila resaltado, más la fila de
+**Confianza** con su motivo. La tarjeta lleva del servidor lo que la tabla
+necesita (media, PJ, temporadas, titularidad, jornadas estimadas y las
+banderas de cambio de equipo/posición); un backend antiguo sin esos campos
+sigue parseando y la tabla muestra un guion donde falte el dato.

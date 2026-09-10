@@ -15,7 +15,14 @@ export const cardSchema = z.object({
   player_id: z.number().int(), name: z.string(), position: z.string(), team: z.string(),
   available: z.boolean(), priority: z.number().nullable(), priority_base: z.number().nullable(),
   vorp: z.number().nullable(), participation: z.number().nullable(),
-  available_gap: z.number().nullable(), marginal_gain: z.number().nullable(), tags: z.array(z.string()), evidence_id: z.string(),
+  available_gap: z.number().nullable(), marginal_gain: z.number().nullable(),
+  // Comparison fields. Optional so an answer saved by an older backend still
+  // parses; the table shows a dash where a value is missing.
+  avg_points: z.number().nullable().optional(), games_played: z.number().optional(),
+  seasons_played: z.number().optional(), availability: z.number().nullable().optional(),
+  exp_games_remaining: z.number().nullable().optional(),
+  is_new: z.boolean().optional(), team_changed: z.boolean().optional(), position_changed: z.boolean().optional(),
+  tags: z.array(z.string()), evidence_id: z.string(),
 });
 export const answerSchema = z.object({
   text: z.string(), cards: z.array(cardSchema), evidence_ids: z.array(z.string()),
@@ -52,6 +59,8 @@ export interface PanelProps {
   liveToken: string;
   context: ViewContext;
   participants: {participant_id: number; display_name: string}[];
-  players: {player_id: number; display_name: string}[];
+  /** The live board's rows. Position, team and Prioridad are what let the
+   *  picker show who it is proposing instead of a bare name. */
+  players: {player_id: number; display_name: string; position: string; team_name: string; priority: number | null}[];
   onSelect: (id: number) => void;
 }
