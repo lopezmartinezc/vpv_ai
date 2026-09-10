@@ -104,3 +104,14 @@ def test_a_comment_suffix_on_the_model_setting_is_tolerated(
     """systemd EnvironmentFile again — see test_settings_parsing."""
     monkeypatch.setattr(settings, "assistant_anthropic_model", "claude-opus-5  # el bueno")
     assert build_provider("anthropic").model == "claude-opus-5"
+
+
+# --------------------------------------------------------------------------
+# Which provider the chat lands on
+# --------------------------------------------------------------------------
+
+
+def test_openai_is_offered_first(both_keys: None) -> None:
+    """The panel falls back to the first available provider when the configured
+    default has no key, so the order decides what people actually see."""
+    assert available_providers()[0] == "openai"

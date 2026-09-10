@@ -130,7 +130,11 @@ def clean_setting(raw: str | None) -> str:
     return (raw or "").split("#", 1)[0].strip()
 
 
-PROVIDERS = ("anthropic", "openai")
+#: Offered in this order. OpenAI first because it is the configured default and
+#: because the panel falls back to the first available provider when the default
+#: has no key — with Anthropic first, a missing OPENAI_API_KEY silently landed
+#: everyone on Claude.
+PROVIDERS = ("openai", "anthropic")
 
 # Model ids arrive from the client. Not whitelisted against the live list — that
 # is cached and would reject a model released an hour ago — but constrained to
