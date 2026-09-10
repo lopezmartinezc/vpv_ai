@@ -276,7 +276,7 @@ class DraftValueService:
         self,
         season_id: int,
         min_games: int = CURRENT_MIN_GAMES,
-        participation_model: ParticipationModel = ParticipationModel.HISTORICO,
+        participation_model: ParticipationModel = ParticipationModel.MIXTO,
     ) -> DraftValueResponse:
         """Compute the draft board for every draftable player of the season.
 
@@ -292,9 +292,10 @@ class DraftValueService:
 
         ``participation_model`` picks how much of the remaining season each
         player is expected to feature in — see
-        :mod:`src.features.stats.participation`. It defaults to the historical
-        rate the board has always used, so switching back is a parameter, not
-        a revert.
+        :mod:`src.features.stats.participation`. It defaults to ``mixto``,
+        which the backtest put ahead on both error and ordering; ``historico``
+        still reproduces the board exactly as it was before mixto existed, so
+        going back is a parameter rather than a revert.
         """
 
         # Load data (SQL load floor kept at 1 so the current partial season

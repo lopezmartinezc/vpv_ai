@@ -110,16 +110,29 @@ async def test_mixto_separates_them_on_minutes(board) -> None:
     assert rows["cameos"].exp_games_remaining < rows["titular"].exp_games_remaining - 5
 
 
-async def test_the_default_is_the_old_behaviour(board) -> None:
-    """Rolling back is choosing the default, so the default must not move."""
+async def test_the_default_is_mixto(board) -> None:
+    """Mixto is what the board answers with when nobody asks for a model.
+
+    It earned that on the backtest: better on both error and ordering, on the
+    full field and on the draftable cut.
+    """
     default = await board()
-    historico = await board(ParticipationModel.HISTORICO)
+    mixto = await board(ParticipationModel.MIXTO)
     assert {s: p.participation for s, p in default.items()} == {
-        s: p.participation for s, p in historico.items()
+        s: p.participation for s, p in mixto.items()
     }
-    assert {s: p.priority for s, p in default.items()} == {
-        s: p.priority for s, p in historico.items()
-    }
+    assert {s: p.priority for s, p in default.items()} == {s: p.priority for s, p in mixto.items()}
+
+
+async def test_historico_still_reproduces_the_old_board(board) -> None:
+    """The way back. Mixto being the default does not retire historico: asking
+    for it must still give exactly the numbers the board gave before any of
+    this existed — games over that season's matchdays, nothing else."""
+    historico = await board(ParticipationModel.HISTORICO)
+    # Both appeared in all five matchdays, which under historico is the whole
+    # story: a full participation regardless of how long they were on the pitch.
+    assert historico["titular"].participation == pytest.approx(1.0)
+    assert historico["cameos"].participation == pytest.approx(1.0)
 
 
 async def test_the_switch_moves_priority_not_just_the_display(board) -> None:

@@ -266,12 +266,12 @@ async def delete_pick(
 @router.get("/{draft_id}/players/stats", response_model=DraftPlayerStatsResponse)
 async def get_draft_player_stats(
     draft_id: int,
-    participacion: ParticipationModel = Query(default=ParticipationModel.HISTORICO),
+    participacion: ParticipationModel = Query(default=ParticipationModel.MIXTO),
     _admin: dict = Depends(get_current_admin),
     service: DraftService = Depends(_get_service),
 ) -> DraftPlayerStatsResponse:
-    """The live board. ``participacion`` defaults to the historical model, so
-    the switch is opt-in per request and reverting is a click."""
+    """The live board. ``participacion`` defaults to ``mixto``; passing
+    ``historico`` gives the board as it was before mixto existed."""
     return await service.get_player_stats_for_draft(draft_id, participation_model=participacion)
 
 

@@ -4,14 +4,16 @@ La **participación** es la fracción de jornadas restantes que esperamos que un
 jugador dispute. Multiplica directamente a `proj_rest_points`, que es lo que
 ordena **Prioridad**: cambiarla reordena el tablero entero.
 
-Por eso NO se ha sustituido nada. Hay un interruptor, el valor por defecto es
-el comportamiento de siempre, y volver atrás es un clic.
+Hay un interruptor. **El valor por defecto es `mixto`**, que ganó el backtest;
+`historico` sigue reproduciendo exactamente el tablero anterior y está a un
+clic. Medido sobre una temporada real, cambiar de modelo mueve **un tercio del
+top-30**, así que no es un ajuste cosmético.
 
 ---
 
 ## Los dos modelos
 
-### `historico` (por defecto)
+### `historico`
 
 ```
 participación = partidos jugados / jornadas de esa temporada
@@ -23,7 +25,7 @@ Sobre la temporada de referencia: la actual si su muestra es suficiente
 **Su punto ciego**: cuenta apariciones, no minutos. El que sale diez minutos
 cada semana aparece como titular indiscutible.
 
-### `mixto`
+### `mixto` (por defecto)
 
 ```
 participación = (1-w) x histórico + w x señal de esta temporada
@@ -44,8 +46,17 @@ señal         = 0,69 x cuota de minutos en su puesto + 0,31 x tasa de aparició
 - **Sin histórico**, se usa solo la señal actual (encogerla hacia un prior de
   cero enterraría a todo recién llegado).
 
-**Acierto medido en temporadas de holdout, prediciendo la participación del
-resto de temporada: 0,655 → 0,730.**
+**Medido sobre una temporada real (J1-J5 para predecir, resto como
+resultado), 439 jugadores:**
+
+| | Histórico | Mixto |
+|---|---|---|
+| Todos (439) | error 0,245 · corr 0,392 | **0,232 · 0,464** |
+| Drafteables (225) | error 0,213 · corr 0,199 | **0,180 · 0,271** |
+
+Gana en las dos métricas y en los dos cortes, que es lo que le da el puesto de
+valor por defecto. La muestra es una sola transición de temporada: es la mejor
+evidencia disponible, no una certeza.
 
 ---
 
@@ -65,12 +76,11 @@ cite exactamente la Prioridad que tienes en la tabla delante.
 Pulsar **Histórico**. No hay migración, ni columna nueva en base de datos, ni
 despliegue que revertir:
 
-- El parámetro por defecto de `get_draft_values` es `historico`.
-- Si el interruptor está en histórico, la petición ni siquiera lleva
-  `?participacion=` — es byte a byte la misma que antes de que esto existiera.
-- Un test (`test_the_default_is_the_old_behaviour`) fija que el tablero por
-  defecto produce exactamente la misma participación y la misma Prioridad que
-  pedirle `historico` explícitamente.
+- `historico` no se ha retirado: es un valor del mismo parámetro.
+- Un test (`test_historico_still_reproduces_the_old_board`) fija que pedirlo
+  devuelve exactamente lo de siempre — partidos entre jornadas, nada más.
+- Otro (`test_the_default_is_mixto`) fija cuál es el valor por defecto, para
+  que cambiarlo sea deliberado y no un descuido.
 
 ## API
 
@@ -80,7 +90,7 @@ despliegue que revertir:
 | `GET /drafts/{draft_id}/players/stats` | `?participacion=historico\|mixto` |
 | `POST /draft-assistant/...` | campo `participacion` en el body |
 
-Omitirlo = `historico`.
+Omitirlo = `mixto`.
 
 ## Código
 

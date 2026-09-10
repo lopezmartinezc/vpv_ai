@@ -132,7 +132,7 @@ class AssistantContext:
     anonymize_participants: bool = True
     # Must match whatever the admin has selected on screen, or the chat quotes
     # numbers he cannot see.
-    participation_model: ParticipationModel = ParticipationModel.HISTORICO
+    participation_model: ParticipationModel = ParticipationModel.MIXTO
     _draft: DraftDetailResponse | None = field(default=None, init=False, repr=False)
     _picked: set[int] | None = field(default=None, init=False, repr=False)
     _perf: dict[int, tuple[PlayerStatRow, AdvancedPlayerStat | None]] | None = field(
