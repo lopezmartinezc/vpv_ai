@@ -29,5 +29,5 @@ def test_the_ceiling_leaves_room_to_raise_it_further() -> None:
     """The field bound, not just the default: a cap at the default means the
     next production incident cannot be fixed with an env var."""
     bound = AssistantSettings.model_fields["max_rounds"].metadata
-    ceiling = next(getattr(m, "le") for m in bound if hasattr(m, "le"))
+    ceiling = next(m.le for m in bound if hasattr(m, "le"))
     assert ceiling > AssistantSettings().max_rounds
