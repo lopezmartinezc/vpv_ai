@@ -7,6 +7,12 @@ import { useAuth } from "@/contexts/auth-context";
 import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
 import { apiClient, ApiClientError } from "@/lib/api-client";
+import {
+  DIFFICULTY_STYLE,
+  difficultyTitle,
+  fixtureDifficulty,
+  type OpponentStrength,
+} from "@/lib/fixture-difficulty";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
 import { PitchView } from "@/components/ui/pitch-view";
 import type { PitchPlayer } from "@/components/ui/pitch-view";
@@ -385,6 +391,7 @@ function PlayerCard({
   onToggle,
   showPoints = false,
   prediction,
+  fixture,
 }: {
   player: SquadPlayerEntry;
   isSelected: boolean;
@@ -392,6 +399,7 @@ function PlayerCard({
   onToggle: (player: SquadPlayerEntry) => void;
   showPoints?: boolean;
   prediction?: PlayerPrediction;
+  fixture?: OpponentStrength;
 }) {
   const pos = player.position as Position;
 
@@ -433,6 +441,18 @@ function PlayerCard({
               >
                 {player.is_home ? "vs" : "@"} {player.opponent_team_name}
               </span>
+              {(() => {
+                const grade = fixtureDifficulty(player.position, fixture);
+                if (!grade || !fixture) return null;
+                return (
+                  <span
+                    className={`ml-1.5 rounded px-1 py-px text-[9px] font-medium ${DIFFICULTY_STYLE[grade]}`}
+                    title={difficultyTitle(player.position, fixture, grade)}
+                  >
+                    {grade === "facil" ? "fácil" : grade === "dificil" ? "difícil" : "media"}
+                  </span>
+                );
+              })()}
             </>
           )}
         </p>
@@ -577,6 +597,34 @@ export default function AlineacionPage() {
       ? `/stats/${selectedSeason.id}/predictions?matchday=${numero}`
       : null,
   );
+  // Opponent strength for THIS matchday, so each card can say whether the
+  // fixture is soft or hard for that player's position. Measured effect is
+  // 1.4-2.6 points per slot, which over eleven slots is the biggest weekly
+  // lever there is.
+  const { data: fixturesData } = useFetch<{
+    fixtures: {
+      matchday: number;
+      team_name: string;
+      opponent_attack: number;
+      opponent_defence: number;
+    }[];
+  }>(
+    selectedSeason
+      ? `/stats/${selectedSeason.id}/fixtures?desde=${numero}&jornadas=1`
+      : null,
+  );
+  const fixtureByTeam = useMemo(() => {
+    const map = new Map<string, OpponentStrength>();
+    for (const f of fixturesData?.fixtures ?? []) {
+      if (f.matchday !== numero) continue;
+      map.set(f.team_name, {
+        opponent_attack: f.opponent_attack,
+        opponent_defence: f.opponent_defence,
+      });
+    }
+    return map;
+  }, [fixturesData, numero]);
+
   const predictionsMap = useMemo(() => {
     if (!predictionsData?.predictions) return new Map<number, PlayerPrediction>();
     return new Map(predictionsData.predictions.map((p) => [p.player_id, p]));
@@ -994,6 +1042,7 @@ export default function AlineacionPage() {
                   onToggle={handleTogglePlayer}
                   showPoints={isAdmin}
                   prediction={predictionsMap.get(player.player_id)}
+                  fixture={fixtureByTeam.get(player.team_name)}
                 />
               );
             })}

@@ -17,9 +17,12 @@ from collections import defaultdict
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.features.stats.fixtures import FixtureStrengthService
 from src.features.stats.repository import MatchdayScoreRow, StatsRepository
 from src.features.stats.schemas import (
     EvolutionEntry,
+    FixtureListResponse,
+    FixtureRow,
     FormationUsage,
     LeagueStatsResponse,
     MatchdayAverage,
@@ -50,7 +53,7 @@ from src.features.stats.schemas_draft_retro import (
 from src.features.stats.service_advanced import AdvancedStatsService
 from src.features.stats.service_draft import DraftValueService
 from src.features.stats.service_draft_retro import DraftRetroService
-from src.shared.dependencies import get_db, require_perm
+from src.shared.dependencies import get_current_user, get_db, require_perm
 from src.shared.permissions import Perm
 
 router = APIRouter(prefix="/stats", tags=["stats"])
@@ -374,6 +377,42 @@ async def get_player_stats(
                 total_points=row.total_points,
             )
             for row in rows
+        ],
+    )
+
+
+@router.get("/{season_id}/fixtures", response_model=FixtureListResponse)
+async def get_fixtures(
+    season_id: int,
+    desde: int = Query(1, ge=1, le=38, description="Primera jornada a devolver"),
+    jornadas: int = Query(6, ge=1, le=20, description="Cuantas jornadas"),
+    db: AsyncSession = Depends(get_db),
+    _user: dict = Depends(get_current_user),
+) -> FixtureListResponse:
+    """Upcoming fixtures with each opponent's attack and defence.
+
+    Feeds the weekly lineup screen: which of my players face a soft opponent
+    this matchday. Difficulty is position-dependent — a keeper is graded on the
+    opponent's attack, a forward on its defence — so the raw strengths are
+    returned and the caller grades them.
+    """
+    rows = await FixtureStrengthService(db).fixtures(
+        season_id, from_matchday=desde, count=jornadas
+    )
+    return FixtureListResponse(
+        season_id=season_id,
+        fixtures=[
+            FixtureRow(
+                matchday=f.matchday,
+                team_id=f.team_id,
+                team_name=f.team_name,
+                opponent_id=f.opponent_id,
+                opponent_name=f.opponent_name,
+                home=f.home,
+                opponent_attack=f.opponent_attack,
+                opponent_defence=f.opponent_defence,
+            )
+            for f in rows
         ],
     )
 
