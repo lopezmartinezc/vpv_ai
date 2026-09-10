@@ -52,6 +52,7 @@ STOP_TRUNCATED = "truncated"
 STOP_NO_CALLS = "no_calls"
 STOP_ROUNDS = "rounds"
 STOP_TOOL_CALLS = "tool_calls"
+STOP_TIMEOUT = "timeout"
 
 # What to tell the admin for each wall. The fixes are different, so the message
 # has to be too: a budget one is an env var, a prose one is the prompt.
@@ -72,6 +73,11 @@ STOP_MESSAGES = {
         "Se agotaron las llamadas a herramientas (ASSISTANT_V2_MAX_TOOL_CALLS) "
         "antes de cerrar el análisis."
     ),
+    STOP_TIMEOUT: (
+        "Se agotó el tiempo (ASSISTANT_V2_TIMEOUT_SECONDS / "
+        "ASSISTANT_V2_PROVIDER_TIMEOUT_SECONDS). Un modelo de razonamiento tarda "
+        "30-60 s por llamada; prueba el modo rápido o sube el límite."
+    ),
 }
 
 
@@ -86,7 +92,9 @@ async def run_engine(
     messages = conversation(history, request.question)
     bootstrap = tools.state() + "\n" + tools.evaluate()
     messages[-1]["content"] = request.question + "\nEVIDENCIA ACTUAL DEL SERVIDOR:\n" + bootstrap
-    seen: set[str] = set()
+    # The model already holds both; asking again must not cost another ten
+    # thousand tokens of the same thing.
+    seen: set[str] = {"estado_draft{}", "evaluar_pick{}"}
     for index in range(config.max_rounds):
         usage.rounds += 1
         await progress("Consultando modelo" if index == 0 else "Contrastando evidencia")

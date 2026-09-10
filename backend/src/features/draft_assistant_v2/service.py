@@ -8,7 +8,7 @@ import httpx
 
 from . import history
 from .config import config
-from .engine import STOP_MESSAGES, Progress, run_engine
+from .engine import STOP_MESSAGES, STOP_TIMEOUT, Progress, run_engine
 from .errors import AssistantError
 from .evaluation import sorted_players
 from .gain import roster_gain
@@ -81,6 +81,7 @@ async def analyze(draft_id: int, user_id: int, request: AskRequest, progress: Pr
                 final = await run_engine(gateway, tools, request, previous, progress, usage)
         except (TimeoutError, httpx.TimeoutException):
             final = None
+            usage.stop_reason = STOP_TIMEOUT
     await progress("Comprobando disponibilidad antes de responder")
     answer = build_answer(snapshot, tools, final, request, usage)
     answer = revalidate(answer, await load_snapshot(draft_id, request.participation))
