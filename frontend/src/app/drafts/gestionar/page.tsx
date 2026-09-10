@@ -582,6 +582,28 @@ export default function GestionarDraftPage() {
   const isPaused = currentDraft?.status === "paused";
   const isCompleted = currentDraft?.status === "completed";
 
+  /** Opens the draft and resolves auto-picks waiting on the first turn.
+   * Without it, a first-in-order manager who is away with an auto-pick list
+   * ready leaves the draft stalled: nothing precedes pick #1 to trigger it. */
+  async function startDraft() {
+    if (!currentDraft) return;
+    if (!window.confirm("¿Iniciar el draft? Si el primero del orden tiene auto-pick activo, se resolverá su turno ahora.")) {
+      return;
+    }
+    setError(null);
+    try {
+      const res = await apiClient.post<{ status: string }>(
+        `/drafts/admin/${currentDraft.id}/start`,
+        {},
+      );
+      showSuccess(`Draft iniciado (${res.status})`);
+      await loadDrafts();
+      await loadDraftDetail();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al iniciar el draft");
+    }
+  }
+
   async function toggleDraftPause() {
     if (!currentDraft) return;
     const next = isPaused ? "resume" : "pause";
@@ -642,6 +664,16 @@ export default function GestionarDraftPage() {
               className="rounded-lg border border-red-500/50 bg-vpv-bg px-4 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/10"
             >
               Reiniciar draft
+            </button>
+          )}
+          {currentDraft && !isCompleted && !isPaused && (
+            <button
+              type="button"
+              onClick={startDraft}
+              className="rounded-lg bg-vpv-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90"
+              title="Abre el draft y resuelve los auto-picks del primer turno"
+            >
+              Iniciar draft
             </button>
           )}
           {currentDraft && !isCompleted && (
