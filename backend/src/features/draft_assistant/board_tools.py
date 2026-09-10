@@ -33,10 +33,12 @@ from src.features.stats.service_draft import DraftValueService
 
 POSITIONS = ("POR", "DEF", "MED", "DEL")
 
-#: How many matchdays ahead the calendar tools look. Long enough to plan a
-#: keeper rotation, short enough that the opponent strengths still mean
-#: something.
-FIXTURE_HORIZON = 12
+#: How many matchdays ahead the calendar tools load. The whole rest of the
+#: season: at 12 the chat reported the calendar was "only loaded to J16" from a
+#: J5 start, which read as missing data when it was this constant. Output size
+#: is capped separately by each tool's ``limite``, so loading the lot costs
+#: memory for one request, not tokens.
+FIXTURE_HORIZON = 38
 
 # Measured over the 8 real seasons in the migrated history (final points,
 # matchdays.counts AND matches.counts respected). Replacement = participants x

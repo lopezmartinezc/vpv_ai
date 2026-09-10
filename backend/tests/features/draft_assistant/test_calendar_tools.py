@@ -167,3 +167,12 @@ async def test_a_team_absent_from_the_loaded_range_says_why() -> None:
 
     assert "calendario" in out.lower()
     assert "update-calendar" in out
+
+
+def test_the_horizon_covers_the_rest_of_the_season() -> None:
+    """The chat reported the calendar "only loaded to J16" — which was this
+    constant at 12, not missing data. A full season is 38 matchdays and the
+    output is capped separately by ``limite``."""
+    from src.features.draft_assistant.board_tools import FIXTURE_HORIZON
+
+    assert FIXTURE_HORIZON >= 38
