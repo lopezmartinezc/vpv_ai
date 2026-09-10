@@ -31,6 +31,7 @@ from src.features.drafts.wishlist_schemas import (
     WishlistUpsertRequest,
 )
 from src.features.seasons.repository import SeasonRepository
+from src.features.stats.participation import ParticipationModel
 from src.shared.models.draft import Draft
 from src.shared.permissions import Perm
 
@@ -985,7 +986,11 @@ class DraftService:
             ]
         )
 
-    async def get_player_stats_for_draft(self, draft_id: int) -> DraftPlayerStatsResponse:
+    async def get_player_stats_for_draft(
+        self,
+        draft_id: int,
+        participation_model: ParticipationModel = ParticipationModel.HISTORICO,
+    ) -> DraftPlayerStatsResponse:
         """Admin-only: draft-board model for the live draft UI.
 
         Mirrors the ``Estadísticas → Draft`` board (``DraftValueService``):
@@ -1003,7 +1008,9 @@ class DraftService:
         season_id = draft.season_id
         picked_ids = await self.repo.get_picked_player_ids(draft_id)
 
-        dv_response = await DraftValueService(self.repo.session).get_draft_values(season_id)
+        dv_response = await DraftValueService(self.repo.session).get_draft_values(
+            season_id, participation_model=participation_model
+        )
 
         players: dict[str, PlayerDraftStats] = {}
         by_position: dict[str, list[tuple[int, float]]] = {}

@@ -21,6 +21,7 @@ from src.features.draft_assistant.providers.base import (
     ProgressCallback,
 )
 from src.features.draft_assistant.providers.openai_provider import OpenAIProvider
+from src.features.stats.participation import ParticipationModel
 
 logger = logging.getLogger(__name__)
 
@@ -291,6 +292,7 @@ class DraftAssistantService:
         provider_name: str | None = None,
         model: str | None = None,
         provider: AssistantProvider | None = None,
+        participation_model: ParticipationModel = ParticipationModel.HISTORICO,
         on_progress: ProgressCallback | None = None,
     ) -> AssistantReply:
         question = question.strip()
@@ -303,6 +305,7 @@ class DraftAssistantService:
             phase=phase,
             user_id=user_id,
             anonymize_participants=settings.assistant_anonymize_participants,
+            participation_model=participation_model,
         )
         active = provider or build_provider(provider_name, model)
         messages = [

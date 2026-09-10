@@ -20,6 +20,7 @@ from src.features.draft_assistant.service import (
     list_models,
     sse_line,
 )
+from src.features.stats.participation import ParticipationModel
 from src.shared.dependencies import get_current_admin, get_db
 
 router = APIRouter(prefix="/draft-assistant", tags=["draft-assistant"])
@@ -52,6 +53,9 @@ class AssistantAskRequest(BaseModel):
     provider: str | None = Field(default=None, pattern="^(anthropic|openai)$")
     # Null uses the provider's configured default model.
     model: str | None = Field(default=None, max_length=100, pattern=r"^[A-Za-z0-9._:@-]+$")
+    # Which participation model the board on the admin's screen is using, so
+    # the chat quotes the same Prioridad he is looking at.
+    participacion: ParticipationModel = ParticipationModel.HISTORICO
 
 
 class ProviderInfo(BaseModel):
@@ -112,6 +116,7 @@ async def ask(
         user_id=_user_id(user),
         provider_name=payload.provider,
         model=payload.model,
+        participation_model=payload.participacion,
     )
     return AssistantAskResponse(
         reply=reply.text,
@@ -160,6 +165,7 @@ async def ask_stream(
                 user_id=_user_id(user),
                 provider_name=payload.provider,
                 model=payload.model,
+                participation_model=payload.participacion,
                 on_progress=on_progress,
             )
             await queue.put(
