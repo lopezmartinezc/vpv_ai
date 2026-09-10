@@ -50,6 +50,16 @@ class Card(StrictModel):
     participation: float | None
     available_gap: float | None = None
     marginal_gain: float | None = None
+    # What a side-by-side needs beyond the ranking: how much he scores when
+    # he plays, how much he plays, and how much evidence sits behind it.
+    avg_points: float | None = None
+    games_played: int = 0
+    seasons_played: int = 0
+    availability: float | None = None
+    exp_games_remaining: float | None = None
+    is_new: bool = False
+    team_changed: bool = False
+    position_changed: bool = False
     tags: list[str] = Field(default_factory=list)
     evidence_id: str
 

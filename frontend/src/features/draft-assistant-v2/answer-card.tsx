@@ -1,4 +1,5 @@
 import type { ReactElement } from "react";
+import { ComparisonTable } from "./comparison-table";
 import type { Answer, Card, Revision } from "./contracts";
 
 function Metric({ label, value }: { label: string; value: string | number | null }): ReactElement {
@@ -128,12 +129,11 @@ export function AnswerCard({
         </p>
       ))}
 
-      {!stale && answer.cards.length > 0 && (
-        <div className="space-y-2">
-          {answer.cards.map((card) => (
-            <PlayerCard key={card.player_id} card={card} onSelect={onSelect} />
-          ))}
-        </div>
+      {!stale && answer.cards.length >= 2 && (
+        <ComparisonTable cards={answer.cards} onSelect={onSelect} />
+      )}
+      {!stale && answer.cards.length === 1 && (
+        <PlayerCard card={answer.cards[0]} onSelect={onSelect} />
       )}
 
       <details className="text-[10px] text-vpv-text-muted">

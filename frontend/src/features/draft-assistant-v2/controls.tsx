@@ -1,5 +1,6 @@
 import type { ReactElement } from "react";
 import type { Capabilities, PanelProps } from "./contracts";
+import { PlayerPicker } from "./player-picker";
 
 /** House input styling, so V2 reads as the same application as everything else. */
 const FIELD =
@@ -76,8 +77,6 @@ export function ContextControls({
   selected: number[];
   setSelected: (ids: number[]) => void;
 }): ReactElement {
-  const nameOf = (id: number): string =>
-    props.players.find((p) => p.player_id === id)?.display_name ?? `#${id}`;
   const open = props.players.find((p) => p.player_id === props.context.selected_player_ids[0]);
 
   return (
@@ -98,46 +97,9 @@ export function ContextControls({
             ))}
           </select>
         </label>
-        <label>
-          <span className={LABEL}>Comparar (hasta 3 jugadores)</span>
-          <select
-            multiple
-            size={3}
-            className={`${FIELD} mt-1 w-full`}
-            value={selected.map(String)}
-            onChange={(e) =>
-              setSelected(
-                Array.from(e.target.selectedOptions)
-                  .slice(0, 3)
-                  .map((o) => Number(o.value)),
-              )
-            }
-          >
-            {props.players.map((p) => (
-              <option key={p.player_id} value={p.player_id}>
-                {p.display_name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <PlayerPicker players={props.players} selected={selected} onChange={setSelected} />
       </div>
 
-      {selected.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1">
-          <span className={LABEL}>Comparando</span>
-          {selected.map((id) => (
-            <button
-              key={id}
-              type="button"
-              title="Quitar de la comparación"
-              onClick={() => setSelected(selected.filter((x) => x !== id))}
-              className="rounded-full border border-vpv-accent/40 bg-vpv-accent/10 px-2 py-0.5 text-[10px] text-vpv-text hover:border-vpv-accent"
-            >
-              {nameOf(id)} ×
-            </button>
-          ))}
-        </div>
-      )}
 
       <p className="text-[10px] text-vpv-text-muted">
         Jugador abierto:{" "}
