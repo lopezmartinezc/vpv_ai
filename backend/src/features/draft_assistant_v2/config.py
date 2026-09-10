@@ -11,8 +11,10 @@ class AssistantSettings(BaseSettings):
     # thinks before it writes. The browser aborts at 190s and nginx's /api
     # read timeout is 300s, so the total stays under the former with margin.
     # See tests/test_timeouts.py.
-    timeout_seconds: int = Field(default=150, ge=10, le=300)
-    provider_timeout_seconds: int = Field(default=90, ge=5, le=180)
+    timeout_seconds: int = Field(default=150, ge=10, le=170)
+    # Never above the total that contains it: one call allowed to outlast the
+    # whole question can only end as a timeout with nothing to show.
+    provider_timeout_seconds: int = Field(default=90, ge=5, le=170)
     # "¿A quién cojo en este pick?" legitimately chains eight or more tool
     # calls — board, picks, upcoming turns, rosters, fixtures, season form.
     # V1 shipped with eight rounds, production answered "me he quedado sin

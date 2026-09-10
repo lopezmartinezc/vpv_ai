@@ -22,3 +22,16 @@ describe("consumption line", () => {
     expect(screen.getByText(/29515 tokens entrada/)).toBeInTheDocument();
   });
 });
+
+it("hides player cards pending validation and restores them only for the matching revision", () => {
+  const data = answer();
+  data.cards = [{player_id: 1, name: "Jugador pendiente", position: "DEF", team: "Equipo",
+    available: true, priority: 10, priority_base: 10, vorp: 0, participation: null,
+    available_gap: null, marginal_gain: null, tags: [], evidence_id: "player:1"}];
+  const {rerender} = render(<AnswerCard answer={data} revision={null} onSelect={vi.fn()} refresh={vi.fn()} />);
+  expect(screen.queryByText("Jugador pendiente")).toBeNull();
+  rerender(<AnswerCard answer={data} revision={data.revision} onSelect={vi.fn()} refresh={vi.fn()} />);
+  expect(screen.getByText("Jugador pendiente")).toBeInTheDocument();
+  rerender(<AnswerCard answer={data} revision={{...data.revision, draft: "changed"}} onSelect={vi.fn()} refresh={vi.fn()} />);
+  expect(screen.queryByText("Jugador pendiente")).toBeNull();
+});

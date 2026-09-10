@@ -156,6 +156,28 @@ def parse_turn(provider: ProviderName, data: dict[str, JsonValue]) -> Turn:
     )
 
 
+def error_fields(response: httpx.Response) -> dict[str, str]:
+    """The provider's error type, code and offending parameter — no prose.
+
+    OpenAI and Anthropic both answer a failure with an `error` object beside
+    the human-readable message. These three keys identify fields and
+    conditions; `message` is the one that can carry back request content, and
+    it is never read here. A non-JSON body yields nothing at all.
+    """
+    try:
+        body = response.json()
+    except ValueError:
+        return {}
+    error = body.get("error") if isinstance(body, dict) else None
+    if not isinstance(error, dict):
+        return {}
+    return {
+        key: str(error[key])[:60]
+        for key in ("type", "code", "param")
+        if isinstance(error.get(key), str | int)
+    }
+
+
 class Gateway:
     def __init__(
         self,
@@ -237,14 +259,15 @@ class Gateway:
             url, headers=headers, json=self.payload(system, messages)
         )
         if response.is_error:
-            # The body is the only thing that tells a rejected parameter from a
-            # rotated key from an overloaded upstream. Logged, never shown.
+            # Structured fields only. The free-text message is where an upstream
+            # can echo what we sent; type, code and param are field identifiers
+            # and are what tell a rejected parameter from a rotated key.
             logger.warning(
-                "assistant_v2 provider=%s model=%s status=%s body=%s",
+                "assistant_v2 provider=%s model=%s status=%s error=%s",
                 self.provider,
                 self.model,
                 response.status_code,
-                response.text[:500],
+                error_fields(response),
             )
             raise AssistantError(
                 "PROVIDER_ERROR", "El proveedor no ha podido responder. Reintenta.", 502

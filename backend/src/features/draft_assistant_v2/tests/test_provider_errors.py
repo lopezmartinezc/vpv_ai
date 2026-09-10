@@ -1,10 +1,4 @@
-"""A provider error must leave a trace an admin can act on.
-
-Every non-2xx came back as "el proveedor no ha podido responder" with the body
-discarded. A 400 for a rejected parameter, a 401 for a rotated key and a 529
-for an overloaded upstream are three different afternoons, and the response
-body is the only thing that tells them apart.
-"""
+"""Provider errors retain safe status diagnostics, never arbitrary upstream bodies."""
 
 import logging
 
@@ -16,7 +10,7 @@ from ..providers import Gateway
 
 
 @pytest.mark.asyncio
-async def test_status_and_body_are_logged(caplog: pytest.LogCaptureFixture) -> None:
+async def test_status_is_logged_without_upstream_body(caplog: pytest.LogCaptureFixture) -> None:
     def handler(req: httpx.Request) -> httpx.Response:
         return httpx.Response(400, json={"error": {"message": "Unknown parameter: 'foo'"}})
 
@@ -24,7 +18,7 @@ async def test_status_and_body_are_logged(caplog: pytest.LogCaptureFixture) -> N
         with caplog.at_level(logging.WARNING), pytest.raises(AssistantError):
             await Gateway(client, "openai", "m").request("s", [{"role": "user", "content": "q"}])
     assert "400" in caplog.text
-    assert "Unknown parameter" in caplog.text
+    assert "Unknown parameter" not in caplog.text
 
 
 @pytest.mark.asyncio

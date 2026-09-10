@@ -142,3 +142,22 @@ en columnas, el mejor valor de cada fila resaltado, más la fila de
 necesita (media, PJ, temporadas, titularidad, jornadas estimadas y las
 banderas de cambio de equipo/posición); un backend antiguo sin esos campos
 sigue parseando y la tabla muestra un guion donde falte el dato.
+
+## Correcciones de revisión
+- Los errores externos registran proveedor, modelo, estado HTTP y los campos
+  **estructurados** del error (`type`, `code`, `param`), nunca el texto libre del
+  mensaje —que es donde un proveedor puede devolver lo que le enviamos—. Un cuerpo
+  que no sea JSON no aporta nada al log.
+- `plantillas` permite `participant_id`, `offset` y `limit` (máximo 30, por defecto 26,
+  que es una plantilla completa). Con filtro, una plantilla entera cabe en una sola
+  llamada; sin filtro se pagina con `next_offset` hasta `null`, y cada página tiene su
+  propia referencia de evidencia. Las necesidades por formación viajan **solo en la
+  primera página**: son idénticas en todas y pesan más que los jugadores de una.
+- Las tarjetas se ocultan mientras la revisión está pendiente o falla, y se invalidan
+  inmediatamente cuando cambia el evento del draft.
+- `ASSISTANT_V2_TIMEOUT_SECONDS` admite como máximo **170 segundos**, con 20 segundos
+  de margen respecto al navegador, y `ASSISTANT_V2_PROVIDER_TIMEOUT_SECONDS` no puede
+  superarlo. **Revisar overrides antes de reiniciar producción:** un valor mayor hace
+  fallar la validación al arrancar, y `AssistantSettings` se construye al importar, así
+  que se cae el backend entero, no solo V2. Por defecto 150 y 90, que no requieren
+  ninguna variable.
