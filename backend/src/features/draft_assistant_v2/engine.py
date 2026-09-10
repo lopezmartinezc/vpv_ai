@@ -116,6 +116,7 @@ async def run_engine(
         turn = await gateway.request(system, messages)
         usage.input_tokens += turn.input_tokens
         usage.cached_tokens += turn.cached_tokens
+        usage.cache_write_tokens += turn.cache_write_tokens
         usage.output_tokens += turn.output_tokens
         if turn.incomplete or not turn.calls:
             usage.stop_reason = STOP_TRUNCATED if turn.incomplete else STOP_NO_CALLS

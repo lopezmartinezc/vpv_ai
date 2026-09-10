@@ -69,6 +69,8 @@ class Usage(StrictModel):
     # Of the input, how much the provider served from its prefix cache. The
     # total is not the bill; this is what makes the bill legible.
     cached_tokens: int = 0
+    # Stored into cache this round (Anthropic bills writes at a premium).
+    cache_write_tokens: int = 0
     output_tokens: int = 0
     rounds: int = 0
     tool_calls: int = 0
