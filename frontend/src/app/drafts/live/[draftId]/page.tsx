@@ -15,7 +15,8 @@ import { apiClient } from "@/lib/api-client";
 import { buildSuggestions } from "@/lib/draft-suggestions";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
 import { WishlistPanel } from "@/components/draft/wishlist-panel";
-import { AssistantPanel } from "@/components/draft/assistant-panel";
+import { DraftChatExperiment } from "@/features/draft-assistant-v2/experiment";
+import { positionSchema } from "@/features/draft-assistant-v2/contracts";
 import { RosterCounter } from "@/components/draft/roster-counter";
 import { TeamCounter } from "@/components/draft/team-counter";
 import { TIER_COLORS, TIER_LABELS } from "@/lib/draft-scorecard";
@@ -789,7 +790,13 @@ export default function LiveDraftPage() {
 
       {/* Claude/GPT assistant over the live board (admin only) */}
       {isAdmin && selectedSeason && draft && (
-        <AssistantPanel seasonId={selectedSeason.id} phase={draft.phase} />
+        <DraftChatExperiment key={`${user?.id}:${draft.id}`} seasonId={selectedSeason.id} phase={draft.phase}
+          draftId={draft.id} liveToken={`${draft.status}:${pickEventCount}:${picks.map((p) => p.id).join(",")}`}
+          context={{selected_player_ids: openDetailId ? [openDetailId] : [], participant_id: null,
+            position: positionSchema.safeParse(posFilter).data ?? null,
+            team: teamOptions.find((t) => String(t.id) === teamFilter)?.name ?? "", search, order: suggestOrder}}
+          participants={draft.participants} players={Object.values(adminStats?.players ?? {})}
+          onSelect={(id) => { void toggleDetail(id); }} />
       )}
 
       {/* Roster composition vs target (for actual participants) */}

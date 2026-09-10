@@ -7,6 +7,7 @@ from alembic import context
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from src.core.config import settings
+from src.features.draft_assistant_v2.models import ChatState  # noqa: F401
 from src.shared.models import Base
 
 config = context.config
