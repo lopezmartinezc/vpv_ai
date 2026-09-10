@@ -96,6 +96,9 @@ def create_app() -> FastAPI:
     from src.features.copa.router import router as copa_router
     from src.features.dashboard.router import router as dashboard_router
     from src.features.draft_assistant.router import router as draft_assistant_router
+    from src.features.draft_assistant_v2.errors import AssistantError
+    from src.features.draft_assistant_v2.router import exception_handler as assistant_v2_error
+    from src.features.draft_assistant_v2.router import router as draft_assistant_v2_router
     from src.features.drafts.router import router as drafts_router
     from src.features.economy.router import router as economy_router
     from src.features.health.router import router as health_router
@@ -122,6 +125,8 @@ def create_app() -> FastAPI:
     app.include_router(copa_router, prefix="/api")
     app.include_router(dashboard_router, prefix="/api")
     app.include_router(draft_assistant_router, prefix="/api")
+    app.include_router(draft_assistant_v2_router, prefix="/api")
+    app.add_exception_handler(AssistantError, assistant_v2_error)  # type: ignore[arg-type]
     app.include_router(drafts_router, prefix="/api")
     app.include_router(economy_router, prefix="/api")
     app.include_router(health_router, prefix="/api")
