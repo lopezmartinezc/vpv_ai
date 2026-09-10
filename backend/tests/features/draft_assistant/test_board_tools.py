@@ -266,3 +266,44 @@ async def test_estado_draft_says_when_the_asker_does_not_play() -> None:
     out = await run_tool(tools, "estado_draft", {})
 
     assert "no participa" in out.lower()
+
+
+async def test_the_board_cache_is_keyed_by_participation_model(monkeypatch) -> None:
+    """Two models, one season: the second must not be served the first's board.
+
+    The 60-second cache is keyed by season, which is right when there is one
+    board per season. With the participation switch there are two, and serving
+    the historico board to a mixto question would have the chat quoting numbers
+    the admin cannot see on screen — the exact failure the switch exists to
+    avoid.
+    """
+
+    from src.features.draft_assistant import board_tools
+    from src.features.stats.participation import ParticipationModel
+
+    board_tools._BOARD_CACHE.clear()
+    calls: list[ParticipationModel] = []
+
+    class _FakeService:
+        def __init__(self, session):  # noqa: ARG002
+            pass
+
+        async def get_draft_values(self, season_id, participation_model, **kw):  # noqa: ARG002
+            calls.append(participation_model)
+            return f"board-{participation_model.value}"
+
+    monkeypatch.setattr(board_tools, "DraftValueService", _FakeService)
+
+    def ctx_for(model):
+        return board_tools.AssistantContext(
+            session=None,  # type: ignore[arg-type]
+            season_id=1,
+            phase="preseason",
+            participation_model=model,
+        )
+
+    assert await ctx_for(ParticipationModel.HISTORICO).board() == "board-historico"
+    assert await ctx_for(ParticipationModel.MIXTO).board() == "board-mixto"
+    # And each is cached in its own slot rather than evicting the other.
+    assert await ctx_for(ParticipationModel.HISTORICO).board() == "board-historico"
+    assert calls == [ParticipationModel.HISTORICO, ParticipationModel.MIXTO]

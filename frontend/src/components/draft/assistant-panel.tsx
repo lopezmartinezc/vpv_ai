@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { useParticipationModel } from "@/lib/participation-model";
 import { API_BASE_URL, apiClient, ApiClientError } from "@/lib/api-client";
 import { readSse } from "@/lib/sse";
 
@@ -56,6 +57,7 @@ export function AssistantPanel({
   seasonId: number;
   phase: string;
 }) {
+  const [participation] = useParticipationModel();
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [provider, setProvider] = useState<string>("");
   const [model, setModel] = useState<string>("");
@@ -137,6 +139,9 @@ export function AssistantPanel({
             history,
             provider: provider || null,
             model: model || null,
+            // The same model the board on screen is using, so the chat and the
+            // table quote the same Prioridad.
+            participacion: participation,
           }),
         },
       );

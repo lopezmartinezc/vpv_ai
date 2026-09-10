@@ -28,6 +28,7 @@ from src.features.drafts.wishlist_schemas import (
     WishlistToggleRequest,
     WishlistUpsertRequest,
 )
+from src.features.stats.participation import ParticipationModel
 from src.shared.dependencies import (
     get_current_admin,
     get_current_user,
@@ -265,10 +266,13 @@ async def delete_pick(
 @router.get("/{draft_id}/players/stats", response_model=DraftPlayerStatsResponse)
 async def get_draft_player_stats(
     draft_id: int,
+    participacion: ParticipationModel = Query(default=ParticipationModel.HISTORICO),
     _admin: dict = Depends(get_current_admin),
     service: DraftService = Depends(_get_service),
 ) -> DraftPlayerStatsResponse:
-    return await service.get_player_stats_for_draft(draft_id)
+    """The live board. ``participacion`` defaults to the historical model, so
+    the switch is opt-in per request and reverting is a click."""
+    return await service.get_player_stats_for_draft(draft_id, participation_model=participacion)
 
 
 @router.get("/{draft_id}/players/search", response_model=PlayerSearchResponse)

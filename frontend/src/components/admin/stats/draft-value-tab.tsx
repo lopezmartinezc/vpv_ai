@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { ParticipationToggle } from "@/components/admin/stats/participation-toggle";
+import { participationQuery, useParticipationModel } from "@/lib/participation-model";
 import { apiClient } from "@/lib/api-client";
 import { sorted, SortDir, POS_COLOR } from "@/components/admin/stats/common";
 import { DraftSimulator } from "@/components/admin/stats/draft-simulator";
@@ -193,6 +195,9 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
   // Column groups: keep the essential columns on screen; reveal the individual
   // model scores on demand so the table isn't unusably wide.
   const [showModels, setShowModels] = useState(false);
+  // Participation model. Read from storage after mount so server and client
+  // render the same first pass; the default is the pre-existing behaviour.
+  const [participation, setParticipation] = useParticipationModel();
   const visibleCols = useMemo(
     () => (showModels ? DRAFT_COLS : DRAFT_COLS.filter((c) => c.group === "core")),
     [showModels],
@@ -214,7 +219,9 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
   useEffect(() => {
     let cancelled = false;
     apiClient
-      .get<DraftValueResponse>(`/stats/${seasonId}/players/draft-value`)
+      .get<DraftValueResponse>(
+        `/stats/${seasonId}/players/draft-value${participationQuery(participation)}`,
+      )
       .then((d) => {
         if (!cancelled) { setData(d); setError(false); }
       })
@@ -225,7 +232,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [seasonId]);
+  }, [seasonId, participation]);
 
   const players = useMemo(() => {
     if (!data) return [];
@@ -408,6 +415,11 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
           Solo no seleccionados
         </label>
         <span className="text-[10px] text-vpv-text-muted">{players.length} jug.</span>
+        <ParticipationToggle
+          value={participation}
+          disabled={loading}
+          onChange={setParticipation}
+        />
         <button
           onClick={() => setShowModels((v) => !v)}
           title="Muestra u oculta las columnas adicionales (Efect, Manual, PtsRes y los sub-modelos Ens, Avg, Form, Stab, Prod, Trend, Disp, Cons). Siguen siendo ordenables."

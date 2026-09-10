@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.stats.fixtures import FixtureStrengthService
+from src.features.stats.participation import ParticipationModel
 from src.features.stats.repository import MatchdayScoreRow, StatsRepository
 from src.features.stats.schemas import (
     EvolutionEntry,
@@ -68,12 +69,19 @@ router = APIRouter(prefix="/stats", tags=["stats"])
 async def get_draft_values(
     season_id: int,
     min_games: int = Query(default=2, ge=1, le=30),
+    participacion: ParticipationModel = Query(default=ParticipationModel.HISTORICO),
     admin: dict = Depends(require_perm(Perm.STATS)),
     db: AsyncSession = Depends(get_db),
 ) -> DraftValueResponse:
-    """Draft value predictions using backtested models."""
+    """Draft value predictions using backtested models.
+
+    ``participacion`` picks how expected playing time is estimated; it defaults
+    to the historical rate, so omitting it is the pre-existing board.
+    """
     service = DraftValueService(db)
-    return await service.get_draft_values(season_id, min_games=min_games)
+    return await service.get_draft_values(
+        season_id, min_games=min_games, participation_model=participacion
+    )
 
 
 @router.put(

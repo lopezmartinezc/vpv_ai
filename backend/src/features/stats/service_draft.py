@@ -25,6 +25,12 @@ from dataclasses import dataclass
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.features.stats.participation import (
+    ParticipationModel,
+    blended_participation,
+    minute_shares,
+    season_participation,
+)
 from src.features.stats.schemas_draft import DraftValuePlayer, DraftValueResponse
 from src.features.stats.scorecard import (
     REPLACEMENT_RANK,
@@ -270,6 +276,7 @@ class DraftValueService:
         self,
         season_id: int,
         min_games: int = CURRENT_MIN_GAMES,
+        participation_model: ParticipationModel = ParticipationModel.HISTORICO,
     ) -> DraftValueResponse:
         """Compute the draft board for every draftable player of the season.
 
@@ -282,6 +289,12 @@ class DraftValueService:
         it is treated as too thin to trust (projection falls back to history),
         but the player still shows. Admin manual overrides replace the
         projection where set.
+
+        ``participation_model`` picks how much of the remaining season each
+        player is expected to feature in — see
+        :mod:`src.features.stats.participation`. It defaults to the historical
+        rate the board has always used, so switching back is a parameter, not
+        a revert.
         """
 
         # Load data (SQL load floor kept at 1 so the current partial season
@@ -302,6 +315,13 @@ class DraftValueService:
         for ps in all_data:
             if ps.games > season_total_md.get(ps.season_id, 0):
                 season_total_md[ps.season_id] = ps.games
+
+        # Share of a full load in his own slot this season — the signal that
+        # tells a starter from a man who comes on for the last ten minutes.
+        # Only mixto reads it; historico never asks.
+        current_shares = (
+            minute_shares(current_data) if participation_model is ParticipationModel.MIXTO else {}
+        )
 
         # Organize. all_data is ordered by (slug, season_id) from the query,
         # so history[slug] stays ascending and hist[-1] is the most recent.
@@ -335,7 +355,8 @@ class DraftValueService:
         # current-season stats — that's what makes the board work preseason.
         for rp in roster:
             slug = rp.slug
-            current = current_map.get(slug)
+            current_raw = current_map.get(slug)
+            current = current_raw
             # Thin current sample → don't trust the blend, but keep the player.
             if current is not None and current.games < min_games:
                 current = None
@@ -414,10 +435,23 @@ class DraftValueService:
             # asserting he'll play, so assume full participation instead of 0
             # (which would zero his projected total and per-slot VORP).
             participation = (
-                min(1.0, ref.games / max(1, season_total_md.get(ref.season_id, ref.games)))
-                if ref
-                else (1.0 if manual_value is not None else 0.0)
+                season_participation(ref, season_total_md)
+                if participation_model is ParticipationModel.HISTORICO
+                else blended_participation(
+                    participation_model,
+                    ref=ref,
+                    hist=hist[-1] if hist else None,
+                    # Deliberately the ungated row: one appearance in five is
+                    # too thin to project points from, and exactly the signal
+                    # participation wants.
+                    current=current_raw,
+                    minute_share=current_shares.get(slug),
+                    md_played=md_played,
+                    season_total_md=season_total_md,
+                )
             )
+            if participation == 0.0 and manual_value is not None:
+                participation = 1.0
             exp_games_remaining = round(remaining_md * participation, 1)
             proj_rest_points = (
                 round(effective_value * exp_games_remaining, 1)

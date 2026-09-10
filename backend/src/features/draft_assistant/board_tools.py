@@ -24,6 +24,7 @@ from src.features.draft_assistant.turn_math import next_pick_for, upcoming_picks
 from src.features.drafts.schemas import DraftDetailResponse
 from src.features.drafts.service import DraftService
 from src.features.stats.fixtures import Fixture, FixtureStrengthService, difficulty
+from src.features.stats.participation import ParticipationModel
 from src.features.stats.repository import PlayerStatRow, StatsRepository
 from src.features.stats.schemas_advanced import AdvancedPlayerStat
 from src.features.stats.schemas_draft import DraftValuePlayer, DraftValueResponse
@@ -109,7 +110,9 @@ datos: la seguridad real es tener UN titular claro y no tener que elegir."""
 #
 # The staleness that IS possible: an admin tag or manual value edited on the
 # board takes up to BOARD_TTL_SECONDS to reach the assistant.
-_BOARD_CACHE: dict[int, tuple[float, DraftValueResponse]] = {}
+# Keyed by (season, participation model): the switch means a season has two
+# boards, and they are not interchangeable.
+_BOARD_CACHE: dict[tuple[int, ParticipationModel], tuple[float, DraftValueResponse]] = {}
 BOARD_TTL_SECONDS = 60.0
 
 
@@ -127,6 +130,9 @@ class AssistantContext:
     # never on whose behalf.
     user_id: int = 0
     anonymize_participants: bool = True
+    # Must match whatever the admin has selected on screen, or the chat quotes
+    # numbers he cannot see.
+    participation_model: ParticipationModel = ParticipationModel.HISTORICO
     _draft: DraftDetailResponse | None = field(default=None, init=False, repr=False)
     _picked: set[int] | None = field(default=None, init=False, repr=False)
     _perf: dict[int, tuple[PlayerStatRow, AdvancedPlayerStat | None]] | None = field(
@@ -137,11 +143,14 @@ class AssistantContext:
 
     async def board(self) -> DraftValueResponse:
         now = time.monotonic()
-        cached = _BOARD_CACHE.get(self.season_id)
+        key = (self.season_id, self.participation_model)
+        cached = _BOARD_CACHE.get(key)
         if cached is not None and now - cached[0] < BOARD_TTL_SECONDS:
             return cached[1]
-        board = await DraftValueService(self.session).get_draft_values(self.season_id)
-        _BOARD_CACHE[self.season_id] = (now, board)
+        board = await DraftValueService(self.session).get_draft_values(
+            self.season_id, participation_model=self.participation_model
+        )
+        _BOARD_CACHE[key] = (now, board)
         return board
 
     async def draft(self) -> DraftDetailResponse:

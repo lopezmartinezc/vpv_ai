@@ -6,6 +6,8 @@ import { useAuth } from "@/contexts/auth-context";
 import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
 import { useDraftWebSocket, type DraftWSEvent } from "@/hooks/use-draft-websocket";
+import { ParticipationToggle } from "@/components/admin/stats/participation-toggle";
+import { participationQuery, useParticipationModel } from "@/lib/participation-model";
 import { apiClient } from "@/lib/api-client";
 import { buildSuggestions } from "@/lib/draft-suggestions";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
@@ -87,6 +89,9 @@ export default function LiveDraftPage() {
 
   // Admin stats (loaded once)
   const [adminStats, setAdminStats] = useState<DraftPlayerStatsResponse | null>(null);
+  // Which participation model the board in front of you is using. Stored, so
+  // it survives a reload mid-draft; defaults to the pre-existing behaviour.
+  const [participation, setParticipation] = useParticipationModel();
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showScoreHelp, setShowScoreHelp] = useState(false);
   // Suggestion ordering. Backtested (7 seasons): Priority predicts season
@@ -204,10 +209,12 @@ export default function LiveDraftPage() {
   useEffect(() => {
     if (!isAdmin || !draftId) return;
     apiClient
-      .get<DraftPlayerStatsResponse>(`/drafts/${draftId}/players/stats`)
+      .get<DraftPlayerStatsResponse>(
+        `/drafts/${draftId}/players/stats${participationQuery(participation)}`,
+      )
       .then(setAdminStats)
       .catch(() => {});
-  }, [isAdmin, draftId]);
+  }, [isAdmin, draftId, participation]);
 
   // Fetch the season's teams once for the search filter (id + name).
   const [teamOptions, setTeamOptions] = useState<DraftTeamOption[]>([]);
@@ -481,6 +488,12 @@ export default function LiveDraftPage() {
       {/* Admin score help / legend */}
       {isAdmin && adminStats && (
         <div>
+          <div className="mb-2 flex justify-end">
+            <ParticipationToggle
+              value={participation}
+              onChange={setParticipation}
+            />
+          </div>
           <button
             onClick={() => setShowScoreHelp(!showScoreHelp)}
             className={`w-full rounded-lg border px-4 py-2 text-left text-xs font-medium transition-colors ${
