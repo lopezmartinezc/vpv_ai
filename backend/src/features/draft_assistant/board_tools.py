@@ -33,11 +33,14 @@ from src.features.stats.service_draft import DraftValueService
 
 POSITIONS = ("POR", "DEF", "MED", "DEL")
 
-#: How many matchdays ahead the calendar tools load. The whole rest of the
-#: season: at 12 the chat reported the calendar was "only loaded to J16" from a
-#: J5 start, which read as missing data when it was this constant. Output size
-#: is capped separately by each tool's ``limite``, so loading the lot costs
-#: memory for one request, not tokens.
+#: The calendar tools load the WHOLE season, J1 to J38 — not "from here on".
+#: At 12 matchdays from a J5 start the chat reported the calendar was "only
+#: loaded to J16", which reads as missing data when it was this constant; and a
+#: fixture already played was equally invisible. Output size is capped
+#: separately by each tool's ``limite``, so loading the lot costs memory for one
+#: request rather than tokens. The DEFAULT VIEW still looks forward from the
+#: current matchday, because "el calendario del Getafe" means what is coming.
+FIXTURE_FIRST_MATCHDAY = 1
 FIXTURE_HORIZON = 38
 
 # Measured over the 8 real seasons in the migrated history (final points,
@@ -130,6 +133,7 @@ class AssistantContext:
         default=None, init=False, repr=False
     )
     _fixtures: list[Fixture] | None = field(default=None, init=False, repr=False)
+    _current_md: int | None = field(default=None, init=False, repr=False)
 
     async def board(self) -> DraftValueResponse:
         now = time.monotonic()
@@ -189,18 +193,24 @@ class AssistantContext:
         query aggregates every match of the season plus the history.
         """
         if self._fixtures is None:
-            # From the season's CURRENT matchday. This used to divide picks by
-            # participants — the draft ROUND, not the matchday — which aimed the
-            # horizon at the wrong stretch of the calendar.
+            self._fixtures = await FixtureStrengthService(self.session).fixtures(
+                self.season_id,
+                from_matchday=FIXTURE_FIRST_MATCHDAY,
+                count=FIXTURE_HORIZON,
+            )
+        return self._fixtures
+
+    async def current_matchday(self) -> int:
+        """Where the season is now. Decides what "upcoming" means for the
+        calendar tools, which hold every matchday but default to the ones
+        still to be played."""
+        if self._current_md is None:
             row = await self.session.execute(
                 text("SELECT matchday_current FROM seasons WHERE id = :sid"),
                 {"sid": self.season_id},
             )
-            current = int(row.scalar_one_or_none() or 0)
-            self._fixtures = await FixtureStrengthService(self.session).fixtures(
-                self.season_id, from_matchday=max(1, current), count=FIXTURE_HORIZON
-            )
-        return self._fixtures
+            self._current_md = int(row.scalar_one_or_none() or 0)
+        return self._current_md
 
     async def caller_participant_id(self) -> int | None:
         """The asker's participant row in this draft, or None if they only run it.
@@ -671,11 +681,15 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
         equipo: str | None = None,
         posicion: str | None = None,
         jornada: int | None = None,
+        desde: int | None = None,
         limite: int = 15,
     ) -> str:
         todos = await ctx.fixtures()
         cobertura = _cobertura(todos)
-        rows = todos
+        # Everything is loaded, but the useful default is what is still to be
+        # played. `desde=1` asks for the whole season including past matchdays.
+        inicio = desde if desde is not None else await ctx.current_matchday()
+        rows = [f for f in todos if f.matchday >= inicio] if jornada is None else todos
         if equipo:
             needle = equipo.lower()
             rows = [f for f in rows if needle in f.team_name.lower()]
@@ -705,8 +719,11 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
         limite: int = 4,
     ) -> str:
         """The jornadas where this team has it hard, and who has it easy then."""
-        rows = await ctx.fixtures()
-        cobertura = _cobertura(rows)
+        todos = await ctx.fixtures()
+        cobertura = _cobertura(todos)
+        # A hard fixture already played needs no cover.
+        inicio = await ctx.current_matchday()
+        rows = [f for f in todos if f.matchday >= inicio]
         pos = posicion.upper()
         needle = equipo.lower()
         mios = [f for f in rows if needle in f.team_name.lower()]
@@ -963,6 +980,16 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
                     "equipo": {"type": "string", "description": "Equipo de La Liga."},
                     "posicion": {"type": "string", "enum": list(POSITIONS)},
                     "jornada": {"type": "integer", "minimum": 1, "maximum": 38},
+                    "desde": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 38,
+                        "description": (
+                            "Primera jornada a mostrar. Por defecto la jornada actual "
+                            "(lo que queda por jugar); pon 1 para ver la temporada entera "
+                            "incluidas las jornadas ya jugadas."
+                        ),
+                    },
                     "limite": {"type": "integer", "minimum": 1, "maximum": 40},
                 },
                 "required": [],

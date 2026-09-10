@@ -54,7 +54,7 @@ class _Draft:
     next_participant_id: int | None = None
 
 
-def _ctx() -> AssistantContext:
+def _ctx(current: int = 11) -> AssistantContext:
     ctx = AssistantContext(session=None, season_id=1, phase="preseason")  # type: ignore[arg-type]
 
     class _Board:
@@ -70,12 +70,16 @@ def _ctx() -> AssistantContext:
     async def fixtures() -> Any:
         return FIXTURES
 
+    async def current_matchday() -> int:
+        return current
+
     async def perf() -> Any:
         return {}
 
     ctx.board = board  # type: ignore[method-assign]
     ctx.draft = draft  # type: ignore[method-assign]
     ctx.fixtures = fixtures  # type: ignore[method-assign]
+    ctx.current_matchday = current_matchday  # type: ignore[method-assign]
     ctx.season_perf = perf  # type: ignore[method-assign]
     return ctx
 
@@ -169,10 +173,41 @@ async def test_a_team_absent_from_the_loaded_range_says_why() -> None:
     assert "update-calendar" in out
 
 
-def test_the_horizon_covers_the_rest_of_the_season() -> None:
-    """The chat reported the calendar "only loaded to J16" — which was this
-    constant at 12, not missing data. A full season is 38 matchdays and the
-    output is capped separately by ``limite``."""
-    from src.features.draft_assistant.board_tools import FIXTURE_HORIZON
+def test_the_whole_season_is_loaded() -> None:
+    """J1 to J38, not "from here on". The chat reported the calendar "only
+    loaded to J16" — that was a 12-matchday horizon from a J5 start, and asking
+    about a fixture already played was equally impossible."""
+    from src.features.draft_assistant.board_tools import (
+        FIXTURE_FIRST_MATCHDAY,
+        FIXTURE_HORIZON,
+    )
 
+    assert FIXTURE_FIRST_MATCHDAY == 1
     assert FIXTURE_HORIZON >= 38
+
+
+@pytest.mark.asyncio
+async def test_calendario_looks_forward_by_default() -> None:
+    """Everything is loaded, but "el calendario del Getafe" means what is
+    coming, not what is already played."""
+    out = await run_tool(build_tools(_ctx(current=12)), "calendario", {"equipo": "Getafe"})
+    assert "J12 " in out
+    assert "J11 " not in out  # J11 is behind us
+
+
+@pytest.mark.asyncio
+async def test_calendario_can_look_back_when_asked() -> None:
+    out = await run_tool(build_tools(_ctx()), "calendario", {"equipo": "Getafe", "desde": 1})
+    assert "J11 " in out and "J12 " in out
+
+
+@pytest.mark.asyncio
+async def test_alternativas_ignores_matchdays_already_played() -> None:
+    """A hard fixture in the past needs no cover."""
+    out = await run_tool(
+        build_tools(_ctx(current=12)),
+        "alternativas_calendario",
+        {"equipo": "Getafe", "posicion": "POR"},
+    )
+    # J11 was Getafe's hard one but it is behind us now.
+    assert "J11 —" not in out
