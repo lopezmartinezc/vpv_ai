@@ -5,8 +5,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class AssistantSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ASSISTANT_V2_", env_file=".env", extra="ignore")
     enabled: bool = True
-    timeout_seconds: int = Field(default=75, ge=10, le=180)
-    provider_timeout_seconds: int = Field(default=25, ge=5, le=60)
+    # A single reasoning call with an 8k output budget runs 30-60s: the model
+    # thinks before it writes. The browser aborts at 190s and nginx's /api
+    # read timeout is 300s, so the total stays under the former with margin.
+    # See tests/test_timeouts.py.
+    timeout_seconds: int = Field(default=150, ge=10, le=300)
+    provider_timeout_seconds: int = Field(default=90, ge=5, le=180)
     # "¿A quién cojo en este pick?" legitimately chains eight or more tool
     # calls — board, picks, upcoming turns, rosters, fixtures, season form.
     # V1 shipped with eight rounds, production answered "me he quedado sin

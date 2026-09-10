@@ -16,7 +16,8 @@ Configuración adicional (backend, prefijo independiente):
 - `ASSISTANT_V2_ENABLED=false`: desactiva V2 sin afectar a Actual.
 - `ASSISTANT_V2_OPENAI_MODELS='["modelo-permitido"]'` y
   `ASSISTANT_V2_ANTHROPIC_MODELS='["modelo-permitido"]'`: listas adicionales.
-- `ASSISTANT_V2_TIMEOUT_SECONDS=75`, `ASSISTANT_V2_MAX_ROUNDS=20`,
+- `ASSISTANT_V2_TIMEOUT_SECONDS=150`, `ASSISTANT_V2_PROVIDER_TIMEOUT_SECONDS=90`,
+  `ASSISTANT_V2_MAX_ROUNDS=20`,
   `ASSISTANT_V2_MAX_TOOL_CALLS=30`, `ASSISTANT_V2_MAX_OUTPUT_TOKENS=8000`.
 
   `MAX_OUTPUT_TOKENS` incluye los **tokens de razonamiento**, no solo el texto
@@ -24,6 +25,24 @@ Configuración adicional (backend, prefijo independiente):
   respuesta volvía truncada y vacía: "Análisis incompleto" sin una línea de
   texto. Si vuelve a pasar, el propio aviso en pantalla dice ahora qué límite
   se ha tocado.
+
+  Los timeouts están dimensionados para un modelo de razonamiento: una sola
+  llamada a gpt-5 con 8000 tokens de salida tarda 30-60 s. El total (150 s)
+  queda por debajo del aborto del navegador (190 s) y del `proxy_read_timeout`
+  de nginx para `/api` (300 s).
+
+## Coste por ronda
+
+En Anthropic el sistema, las herramientas y el último bloque de cada mensaje
+van marcados con `cache_control: ephemeral`, como en el chat actual, de modo
+que cada ronda reutiliza el prefijo de la anterior. OpenAI cachea prefijos
+largos sin pedirlo.
+
+`estado_draft` resume los picks (total, ronda actual, recuento por
+participante y los 12 últimos) en vez de listarlos todos: la lista completa
+vive en `plantillas`. Si el modelo vuelve a pedir `estado_draft` o
+`evaluar_pick`, que ya recibió en el primer mensaje, obtiene "consulta
+repetida" en lugar de otra copia.
 
   El presupuesto de rondas arranca donde acabó V1, no donde empezó: "¿a quién
   cojo en este pick?" encadena ocho o más llamadas a herramientas, V1 salió con

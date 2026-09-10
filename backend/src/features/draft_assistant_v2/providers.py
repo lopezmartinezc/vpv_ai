@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Sequence
 
 import httpx
@@ -16,6 +17,26 @@ from .schemas import Capabilities, ProviderName, ProviderOption
 from .tools import tool_definitions
 
 JSON_OBJECT = TypeAdapter(dict[str, JsonValue])
+logger = logging.getLogger(__name__)
+EPHEMERAL: dict[str, JsonValue] = {"type": "ephemeral"}
+
+
+def cache_last_block(message: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    """Copy of an Anthropic message with its last content block cache-marked.
+
+    Each round's prompt is the previous round's prompt plus one exchange, so
+    marking the newest block lets the provider reuse everything before it.
+    String content becomes a single text block; block lists get the marker on
+    their last block only. The caller's message is left untouched.
+    """
+    content = message.get("content")
+    if isinstance(content, str):
+        blocks: list[JsonValue] = [{"type": "text", "text": content, "cache_control": EPHEMERAL}]
+        return {**message, "content": blocks}
+    if isinstance(content, list) and content and isinstance(content[-1], dict):
+        last: dict[str, JsonValue] = {**content[-1], "cache_control": EPHEMERAL}
+        return {**message, "content": [*content[:-1], last]}
+    return message
 
 
 class Call(BaseModel):
@@ -115,10 +136,23 @@ class Gateway:
                 "max_output_tokens": config.max_output_tokens,
                 "parallel_tool_calls": False,
             }
+        # Prompt caching, as V1 does: system, tools and the bootstrap evidence are
+        # identical on every round of a question, and V1 measured roughly a 4x
+        # saving on input by marking them. OpenAI caches long prefixes unasked.
+        tools = list(definitions) if isinstance(definitions, list) else []
+        if tools and isinstance(tools[-1], dict):
+            tools[-1] = {**tools[-1], "cache_control": EPHEMERAL}
+        history = list(messages)
+        if history:
+            history[-1] = cache_last_block(history[-1])
+        system_blocks: list[JsonValue] = [
+            {"type": "text", "text": system, "cache_control": EPHEMERAL}
+        ]
         return {
             **common,
-            "system": system,
-            "messages": list(messages),
+            "tools": tools,
+            "system": system_blocks,
+            "messages": list(history),
             "max_tokens": config.max_output_tokens,
             "tool_choice": {"type": "any"},
         }
@@ -137,6 +171,15 @@ class Gateway:
             url, headers=headers, json=self.payload(system, messages)
         )
         if response.is_error:
+            # The body is the only thing that tells a rejected parameter from a
+            # rotated key from an overloaded upstream. Logged, never shown.
+            logger.warning(
+                "assistant_v2 provider=%s model=%s status=%s body=%s",
+                self.provider,
+                self.model,
+                response.status_code,
+                response.text[:500],
+            )
             raise AssistantError(
                 "PROVIDER_ERROR", "El proveedor no ha podido responder. Reintenta.", 502
             )

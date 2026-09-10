@@ -25,7 +25,7 @@ class Detail(StrictModel):
 
 
 class Final(StrictModel):
-    explanation: str = Field(min_length=1, max_length=4000)
+    explanation: str = Field(min_length=1, max_length=8000)
     player_ids: list[PositiveId] = Field(default_factory=list, max_length=3)
     evidence_ids: list[str] = Field(min_length=1, max_length=12)
 
@@ -50,6 +50,30 @@ DESCRIPTIONS = {
     "plantillas": "Propiedad vigente de todos los participantes, también en invierno.",
     "responder": "Termina con explicación, hasta tres IDs consultados y referencias de evidencia.",
 }
+
+
+# How many of the latest picks `estado_draft` spells out. Enough to see what the
+# rivals just did; the full history lives in `plantillas`.
+RECENT_PICKS = 12
+
+
+def explain(exc: Exception) -> str:
+    """What was wrong with a tool call, in terms the model can act on.
+
+    A limit out of range, an unknown field, an explanation over the cap and an
+    evidence id that was never consulted all need different corrections; one
+    generic line for all of them leaves the model retrying blind. Bounded, and
+    never echoing the offending input back.
+    """
+    if isinstance(exc, ValidationError):
+        parts = [
+            f"{'.'.join(str(x) for x in e['loc']) or 'argumentos'}: {e['msg']}"
+            for e in exc.errors()[:5]
+        ]
+        return "; ".join(parts)[:600]
+    if isinstance(exc, KeyError):
+        return "Herramienta desconocida."
+    return str(exc)[:600] or "Argumentos inválidos."
 
 
 class ToolResult(StrictModel):
@@ -82,6 +106,7 @@ class Toolset:
         return self.register(f"player:{player_id}", card.model_dump_json())
 
     def state(self) -> str:
+        picks = self.snapshot.draft.picks
         data = {
             "draft_id": self.snapshot.draft.id,
             "phase": self.snapshot.draft.phase,
@@ -90,7 +115,17 @@ class Toolset:
             "pool_size": self.snapshot.pool_size,
             "revision": self.snapshot.revision().model_dump(),
             "selected_player_ids": self.view.selected_player_ids,
-            "picks": [
+            # Summarised, not listed: every pick by name is 286 rows by the end
+            # of a draft, resent on every round, and `plantillas` already
+            # answers "who has whom". What the model needs from here is where
+            # the draft stands and what has just happened.
+            "total_picks": len(picks),
+            "current_round": len(picks) // max(1, len(self.snapshot.draft.participants)) + 1,
+            "picks_by_participant": {
+                str(p.participant_id): sum(x.participant_id == p.participant_id for x in picks)
+                for p in self.snapshot.draft.participants
+            },
+            "recent_picks": [
                 {
                     "number": p.pick_number,
                     "round": p.round_number,
@@ -100,7 +135,7 @@ class Toolset:
                     "team": p.team_name,
                     "participant_id": p.participant_id,
                 }
-                for p in self.snapshot.draft.picks
+                for p in picks[-RECENT_PICKS:]
             ],
             "note": "Si participant es null, pide elegir plantilla; no uses la del turno.",
         }
@@ -164,8 +199,8 @@ class Toolset:
             args = ExtraQuery.model_validate_json(raw)
             result = await extra_query(self.snapshot.draft.season_id, name, args)
             return ToolResult(content=self.register(name, result))
-        except (ValidationError, ValueError):
-            return ToolResult(error=True, content="INVALID_TOOL_ARGUMENTS: comprueba los filtros.")
+        except (ValidationError, ValueError) as exc:
+            return ToolResult(error=True, content=f"INVALID_TOOL_ARGUMENTS: {explain(exc)}")
 
     def dispatch(self, name: str, raw: str) -> ToolResult:
         try:
@@ -185,14 +220,12 @@ class Toolset:
                 "plantillas": self.rosters,
             }[name]
             return ToolResult(content=handler())
-        except (ValidationError, ValueError, KeyError):
+        except (ValidationError, ValueError, KeyError) as exc:
             return ToolResult(
                 error=True,
                 content=json.dumps(
-                    {
-                        "code": "INVALID_TOOL_ARGUMENTS",
-                        "message": "Revisa tipos, campos, límites e IDs de evidencia de la herramienta.",
-                    }
+                    {"code": "INVALID_TOOL_ARGUMENTS", "message": explain(exc)},
+                    ensure_ascii=False,
                 ),
             )
 
