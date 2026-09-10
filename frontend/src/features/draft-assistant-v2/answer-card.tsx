@@ -141,7 +141,13 @@ export function AnswerCard({
         <p className="mt-1 break-all">{answer.evidence_ids.join(" · ")}</p>
         <p className="mt-1 tabular-nums">
           {answer.usage.latency_ms} ms · {answer.usage.tool_calls} herramientas ·{" "}
-          {answer.usage.input_tokens} tokens entrada · {answer.usage.output_tokens} salida
+          {answer.usage.input_tokens} tokens entrada
+          {(answer.usage.cached_tokens ?? 0) > 0 && (
+            <span title="Servidos desde la caché de prefijo del proveedor: se cobran a una fracción.">
+              {" "}({answer.usage.cached_tokens} en caché)
+            </span>
+          )}
+          {" "}· {answer.usage.output_tokens} salida
         </p>
       </details>
     </article>

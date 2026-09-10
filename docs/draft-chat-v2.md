@@ -17,7 +17,7 @@ Configuración adicional (backend, prefijo independiente):
 - `ASSISTANT_V2_OPENAI_MODELS='["modelo-permitido"]'` y
   `ASSISTANT_V2_ANTHROPIC_MODELS='["modelo-permitido"]'`: listas adicionales.
 - `ASSISTANT_V2_TIMEOUT_SECONDS=150`, `ASSISTANT_V2_PROVIDER_TIMEOUT_SECONDS=90`,
-  `ASSISTANT_V2_MAX_ROUNDS=20`,
+  `ASSISTANT_V2_QUICK_EFFORT=low`, `ASSISTANT_V2_MAX_ROUNDS=20`,
   `ASSISTANT_V2_MAX_TOOL_CALLS=30`, `ASSISTANT_V2_MAX_OUTPUT_TOKENS=8000`.
 
   `MAX_OUTPUT_TOKENS` incluye los **tokens de razonamiento**, no solo el texto
@@ -31,7 +31,19 @@ Configuración adicional (backend, prefijo independiente):
   queda por debajo del aborto del navegador (190 s) y del `proxy_read_timeout`
   de nginx para `/api` (300 s).
 
+  `QUICK_EFFORT` es el esfuerzo de razonamiento que se pide a OpenAI en modo
+  *Rápido* (`low` | `medium` | `high`; vacío no envía el parámetro, para un
+  modelo que no lo acepte). El modo detallado lo deja al proveedor. Anthropic
+  no lo usa: V2 no activa *thinking* ahí. La primera respuesta real tardó
+  77 s a esfuerzo por defecto — medio reloj de pick — en una pregunta marcada
+  como rápida.
+
 ## Coste por ronda
+
+La línea de consumo muestra los tokens de entrada **y cuántos sirvió el
+proveedor desde su caché de prefijo** (`cached_tokens` en OpenAI,
+`cache_read_input_tokens` en Anthropic). El total no es la factura; la
+parte en caché se cobra a una fracción.
 
 En Anthropic el sistema, las herramientas y el último bloque de cada mensaje
 van marcados con `cache_control: ephemeral`, como en el chat actual, de modo

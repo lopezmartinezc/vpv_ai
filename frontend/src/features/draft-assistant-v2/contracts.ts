@@ -29,7 +29,9 @@ export const answerSchema = z.object({
   status: z.enum(["current", "stale", "incomplete"]), warnings: z.array(z.string()),
   revision: revisionSchema, provider: z.string(), model: z.string(),
   usage: z.object({input_tokens: z.number(), output_tokens: z.number(), rounds: z.number(),
-    tool_calls: z.number(), latency_ms: z.number()}),
+    tool_calls: z.number(), latency_ms: z.number(),
+    // Optional: answers saved before the field existed still parse.
+    cached_tokens: z.number().optional()}),
 });
 export const historySchema = z.object({
   exchanges: z.array(z.object({question: z.string(), answer: answerSchema})),
