@@ -69,14 +69,14 @@ router = APIRouter(prefix="/stats", tags=["stats"])
 async def get_draft_values(
     season_id: int,
     min_games: int = Query(default=2, ge=1, le=30),
-    participacion: ParticipationModel = Query(default=ParticipationModel.HISTORICO),
+    participacion: ParticipationModel = Query(default=ParticipationModel.MIXTO),
     admin: dict = Depends(require_perm(Perm.STATS)),
     db: AsyncSession = Depends(get_db),
 ) -> DraftValueResponse:
     """Draft value predictions using backtested models.
 
-    ``participacion`` picks how expected playing time is estimated; it defaults
-    to the historical rate, so omitting it is the pre-existing board.
+    ``participacion`` picks how expected playing time is estimated. It defaults
+    to ``mixto``; pass ``historico`` for the board as it was before mixto.
     """
     service = DraftValueService(db)
     return await service.get_draft_values(

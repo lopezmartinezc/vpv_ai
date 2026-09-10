@@ -9,14 +9,15 @@
  * ten minutes every week. Backtested on held-out seasons, 0.655 -> 0.730.
  *
  * Participation multiplies into projected rest-of-season points and therefore
- * into Prioridad, so switching reorders the whole board. That is why the
- * default stays `historico` and the choice is a toggle: going back is a click,
- * not a deploy.
+ * into Prioridad, so switching reorders the whole board — measured on a real
+ * season, a third of the top 30 changes. `mixto` is the default because it won
+ * the backtest on both error and ordering; the toggle keeps `historico` one
+ * click away rather than one deploy away.
  */
 
 export type ParticipationModel = "historico" | "mixto";
 
-export const PARTICIPATION_DEFAULT: ParticipationModel = "historico";
+export const PARTICIPATION_DEFAULT: ParticipationModel = "mixto";
 
 export const PARTICIPATION_LABELS: Record<ParticipationModel, string> = {
   historico: "Histórico",
@@ -58,8 +59,8 @@ export function writeParticipationModel(model: ParticipationModel): void {
   }
 }
 
-/** `?participacion=` for the board endpoints. Omitted when it's the default,
- *  so the request stays byte-identical to what it was before this existed. */
+/** `?participacion=` for the board endpoints. Omitted when it matches the
+ *  default, since the server picks the same model for a request without it. */
 export function participationQuery(model: ParticipationModel): string {
   return model === PARTICIPATION_DEFAULT ? "" : `?participacion=${model}`;
 }

@@ -55,7 +55,7 @@ class AssistantAskRequest(BaseModel):
     model: str | None = Field(default=None, max_length=100, pattern=r"^[A-Za-z0-9._:@-]+$")
     # Which participation model the board on the admin's screen is using, so
     # the chat quotes the same Prioridad he is looking at.
-    participacion: ParticipationModel = ParticipationModel.HISTORICO
+    participacion: ParticipationModel = ParticipationModel.MIXTO
 
 
 class ProviderInfo(BaseModel):

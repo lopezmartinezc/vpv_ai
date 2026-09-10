@@ -989,7 +989,7 @@ class DraftService:
     async def get_player_stats_for_draft(
         self,
         draft_id: int,
-        participation_model: ParticipationModel = ParticipationModel.HISTORICO,
+        participation_model: ParticipationModel = ParticipationModel.MIXTO,
     ) -> DraftPlayerStatsResponse:
         """Admin-only: draft-board model for the live draft UI.
 

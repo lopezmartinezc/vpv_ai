@@ -292,7 +292,7 @@ class DraftAssistantService:
         provider_name: str | None = None,
         model: str | None = None,
         provider: AssistantProvider | None = None,
-        participation_model: ParticipationModel = ParticipationModel.HISTORICO,
+        participation_model: ParticipationModel = ParticipationModel.MIXTO,
         on_progress: ProgressCallback | None = None,
     ) -> AssistantReply:
         question = question.strip()
