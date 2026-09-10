@@ -56,6 +56,12 @@ cada vez (medido: 7 936 tokens en caché en dos preguntas seguidas, ni uno
 de la evidencia reutilizado). La línea de modo (rápido/detallado) va al final
 del sistema, para que las dos modalidades compartan reglas y evidencia.
 
+En OpenAI cada request lleva además `prompt_cache_key`, estable por draft y
+revisión: OpenAI enruta por un hash del prefijo que *influye* en la máquina
+sin fijarla, y medido en producción dos preguntas con prefijo byte a byte
+idéntico no compartían caché. La clave fija el enrutado y cambia exactamente
+cuando cambia el estado del draft.
+
 En Anthropic el sistema, las herramientas y el último bloque de cada mensaje
 van marcados con `cache_control: ephemeral`, como en el chat actual, de modo
 que cada ronda reutiliza el prefijo de la anterior. OpenAI cachea prefijos

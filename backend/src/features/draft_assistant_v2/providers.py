@@ -128,7 +128,12 @@ def parse_turn(provider: ProviderName, data: dict[str, JsonValue]) -> Turn:
 
 class Gateway:
     def __init__(
-        self, client: httpx.AsyncClient, provider: ProviderName, model: str, effort: str = ""
+        self,
+        client: httpx.AsyncClient,
+        provider: ProviderName,
+        model: str,
+        effort: str = "",
+        cache_key: str = "",
     ) -> None:
         self.client = client
         self.provider = provider
@@ -136,6 +141,11 @@ class Gateway:
         # OpenAI reasoning effort; empty leaves it to the provider. Anthropic
         # ignores it: V2 does not enable thinking there, so it is already quick.
         self.effort = effort
+        # OpenAI routes a request by a hash of its prefix, which influences the
+        # machine it lands on without fixing it; a key pins it, so the next
+        # question at the same draft state reaches the cache the last one
+        # filled. Anthropic's cache is explicit and needs nothing here.
+        self.cache_key = cache_key
 
     def payload(
         self, system: str, messages: Sequence[dict[str, JsonValue]]
@@ -146,9 +156,13 @@ class Gateway:
             reasoning: dict[str, JsonValue] = (
                 {"reasoning": {"effort": self.effort}} if self.effort else {}
             )
+            routing: dict[str, JsonValue] = (
+                {"prompt_cache_key": self.cache_key} if self.cache_key else {}
+            )
             return {
                 **common,
                 **reasoning,
+                **routing,
                 "instructions": system,
                 "input": list(messages),
                 "store": False,
