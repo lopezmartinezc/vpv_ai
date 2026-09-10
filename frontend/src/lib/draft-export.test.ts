@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { DraftValuePlayer } from "@/types";
-import { EXPORT_COLUMNS, exportFilename, formatCell, toCsv } from "./draft-export";
+import { EXPORT_COLUMNS, exportFilename, toCsv } from "./draft-export";
 
 const player = (over: Partial<DraftValuePlayer> = {}): DraftValuePlayer =>
   ({
@@ -48,32 +48,6 @@ const cellsOf = (csv: string, row: number): string[] =>
 
 const columnIndex = (header: string): number =>
   EXPORT_COLUMNS.findIndex((c) => c.header === header);
-
-describe("formatCell", () => {
-  it("writes decimals with a comma, which is what Spanish Excel reads as a number", () => {
-    expect(formatCell(448.2)).toBe("448,2");
-    expect(formatCell(30)).toBe("30");
-  });
-
-  it("quotes a field containing the separator, and doubles inner quotes", () => {
-    expect(formatCell("Duda; mirar prensa")).toBe('"Duda; mirar prensa"');
-    expect(formatCell('Dijo "titular"')).toBe('"Dijo ""titular"""');
-  });
-
-  it("quotes a field with a newline so it stays one cell", () => {
-    expect(formatCell("linea 1\nlinea 2")).toBe('"linea 1\nlinea 2"');
-  });
-
-  it("leaves an empty cell for nothing, rather than the word null", () => {
-    expect(formatCell(null)).toBe("");
-    expect(formatCell(undefined)).toBe("");
-  });
-
-  it("does not write Infinity or NaN into a spreadsheet", () => {
-    expect(formatCell(Number.POSITIVE_INFINITY)).toBe("");
-    expect(formatCell(Number.NaN)).toBe("");
-  });
-});
 
 describe("toCsv", () => {
   it("opens with a BOM so Excel keeps the accents", () => {

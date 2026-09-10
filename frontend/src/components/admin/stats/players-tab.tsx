@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { downloadCsv } from "@/lib/csv-export";
+import { performanceFilename, playersToCsv } from "@/lib/performance-export";
 import { sorted, SortDir, POS_COLOR } from "@/components/admin/stats/common";
 import type {
   PlayerStatRow,
@@ -21,7 +23,13 @@ type SortKey = keyof PlayerStatRow | "media_periodicos";
  * Features: position filter chips, text search (name/team), top stats cards,
  * responsive column headers (full label on desktop, abbreviation on mobile).
  */
-export function PlayersTab({ players }: { players: PlayerStatRow[] }) {
+export function PlayersTab({
+  players,
+  seasonName = "",
+}: {
+  players: PlayerStatRow[];
+  seasonName?: string;
+}) {
   const [sortKey, setSortKey] = useState<SortKey>("total_points");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [posFilter, setPosFilter] = useState<string>("Todos");
@@ -231,6 +239,14 @@ export function PlayersTab({ players }: { players: PlayerStatRow[] }) {
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
+        <button
+          onClick={() => downloadCsv(performanceFilename("rendimiento", seasonName), playersToCsv(filtered))}
+          disabled={filtered.length === 0}
+          title="Descarga la tabla tal y como la estás viendo (mismos filtros y orden) con todas las columnas, incluidos minutos por partido y el % de titularidades. CSV preparado para Excel: se abre con doble clic."
+          className="ml-auto rounded border border-vpv-border px-2 py-1 text-[10px] font-medium text-vpv-text-muted transition-colors hover:text-vpv-text disabled:opacity-40"
+        >
+          ↓ Exportar ({filtered.length})
+        </button>
         <div className="flex gap-1">
           {POS_FILTERS.map((pos) => (
             <button
