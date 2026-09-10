@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { downloadCsv } from "@/lib/csv-export";
+import { advancedToCsv, performanceFilename } from "@/lib/performance-export";
 import { sorted, SortDir, POS_COLOR } from "@/components/admin/stats/common";
 import type {
   AdvancedPlayerStat,
@@ -28,7 +30,13 @@ function CvBadge({ cv }: { cv: number }) {
   return <span className={`tabular-nums ${color}`}>{cv.toFixed(2)}</span>;
 }
 
-export function AdvancedTab({ players }: { players: AdvancedPlayerStat[] }) {
+export function AdvancedTab({
+  players,
+  seasonName = "",
+}: {
+  players: AdvancedPlayerStat[];
+  seasonName?: string;
+}) {
   const [posFilter, setPosFilter] = useState<string>("Todos");
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<AdvSortKey>("total_points");
@@ -78,6 +86,14 @@ export function AdvancedTab({ players }: { players: AdvancedPlayerStat[] }) {
     <div className="space-y-4">
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
+        <button
+          onClick={() => downloadCsv(performanceFilename("avanzado", seasonName), advancedToCsv(filtered))}
+          disabled={filtered.length === 0}
+          title="Descarga la tabla tal y como la estás viendo (mismos filtros y orden) con todas las columnas, incluida la consistencia (1−CV) que la tabla calcula al vuelo. CSV preparado para Excel: se abre con doble clic."
+          className="ml-auto rounded border border-vpv-border px-2 py-1 text-[10px] font-medium text-vpv-text-muted transition-colors hover:text-vpv-text disabled:opacity-40"
+        >
+          ↓ Exportar ({filtered.length})
+        </button>
         <div className="flex gap-1">
           {ADV_POS_FILTERS.map((pos) => (
             <button

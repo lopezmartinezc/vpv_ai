@@ -89,6 +89,9 @@ function ErrorBanner({ message }: { message: string }) {
 
 export default function AdminEstadisticasPage() {
   const [seasons, setSeasons] = useState<SeasonOption[]>([]);
+  // Names the exported file, so a folder of them says which season each is.
+  const seasonName =
+    seasons.find((s) => s.id === selectedSeasonId)?.name ?? "";
   const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<MainTab>("rendimiento");
   const [perfLens, setPerfLens] = useState<PerfLens>("jugadores");
@@ -298,7 +301,9 @@ export default function AdminEstadisticasPage() {
             </div>
           ) : (
             <>
-              {perfLens === "jugadores" && <PlayersTab players={players} />}
+              {perfLens === "jugadores" && (
+                <PlayersTab players={players} seasonName={seasonName} />
+              )}
               {perfLens === "participantes" && (
                 <ParticipantsTab breakdowns={breakdowns} extremes={extremes} />
               )}
@@ -310,7 +315,7 @@ export default function AdminEstadisticasPage() {
                 />
               )}
               {perfLens === "avanzado" && (
-                <AdvancedTab players={advancedPlayers} />
+                <AdvancedTab players={advancedPlayers} seasonName={seasonName} />
               )}
               {perfLens === "contexto" && selectedSeasonId && (
                 <ContextoTab
