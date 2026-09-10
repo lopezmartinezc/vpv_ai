@@ -249,7 +249,16 @@ class Gateway:
             raise AssistantError(
                 "PROVIDER_ERROR", "El proveedor no ha podido responder. Reintenta.", 502
             )
-        return parse_turn(self.provider, JSON_OBJECT.validate_json(response.content))
+        data = JSON_OBJECT.validate_json(response.content)
+        # The raw usage object, per round, counts only. Summed totals cannot say
+        # where a cache stops being reused; this can.
+        logger.info(
+            "assistant_v2 usage provider=%s model=%s usage=%s",
+            self.provider,
+            self.model,
+            data.get("usage"),
+        )
+        return parse_turn(self.provider, data)
 
     def append_results(
         self, messages: list[dict[str, JsonValue]], turn: Turn, outputs: list[tuple[Call, str]]
