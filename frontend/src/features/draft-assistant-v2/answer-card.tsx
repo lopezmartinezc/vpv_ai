@@ -129,10 +129,10 @@ export function AnswerCard({
         </p>
       ))}
 
-      {!stale && answer.cards.length >= 2 && (
+      {revision !== null && !stale && answer.cards.length >= 2 && (
         <ComparisonTable cards={answer.cards} onSelect={onSelect} />
       )}
-      {!stale && answer.cards.length === 1 && (
+      {revision !== null && !stale && answer.cards.length === 1 && (
         <PlayerCard card={answer.cards[0]} onSelect={onSelect} />
       )}
 

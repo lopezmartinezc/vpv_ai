@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 
-from pydantic import Field, ValidationError
+from pydantic import Field, JsonValue, ValidationError
 
 from .evaluation import formation_needs, rivals_before_turn, sorted_players, turn_context
 from .gain import roster_gain
@@ -18,6 +18,14 @@ class Empty(StrictModel):
 
 class Search(ViewContext):
     limit: Annotated[int, Field(strict=True, ge=1, le=30)] = 10
+
+
+class Rosters(StrictModel):
+    participant_id: PositiveId | None = None
+    offset: Annotated[int, Field(strict=True, ge=0)] = 0
+    # A full squad is 26. Ten at a time turned one answer into twenty-nine
+    # questions and sent four times what the unpaged call it replaced did.
+    limit: Annotated[int, Field(strict=True, ge=1, le=30)] = 26
 
 
 class Detail(StrictModel):
@@ -37,7 +45,7 @@ SCHEMAS: dict[str, type[StrictModel]] = {
     "buscar_jugadores": Search,
     "detalle_jugador": Detail,
     "evaluar_pick": Empty,
-    "plantillas": Empty,
+    "plantillas": Rosters,
     "responder": Final,
 }
 DESCRIPTIONS = {
@@ -47,7 +55,11 @@ DESCRIPTIONS = {
     "buscar_jugadores": "Jugadores disponibles, ordenados por métricas del servidor. Filtros opcionales.",
     "detalle_jugador": "Métricas y observaciones de un jugador por ID, incluidas sus incertidumbres.",
     "evaluar_pick": "Candidatos y alternativas del contexto visible, necesidades y espera real.",
-    "plantillas": "Propiedad vigente de todos los participantes, también en invierno.",
+    "plantillas": (
+        "Plantillas por propiedad vigente. Filtra con participant_id (una plantilla "
+        "entera cabe en una página); sin filtro pagina con next_offset hasta null. "
+        "Las necesidades por formación viajan solo en la primera página."
+    ),
     "responder": "Termina con explicación, hasta tres IDs consultados y referencias de evidencia.",
 }
 
@@ -156,18 +168,38 @@ class Toolset:
         detail["untrusted_note"] = (player.note or "")[:1000]
         return json.dumps({"card": json.loads(card), "metrics": detail}, ensure_ascii=False)
 
-    def rosters(self) -> str:
-        data = [
-            {
-                "participant_id": p.participant_id,
-                "players": [
-                    r.model_dump() for r in self.snapshot.roster if r.owner_id == p.participant_id
-                ],
-                "missing_by_formation": formation_needs(self.snapshot, p.participant_id),
+    def rosters(self, args: Rosters | None = None) -> str:
+        args = args or Rosters()
+        participants = {p.participant_id for p in self.snapshot.draft.participants}
+        if args.participant_id is not None and args.participant_id not in participants:
+            raise ValueError("Participante ajeno al draft.")
+        rows = sorted(
+            (
+                r
+                for r in self.snapshot.roster
+                if r.owner_id in participants
+                and (args.participant_id is None or r.owner_id == args.participant_id)
+            ),
+            key=lambda r: r.id,
+        )
+        end = args.offset + args.limit
+        data: dict[str, JsonValue] = {
+            "total": len(rows),
+            "offset": args.offset,
+            "next_offset": end if end < len(rows) else None,
+            "players": [r.model_dump() for r in rows[args.offset : end]],
+        }
+        # Identical on every page and bigger than the players on it: send it
+        # once, with the first page.
+        if args.offset == 0:
+            needs: dict[str, JsonValue] = {
+                str(pid): cast(JsonValue, formation_needs(self.snapshot, pid))
+                for pid in sorted(participants)
+                if args.participant_id is None or pid == args.participant_id
             }
-            for p in self.snapshot.draft.participants
-        ]
-        return self.register("rosters", json.dumps(data, ensure_ascii=False))
+            data["missing_by_participant"] = needs
+        key = f"rosters:{args.participant_id}:{args.offset}:{args.limit}"
+        return self.register(key, json.dumps(data, ensure_ascii=False))
 
     def evaluate(self) -> str:
         ranked = sorted_players(self.snapshot, self.view)
@@ -212,6 +244,8 @@ class Toolset:
             args = schema.model_validate_json(raw)
             if isinstance(args, Final):
                 return self.finish(args)
+            if isinstance(args, Rosters):
+                return ToolResult(content=self.rosters(args))
             if isinstance(args, Search):
                 return ToolResult(content=self.search(args))
             if isinstance(args, Detail):
@@ -219,7 +253,6 @@ class Toolset:
             handler = {
                 "estado_draft": self.state,
                 "evaluar_pick": self.evaluate,
-                "plantillas": self.rosters,
             }[name]
             return ToolResult(content=handler())
         except (ValidationError, ValueError, KeyError) as exc:
