@@ -45,11 +45,16 @@ proveedor desde su caché de prefijo** (`cached_tokens` en OpenAI,
 `cache_read_input_tokens` en Anthropic). El total no es la factura; la
 parte en caché se cobra a una fracción.
 
-El último mensaje lleva la evidencia **antes** de la pregunta. La evidencia es
-idéntica para toda pregunta sobre la misma revisión del draft; la pregunta es
-lo que cambia. Como los proveedores cachean por prefijo exacto, así la
-evidencia queda en la parte reutilizable entre consultas consecutivas en un
-mismo pick, y la pregunta acaba al final, junto a la generación.
+La evidencia inicial (`estado_draft` + `evaluar_pick`) va en el **prompt de
+sistema**, delante de herramientas e historial, y **sin marca de tiempo**
+(los hashes de revisión bastan). Es idéntica para toda pregunta sobre la
+misma revisión del draft, y como los proveedores cachean por prefijo exacto,
+así se reutiliza entre consultas consecutivas en un mismo pick — y deja de
+reutilizarse justo cuando el draft cambia, que es cuando debe. En el último
+mensaje de usuario nunca lo era: el historial que va delante la desplazaba
+cada vez (medido: 7 936 tokens en caché en dos preguntas seguidas, ni uno
+de la evidencia reutilizado). La línea de modo (rápido/detallado) va al final
+del sistema, para que las dos modalidades compartan reglas y evidencia.
 
 En Anthropic el sistema, las herramientas y el último bloque de cada mensaje
 van marcados con `cache_control: ephemeral`, como en el chat actual, de modo
