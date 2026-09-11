@@ -10,6 +10,10 @@ export const PLAYER_TAGS: { key: string; label: string; cls: string }[] = [
   { key: "titular", label: "Titular", cls: "bg-green-500/20 text-green-300" },
   { key: "rotacion", label: "Rotación", cls: "bg-teal-500/15 text-teal-300" },
   { key: "suplente", label: "Suplente", cls: "bg-amber-500/15 text-amber-300" },
+  // Barely played, but you expect him to fight for a shirt. The class where
+  // the model is most wrong: one-or-two-appearance players were projected at
+  // 0.33 participation and finished at 0.51.
+  { key: "competira", label: "Competirá", cls: "bg-sky-500/15 text-sky-300" },
   { key: "duda", label: "Duda", cls: "bg-violet-500/15 text-violet-300" },
   { key: "penaltis", label: "Penaltis", cls: "bg-emerald-500/15 text-emerald-300" },
   { key: "gol", label: "Gol", cls: "bg-lime-500/15 text-lime-300" },
@@ -36,4 +40,5 @@ export const PLAYER_TAG_EMOJI: Record<string, string> = {
   evitar: "🚫",
   lesion: "🚑",
   suplente: "🪑",
+  competira: "🥊",
 };
