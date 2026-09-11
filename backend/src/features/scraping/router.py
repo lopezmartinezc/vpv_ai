@@ -114,6 +114,34 @@ async def check_updates_endpoint(
 # ---------------------------------------------------------------------------
 
 
+@router.post(
+    "/players/{player_id}/resync",
+    summary="Re-scrape one player's stats, optionally re-pinning his club",
+)
+async def resync_player_endpoint(
+    player_id: int,
+    season_id: int = Query(..., description="Temporada del jugador"),
+    start: int | None = Query(default=None, ge=1, le=100),
+    end: int | None = Query(default=None, ge=1, le=100),
+    repin: bool = Query(
+        default=False,
+        description=(
+            "Reasigna equipo y partido de sus jornadas al equipo ACTUAL del jugador. "
+            "Solo para corregir un alta equivocada (una cesion dada de alta con el club "
+            "de origen): un traspaso real debe conservar el equipo con el que jugo."
+        ),
+    ),
+    _admin: dict = Depends(require_perm(Perm.SCRAPING)),
+    service: ScrapingService = Depends(_get_service),
+) -> dict:
+    """Re-read this player's page and recompute his points for the season.
+
+    Points come from his own stats table, so they are recomputed whatever
+    happens. ``repin`` additionally lifts the team pin for this player alone.
+    """
+    return await service.resync_player(season_id, player_id, start=start, end=end, repin=repin)
+
+
 @router.get("/logs", summary="Query persistent scraping logs")
 async def get_scraping_logs(
     season_id: int = Query(...),

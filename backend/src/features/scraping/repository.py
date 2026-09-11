@@ -204,6 +204,9 @@ class ScrapingRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars())
 
+    async def get_player_by_id(self, player_id: int) -> Player | None:
+        return await self.session.get(Player, player_id)
+
     async def get_player_stat(self, player_id: int, matchday_id: int) -> PlayerStat | None:
         """Return the existing player_stats row for (player, matchday), or None.
 
@@ -253,6 +256,7 @@ class ScrapingRepository:
         stats: PlayerMatchdayStats,
         breakdown: PointsBreakdown,
         team_id: int | None = None,
+        force_team: bool = False,
     ) -> None:
         """INSERT or UPDATE a ``player_stats`` row via PostgreSQL ON CONFLICT.
 
@@ -321,7 +325,16 @@ class ScrapingRepository:
         # Pin team_id to the FIRST scrape of this matchday: keep the stored
         # value and only fill it when still NULL. A later transfer re-scrape
         # must not overwrite the team the player actually played for.
-        set_cols["team_id"] = func.coalesce(PlayerStat.team_id, insert_stmt.excluded.team_id)
+        #
+        # force_team lifts the pin for one player, on request. The pin is
+        # right by default and wrong in one case: when the first scrape itself
+        # recorded the wrong club (a loan signed up under the parent club), it
+        # preserves the mistake and nothing else can reach it.
+        set_cols["team_id"] = (
+            insert_stmt.excluded.team_id
+            if force_team
+            else func.coalesce(PlayerStat.team_id, insert_stmt.excluded.team_id)
+        )
         stmt = insert_stmt.on_conflict_do_update(
             index_elements=["player_id", "matchday_id"],
             set_=set_cols,
