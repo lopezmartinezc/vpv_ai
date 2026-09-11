@@ -5,6 +5,24 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
+class SeasonLine(BaseModel):
+    """One season's raw production, for the expanded row.
+
+    The flat fields below describe the REFERENCE season, which is the current
+    one once it has a couple of appearances. Five matchdays in, that makes a
+    proven scorer read "Goles: 0" — so the previous season travels alongside.
+    """
+
+    season_name: str
+    games_played: int
+    goals: int
+    assists: int
+    total_points: float
+    avg_points: float
+    marca_avg: float | None = None
+    as_avg: float | None = None
+
+
 class DraftValuePlayer(BaseModel):
     player_id: int
     slug: str  # stable across seasons; used to join with historical rows
@@ -13,7 +31,12 @@ class DraftValuePlayer(BaseModel):
     position: str
     photo_path: str | None
 
-    # Base stats
+    # Base stats. These describe ref_season_name, NOT the player's career.
+    ref_season_name: str | None = None
+    # The season before it, when the figures above are the current one. None
+    # when they already are last season's, or when there is no past to show —
+    # zeros would read as "scored nothing" instead of "no previous season".
+    previous_season: SeasonLine | None = None
     games_played: int
     seasons_played: int
     avg_points: float

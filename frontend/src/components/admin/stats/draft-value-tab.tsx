@@ -710,6 +710,11 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
                 {/* Expanded detail */}
                 {isExpanded && (
                   <div className="border-t border-vpv-border/30 bg-vpv-bg/20 px-4 py-2.5 text-xs">
+                    {/* Which season these figures describe. Without it a scorer
+                        five matchdays into a season reads as having none. */}
+                    <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-vpv-text-muted">
+                      Temporada {p.ref_season_name ?? "de referencia"}
+                    </p>
                     <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 sm:grid-cols-3 md:grid-cols-4">
                       <div>
                         <span className="text-vpv-text-muted">Temporadas: </span>
@@ -760,6 +765,22 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
                         <span className="font-medium text-vpv-text">{p.productivity_score.toFixed(1)}</span>
                       </div>
                     </div>
+
+                    {p.previous_season && (
+                      <p className="mt-2 border-t border-vpv-border/30 pt-2 text-[11px] text-vpv-text-muted">
+                        <span className="font-medium uppercase tracking-wide">
+                          Temporada {p.previous_season.season_name}
+                        </span>
+                        {": "}
+                        {p.previous_season.games_played} PJ ·{" "}
+                        <span className="text-vpv-text">{p.previous_season.goals} goles</span> ·{" "}
+                        <span className="text-vpv-text">{p.previous_season.assists} asist.</span> ·{" "}
+                        {p.previous_season.total_points.toFixed(0)} pts (
+                        {p.previous_season.avg_points.toFixed(1)}/partido)
+                        {p.previous_season.marca_avg != null &&
+                          ` · Marca ${p.previous_season.marca_avg.toFixed(1)}`}
+                      </p>
+                    )}
                     <ManualOverrideEditor seasonId={seasonId} player={p} onSaved={setData} />
                   </div>
                 )}
