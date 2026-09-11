@@ -12,6 +12,7 @@ tokens for the same information and the model reads it just as well.
 from __future__ import annotations
 
 import time
+from collections.abc import Collection
 from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any
@@ -277,6 +278,62 @@ SEASON_SAMPLE_CAVEAT = (
 )
 
 
+def _player_detail(
+    p: DraftValuePlayer,
+    *,
+    picked: Collection[int] = (),
+    perf: dict[int, tuple[PlayerStatRow, AdvancedPlayerStat | None]] | None = None,
+) -> str:
+    """One player, fully described, for the chat.
+
+    The raw figures below describe the REFERENCE season — the current one once
+    it has a couple of appearances, last season otherwise — so they are named
+    by their season rather than called "Historico". Labelling five matchdays
+    as a career is how a proven scorer comes back as "0 goles".
+    """
+    perf = perf or {}
+    ref = p.ref_season_name or "temporada de referencia"
+    prev = p.previous_season
+    previous_line = (
+        f"  Temporada {prev.season_name}: {prev.games_played} partidos, "
+        f"media {_fmt(prev.avg_points)}, {prev.goals} goles, {prev.assists} asistencias"
+        + (f", Marca {_fmt(prev.marca_avg, 2)}" if prev.marca_avg is not None else "")
+        + (f", AS {_fmt(prev.as_avg, 2)}" if prev.as_avg is not None else "")
+        + "\n"
+        if prev is not None
+        else ""
+    )
+    return (
+        f"{p.display_name} ({p.position}, {p.team_name})\n"
+        f"  Prioridad {_fmt(p.priority)} (base sin tags {_fmt(p.priority_base)}), "
+        f"puesto global {p.overall_rank or '-'}\n"
+        f"  VORP {_fmt(p.vorp, 2)} | Salto {_fmt(p.next_gap)} | "
+        f"rank en su posicion {p.position_rank or '-'} | Tier {p.position_tier or '-'}\n"
+        f"  Participacion {_fmt(p.participation, 2)} | "
+        f"partidos restantes esperados {_fmt(p.exp_games_remaining)} | "
+        f"puntos proyectados resto {_fmt(p.proj_rest_points)}\n"
+        f"  Fiabilidad (event_share) {_fmt(p.event_share, 2)} | "
+        f"goles encajados/partido del equipo {_fmt(p.team_goals_conceded, 2)}\n"
+        f"  Temporada {ref} (de donde salen estas cifras): {p.games_played} partidos, "
+        f"media {_fmt(p.avg_points)}, {p.goals} goles, {p.assists} asistencias, "
+        f"Marca {_fmt(p.marca_avg, 2)}, AS {_fmt(p.as_avg, 2)}\n"
+        + previous_line
+        + f"  Historial: {p.seasons_played} temporadas con datos | "
+        f"consistencia {_fmt(p.consistency, 2)}\n"
+        f"  Valor manual {_fmt(p.manual_value)} | nota: {p.note or '-'} | "
+        f"tags: {', '.join(p.tags) or '-'}\n"
+        f"  Flags: pico={p.is_peak_year} banquillo={p.is_bench_risk} "
+        f"penaltis={p.is_penalty_taker} nuevo={p.is_new} "
+        f"fichado={p.player_id in picked} cambio_equipo={p.team_changed}\n"
+        f"  Esta temporada: "
+        + (
+            _season_numbers(*perf[p.player_id])
+            if p.player_id in perf
+            else "sin datos todavia (no ha jugado ninguna jornada)"
+        )
+    )
+
+
 def _season_numbers(row: PlayerStatRow, adv: AdvancedPlayerStat | None) -> str:
     """Just the figures, so the detail and the listing agree on wording."""
     extra = ""
@@ -399,33 +456,7 @@ def build_tools(ctx: AssistantContext) -> list[ToolSpec]:
             return f"'{nombre}' es ambiguo ({len(matches)} coincidencias): {names}. Concreta mas."
         out = []
         for p in matches:
-            out.append(
-                f"{p.display_name} ({p.position}, {p.team_name})\n"
-                f"  Prioridad {_fmt(p.priority)} (base sin tags {_fmt(p.priority_base)}), "
-                f"puesto global {p.overall_rank or '-'}\n"
-                f"  VORP {_fmt(p.vorp, 2)} | Salto {_fmt(p.next_gap)} | "
-                f"rank en su posicion {p.position_rank or '-'} | Tier {p.position_tier or '-'}\n"
-                f"  Participacion {_fmt(p.participation, 2)} | "
-                f"partidos restantes esperados {_fmt(p.exp_games_remaining)} | "
-                f"puntos proyectados resto {_fmt(p.proj_rest_points)}\n"
-                f"  Fiabilidad (event_share) {_fmt(p.event_share, 2)} | "
-                f"goles encajados/partido del equipo {_fmt(p.team_goals_conceded, 2)}\n"
-                f"  Historico: {p.games_played} partidos en {p.seasons_played} temporadas, "
-                f"media {_fmt(p.avg_points)}, {p.goals} goles, {p.assists} asistencias\n"
-                f"  Marca {_fmt(p.marca_avg, 2)} | AS {_fmt(p.as_avg, 2)} | "
-                f"consistencia {_fmt(p.consistency, 2)}\n"
-                f"  Valor manual {_fmt(p.manual_value)} | nota: {p.note or '-'} | "
-                f"tags: {', '.join(p.tags) or '-'}\n"
-                f"  Flags: pico={p.is_peak_year} banquillo={p.is_bench_risk} "
-                f"penaltis={p.is_penalty_taker} nuevo={p.is_new} "
-                f"fichado={p.player_id in picked} cambio_equipo={p.team_changed}\n"
-                f"  Esta temporada: "
-                + (
-                    _season_numbers(*perf[p.player_id])
-                    if p.player_id in perf
-                    else "sin datos todavia (no ha jugado ninguna jornada)"
-                )
-            )
+            out.append(_player_detail(p, picked=picked, perf=perf))
         return "\n\n".join(out)
 
     async def estado_draft() -> str:

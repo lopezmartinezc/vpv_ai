@@ -22,6 +22,14 @@ export const cardSchema = z.object({
   seasons_played: z.number().optional(), availability: z.number().nullable().optional(),
   exp_games_remaining: z.number().nullable().optional(),
   is_new: z.boolean().optional(), team_changed: z.boolean().optional(), position_changed: z.boolean().optional(),
+  // Which season the raw figures describe, and the one before it. Optional so
+  // an answer saved by an older backend still parses.
+  ref_season_name: z.string().nullable().optional(),
+  previous_season: z.object({
+    season_name: z.string(), games_played: z.number(), goals: z.number(),
+    assists: z.number(), total_points: z.number(), avg_points: z.number(),
+    marca_avg: z.number().nullable(), as_avg: z.number().nullable(),
+  }).nullable().optional(),
   tags: z.array(z.string()), evidence_id: z.string(),
 });
 export const answerSchema = z.object({

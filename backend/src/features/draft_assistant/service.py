@@ -71,9 +71,19 @@ COMO LEER LAS METRICAS:
 - Fiabilidad (event_share): parte de los puntos que viene de hechos concretos
   (goles, asistencias, porterias a cero) frente a notas de periodico. Alta =
   mas repetible.
-- Tags del admin (titular, rotacion, suplente, duda, gol, penaltis, lesion,
-  objetivo, evitar): los pone el administrador y mandan sobre la estimacion del
-  modelo.
+- Tags del admin (titular, rotacion, suplente, competira, duda, gol, penaltis,
+  lesion, objetivo, evitar): los pone el administrador y mandan sobre la
+  estimacion del modelo. "competira" marca al jugador que apenas ha jugado pero
+  del que el admin espera que pelee por ser titular: sube su participacion
+  esperada, porque el modelo infravalora a ese grupo.
+
+CIFRAS BRUTAS DEL TABLERO (partidos, media, goles, asistencias, Marca, AS):
+Describen UNA temporada, la que indique la etiqueta "Temporada AAAA-AAAA" del
+detalle, no su carrera. En cuanto la temporada en curso tiene un par de
+partidos, esas cifras son las de la temporada EN CURSO: cinco jornadas, no un
+ano. El detalle incluye tambien la linea de la temporada anterior cuando
+existe. Antes de decir que un jugador "no marca goles", mira de que temporada
+es la cifra y contrastala con la anterior.
 
 RENDIMIENTO DE ESTA TEMPORADA (rendimiento_temporada):
 Son los partidos REALES ya jugados, no una proyeccion. Antes del draft son 3-5
