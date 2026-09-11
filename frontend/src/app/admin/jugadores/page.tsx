@@ -277,6 +277,43 @@ export default function AdminJugadoresPage() {
     }
   }, []);
 
+  // Re-sync one player against his own futbolfantasy page. `repin` also
+  // rewrites the club stored on his past matchdays, which the scraper pins on
+  // purpose — offered only here, only per player, and only after you have
+  // corrected his team above, because a real transfer must keep its history.
+  const [resyncing, setResyncing] = useState<number | null>(null);
+  const [resyncMsg, setResyncMsg] = useState<Record<number, string>>({});
+  const handleResync = useCallback(
+    async (player: Player, repin: boolean) => {
+      if (!selectedSeason) return;
+      if (repin && !window.confirm(
+        `¿Reasignar también las jornadas ya jugadas de ${player.display_name} a su equipo actual?\n\n` +
+        "Úsalo solo si estaba dado de alta en el equipo equivocado (una cesión con el club de origen). " +
+        "Si cambió de equipo de verdad, NO lo uses: perderías el equipo con el que jugó cada jornada.",
+      )) return;
+      setResyncing(player.id);
+      setResyncMsg((m) => ({ ...m, [player.id]: "" }));
+      try {
+        const q = new URLSearchParams({ season_id: String(selectedSeason.id), repin: String(repin) });
+        const res = await apiClient.post<{ rows_updated: number; repinned: number }>(
+          `/scraping/players/${player.id}/resync?${q}`, {},
+        );
+        setResyncMsg((m) => ({
+          ...m,
+          [player.id]: `${res.rows_updated} jornadas${repin ? `, ${res.repinned} reasignadas` : ""}`,
+        }));
+      } catch (e) {
+        setResyncMsg((m) => ({
+          ...m,
+          [player.id]: e instanceof Error ? e.message : "Error",
+        }));
+      } finally {
+        setResyncing(null);
+      }
+    },
+    [selectedSeason],
+  );
+
   const handleSavePosition = useCallback(
     async (playerId: number, position: Position) => {
       await patchPlayer(playerId, { position });
@@ -499,6 +536,7 @@ export default function AdminJugadoresPage() {
                   <th className="px-4 py-2 font-medium">Equipo</th>
                   <th className="px-4 py-2 font-medium">Propietario</th>
                   <th className="px-4 py-2 font-medium">Estado</th>
+                  <th className="px-4 py-2 font-medium">Puntos</th>
                 </tr>
               </thead>
               <tbody>
@@ -563,6 +601,33 @@ export default function AdminJugadoresPage() {
                           {player.owner_name ?? "No disp."}
                         </span>
                       )}
+                    </td>
+
+                    {/* Re-sync his stats from his own page */}
+                    <td className="px-4 py-2">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => void handleResync(player, false)}
+                          disabled={resyncing === player.id}
+                          title="Vuelve a leer su ficha y recalcula sus puntos de la temporada. No toca el equipo de las jornadas ya jugadas."
+                          className="rounded border border-vpv-border px-2 py-0.5 text-[10px] text-vpv-text-muted hover:text-vpv-text disabled:opacity-40"
+                        >
+                          {resyncing === player.id ? "..." : "↻ Puntos"}
+                        </button>
+                        <button
+                          onClick={() => void handleResync(player, true)}
+                          disabled={resyncing === player.id}
+                          title="Además reasigna el equipo y el partido de sus jornadas al equipo ACTUAL. Solo si estaba dado de alta en el club equivocado; un traspaso real debe conservar su historial."
+                          className="rounded border border-amber-500/40 px-2 py-0.5 text-[10px] text-amber-400 hover:bg-amber-500/10 disabled:opacity-40"
+                        >
+                          ↻ + equipo
+                        </button>
+                        {resyncMsg[player.id] && (
+                          <span className="text-[10px] text-vpv-text-muted">
+                            {resyncMsg[player.id]}
+                          </span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

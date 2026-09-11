@@ -1063,6 +1063,101 @@ class ScrapingService:
         logger.info("scrape_match_players: done — match_id=%d summary=%s", match_id, summary)
         return summary
 
+    async def resync_player(
+        self,
+        season_id: int,
+        player_id: int,
+        *,
+        start: int | None = None,
+        end: int | None = None,
+        repin: bool = False,
+    ) -> dict[str, object]:
+        """Re-scrape ONE player's stats, optionally re-pinning club and match.
+
+        Same work as ``scrape_season_by_player`` for a single player: fetch his
+        page once, re-parse every matchday, recompute the points. Result and
+        goals conceded come from his own stats table, so the points were never
+        the problem — the club recorded alongside them can be.
+
+        ``repin`` rewrites team_id and match_id from his CURRENT roster team.
+        That is normally forbidden on purpose: a real mid-season transfer must
+        not rewrite the club he turned out for in past matchdays. It is offered
+        here because the pin has one failure mode it cannot detect — a loan
+        signed up under the parent club, where the first scrape pinned a
+        mistake. An admin who has just corrected the roster is the only one who
+        knows which case this is, so it is explicit, per player, and off by
+        default.
+        """
+        from src.core.exceptions import NotFoundError
+
+        player = await self.repo.get_player_by_id(player_id)
+        if player is None or player.season_id != season_id:
+            raise NotFoundError("Player", player_id)
+        if not player.slug:
+            return {"player_id": player_id, "rows_updated": 0, "skipped": "sin slug"}
+
+        rules = await self.repo.get_scoring_rules(season_id)
+        engine = ScoringEngine(rules)
+        matchdays = await self.repo.get_matchdays_by_season(season_id, start=start, end=end)
+        md_by_number = {md.number: md for md in matchdays}
+        if not md_by_number:
+            return {"player_id": player_id, "rows_updated": 0, "skipped": "sin jornadas"}
+
+        base_url = self._settings.scraping_base_url.rstrip("/")
+        async with ScrapingClient() as client:
+            html = await client.fetch(f"{base_url}/jugadores/{player.slug}")
+        stats_list = parse_player_all_matchdays(html)
+
+        rows_updated = 0
+        repinned = 0
+        affected_md_ids: set[int] = set()
+        for stats in stats_list:
+            md = md_by_number.get(stats.matchday_number)
+            if md is None:
+                continue
+            existing = await self.repo.get_player_stat(player.id, md.id)
+            # Position stays frozen by era whatever happens here: that is a
+            # separate rule, and re-syncing a club must not re-open it.
+            position = (existing.position if existing else None) or player.position
+            if repin or existing is None or existing.match_id is None:
+                match = await self.repo.find_match_for_team(md.id, player.team_id)
+                match_id: int | None = match.id if match else None
+                if repin and existing is not None:
+                    repinned += 1
+            else:
+                match_id = existing.match_id
+
+            _preserve_admin_marca(stats, existing)
+            breakdown = engine.calculate(stats, position)
+            await self.repo.upsert_player_stat(
+                player_id=player.id,
+                matchday_id=md.id,
+                match_id=match_id,
+                position=position,
+                stats=stats,
+                breakdown=breakdown,
+                team_id=player.team_id,
+                force_team=repin,
+            )
+            rows_updated += 1
+            affected_md_ids.add(md.id)
+
+        await self.session.flush()
+        # Participant scores are built from these rows; leaving them stale would
+        # make the fix invisible where it matters most.
+        for md_id in sorted(affected_md_ids):
+            await self._aggregator.aggregate_matchday(md_id)
+
+        summary: dict[str, object] = {
+            "player_id": player_id,
+            "slug": player.slug,
+            "rows_updated": rows_updated,
+            "repinned": repinned,
+            "matchdays": sorted(md_by_number[n].number for n in md_by_number),
+        }
+        logger.info("resync_player: %s", summary)
+        return summary
+
     async def scrape_season_by_player(
         self,
         season_id: int,

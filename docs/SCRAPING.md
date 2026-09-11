@@ -624,3 +624,38 @@ ORDER BY u.display_name;"
 5. **`scraping_slug` con typo provocaba 4xx en cadena**: `PhotoDownloader`
    ahora hace fallback a la URL plana si el suffix devuelve 4xx
    (defensivo). El typo debe corregirse igualmente en `seasons.scraping_slug`.
+
+## Re-sincronizar un jugador (Admin → Jugadores)
+
+Dos botones por fila:
+
+- **↻ Puntos** — vuelve a leer su ficha de futbolfantasy y **recalcula sus puntos**
+  de la temporada. El resultado del partido y los goles encajados salen de su
+  propia tabla de estadísticas, no del partido que el scraper busca en la base de
+  datos, así que esto corrige cualquier desajuste de puntuación sin tocar nada más.
+- **↻ + equipo** — además **reasigna el equipo y el partido** de sus jornadas al
+  equipo **actual** del jugador.
+
+### Cuándo usar cada uno
+
+`player_stats.team_id` está anclado al primer scrapeo **a propósito**: un traspaso
+real a mitad de temporada no debe reescribir el club con el que jugó cada jornada.
+Ese anclaje tiene un único punto ciego — cuando el primer scrapeo ya guardó el club
+equivocado (una **cesión dada de alta con el club de origen**), preserva el error y
+nada más puede corregirlo, ni siquiera un re-scrapeo completo.
+
+Por eso `↻ + equipo` existe, y por eso es **explícito, por jugador y pide
+confirmación**:
+
+| Situación | Botón |
+|---|---|
+| Cesión / alta con el club equivocado | Corrige el equipo arriba, luego **↻ + equipo** |
+| Traspaso real a mitad de temporada | **↻ Puntos** (nunca el otro: perderías su historial) |
+| Solo sospechas de la puntuación | **↻ Puntos** |
+
+Tras la operación se reagregan las jornadas afectadas, así que las puntuaciones de
+los participantes quedan consistentes.
+
+Equivalente por API:
+`POST /scraping/players/{player_id}/resync?season_id=N&repin=true|false`
+(opcional `start` / `end` para acotar jornadas).
