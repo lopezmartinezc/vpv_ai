@@ -1077,12 +1077,29 @@ export interface PalmaresResponse {
 // Draft Value Predictions
 // ---------------------------------------------------------------------------
 
+/** One season's raw production, shown in the expanded draft row. */
+export interface SeasonLine {
+  season_name: string;
+  games_played: number;
+  goals: number;
+  assists: number;
+  total_points: number;
+  avg_points: number;
+  marca_avg: number | null;
+  as_avg: number | null;
+}
+
 export interface DraftValuePlayer {
   player_id: number;
   display_name: string;
   team_name: string;
   position: string;
   photo_path: string | null;
+  // The raw figures below describe ref_season_name, not the player's career:
+  // the reference season flips to the current one once it has a couple of
+  // appearances, so five matchdays in a proven scorer shows zero goals.
+  ref_season_name?: string | null;
+  previous_season?: SeasonLine | null;
   games_played: number;
   seasons_played: number;
   avg_points: number;

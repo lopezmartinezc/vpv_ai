@@ -31,7 +31,7 @@ from src.features.stats.participation import (
     minute_shares,
     season_participation,
 )
-from src.features.stats.schemas_draft import DraftValuePlayer, DraftValueResponse
+from src.features.stats.schemas_draft import DraftValuePlayer, DraftValueResponse, SeasonLine
 from src.features.stats.scorecard import (
     REPLACEMENT_RANK,
     STARTER_SLOTS,
@@ -396,6 +396,10 @@ class DraftValueService:
             )
             # Reference for display stats: current preferred, else last season.
             ref = current if current is not None else (hist[-1] if hist else None)
+            # Name the season the raw figures belong to, and carry the one
+            # before it when they are the current season's — at draft time the
+            # comparison is the decision, and an unlabelled 0 is a trap.
+            previous = hist[-1] if (current is not None and hist) else None
 
             auto_projection = round(proj.ensemble_score, 2) if proj is not None else None
             ensemble_score = proj.ensemble_score if proj is not None else 0.0
@@ -539,6 +543,21 @@ class DraftValueService:
                     participation=round(participation, 2),
                     consistency=round(consistency, 2),
                     second_half_avg=round(second_half_avg, 2) if second_half_avg else None,
+                    ref_season_name=ref.season_name if ref else None,
+                    previous_season=(
+                        SeasonLine(
+                            season_name=previous.season_name,
+                            games_played=previous.games,
+                            goals=previous.goals,
+                            assists=previous.assists,
+                            total_points=round(previous.total_pts, 1),
+                            avg_points=round(previous.avg_pts, 2),
+                            marca_avg=previous.marca_avg,
+                            as_avg=previous.as_avg,
+                        )
+                        if previous is not None
+                        else None
+                    ),
                     goals=ref.goals if ref else 0,
                     assists=ref.assists if ref else 0,
                     signal=signal,
