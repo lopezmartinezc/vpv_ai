@@ -650,11 +650,22 @@ confirmación**:
 | Situación | Botón |
 |---|---|
 | Cesión / alta con el club equivocado | Corrige el equipo arriba, luego **↻ + equipo** |
-| Traspaso real a mitad de temporada | **↻ Puntos** (nunca el otro: perderías su historial) |
+| Traspaso real a mitad de temporada | Pon **desde J** = jornada de su primer partido con el equipo nuevo, luego **↻ + equipo** |
 | Solo sospechas de la puntuación | **↻ Puntos** |
 
 Tras la operación se reagregan las jornadas afectadas, así que las puntuaciones de
 los participantes quedan consistentes.
+
+### El campo «desde J»
+
+Entre los dos botones hay una casilla de jornada. Vacía, la reasignación cubre
+**toda la temporada**: correcto para un alta equivocada, porque ninguna de sus
+filas dice la verdad. Con un número, cubre **de esa jornada en adelante**, que es
+lo que necesita un traspaso real — las jornadas anteriores registran el club en
+el que de verdad estuvo, y reescribirlas cambiaría una verdad por una comodidad.
+
+Ejemplo real: un jugador con dos jornadas sin convocar en su club de origen y
+traspasado antes de la tercera → **desde J = 3**.
 
 Equivalente por API:
 `POST /scraping/players/{player_id}/resync?season_id=N&repin=true|false`
