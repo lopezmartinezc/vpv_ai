@@ -103,6 +103,8 @@ class Snapshot(BaseModel):
             is_new=player.is_new,
             team_changed=player.team_changed,
             position_changed=player.position_changed,
+            ref_season_name=player.ref_season_name,
+            previous_season=player.previous_season,
             tags=player.tags,
             evidence_id=f"player:{player.player_id}",
         )

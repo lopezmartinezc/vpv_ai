@@ -4,6 +4,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.features.stats.schemas_draft import SeasonLine
+
 Position = Literal["POR", "DEF", "MED", "DEL"]
 ProviderName = Literal["openai", "anthropic"]
 PositiveId = Annotated[int, Field(gt=0, strict=True)]
@@ -60,6 +62,11 @@ class Card(StrictModel):
     is_new: bool = False
     team_changed: bool = False
     position_changed: bool = False
+    # Which season the raw figures above describe — the current one once it has
+    # a couple of appearances. Saying so is what stops five matchdays being
+    # reported as a career.
+    ref_season_name: str | None = None
+    previous_season: SeasonLine | None = None
     tags: list[str] = Field(default_factory=list)
     evidence_id: str
 

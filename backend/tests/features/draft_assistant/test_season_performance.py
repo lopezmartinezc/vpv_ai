@@ -95,6 +95,9 @@ class _Player:
     is_penalty_taker: bool = False
     is_new: bool = False
     team_changed: bool = False
+    # Which season the raw figures above describe, and the one before it.
+    ref_season_name: str | None = "2026-2027"
+    previous_season: object | None = None
 
 
 EYONG = _Player(7, "Etta Eyong", "DEL", "Levante")
