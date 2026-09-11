@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { ParticipationToggle } from "@/components/admin/stats/participation-toggle";
+import { UNTAGGED, matchesTagFilter, tagCounts, toggleTag } from "@/lib/draft-tag-filter";
 import { downloadCsv, exportFilename, toCsv } from "@/lib/draft-export";
 import { confidenceDots, confidenceFor } from "@/lib/draft-confidence";
 import { participationQuery, useParticipationModel } from "@/lib/participation-model";
@@ -194,6 +195,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
   const [posFilter, setPosFilter] = useState("");
   const [search, setSearch] = useState("");
   const [hideDrafted, setHideDrafted] = useState(false);
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [sortKey, setSortKey] = useState<DraftSortKey>("priority");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -249,6 +251,7 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
     }));
     if (posFilter) list = list.filter((p) => p.position === posFilter);
     if (hideDrafted) list = list.filter((p) => !p.is_drafted);
+    if (tagFilter.length) list = list.filter((p) => matchesTagFilter(p.tags, tagFilter));
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(
@@ -268,7 +271,11 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
       );
     }
     return sorted(list, sortKey, sortDir);
-  }, [data, posFilter, search, hideDrafted, sortKey, sortDir]);
+  }, [data, posFilter, search, hideDrafted, tagFilter, sortKey, sortDir]);
+
+  // Counted over the whole board, not the filtered rows: a count that shrank
+  // as you filtered could never tell you how much is left to review.
+  const counts = useMemo(() => tagCounts(data?.players ?? []), [data]);
 
   // Positional scarcity: how deep the draftable pool runs per position.
   // Fewer players above replacement (vorp > 0) => scarcer => draft earlier.
@@ -395,6 +402,48 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
       </div>
 
       {/* Filters */}
+      {/* Your own tags. Several read as OR — the lists together, not their
+          intersection. "Sin tags" is the pre-draft to-do list. */}
+      <div className="flex flex-wrap items-center gap-1">
+        <span className="mr-1 text-[10px] font-medium uppercase tracking-wide text-vpv-text-muted">
+          Tags
+        </span>
+        {[...PLAYER_TAGS, { key: UNTAGGED, label: "Sin tags", cls: "bg-vpv-bg text-vpv-text-muted" }].map(
+          (tag) => {
+            const active = tagFilter.includes(tag.key);
+            const count = counts[tag.key] ?? 0;
+            return (
+              <button
+                key={tag.key}
+                onClick={() => setTagFilter(toggleTag(tagFilter, tag.key))}
+                disabled={count === 0 && !active}
+                title={
+                  tag.key === UNTAGGED
+                    ? "Jugadores que aún no has etiquetado: tu lista de repaso antes del draft"
+                    : `Jugadores con la etiqueta ${tag.label}`
+                }
+                className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition ${
+                  active
+                    ? "ring-1 ring-vpv-accent " + tag.cls
+                    : "border border-vpv-border text-vpv-text-muted hover:text-vpv-text disabled:opacity-30"
+                }`}
+              >
+                {tag.label}
+                <span className="ml-1 tabular-nums opacity-70">{count}</span>
+              </button>
+            );
+          },
+        )}
+        {tagFilter.length > 0 && (
+          <button
+            onClick={() => setTagFilter([])}
+            className="ml-1 text-[10px] text-vpv-text-muted underline hover:text-vpv-text"
+          >
+            quitar filtro
+          </button>
+        )}
+      </div>
+
       <div className="flex flex-wrap items-end gap-2">
         <div className="flex gap-0.5">
           {["", "POR", "DEF", "MED", "DEL"].map((p) => (
