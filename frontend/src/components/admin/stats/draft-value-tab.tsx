@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { ParticipationToggle } from "@/components/admin/stats/participation-toggle";
+import { formatSeasonLine } from "@/lib/season-summary";
 import { UNTAGGED, matchesTagFilter, tagCounts, toggleTag } from "@/lib/draft-tag-filter";
 import { downloadCsv, exportFilename, toCsv } from "@/lib/draft-export";
 import { confidenceDots, confidenceFor } from "@/lib/draft-confidence";
@@ -729,6 +730,10 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
                         <span className="font-medium text-vpv-text">{p.total_points.toFixed(0)}</span>
                       </div>
                       <div>
+                        <span className="text-vpv-text-muted">Media: </span>
+                        <span className="font-medium text-vpv-text">{p.avg_points.toFixed(1)} pts/j</span>
+                      </div>
+                      <div>
                         <span className="text-vpv-text-muted">Disponibilidad: </span>
                         <span className={`font-medium ${p.availability > 0.8 ? "text-green-400" : p.availability > 0.6 ? "text-amber-400" : "text-red-400"}`}>
                           {(p.availability * 100).toFixed(0)}%
@@ -772,13 +777,9 @@ export function DraftValueTab({ seasonId }: { seasonId: number }) {
                           Temporada {p.previous_season.season_name}
                         </span>
                         {": "}
-                        {p.previous_season.games_played} PJ ·{" "}
-                        <span className="text-vpv-text">{p.previous_season.goals} goles</span> ·{" "}
-                        <span className="text-vpv-text">{p.previous_season.assists} asist.</span> ·{" "}
-                        {p.previous_season.total_points.toFixed(0)} pts (
-                        {p.previous_season.avg_points.toFixed(1)}/partido)
-                        {p.previous_season.marca_avg != null &&
-                          ` · Marca ${p.previous_season.marca_avg.toFixed(1)}`}
+                        <span className="text-vpv-text">
+                          {formatSeasonLine(p.previous_season)}
+                        </span>
                       </p>
                     )}
                     <ManualOverrideEditor seasonId={seasonId} player={p} onSaved={setData} />
