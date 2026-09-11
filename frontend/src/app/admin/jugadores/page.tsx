@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { resyncQuery, resyncWarning } from "@/lib/resync-params";
 import { apiClient } from "@/lib/api-client";
 import { useSeason } from "@/contexts/season-context";
 
@@ -283,20 +284,20 @@ export default function AdminJugadoresPage() {
   // corrected his team above, because a real transfer must keep its history.
   const [resyncing, setResyncing] = useState<number | null>(null);
   const [resyncMsg, setResyncMsg] = useState<Record<number, string>>({});
+  // First matchday to touch, per player. Empty means the whole season — which
+  // is right for a wrong registration and wrong for a real mid-season transfer.
+  const [resyncFrom, setResyncFrom] = useState<Record<number, string>>({});
   const handleResync = useCallback(
     async (player: Player, repin: boolean) => {
       if (!selectedSeason) return;
-      if (repin && !window.confirm(
-        `¿Reasignar también las jornadas ya jugadas de ${player.display_name} a su equipo actual?\n\n` +
-        "Úsalo solo si estaba dado de alta en el equipo equivocado (una cesión con el club de origen). " +
-        "Si cambió de equipo de verdad, NO lo uses: perderías el equipo con el que jugó cada jornada.",
-      )) return;
+      const fromMatchday = resyncFrom[player.id];
+      if (repin && !window.confirm(resyncWarning(player.display_name, fromMatchday))) return;
       setResyncing(player.id);
       setResyncMsg((m) => ({ ...m, [player.id]: "" }));
       try {
-        const q = new URLSearchParams({ season_id: String(selectedSeason.id), repin: String(repin) });
+        const query = resyncQuery({ seasonId: selectedSeason.id, repin, fromMatchday });
         const res = await apiClient.post<{ rows_updated: number; repinned: number }>(
-          `/scraping/players/${player.id}/resync?${q}`, {},
+          `/scraping/players/${player.id}/resync?${query}`, {},
         );
         setResyncMsg((m) => ({
           ...m,
@@ -311,7 +312,7 @@ export default function AdminJugadoresPage() {
         setResyncing(null);
       }
     },
-    [selectedSeason],
+    [selectedSeason, resyncFrom],
   );
 
   const handleSavePosition = useCallback(
@@ -614,6 +615,19 @@ export default function AdminJugadoresPage() {
                         >
                           {resyncing === player.id ? "..." : "↻ Puntos"}
                         </button>
+                        <input
+                          type="number"
+                          min={1}
+                          max={38}
+                          value={resyncFrom[player.id] ?? ""}
+                          onChange={(e) =>
+                            setResyncFrom((m) => ({ ...m, [player.id]: e.target.value }))
+                          }
+                          placeholder="J"
+                          aria-label={`Desde qué jornada reasignar a ${player.display_name}`}
+                          title="Desde qué jornada reasignar. Déjalo vacío para toda la temporada; ponlo si cambió de equipo a mitad (la jornada de su primer partido con el equipo nuevo)."
+                          className="w-10 rounded border border-vpv-border bg-vpv-bg px-1 py-0.5 text-[10px] text-vpv-text placeholder:text-vpv-text-muted"
+                        />
                         <button
                           onClick={() => void handleResync(player, true)}
                           disabled={resyncing === player.id}
