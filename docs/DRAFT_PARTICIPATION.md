@@ -100,3 +100,27 @@ Omitirlo = `mixto`.
 - `backend/tests/features/stats/test_draft_value_participation_switch.py` — el
   interruptor sobre el tablero real.
 - `frontend/src/lib/participation-model.ts` — store compartido + query.
+
+## El tag `Competirá`
+
+Para el jugador que **apenas ha jugado** pero del que esperas que pelee por ser
+titular. Es la clase donde el modelo más se equivoca, y está medido: los de una
+o dos jornadas se proyectaban en **0,33** de participación y acabaron la
+temporada en **0,51**.
+
+Es un tag de **rol**, así que sustituye la suposición de riesgo de banquillo del
+modelo (×0,75) — que es exactamente lo que tu criterio contradice — y aplica un
+**suelo de participación de 0,55**: por encima del 0,51 real porque etiquetarlo
+es apostar por él, y por debajo del 0,65 de un suplente asentado de equipo
+grande, porque todavía no se ha ganado el puesto. Suelo, nunca techo: si el
+modelo ya dice más, manda el modelo.
+
+El suelo se aplica **solo a Prioridad**. `participation`, `exp_games_remaining`
+y `priority_base` siguen siendo la visión del modelo; un tag que los reescribiera
+destruiría lo único para lo que sirve la columna Base: ver qué ha cambiado tu
+criterio.
+
+**Lo que el tag no puede hacer:** un jugador sin histórico y sin datos de esta
+temporada no tiene valor por partido, y la participación multiplica a ese valor.
+No hay nada que escalar. Para esos hace falta un **valor manual**; el tag no
+inventa puntos de la nada.

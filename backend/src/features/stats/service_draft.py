@@ -74,6 +74,7 @@ ALLOWED_TAGS = {
     "titular",
     "rotacion",
     "suplente",
+    "competira",
     "duda",
     "penaltis",
     "gol",
@@ -90,7 +91,21 @@ ROLE_MULTIPLIER: dict[str, float] = {
     "titular": 1.00,  # nailed-on starter
     "rotacion": 0.88,  # rotates / first off the bench
     "suplente": 0.75,  # bench
+    # Barely played, but the admin expects him to fight for a shirt. Neutral on
+    # value because the judgement is about MINUTES, and it is carried by the
+    # participation floor below; multiplying here too would count it twice.
+    # Being a role tag is the point: it replaces the bench-risk guess it
+    # contradicts.
+    "competira": 1.00,
 }
+
+# Participation floor for "competira". Players with one or two appearances were
+# projected at 0.33 and finished the season at 0.51, so the model under-rates
+# exactly this group. Above that 0.51 because tagging a player is backing him;
+# below the 0.65 an established big-club substitute reached, because he has not
+# won the shirt yet. A floor, never a ceiling, and applied to priority alone —
+# see where it is used.
+COMPETING_PARTICIPATION = 0.55
 
 TAG_MULTIPLIER: dict[str, float] = {
     "penaltis": 1.05,
@@ -622,6 +637,11 @@ class DraftValueService:
                 adj *= ROLE_MULTIPLIER[role]
             elif p.is_bench_risk:
                 adj *= 0.75
+            # A floor on expected playing time, expressed as a multiplier so it
+            # lands only on priority: proj_rest_points and priority_base are the
+            # model's own view, and a tag must not rewrite them.
+            if "competira" in p.tags and p.participation:
+                adj *= max(1.0, COMPETING_PARTICIPATION / p.participation)
             for tag in p.tags:
                 adj *= TAG_MULTIPLIER.get(tag, 1.0)
             p.priority = round(p.proj_rest_points * adj, 1)
