@@ -35,9 +35,15 @@ export function PlayersTab({
   const [posFilter, setPosFilter] = useState<string>("Todos");
   const [search, setSearch] = useState("");
   const [minPlayed, setMinPlayed] = useState(0);
+  const [hideDrafted, setHideDrafted] = useState(false);
 
   const filtered = useMemo(() => {
     let list = players;
+    // Same check as the draft board: preparing a draft, the question is
+    // almost always about the players still free.
+    if (hideDrafted) {
+      list = list.filter((p) => !p.is_drafted);
+    }
     if (posFilter !== "Todos") {
       list = list.filter((p) => p.position === posFilter);
     }
@@ -59,7 +65,7 @@ export function PlayersTab({
       );
     }
     return sorted(list, sortKey, sortDir);
-  }, [players, posFilter, minPlayed, search, sortKey, sortDir]);
+  }, [players, posFilter, minPlayed, search, sortKey, sortDir, hideDrafted]);
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -239,6 +245,15 @@ export function PlayersTab({
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-1 text-[10px] text-vpv-text-muted">
+          <input
+            type="checkbox"
+            checked={hideDrafted}
+            onChange={(e) => setHideDrafted(e.target.checked)}
+            className="accent-vpv-accent"
+          />
+          Solo no seleccionados
+        </label>
         <button
           onClick={() => downloadCsv(performanceFilename("rendimiento", seasonName), playersToCsv(filtered))}
           disabled={filtered.length === 0}

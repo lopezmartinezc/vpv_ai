@@ -772,6 +772,8 @@ export interface PlayerStatRow {
   started_count: number;
   avg_points: number;
   total_points: number;
+  /** Already owned by a participant — same source as the draft board. */
+  is_drafted?: boolean;
 }
 
 export interface PlayerStatsResponse {
