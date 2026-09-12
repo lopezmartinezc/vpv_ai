@@ -383,6 +383,7 @@ async def get_player_stats(
                 started_count=row.started_count,
                 avg_points=row.avg_points,
                 total_points=row.total_points,
+                is_drafted=row.is_drafted,
             )
             for row in rows
         ],
