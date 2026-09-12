@@ -38,6 +38,8 @@ class PlayerStatRow(BaseModel):
     minutes_played: int
     matchdays_played: int
     started_count: int  # How many matchdays the player was a starter
+    # Already owned by a participant, so the table can hide who is gone.
+    is_drafted: bool = False
     # Points
     avg_points: float  # total_points / matchdays_played
     total_points: int

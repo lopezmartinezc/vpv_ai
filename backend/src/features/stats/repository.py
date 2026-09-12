@@ -54,6 +54,9 @@ class PlayerStatRow:
     started_count: int
     avg_points: float
     total_points: int
+    # Already owned by a participant. Same source as the draft board, so the
+    # two tabs can answer the same question: who is still free.
+    is_drafted: bool = False
 
 
 @dataclass
@@ -208,6 +211,7 @@ class StatsRepository:
                     0,
                 ).label("started_count"),
                 total_pts.label("total_points"),
+                Player.owner_id,
             )
             .join(Player, PlayerStat.player_id == Player.id)
             .join(Team, Player.team_id == Team.id)
@@ -223,6 +227,7 @@ class StatsRepository:
                 Player.photo_path,
                 PlayerStat.position,
                 Team.name,
+                Player.owner_id,
             )
             .order_by(total_pts.desc())
         )
@@ -246,6 +251,7 @@ class StatsRepository:
                 minutes_played=int(row.minutes_played),
                 matchdays_played=int(row.matchdays_played),
                 started_count=int(row.started_count),
+                is_drafted=row.owner_id is not None,
                 avg_points=(
                     round(int(row.total_points) / int(row.matchdays_played), 2)
                     if int(row.matchdays_played) > 0
