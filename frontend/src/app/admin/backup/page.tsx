@@ -54,8 +54,12 @@ export default function BackupPage() {
           Backup de base de datos
         </h2>
         <p className="mb-4 text-sm text-vpv-text-muted">
-          Genera y descarga un volcado completo de la base de datos PostgreSQL
-          (pg_dump). El archivo incluye esquema y datos.
+          Genera y descarga un volcado de la base de datos PostgreSQL (pg_dump).
+          El archivo incluye esquema y datos de todas las tablas de la
+          aplicación. Quedan fuera las copias manuales{" "}
+          <code className="rounded bg-vpv-bg px-1">*_snap_*</code> que dejaron
+          migraciones antiguas: duplican datos que ya están en las tablas
+          reales.
         </p>
 
         {error && (

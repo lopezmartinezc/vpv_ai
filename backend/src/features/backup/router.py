@@ -15,6 +15,17 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/backup", tags=["backup"])
 
+# Ad-hoc snapshot tables — `<table>_snap_<YYYYMMDD_HHMMSS>` — are manual safety
+# copies left behind by past migrations and re-syncs. They hold nothing the real
+# tables do not, and they are not part of the schema.
+#
+# They must be excluded rather than merely skipped: pg_dump takes an ACCESS SHARE
+# lock on every table it dumps, in a single LOCK TABLE statement. One snapshot
+# created by another role (psql as `postgres`, say) is therefore enough to fail
+# the *whole* backup with "permiso denegado a la tabla ...". Leaving them out
+# also keeps the download from carrying a duplicate copy of player_stats.
+SNAPSHOT_TABLES = "*_snap_[0-9]*"
+
 
 @router.post("/admin/download")
 @limiter.limit("3/hour")
@@ -39,6 +50,7 @@ async def download_backup(
         "--no-password",
         "--clean",
         "--if-exists",
+        f"--exclude-table={SNAPSHOT_TABLES}",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         env={"PGPASSWORD": settings.pg_password, "PATH": "/usr/bin:/usr/local/bin"},
