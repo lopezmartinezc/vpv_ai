@@ -2,21 +2,23 @@
 
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { useSeason } from "@/contexts/season-context";
+import { useAuth } from "@/contexts/auth-context";
 import { useDashboardData } from "@/hooks/use-dashboard-data";
 import { useFetch } from "@/hooks/use-fetch";
-import { MatchdayAccordion } from "@/components/dashboard/matchday-accordion";
+import { appliesToCompetition } from "@/lib/competition-scope";
+import { CompetitiveHome } from "@/components/dashboard/competitive-home";
+import { UnavailableNotice } from "@/components/dashboard/unavailable-notice";
 import { Podium } from "@/components/dashboard/podium";
 import { NavCards } from "@/components/dashboard/nav-cards";
 import { CopaWidget } from "@/components/dashboard/copa-widget";
 import { CopaMatchdayWidget } from "@/components/dashboard/copa-matchday-widget";
 import { PagometroJornadaWidget } from "@/components/dashboard/pagometro-jornada-widget";
 import { PagometroWidget } from "@/components/dashboard/pagometro-widget";
-import { DeadlineWidget } from "@/components/dashboard/deadline-widget";
 import { TournamentHero } from "@/components/tournament/tournament-hero";
 import { SkeletonCards } from "@/components/ui/skeleton";
-import type { GroupStandingsResponse } from "@/types";
+import homeStyles from "@/components/dashboard/home.module.css";
 import { Logo } from "@/components/ui/logo";
-import type { MatchdayDetailResponse } from "@/types";
+import type { GroupStandingsResponse, MatchdayDetailResponse } from "@/types";
 
 interface SeasonPaymentEntry {
   id: number;
@@ -27,6 +29,7 @@ interface SeasonPaymentEntry {
 }
 
 export default function Home() {
+  const { user } = useAuth();
   const { selectedSeason, loading: seasonLoading, isTournamentContext } = useSeason();
   const mdCurrent = selectedSeason?.matchday_current ?? null;
   const {
@@ -35,10 +38,10 @@ export default function Home() {
     copaData,
     economy,
     loading,
-  } = useDashboardData(
-    selectedSeason?.id ?? null,
-    mdCurrent,
-  );
+    error,
+    refetch,
+    unavailable,
+  } = useDashboardData(selectedSeason?.id ?? null, mdCurrent);
 
   const { data: groupStandings } = useFetch<GroupStandingsResponse>(
     selectedSeason ? `/standings/${selectedSeason.id}/groups` : null,
@@ -46,10 +49,8 @@ export default function Home() {
 
   // Fetch previous matchday to show when current has no scores yet
   const prevNumber = mdCurrent && mdCurrent > 1 ? mdCurrent - 1 : null;
-  const { data: prevMatchday } = useFetch<MatchdayDetailResponse>(
-    selectedSeason && prevNumber
-      ? `/matchdays/${selectedSeason.id}/${prevNumber}`
-      : null,
+  const { data: prevMatchday, refetch: refreshPrevious } = useFetch<MatchdayDetailResponse>(
+    selectedSeason && prevNumber ? `/matchdays/${selectedSeason.id}/${prevNumber}` : null,
   );
 
   const { data: payments } = useFetch<SeasonPaymentEntry[]>(
@@ -67,16 +68,19 @@ export default function Home() {
     return rules;
   }, [payments]);
 
-  // Determine if deadline has passed (re-checks every 30s via external store)
+  const refreshDashboard = useCallback(() => {
+    refetch();
+    refreshPrevious();
+  }, [refetch, refreshPrevious]);
+
+  // Which matchday the Copa and Pagometro widgets follow (re-checked every 30s).
+  // The lineup and the rivals follow the server's deadline, in CompetitiveHome.
   const firstMatchAt = currentMatchdayDetail?.first_match_at ?? null;
   const dlMin = selectedSeason?.lineup_deadline_min ?? 0;
-  const subscribe = useCallback(
-    (cb: () => void) => {
-      const id = setInterval(cb, 30_000);
-      return () => clearInterval(id);
-    },
-    [],
-  );
+  const subscribe = useCallback((cb: () => void) => {
+    const id = setInterval(cb, 30_000);
+    return () => clearInterval(id);
+  }, []);
   const deadlinePassed = useSyncExternalStore(
     subscribe,
     () => {
@@ -99,7 +103,7 @@ export default function Home() {
   // Show previous matchday until deadline passes, then show current
   const displayMatchday = deadlinePassed
     ? currentMatchdayDetail
-    : prevMatchday ?? currentMatchdayDetail;
+    : (prevMatchday ?? currentMatchdayDetail);
 
   // Pagometro uses whichever matchday is being displayed
   const pagometroMatchday = displayMatchday?.stats_ok ? displayMatchday : null;
@@ -110,11 +114,17 @@ export default function Home() {
   // behavior; the gate fires only on an explicit `false`.
   const economyEnabled = selectedSeason?.weekly_payments_enabled !== false;
 
+  // The Copa is a league competition: the same rule as the menu (IN-04).
+  const copaApplies = appliesToCompetition("/copa", isTournamentContext);
+  const copaStandings = copaApplies ? (copaData?.standings ?? []) : [];
+  const currentCopaMatchday = copaApplies
+    ? (copaData?.matchdays.find(
+        (md) => md.matchday_number === (displayMatchday?.number ?? mdCurrent),
+      ) ?? null)
+    : null;
+
   const leader = standings?.entries[0] ?? null;
-  const copaLeader = copaData?.standings[0] ?? null;
-  const currentCopaMatchday = copaData?.matchdays.find(
-    (md) => md.matchday_number === (displayMatchday?.number ?? mdCurrent),
-  ) ?? null;
+  const copaLeader = copaStandings[0] ?? null;
 
   const navCards = [
     {
@@ -125,14 +135,18 @@ export default function Home() {
         ? `Lider: ${leader.display_name} (${leader.total_points} pts)`
         : "Tabla general",
     },
-    {
-      title: "Copa",
-      href: "/copa",
-      icon: "shield" as const,
-      detail: copaLeader
-        ? `Lider: ${copaLeader.display_name} (${copaLeader.total_points} pts)`
-        : "Competicion Copa",
-    },
+    ...(copaApplies
+      ? [
+          {
+            title: "Copa",
+            href: "/copa",
+            icon: "shield" as const,
+            detail: copaLeader
+              ? `Lider: ${copaLeader.display_name} (${copaLeader.total_points} pts)`
+              : "Competicion Copa",
+          },
+        ]
+      : []),
     {
       title: "Jornadas",
       href: "/jornadas",
@@ -153,100 +167,137 @@ export default function Home() {
       : []),
   ];
 
+  const hasSecondary = Boolean(
+    currentCopaMatchday ||
+    copaStandings.length ||
+    groupStandings?.groups.length ||
+    (economyEnabled &&
+      (economy?.balances.length ||
+        (pagometroMatchday?.scores.length && Object.keys(weeklyRules).length))),
+  );
+
   return (
     <div className="space-y-6">
-      <TournamentHero
-        title="Inicio"
-        subtitle="Bienvenido al fantasy del Mundial"
-        onlyInTournamentContext
-      />
-      {!isTournamentContext && (
+      {!currentMatchdayDetail && (
+        <TournamentHero
+          title="Inicio"
+          subtitle="Bienvenido al fantasy del Mundial"
+          onlyInTournamentContext
+        />
+      )}
+      {!isTournamentContext && !currentMatchdayDetail && (
         <div className="flex items-center gap-4">
           <Logo className="h-16 w-auto text-vpv-accent" />
           {selectedSeason && (
-            <p className="text-sm text-vpv-text-muted">
-              Temporada {selectedSeason.name}
-            </p>
+            <p className="text-sm text-vpv-text-muted">Temporada {selectedSeason.name}</p>
           )}
         </div>
       )}
 
-      {/* Deadline countdown — always for current matchday */}
-      {currentMatchdayDetail && selectedSeason && (
-        <DeadlineWidget
-          firstMatchAt={currentMatchdayDetail.first_match_at}
-          deadlineMin={selectedSeason.lineup_deadline_min}
-          matchdayNumber={currentMatchdayDetail.number}
-        />
+      {error && (
+        <div role="alert" className="rounded-lg border border-vpv-danger p-4 text-sm text-vpv-text">
+          No se pudo cargar el Inicio.{" "}
+          <button type="button" onClick={refetch} className="min-h-11 text-vpv-accent">
+            Reintentar
+          </button>
+        </div>
       )}
-
-      {/* Matchday scores — shows previous if current has no scores yet */}
-      {displayMatchday && selectedSeason && (
-        <MatchdayAccordion
-          data={displayMatchday}
+      <UnavailableNotice sections={unavailable} onRetry={refetch} />
+      {!selectedSeason && (
+        <p className="text-vpv-text-muted">Selecciona una temporada para seguir tu liga.</p>
+      )}
+      {selectedSeason && currentMatchdayDetail && (
+        <CompetitiveHome
+          key={`${selectedSeason.id}:${user?.id ?? "guest"}:${currentMatchdayDetail.number}`}
           seasonId={selectedSeason.id}
+          seasonName={selectedSeason.name}
+          economyEnabled={economyEnabled}
+          isTournament={isTournamentContext}
+          current={currentMatchdayDetail}
+          previous={prevMatchday}
+          authenticated={user !== null}
+          standings={standings?.entries ?? []}
+          onRefresh={refreshDashboard}
         />
       )}
+      {selectedSeason &&
+        !currentMatchdayDetail &&
+        !error &&
+        !unavailable.includes("current_matchday") && (
+          <p className="rounded-lg border border-vpv-card-border p-4 text-vpv-text-muted">
+            No hay información de la jornada disponible.{" "}
+            <button type="button" onClick={refetch} className="min-h-11 text-vpv-accent">
+              Volver a consultar
+            </button>
+          </p>
+        )}
 
-      {standings && standings.entries.length > 0 && (
+      {!currentMatchdayDetail && standings && standings.entries.length > 0 && (
         <Podium entries={standings.entries} seasonId={selectedSeason?.id} />
       )}
 
-      {currentCopaMatchday && (
-        <CopaMatchdayWidget matchday={currentCopaMatchday} />
-      )}
+      {(hasSecondary || !currentMatchdayDetail) && (
+        <section className={homeStyles.secondary} aria-label="Más competiciones y gestión">
+          <h2 className={homeStyles.secondaryTitle}>El resto de tu liga</h2>
+          <div className={homeStyles.secondaryGrid}>
+            {currentCopaMatchday && <CopaMatchdayWidget matchday={currentCopaMatchday} />}
 
-      {copaData && copaData.standings.length > 0 && (
-        <CopaWidget entries={copaData.standings} />
-      )}
+            {copaStandings.length > 0 && <CopaWidget entries={copaStandings} />}
 
-      {economyEnabled &&
-        pagometroMatchday &&
-        pagometroMatchday.scores.length > 0 &&
-        Object.keys(weeklyRules).length > 0 && (
-          <PagometroJornadaWidget
-            scores={pagometroMatchday.scores}
-            matchdayNumber={pagometroMatchday.number}
-            weeklyRules={weeklyRules}
-          />
-        )}
+            {economyEnabled &&
+              pagometroMatchday &&
+              pagometroMatchday.scores.length > 0 &&
+              Object.keys(weeklyRules).length > 0 && (
+                <PagometroJornadaWidget
+                  scores={pagometroMatchday.scores}
+                  matchdayNumber={pagometroMatchday.number}
+                  weeklyRules={weeklyRules}
+                />
+              )}
 
-      {economyEnabled && economy && economy.balances.length > 0 && (
-        <PagometroWidget balances={economy.balances} />
-      )}
+            {economyEnabled && economy && economy.balances.length > 0 && (
+              <PagometroWidget balances={economy.balances} />
+            )}
 
-      {/* Group standings */}
-      {groupStandings && groupStandings.groups.length > 0 && (
-        <div className="rounded-lg border border-vpv-card-border bg-vpv-card overflow-hidden">
-          <div className="border-b border-vpv-border bg-vpv-bg px-4 py-2.5">
-            <h2 className="text-sm font-semibold text-vpv-text">Grupos</h2>
-          </div>
-          <div className="divide-y divide-vpv-border">
-            {groupStandings.groups.map((g) => {
-              const isLast = g.rank === groupStandings.groups.length;
-              return (
-                <div
-                  key={g.group_name}
-                  className={`flex items-center justify-between px-4 py-2.5 ${
-                    isLast ? "bg-red-500/5" : g.rank === 1 ? "bg-amber-400/5" : ""
-                  }`}
-                >
-                  <span className="text-sm font-medium text-vpv-text">
-                    {g.rank === 1 && "\uD83C\uDFC6 "}
-                    {isLast && "\uD83C\uDF55 "}
-                    {g.rank}. {g.group_name}
-                  </span>
-                  <span className="text-sm tabular-nums font-bold text-vpv-text">
-                    {g.avg_points} <span className="text-xs font-normal text-vpv-text-muted">pts/usr</span>
-                  </span>
+            {/* Group standings */}
+            {groupStandings && groupStandings.groups.length > 0 && (
+              <div className="rounded-lg border border-vpv-card-border bg-vpv-card overflow-hidden">
+                <div className="border-b border-vpv-border bg-vpv-bg px-4 py-2.5">
+                  <h2 className="text-sm font-semibold text-vpv-text">Grupos</h2>
                 </div>
-              );
-            })}
+                <div className="divide-y divide-vpv-border">
+                  {groupStandings.groups.map((g) => {
+                    const isLast = g.rank === groupStandings.groups.length;
+                    return (
+                      <div
+                        key={g.group_name}
+                        className={`flex items-center justify-between px-4 py-2.5 ${
+                          isLast ? "bg-red-500/5" : g.rank === 1 ? "bg-amber-400/5" : ""
+                        }`}
+                      >
+                        <span className="text-sm font-medium text-vpv-text">
+                          {g.rank === 1 && "🏆 "}
+                          {isLast && "🍕 "}
+                          {g.rank}. {g.group_name}
+                        </span>
+                        <span className="text-sm tabular-nums font-bold text-vpv-text">
+                          {g.avg_points}{" "}
+                          <span className="text-xs font-normal text-vpv-text-muted">pts/usr</span>
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
-        </div>
+          {!currentMatchdayDetail && (
+            <div className="mt-5">
+              <NavCards cards={navCards} />
+            </div>
+          )}
+        </section>
       )}
-
-      <NavCards cards={navCards} />
     </div>
   );
 }

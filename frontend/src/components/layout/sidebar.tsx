@@ -16,6 +16,7 @@ import {
   resolveCompetitionContexts,
   visibleAdminItems,
 } from "@/lib/admin-nav";
+import { appliesToCompetition } from "@/lib/competition-scope";
 
 interface DeadlineCheck {
   has_lineup: boolean;
@@ -29,22 +30,23 @@ type NavItem = {
   href: string;
   label: string;
   icon: IconName;
-  appliesTo?: "all" | "league" | "tournament";
 };
 
+// Which of these apply to a league or a tournament is decided in
+// lib/competition-scope, shared with the home page.
 const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Inicio", icon: "home" },
   { href: "/clasificacion", label: "Clasificacion", icon: "trophy" },
   { href: "/acierto", label: "Acierto", icon: "clipboard" },
   { href: "/ranking", label: "🏆 Ranking", icon: "medal" },
   // Liga-only
-  { href: "/palmares", label: "Palmares", icon: "medal", appliesTo: "league" },
-  { href: "/copa", label: "Copa", icon: "shield", appliesTo: "league" },
+  { href: "/palmares", label: "Palmares", icon: "medal" },
+  { href: "/copa", label: "Copa", icon: "shield" },
   // Tournament-only (paginas creadas en Fase 6)
-  { href: "/grupos", label: "Grupos", icon: "trophy", appliesTo: "tournament" },
-  { href: "/bracket", label: "Cuadro de eliminatorias", icon: "shuffle", appliesTo: "tournament" },
-  { href: "/playoffs", label: "Playoffs", icon: "medal", appliesTo: "tournament" },
-  { href: "/predicciones", label: "Predicciones", icon: "clipboard", appliesTo: "tournament" },
+  { href: "/grupos", label: "Grupos", icon: "trophy" },
+  { href: "/bracket", label: "Cuadro de eliminatorias", icon: "shuffle" },
+  { href: "/playoffs", label: "Playoffs", icon: "medal" },
+  { href: "/predicciones", label: "Predicciones", icon: "clipboard" },
   // Common
   { href: "/jornadas", label: "Jornadas", icon: "calendar" },
   { href: "/economia", label: "Economia", icon: "coins" },
@@ -68,13 +70,11 @@ export function Sidebar({
   // older bundles don't lose the entry.
   const economyEnabled = selectedSeason?.weekly_payments_enabled !== false;
 
-  const visibleNavItems = NAV_ITEMS.filter((item) => {
-    if (item.href === "/economia" && !economyEnabled) return false;
-    if (!item.appliesTo || item.appliesTo === "all") return true;
-    if (item.appliesTo === "league") return !isTournamentContext;
-    if (item.appliesTo === "tournament") return isTournamentContext;
-    return true;
-  });
+  const visibleNavItems = NAV_ITEMS.filter(
+    (item) =>
+      !(item.href === "/economia" && !economyEnabled) &&
+      appliesToCompetition(item.href, isTournamentContext),
+  );
 
   // Determine which matchday to link "Introducir equipo" to
   const { data: deadlineCheck } = useFetch<DeadlineCheck>(
