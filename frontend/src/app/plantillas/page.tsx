@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense } from "react";
-import Link from "next/link";
+import { SeasonLink as Link } from "@/components/ui/season-link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";

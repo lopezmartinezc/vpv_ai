@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { SeasonLink as Link } from "@/components/ui/season-link";
 import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
 import { SeasonSelector } from "@/components/layout/season-selector";

@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
+import { SeasonLink as Link } from "@/components/ui/season-link";
 import { useAuth } from "@/contexts/auth-context";
 import { useSeason } from "@/contexts/season-context";
 import { ThemeToggle } from "@/components/ui/theme-toggle";

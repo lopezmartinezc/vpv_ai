@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { SeasonLink as Link } from "@/components/ui/season-link";
 import type { CopaMatchdayDetail } from "@/types";
 
 function ResultLabel({ points }: { points: number }) {

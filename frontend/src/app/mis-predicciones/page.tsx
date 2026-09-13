@@ -1,5 +1,6 @@
 "use client";
 
+import { SeasonLink } from "@/components/ui/season-link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSeason } from "@/contexts/season-context";
 import { useAuth } from "@/contexts/auth-context";
@@ -233,12 +234,12 @@ function PrediccionesContent() {
       />
 
       <div className="flex justify-end">
-        <a
+        <SeasonLink
           href="/predicciones"
           className="text-xs text-vpv-text-muted hover:text-vpv-text"
         >
           ← Ver predicciones de todos
-        </a>
+        </SeasonLink>
       </div>
 
       {/* Step tabs */}

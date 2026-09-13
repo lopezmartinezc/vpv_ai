@@ -1,5 +1,6 @@
 "use client";
 
+import { SeasonLink } from "@/components/ui/season-link";
 import { Fragment, useMemo, useState } from "react";
 import { useSeason } from "@/contexts/season-context";
 import { useAuth } from "@/contexts/auth-context";
@@ -96,12 +97,12 @@ function PrediccionesContent() {
           )}
         </div>
         {isLogged && (
-          <a
+          <SeasonLink
             href="/mis-predicciones"
             className="rounded-md bg-vpv-accent px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-vpv-accent/80"
           >
             {status?.locked === true ? "Ver mi predicción" : "Mis predicciones"}
-          </a>
+          </SeasonLink>
         )}
       </div>
 

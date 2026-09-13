@@ -20,6 +20,7 @@ export function SeasonSelector() {
 
   return (
     <select
+      aria-label="Temporada"
       value={selectedSeason.id}
       onChange={(e) => selectSeason(Number(e.target.value))}
       className="rounded-md border border-vpv-border bg-vpv-card px-3 py-1.5 text-sm text-vpv-text focus:border-vpv-accent focus:outline-none"

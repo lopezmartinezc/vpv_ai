@@ -1,5 +1,6 @@
 "use client";
 
+import { SeasonLink } from "@/components/ui/season-link";
 import { useCallback, useEffect, useState } from "react";
 
 import { apiClient } from "@/lib/api-client";
@@ -342,12 +343,12 @@ export function PlayoffsCard({
           {status === "completed"
             ? "Playoff finalizado."
             : "Eliminatorias en curso."}{" "}
-          <a
+          <SeasonLink
             href="/playoffs"
             className="text-vpv-accent underline-offset-2 hover:underline"
           >
             Ver detalle público
-          </a>
+          </SeasonLink>
           .
         </p>
       )}
