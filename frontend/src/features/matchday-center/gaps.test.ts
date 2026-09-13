@@ -39,6 +39,8 @@ const base: MatchdayState = {
   scrape_errors: [],
   blockers: [],
   can_close: true,
+  requires_economy: false,
+  missing_permission: null,
   preview: {
     season_id: 12,
     matchday_number: 6,
@@ -105,6 +107,26 @@ describe("closeAllowed", () => {
     // The panel must not start arguing with the API.
     expect(closeAllowed(withState({ can_close: true, blockers: ["algo"] }))).toBe(true);
     expect(closeAllowed(withState({ can_close: false, blockers: [] }))).toBe(false);
+  });
+});
+
+describe("closeAllowed for a delegate without Economía", () => {
+  const needsEconomy = withState({
+    can_close: true,
+    requires_economy: true,
+    missing_permission: "Este cierre generaría los pagos semanales: necesitas también el permiso de Economía.",
+  });
+
+  it("refuses when the server says this user lacks the permission", () => {
+    expect(closeAllowed(needsEconomy)).toBe(false);
+  });
+
+  it("says so in the headline instead of 'Lista para cerrar'", () => {
+    expect(headline(needsEconomy)).toBe("Lista, pero requiere Economía");
+  });
+
+  it("allows it when the same close needs no extra permission", () => {
+    expect(closeAllowed(withState({ can_close: true, missing_permission: null }))).toBe(true);
   });
 });
 

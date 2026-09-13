@@ -26,9 +26,12 @@ from src.features.auth.service import _create_token
 from src.shared.models.user import User
 from src.shared.permissions import Perm
 
-# Any gated route works; this one is cheap and needs no season to exist,
-# because authorisation is checked before the handler runs.
-GATED = "/api/stats/1/fixtures?desde=1&jornadas=1"
+# Any route behind a delegable permission works; this one is cheap and needs no
+# season to exist, because authorisation is checked before the handler runs.
+# (It used to be a /stats route under STATS — analytics became admin only, so
+# STATS no longer opens anything there to revoke.)
+GATED = "/api/matchdays/admin/1/1/estado"
+DELEGABLE = Perm.MATCHDAYS
 FORBIDDEN = 403
 
 
@@ -56,7 +59,7 @@ def auth(token: str) -> dict[str, str]:
 async def test_revoking_a_permission_takes_effect_on_the_next_request(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    user, token = await make_user(db_session, is_admin=False, permissions=int(Perm.STATS))
+    user, token = await make_user(db_session, is_admin=False, permissions=int(DELEGABLE))
 
     user.permissions = 0
     await db_session.flush()
@@ -86,7 +89,7 @@ async def test_granting_a_permission_also_takes_effect_without_a_new_token(
     user, token = await make_user(db_session, is_admin=False, permissions=0)
     assert (await client.get(GATED, headers=auth(token))).status_code == FORBIDDEN
 
-    user.permissions = int(Perm.STATS)
+    user.permissions = int(DELEGABLE)
     await db_session.flush()
 
     assert (await client.get(GATED, headers=auth(token))).status_code != FORBIDDEN
@@ -97,7 +100,7 @@ async def test_an_untouched_permission_still_works(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     """The guard must not break the ordinary case."""
-    _, token = await make_user(db_session, is_admin=False, permissions=int(Perm.STATS))
+    _, token = await make_user(db_session, is_admin=False, permissions=int(DELEGABLE))
 
     assert (await client.get(GATED, headers=auth(token))).status_code != FORBIDDEN
 

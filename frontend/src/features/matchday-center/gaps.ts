@@ -84,14 +84,15 @@ export function hiddenExampleCount(gap: Gap): number {
 }
 
 /**
- * Whether the close button may be pressed.
+ * Whether the close button may be pressed — by *this* user.
  *
- * The server decides, not this. `can_close` is computed there alongside the
- * blockers, so a panel that disagreed with the API would only be lying to the
- * person pressing the button.
+ * The server decides, not this. `can_close` says whether the jornada can close;
+ * `missing_permission` says whether this user may do it (a close that pays out
+ * needs ECONOMY as well). Both are computed there, so a panel that disagreed
+ * with the API would only be lying to the person pressing the button.
  */
 export function closeAllowed(state: MatchdayState): boolean {
-  return state.can_close;
+  return state.can_close && !state.missing_permission;
 }
 
 /**
@@ -108,7 +109,8 @@ export function closeMovesMoney(state: MatchdayState): boolean {
 /** One line saying where the jornada stands, for the panel header. */
 export function headline(state: MatchdayState): string {
   if (state.status === "finished") return "Jornada cerrada";
-  if (state.can_close) return "Lista para cerrar";
+  if (state.can_close)
+    return state.missing_permission ? "Lista, pero requiere Economía" : "Lista para cerrar";
   const blocking = gapsOf(state).filter((g) => g.blocking);
   if (blocking.length === 0) return "En curso";
   const total = blocking.reduce((n, g) => n + g.count, 0);

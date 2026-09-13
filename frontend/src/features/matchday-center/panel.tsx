@@ -224,7 +224,8 @@ export function MatchdayCenterPanel({
           <div className="mt-4 border-t border-vpv-card-border pt-4">
             {!allowed ? (
               <p className="text-xs text-vpv-text-muted">
-                No se puede cerrar todavía: {state.blockers.join(" ")}
+                {state.missing_permission ??
+                  `No se puede cerrar todavía: ${state.blockers.join(" ")}`}
               </p>
             ) : confirming ? (
               <div className="space-y-2">
