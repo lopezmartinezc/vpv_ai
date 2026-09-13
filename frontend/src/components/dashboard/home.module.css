@@ -617,3 +617,25 @@
     transition: none;
   }
 }
+/* Your eleven, open without a click. */
+.yourLineup {
+  padding: 14px 18px 10px;
+}
+.yourLineupHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.yourLineupTotal {
+  font-size: 18px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--home-ink);
+}
+.yourLineupNote {
+  font-size: 13px;
+  color: var(--home-muted);
+  padding: 4px 0 8px;
+}

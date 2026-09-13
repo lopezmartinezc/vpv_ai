@@ -104,6 +104,7 @@ function PlayerLine({
   points,
   b,
   bench = false,
+  compact = false,
 }: {
   name: string;
   position: string;
@@ -112,6 +113,8 @@ function PlayerLine({
   points: number;
   b: Breakdown | null | undefined;
   bench?: boolean;
+  /** One line per player: a pending one shows ◷ instead of a note below it. */
+  compact?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const hasBreakdown = b !== null && b !== undefined;
@@ -137,18 +140,29 @@ function PlayerLine({
         </span>
         <span className="text-xs text-vpv-text-muted">{team}</span>
         <span className="w-8 text-right font-bold tabular-nums text-vpv-text">
-          {hasBreakdown ? points : "—"}
+          {hasBreakdown ? (
+            points
+          ) : compact ? (
+            <>
+              <span aria-hidden="true">◷</span>
+              <span className="sr-only">pendiente de puntuar</span>
+            </>
+          ) : (
+            "—"
+          )}
         </span>
         {hasBreakdown ? <ChevronIcon open={expanded} /> : <span className="w-4" />}
       </button>
 
-      {!hasBreakdown && <p className="ml-8 text-xs text-vpv-text-muted">Sin desglose disponible</p>}
+      {!hasBreakdown && !compact && (
+        <p className="ml-8 text-xs text-vpv-text-muted">Sin desglose disponible</p>
+      )}
       {expanded && hasBreakdown && <BreakdownGrid b={b} />}
     </div>
   );
 }
 
-function PlayerRow({ player }: { player: LineupPlayerEntry }) {
+function PlayerRow({ player, compact }: { player: LineupPlayerEntry; compact?: boolean }) {
   return (
     <PlayerLine
       name={player.player_name}
@@ -157,11 +171,12 @@ function PlayerRow({ player }: { player: LineupPlayerEntry }) {
       photo={player.photo_path}
       points={player.points}
       b={player.score_breakdown}
+      compact={compact}
     />
   );
 }
 
-function BenchPlayerRow({ player }: { player: BenchPlayerEntry }) {
+function BenchPlayerRow({ player, compact }: { player: BenchPlayerEntry; compact?: boolean }) {
   return (
     <PlayerLine
       name={player.player_name}
@@ -171,7 +186,63 @@ function BenchPlayerRow({ player }: { player: BenchPlayerEntry }) {
       points={player.matchday_points}
       b={player.score_breakdown}
       bench
+      compact={compact}
     />
+  );
+}
+
+/**
+ * A lineup: the eleven with their points, the total and the bench. Shared by
+ * the comparison and your own eleven, so both read a player the same way.
+ * Compact folds the bench and marks a player still to be scored with ◷.
+ */
+export function LineupPlayers({
+  lineup,
+  compact = false,
+}: {
+  lineup: LineupDetailResponse;
+  compact?: boolean;
+}) {
+  const bench = (
+    <div className="divide-y divide-vpv-border/30">
+      {lineup.bench.map((p) => (
+        <BenchPlayerRow key={p.player_id} player={p} compact={compact} />
+      ))}
+    </div>
+  );
+  const benchTitle = `Banquillo (${lineup.bench.length})`;
+
+  return (
+    <div>
+      <div className="divide-y divide-vpv-border/50">
+        {lineup.players.map((p) => (
+          <PlayerRow key={p.player_id} player={p} compact={compact} />
+        ))}
+        {!compact && (
+          <div className="flex items-center justify-between pt-2 text-sm font-bold text-vpv-text">
+            <span>Total</span>
+            <span className="tabular-nums">{lineup.total_points}</span>
+          </div>
+        )}
+      </div>
+
+      {lineup.bench.length > 0 &&
+        (compact ? (
+          <details className="mt-2 border-t border-vpv-border pt-2">
+            <summary className="min-h-8 cursor-pointer text-[11px] font-semibold uppercase tracking-wider text-vpv-text-muted">
+              {benchTitle}
+            </summary>
+            {bench}
+          </details>
+        ) : (
+          <div className="mt-3 border-t border-vpv-border pt-2">
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted">
+              {benchTitle}
+            </p>
+            {bench}
+          </div>
+        ))}
+    </div>
   );
 }
 
@@ -274,32 +345,7 @@ function AccordionRow({
             </p>
           )}
 
-          {lineup && (
-            <div>
-              <div className="divide-y divide-vpv-border/50">
-                {lineup.players.map((p) => (
-                  <PlayerRow key={p.player_id} player={p} />
-                ))}
-                <div className="flex items-center justify-between pt-2 text-sm font-bold text-vpv-text">
-                  <span>Total</span>
-                  <span className="tabular-nums">{lineup.total_points}</span>
-                </div>
-              </div>
-
-              {lineup.bench.length > 0 && (
-                <div className="mt-3 border-t border-vpv-border pt-2">
-                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-vpv-text-muted">
-                    Banquillo ({lineup.bench.length})
-                  </p>
-                  <div className="divide-y divide-vpv-border/30">
-                    {lineup.bench.map((p) => (
-                      <BenchPlayerRow key={p.player_id} player={p} />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+          {lineup && <LineupPlayers lineup={lineup} />}
 
           {!loading && !hidden && (error || !lineup) && (
             <p className="py-2 text-xs text-vpv-text-muted">

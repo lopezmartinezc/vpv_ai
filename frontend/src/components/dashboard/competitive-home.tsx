@@ -11,6 +11,7 @@ import { MatchdayAccordion } from "./matchday-accordion";
 import { MatchdayIncidents } from "./matchday-incidents";
 import { PersonalPlayoff, type PlayoffPhase } from "./personal-playoff";
 import { Podium } from "./podium";
+import { YourLineup } from "./your-lineup";
 import { YourMatchday } from "./your-matchday";
 import styles from "./home.module.css";
 
@@ -169,6 +170,14 @@ export function CompetitiveHome({
 
       <div className={styles.layout} data-home-layout>
         <div className={styles.main} data-home-main>
+          {participantId !== null && displayed && (
+            <YourLineup
+              seasonId={seasonId}
+              matchdayNumber={displayed.number}
+              participantId={participantId}
+              refreshKey={refreshKey}
+            />
+          )}
           {participantId !== null && (
             <PersonalPlayoff
               seasonId={seasonId}

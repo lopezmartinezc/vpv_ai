@@ -23,6 +23,9 @@ vi.mock("./personal-playoff", () => ({
     </p>
   ),
 }));
+vi.mock("./your-lineup", () => ({
+  YourLineup: ({ matchdayNumber }: { matchdayNumber: number }) => <p>Tu once J{matchdayNumber}</p>,
+}));
 vi.mock("./matchday-incidents", () => ({
   MatchdayIncidents: ({ matchdayNumber }: { matchdayNumber: number }) => (
     <p>Incidencias J{matchdayNumber}</p>
@@ -148,6 +151,15 @@ describe("the matchday in play", () => {
     const card = await screen.findByRole("region", { name: "Tu jornada · J3" });
     expect(card).toHaveTextContent("12 pts");
     expect(card).not.toHaveTextContent("40");
+  });
+
+  it("opens your eleven of the matchday in play, for you only", async () => {
+    mockMe();
+    const { unmount } = render(<CompetitiveHome {...props} previous={inPlay} />);
+    expect(await screen.findByText("Tu once J3")).toBeInTheDocument();
+    unmount();
+    render(<CompetitiveHome {...props} authenticated={false} />);
+    expect(screen.queryByText(/Tu once/)).not.toBeInTheDocument();
   });
 
   it("gives a visitor no personal card", () => {
