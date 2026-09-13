@@ -19,60 +19,24 @@
   outline: 3px solid var(--color-accent);
   outline-offset: 4px;
 }
+/* One line: the matchday, and the season beside it. */
 .header {
   display: flex;
-  justify-content: space-between;
-  gap: 24px;
-  align-items: center;
-  padding: 6px 0 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
 }
 .eyebrow {
-  color: var(--home-link);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  font-weight: 750;
-  margin-bottom: 9px;
+  color: var(--home-muted);
+  font-size: 13px;
+  font-weight: 600;
 }
 .title {
-  font-size: clamp(28px, 3.7vw, 44px);
-  line-height: 1.08;
+  font-size: 26px;
+  line-height: 1.15;
   font-weight: 800;
-  letter-spacing: -0.055em;
+  letter-spacing: -0.04em;
   color: var(--home-ink);
-}
-.subtitle {
-  font-size: 14px;
-  color: var(--home-muted);
-  margin-top: 10px;
-}
-.refresh {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 7px;
-  flex-shrink: 0;
-}
-.refresh button {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 0 15px;
-  border: 1px solid var(--home-line);
-  border-radius: 10px;
-  font-size: 12px;
-  font-weight: 650;
-  background: var(--color-card);
-  color: var(--home-ink);
-  cursor: pointer;
-}
-.refresh button:hover {
-  border-color: var(--color-accent);
-}
-.refresh small {
-  font-size: 10px;
-  color: var(--home-muted);
 }
 .metrics {
   display: grid;
@@ -542,36 +506,11 @@
   .home {
     gap: 16px;
   }
-  .header {
-    align-items: start;
-    flex-wrap: wrap;
-    gap: 13px;
-    padding-top: 0;
-  }
   .title {
-    font-size: 30px;
-  }
-  .subtitle {
-    font-size: 12px;
-    margin-top: 7px;
+    font-size: 22px;
   }
   .eyebrow {
-    font-size: 10px;
-    margin-bottom: 8px;
-  }
-  .refresh {
-    flex-direction: row;
-    align-items: center;
-    width: 100%;
-    gap: 12px;
-  }
-  .refresh button {
-    min-height: 44px;
-    font-size: 11px;
-    padding: 0 11px;
-  }
-  .refresh small {
-    font-size: 10px;
+    font-size: 12px;
   }
   .metrics {
     border-radius: 11px;
