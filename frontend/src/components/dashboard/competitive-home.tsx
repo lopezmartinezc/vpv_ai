@@ -13,21 +13,17 @@ import { PersonalPlayoff, type PlayoffPhase } from "./personal-playoff";
 import { Podium } from "./podium";
 import styles from "./home.module.css";
 
-interface DeadlineStatus {
-  has_lineup: boolean;
-  deadline_at: string | null;
-  minutes_remaining: number | null;
-  matchday_number: number;
-}
-
-// Only the server's effective deadline is used, including explicit overrides.
+/**
+ * Whether the lineup deadline has passed. Only the server's effective deadline
+ * counts (overrides included): the first kick-off can be an early match played
+ * days before the rest. No deadline, or an unreadable one, is "unknown".
+ */
 export function isDeadlinePassed(
-  status: DeadlineStatus | null,
-  matchday: number,
+  deadlineAt: string | null | undefined,
   now: number,
 ): boolean | null {
-  if (!status || status.matchday_number !== matchday || !status.deadline_at) return null;
-  const time = Date.parse(status.deadline_at);
+  if (!deadlineAt) return null;
+  const time = Date.parse(deadlineAt);
   return Number.isFinite(time) ? now >= time : null;
 }
 
@@ -47,6 +43,7 @@ export function CompetitiveHome({
   economyEnabled?: boolean;
   /** Tournaments have no Copa: the shortcuts follow the same rule as the menu. */
   isTournament?: boolean;
+  /** The season's current matchday: the one whose lineup is being set. */
   current: MatchdayDetailResponse;
   previous: MatchdayDetailResponse | null;
   authenticated: boolean;
@@ -56,19 +53,14 @@ export function CompetitiveHome({
   const me = useFetch<MyLineupResponse>(
     authenticated ? `/lineups/${seasonId}/${current.number}/me` : null,
   );
-  const deadline = useFetch<DeadlineStatus>(
-    authenticated ? `/lineups/${seasonId}/deadline-status` : null,
-  );
   const [refreshKey, setRefreshKey] = useState(0);
   const refreshMe = me.refetch;
-  const refreshDeadline = deadline.refetch;
   // The home asks again every minute on its own; a button for it only took room.
   const refresh = useCallback(() => {
     refreshMe();
-    refreshDeadline();
     onRefresh();
     setRefreshKey((value) => value + 1);
-  }, [refreshMe, refreshDeadline, onRefresh]);
+  }, [refreshMe, onRefresh]);
   useEffect(() => {
     const timer = setInterval(refresh, 60_000);
     return () => clearInterval(timer);
@@ -79,17 +71,22 @@ export function CompetitiveHome({
   }, []);
   const passed = useSyncExternalStore(
     subscribe,
-    () => isDeadlinePassed(authenticated ? deadline.data : null, current.number, Date.now()),
+    () => isDeadlinePassed(current.deadline_at, Date.now()),
     () => null,
   );
   const final = isMatchdayFinal(current);
   const showCurrent = passed === true || final;
-  const playoffPhase: PlayoffPhase = final ? "final" : showCurrent ? "during" : "before";
-  const displayed = showCurrent
-    ? current
-    : previous && isMatchdayFinal(previous)
-      ? previous
-      : null;
+  // The matchday in play: until the current one's deadline, the previous one —
+  // closed or still being played — while you set the lineup for the current.
+  const displayed = showCurrent ? current : previous;
+  // The playoff follows the same matchday: a duel still being played, or else
+  // the next rival.
+  const playoff: { number: number; phase: PlayoffPhase; scores?: MatchdayDetailResponse["scores"] } =
+    showCurrent
+      ? { number: current.number, phase: final ? "final" : "during", scores: current.scores }
+      : displayed && !isMatchdayFinal(displayed)
+        ? { number: displayed.number, phase: "during", scores: displayed.scores }
+        : { number: current.number, phase: "before" };
   const personal = authenticated ? me.data : null;
   const participantId = personal?.participant_id ?? null;
   const position = standings.find((entry) => entry.participant_id === participantId);
@@ -114,7 +111,7 @@ export function CompetitiveHome({
   return (
     <section className={styles.home} aria-label="Tu jornada y tus rivales">
       <header className={styles.header}>
-        <h1 className={styles.title}>Jornada {current.number}</h1>
+        <h1 className={styles.title}>Jornada {displayed?.number ?? current.number}</h1>
         <p className={styles.eyebrow}>{seasonName}</p>
       </header>
 
@@ -154,10 +151,10 @@ export function CompetitiveHome({
           <div>
             <h2>Mi alineación · J{current.number}</h2>
             <p className={styles.lineupState}>{lineupState}</p>
-            {passed === false && deadline.data?.deadline_at && (
+            {passed === false && current.deadline_at && (
               <p className={styles.lineupHint}>
                 Cierre:{" "}
-                {new Date(deadline.data.deadline_at).toLocaleString("es-ES", {
+                {new Date(current.deadline_at).toLocaleString("es-ES", {
                   timeZone: "Europe/Madrid",
                 })}{" "}
                 (Madrid)
@@ -187,21 +184,15 @@ export function CompetitiveHome({
           {participantId !== null && (
             <PersonalPlayoff
               seasonId={seasonId}
-              matchdayNumber={current.number}
+              matchdayNumber={playoff.number}
               participantId={participantId}
-              phase={playoffPhase}
-              scores={showCurrent ? current.scores : undefined}
+              phase={playoff.phase}
+              scores={playoff.scores}
               refreshKey={refreshKey}
             />
           )}
           {displayed ? (
             <>
-              {!showCurrent && (
-                <p className={styles.previous}>
-                  Últimos resultados disponibles · J{displayed.number}. La próxima jornada es J
-                  {current.number}.
-                </p>
-              )}
               <MatchdayAccordion
                 key={`${seasonId}:${displayed.number}`}
                 refreshKey={refreshKey}
@@ -218,8 +209,7 @@ export function CompetitiveHome({
             </>
           ) : (
             <p className={`${styles.card} ${styles.empty}`}>
-              La comparación de esta jornada aparecerá cuando se verifique el cierre. Todavía no hay
-              resultados anteriores disponibles.
+              La comparación de esta jornada aparecerá cuando cierre el plazo de alineación.
             </p>
           )}
         </div>

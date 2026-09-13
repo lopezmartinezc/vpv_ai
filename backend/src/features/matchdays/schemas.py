@@ -48,6 +48,9 @@ class MatchdayDetailResponse(BaseModel):
     counts: bool
     stats_ok: bool
     first_match_at: datetime | None
+    # The effective lineup deadline (override, or kick-off minus the margin), so
+    # every screen answers "has it passed?" the same way, visitors included.
+    deadline_at: datetime | None = None
     matches: list[MatchEntry]
     scores: list[ParticipantScore]
 

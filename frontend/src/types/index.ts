@@ -241,6 +241,11 @@ export interface MatchdayDetailResponse {
   counts: boolean;
   stats_ok: boolean;
   first_match_at: string | null;
+  /**
+   * The effective lineup deadline: override, or kick-off minus the margin.
+   * Absent from an older API; null when the server has no information.
+   */
+  deadline_at?: string | null;
   matches: MatchEntry[];
   scores: ParticipantScore[];
 }
