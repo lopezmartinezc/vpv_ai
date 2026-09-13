@@ -1565,3 +1565,48 @@ export interface RankingsResponse {
   /** Tournaments only; null for leagues. */
   survivors?: SurvivorsResponse | null;
 }
+
+// ---------------------------------------------------------------------------
+// Matchday centre — GET /matchdays/admin/{season_id}/{number}/estado
+// ---------------------------------------------------------------------------
+
+/** What one step of closing did, or would do. */
+export interface CloseStep {
+  name: string;
+  /** hecho | ya_estaba | bloqueado */
+  outcome: string;
+  detail: string;
+}
+
+export interface CloseReport {
+  season_id: number;
+  matchday_number: number;
+  dry_run: boolean;
+  closed: boolean;
+  blockers: string[];
+  steps: CloseStep[];
+}
+
+export interface MatchdayState {
+  season_id: number;
+  matchday_number: number;
+  matchday_id: number;
+  status: string;
+  counts: boolean;
+  stats_ok: boolean;
+  deadline_at: string | null;
+  is_current: boolean;
+  matches_total: number;
+  matches_counting: number;
+  matches_without_result: string[];
+  matches_without_stats: string[];
+  participants_total: number;
+  lineups_missing: string[];
+  ratings_missing: number;
+  last_scrape_at: string | null;
+  scrape_errors: string[];
+  blockers: string[];
+  can_close: boolean;
+  /** What closing would do right now, computed server-side without doing it. */
+  preview: CloseReport;
+}
