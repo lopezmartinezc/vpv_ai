@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
+from html import escape
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,9 +19,11 @@ from src.features.scraping.client import ScrapingClient, ScrapingError
 from src.features.scraping.live_events import (
     EVENT_EMOJI,
     EVENT_LABEL,
+    LiveEvent,
     parse_live_events,
 )
 from src.features.scraping.log_buffer import scraping_log
+from src.shared.models.lineup import Lineup, LineupPlayer
 from src.shared.models.matchday import Match, Matchday
 from src.shared.models.participant import SeasonParticipant
 from src.shared.models.player import Player
@@ -31,9 +34,57 @@ logger = logging.getLogger(__name__)
 
 _JOB_ID = "live_monitor"
 
+BURGER = "\U0001f354"  # 🍔
+
 # In-memory deduplication: match_id → set of (minute, event_type, player_slug)
 _sent_events: dict[int, set[tuple[str, str, str]]] = {}
 _last_run_at: datetime | None = None
+
+
+def is_burger_goal(
+    event_type: str,
+    player: Player | None,
+    matchday_counts: bool,
+    match_counts: bool,
+    lined_up: set[tuple[int, int]],
+) -> bool:
+    """Whether a goal is a 🍔: its scorer belongs to someone who left him out.
+
+    The same rule as the burger ranking (``burger_ranking/service.py``): the
+    player is owned, his owner did not field him in that matchday's eleven —
+    no lineup at all included — and both the matchday and the fixture count.
+    ``lined_up`` holds the (participant_id, player_id) pairs of that matchday.
+    """
+    if event_type != "goal" or player is None or player.owner_id is None:
+        return False
+    if not (matchday_counts and match_counts):
+        return False
+    return (player.owner_id, player.id) not in lined_up
+
+
+def format_live_alert(
+    event: LiveEvent,
+    *,
+    home_team: str,
+    away_team: str,
+    score: str,
+    matchday_number: int,
+    owner_name: str | None,
+    burger: bool = False,
+) -> str:
+    """The Telegram message for one live event (HTML parse mode)."""
+    emoji = EVENT_EMOJI.get(event.event_type, "") + (BURGER if burger else "")
+    label = EVENT_LABEL.get(event.event_type, event.event_type)
+    owner_line = ""
+    if owner_name is not None:
+        owner_line = f"\nPropietario: {escape(owner_name)}"
+        if burger:
+            owner_line += f" — {BURGER} no estaba en su once"
+    return (
+        f"{emoji} <b>{label}</b> — {escape(event.player_name)} ({event.minute})\n"
+        f"{escape(home_team)} {score} {escape(away_team)} | J{matchday_number}"
+        f"{owner_line}"
+    )
 
 
 async def live_match_monitor() -> None:
@@ -60,7 +111,8 @@ async def _check_live_matches(session: AsyncSession) -> None:
         return
 
     now = datetime.now(UTC)
-    live_matches: list[tuple[Match, int]] = []  # (match, matchday_number)
+    # (match, matchday_number, matchday_counts)
+    live_matches: list[tuple[Match, int, bool]] = []
 
     # Find ALL live matches across any matchday (not just current)
     # by querying matches with played_at in the live window
@@ -68,7 +120,7 @@ async def _check_live_matches(session: AsyncSession) -> None:
     live_window_end = now + timedelta(minutes=15)
 
     stmt = (
-        select(Match, Matchday.number)
+        select(Match, Matchday.number, Matchday.counts)
         .join(Matchday, Match.matchday_id == Matchday.id)
         .where(
             Matchday.season_id == season.id,
@@ -79,8 +131,8 @@ async def _check_live_matches(session: AsyncSession) -> None:
         )
     )
     result = await session.execute(stmt)
-    for match, md_number in result.all():
-        live_matches.append((match, md_number))
+    for match, md_number, md_counts in result.all():
+        live_matches.append((match, md_number, md_counts))
 
     if not live_matches:
         # Cleanup all sent events when no live matches
@@ -98,8 +150,11 @@ async def _check_live_matches(session: AsyncSession) -> None:
     # Build team name map
     team_map = await _build_team_map(session, season.id)
 
+    # Who fielded whom in the matchdays being played, to tell a 🍔 goal
+    lined_up = await _lined_up_by_matchday(session, {m.matchday_id for m, _, _ in live_matches})
+
     async with ScrapingClient() as client:
-        for match, md_number in live_matches:
+        for match, md_number, md_counts in live_matches:
             try:
                 html = await client.fetch(match.source_url)  # type: ignore[arg-type]
             except ScrapingError:
@@ -144,10 +199,8 @@ async def _check_live_matches(session: AsyncSession) -> None:
             from src.features.telegram.alerts_config import is_live_event_enabled
 
             for event in new_events:
-                from html import escape
-
                 info = player_map.get(event.player_slug)
-                _player, owner_name = info if info else (None, None)
+                player, owner_name = info if info else (None, None)
 
                 is_vpv = owner_name is not None
                 if not is_vpv and event.event_type not in always_send:
@@ -161,17 +214,22 @@ async def _check_live_matches(session: AsyncSession) -> None:
                     seen.add(event.dedup_key)
                     continue
 
-                emoji = EVENT_EMOJI.get(event.event_type, "")
                 label = EVENT_LABEL.get(event.event_type, event.event_type)
-                safe_name = escape(event.player_name)
-                safe_home = escape(home_team)
-                safe_away = escape(away_team)
-
-                owner_line = f"\nPropietario: {escape(owner_name or '')}" if is_vpv else ""
-                msg = (
-                    f"{emoji} <b>{label}</b> \u2014 {safe_name} ({event.minute})\n"
-                    f"{safe_home} {score} {safe_away} | J{md_number}"
-                    f"{owner_line}"
+                burger = is_burger_goal(
+                    event.event_type,
+                    player,
+                    md_counts,
+                    match.counts,
+                    lined_up.get(match.matchday_id, set()),
+                )
+                msg = format_live_alert(
+                    event,
+                    home_team=home_team,
+                    away_team=away_team,
+                    score=score,
+                    matchday_number=md_number,
+                    owner_name=owner_name,
+                    burger=burger,
                 )
 
                 sent = await _send_telegram(session, msg, season_id=season.id)
@@ -180,7 +238,8 @@ async def _check_live_matches(session: AsyncSession) -> None:
                     sends_this_tick += 1
                     scraping_log(
                         _JOB_ID,
-                        f"Enviado: {label} {event.player_name} ({event.minute}) -> {owner_name}",
+                        f"Enviado: {label} {event.player_name} ({event.minute}) -> {owner_name}"
+                        f"{' (hamburguesa)' if burger else ''}",
                     )
                     if sends_this_tick >= 5:
                         break  # max 5 per tick, rest will be sent next tick
@@ -194,7 +253,7 @@ async def _check_live_matches(session: AsyncSession) -> None:
                     # Will retry on next tick
 
     # Cleanup finished matches from dedup cache
-    live_match_ids = {m.id for m, _ in live_matches}
+    live_match_ids = {m.id for m, _, _ in live_matches}
     for mid in list(_sent_events.keys()):
         if mid not in live_match_ids:
             del _sent_events[mid]
@@ -215,6 +274,24 @@ async def _build_player_map(
     for player, display_name in result.all():
         mapping[player.slug] = (player, display_name)
     return mapping
+
+
+async def _lined_up_by_matchday(
+    session: AsyncSession, matchday_ids: set[int]
+) -> dict[int, set[tuple[int, int]]]:
+    """matchday_id → the (participant_id, player_id) pairs in its lineups."""
+    if not matchday_ids:
+        return {}
+    stmt = (
+        select(Lineup.matchday_id, Lineup.participant_id, LineupPlayer.player_id)
+        .join(LineupPlayer, LineupPlayer.lineup_id == Lineup.id)
+        .where(Lineup.matchday_id.in_(matchday_ids))
+    )
+    result = await session.execute(stmt)
+    fielded: dict[int, set[tuple[int, int]]] = {}
+    for matchday_id, participant_id, player_id in result.all():
+        fielded.setdefault(matchday_id, set()).add((participant_id, player_id))
+    return fielded
 
 
 async def _build_team_map(session: AsyncSession, season_id: int) -> dict[int, str]:
