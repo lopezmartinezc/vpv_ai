@@ -2,12 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "@/lib/api-client";
-
-interface SeasonSummary {
-  id: number;
-  name: string;
-  status: string;
-}
+import { useSeason } from "@/contexts/season-context";
 
 interface ParticipantBalance {
   participant_id: number;
@@ -73,10 +68,11 @@ function sortTransactions(txs: TransactionEntry[]): {
 }
 
 export default function AdminEconomiaPage() {
-  const [seasons, setSeasons] = useState<SeasonSummary[]>([]);
-  const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
+  // Season from the shared context, which reads it off the URL: the menu link
+  // and the screen can no longer disagree about which one this is.
+  const { seasons, selectedSeason, selectSeason, loading } = useSeason();
+  const selectedSeasonId = selectedSeason?.id ?? null;
   const [balances, setBalances] = useState<ParticipantBalance[]>([]);
-  const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
 
   // Create form
@@ -97,21 +93,6 @@ export default function AdminEconomiaPage() {
   const [txLoading, setTxLoading] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
 
-  const fetchSeasons = useCallback(async () => {
-    try {
-      const data = await apiClient.get<SeasonSummary[]>("/seasons");
-      setSeasons(data);
-      if (data.length > 0 && selectedSeasonId === null) {
-        const active = data.find((s) => s.status === "active") ?? data[0];
-        setSelectedSeasonId(active.id);
-      }
-    } catch {
-      // handled
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedSeasonId]);
-
   const fetchBalances = useCallback(async (seasonId: number) => {
     try {
       const data = await apiClient.get<{
@@ -122,10 +103,6 @@ export default function AdminEconomiaPage() {
       // handled
     }
   }, []);
-
-  useEffect(() => {
-    fetchSeasons();
-  }, [fetchSeasons]);
 
   useEffect(() => {
     if (selectedSeasonId !== null) {
@@ -271,7 +248,7 @@ export default function AdminEconomiaPage() {
         <label className="text-sm text-vpv-text-muted">Temporada:</label>
         <select
           value={selectedSeasonId ?? ""}
-          onChange={(e) => setSelectedSeasonId(Number(e.target.value))}
+          onChange={(e) => selectSeason(Number(e.target.value))}
           className="rounded border border-vpv-border bg-vpv-bg px-3 py-1.5 text-sm text-vpv-text"
         >
           {seasons.map((s) => (

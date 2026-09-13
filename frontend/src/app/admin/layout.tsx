@@ -9,11 +9,15 @@ import {
   type AdminNavItem,
   adminLabelForPath,
   canSeeAdminItem,
+  hrefForSeason,
   operationsItems,
   resolveCompetitionContexts,
   seasonItems,
   systemItems,
 } from "@/lib/admin-nav";
+
+/** A nav entry after the season has been stamped into its link. */
+type NavLink = { href: string; base: string; label: string };
 
 export default function AdminLayout({
   children,
@@ -43,21 +47,35 @@ export default function AdminLayout({
         ? items.filter((i) => i.href !== "/admin/economia")
         : items;
 
-    const sections: { group: string; items: AdminNavItem[] }[] = [];
+    // The season travels in the link. Both competition sections are built from
+    // the same ADMIN_ITEMS, so without it "Jornadas" under Torneo and "Jornadas"
+    // under Liga were the same href, and the page then picked a season of its
+    // own — which is how the menu could say one thing and the screen do another.
+    const link = (items: AdminNavItem[], seasonId?: number): NavLink[] =>
+      items.map((i) => ({
+        href: hrefForSeason(i, seasonId),
+        base: i.href,
+        label: i.label,
+      }));
+
+    const sections: { group: string; items: NavLink[] }[] = [];
     if (league) {
       sections.push({
         group: `⚽ ${league.name}`,
-        items: dropEconomy(visible(seasonItems("league")), league),
+        items: link(dropEconomy(visible(seasonItems("league")), league), league.id),
       });
     }
     if (tournament) {
       sections.push({
         group: `🏆 ${tournament.name}`,
-        items: dropEconomy(visible(seasonItems("tournament")), tournament),
+        items: link(
+          dropEconomy(visible(seasonItems("tournament")), tournament),
+          tournament.id,
+        ),
       });
     }
-    sections.push({ group: "Operaciones", items: visible(operationsItems) });
-    sections.push({ group: "Sistema", items: visible(systemItems) });
+    sections.push({ group: "Operaciones", items: link(visible(operationsItems)) });
+    sections.push({ group: "Sistema", items: link(visible(systemItems)) });
     return sections.filter((s) => s.items.length > 0);
   }, [user, league, tournament]);
 
@@ -82,9 +100,10 @@ export default function AdminLayout({
             {section.group}
           </p>
           <ul className="space-y-0.5">
-            {section.items.map(({ href, label }) => {
-              const active =
-                pathname === href || pathname.startsWith(href + "/");
+            {section.items.map(({ href, base, label }) => {
+              // Highlight on the route, not on the decorated link: the query
+              // string is never part of the pathname.
+              const active = pathname === base || pathname.startsWith(base + "/");
               return (
                 <li key={href}>
                   <Link
@@ -148,7 +167,18 @@ export default function AdminLayout({
         </aside>
 
         {/* Content */}
-        <main className="min-w-0 flex-1">{children}</main>
+        <main className="min-w-0 flex-1">
+          {selectedSeason && selectedSeason.status !== "active" && (
+            <div
+              role="status"
+              className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-400"
+            >
+              Estás operando sobre <strong>{selectedSeason.name}</strong>, que no
+              es la temporada activa. Los cambios afectan a datos históricos.
+            </div>
+          )}
+          {children}
+        </main>
       </div>
     </div>
   );

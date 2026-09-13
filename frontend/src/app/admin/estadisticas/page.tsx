@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "@/lib/api-client";
+import { useSeason } from "@/contexts/season-context";
 import { DraftRetroTab } from "@/components/admin/draft-retro-tab";
 import { StatsGuide } from "@/components/admin/stats-guide";
 import { PlayersTab } from "@/components/admin/stats/players-tab";
@@ -66,12 +67,6 @@ const PERF_LENSES = [
 
 type PerfLens = (typeof PERF_LENSES)[number]["key"];
 
-interface SeasonOption {
-  id: number;
-  name: string;
-  status: string;
-}
-
 /** Position badge colors — consistent with other admin tables. */
 
 function ErrorBanner({ message }: { message: string }) {
@@ -88,17 +83,15 @@ function ErrorBanner({ message }: { message: string }) {
 
 
 export default function AdminEstadisticasPage() {
-  const [seasons, setSeasons] = useState<SeasonOption[]>([]);
-  const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
+  // Season from the shared context, which reads it off the URL, so this page
+  // can no longer land on a season other than the one the menu linked to.
+  const { seasons, selectedSeason, selectSeason, loading } = useSeason();
+  const selectedSeasonId = selectedSeason?.id ?? null;
   // Names the exported file, so a folder of them says which season each is.
-  // Must come AFTER selectedSeasonId: .find() runs its callback immediately,
-  // so reading it above the declaration is a temporal dead zone at render —
-  // and TypeScript does not flag it, because the reference sits in a closure.
-  const seasonName = seasons.find((s) => s.id === selectedSeasonId)?.name ?? "";
+  const seasonName = selectedSeason?.name ?? "";
   const [activeTab, setActiveTab] = useState<MainTab>("rendimiento");
   const [perfLens, setPerfLens] = useState<PerfLens>("jugadores");
   const [includeNoncounting, setIncludeNoncounting] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Data per tab
@@ -115,27 +108,6 @@ export default function AdminEstadisticasPage() {
   );
   const [dependencyData, setDependencyData] = useState<TeamDependencyEntry[]>([]);
   const [tabLoading, setTabLoading] = useState(false);
-
-  const fetchSeasons = useCallback(async () => {
-    try {
-      const data = await apiClient.get<SeasonOption[]>("/seasons");
-      setSeasons(data);
-      if (data.length > 0 && selectedSeasonId === null) {
-        const active = data.find((s) => s.status === "active") ?? data[0];
-        setSelectedSeasonId(active.id);
-      }
-    } catch (err) {
-      setError(
-        `Error al cargar temporadas: ${err instanceof Error ? err.message : "desconocido"}`,
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedSeasonId]);
-
-  useEffect(() => {
-    fetchSeasons();
-  }, [fetchSeasons]);
 
   // Only the "Rendimiento" lenses need a page-level fetch; Draft/Análisis
   // self-fetch inside their components and Guía is static.
@@ -212,7 +184,7 @@ export default function AdminEstadisticasPage() {
         <label className="text-sm text-vpv-text-muted">Temporada:</label>
         <select
           value={selectedSeasonId ?? ""}
-          onChange={(e) => setSelectedSeasonId(Number(e.target.value))}
+          onChange={(e) => selectSeason(Number(e.target.value))}
           className="rounded border border-vpv-border bg-vpv-bg px-3 py-1.5 text-sm text-vpv-text"
         >
           {seasons.map((s) => (

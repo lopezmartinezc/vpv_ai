@@ -73,6 +73,26 @@ export function seasonItems(kind: "league" | "tournament"): AdminNavItem[] {
   );
 }
 
+/**
+ * Link to an admin item **for a specific season**.
+ *
+ * The admin rail renders one section per competition (⚽ Liga / 🏆 Torneo), but
+ * both are built by filtering the same `ADMIN_ITEMS`, so "Jornadas" under Torneo
+ * and "Jornadas" under Liga were literally the same href. Clicking either landed
+ * on a page that then chose its own season — usually whichever the API returned
+ * first — so the menu could say Torneo while the screen operated on the Liga.
+ *
+ * Carrying the season in the URL makes the two links different, and makes the
+ * choice survive a reload, a shared link and a second tab on another season.
+ */
+export function hrefForSeason(
+  item: AdminNavItem,
+  seasonId: number | null | undefined,
+): string {
+  if (seasonId == null) return item.href;
+  return `${item.href}${item.href.includes("?") ? "&" : "?"}season=${seasonId}`;
+}
+
 export const operationsItems: AdminNavItem[] = ADMIN_ITEMS.filter(
   (i) => i.scope === "operations",
 );

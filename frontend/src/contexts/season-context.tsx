@@ -2,12 +2,14 @@
 
 import {
   createContext,
+  Suspense,
   useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
 } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { apiClient } from "@/lib/api-client";
 import type { SeasonSummary } from "@/types";
 
@@ -38,58 +40,96 @@ const SeasonContext = createContext<SeasonContextValue>({
 });
 
 const STORAGE_KEY = "vpv_selected_season_id";
+export const SEASON_PARAM = "season";
+
+/**
+ * Which season this render is about, in order of authority.
+ *
+ * The URL wins. It is the only source a reader can see, share and reload, and
+ * the only one that can differ between two open tabs — which is precisely the
+ * case that used to leave a screen operating on a season other than the one the
+ * menu named. `localStorage` only chooses where you land when the URL is silent;
+ * it must never contradict an explicit address.
+ */
+export function resolveSeason(
+  seasons: SeasonSummary[],
+  fromUrl: string | null,
+  fromStorage: string | null,
+): SeasonSummary | null {
+  const byId = (raw: string | null) => {
+    if (!raw) return null;
+    const id = Number(raw);
+    return Number.isFinite(id) ? (seasons.find((s) => s.id === id) ?? null) : null;
+  };
+  const active = (kind: "league" | "tournament") =>
+    seasons.find((s) => s.status === "active" && (s.kind ?? "league") === kind) ?? null;
+
+  return (
+    byId(fromUrl) ??
+    byId(fromStorage) ??
+    active("league") ??
+    active("tournament") ??
+    seasons[0] ??
+    null
+  );
+}
+
+/**
+ * Reports `?season=` upwards, and nothing else.
+ *
+ * `useSearchParams` opts its whole subtree out of prerendering unless a Suspense
+ * boundary stands above it — Next fails the build otherwise. Isolating the read
+ * in a component that renders nothing keeps that boundary around a single null,
+ * so the navigation bar and the page still prerender as before.
+ */
+function SeasonParam({ onChange }: { onChange: (value: string | null) => void }) {
+  const value = useSearchParams().get(SEASON_PARAM);
+  useEffect(() => {
+    onChange(value);
+  }, [value, onChange]);
+  return null;
+}
 
 export function SeasonProvider({ children }: { children: React.ReactNode }) {
   const [seasons, setSeasons] = useState<SeasonSummary[]>([]);
-  const [selectedSeason, setSelectedSeason] = useState<SeasonSummary | null>(
-    null,
-  );
   const [loading, setLoading] = useState(true);
+  const [seasonParam, setSeasonParam] = useState<string | null>(null);
+  const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     apiClient
       .get<SeasonSummary[]>("/seasons")
-      .then((data) => {
-        setSeasons(data);
-
-        // Restore previous selection if still valid
-        let initial: SeasonSummary | null = null;
-        if (typeof window !== "undefined") {
-          const stored = localStorage.getItem(STORAGE_KEY);
-          if (stored) {
-            const storedId = Number(stored);
-            initial = data.find((s) => s.id === storedId) ?? null;
-          }
-        }
-
-        // Fallback: prefer active Liga, then active tournament, then most recent
-        if (initial == null) {
-          const activeLeague = data.find(
-            (s) => s.status === "active" && (s.kind ?? "league") === "league",
-          );
-          const activeTournament = data.find(
-            (s) => s.status === "active" && s.kind === "tournament",
-          );
-          initial = activeLeague ?? activeTournament ?? data[0] ?? null;
-        }
-
-        if (initial) setSelectedSeason(initial);
-      })
+      .then(setSeasons)
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
+  // Derived, not stored: with the URL as the source of truth there is no second
+  // copy of the selection to drift out of step with the address bar.
+  const selectedSeason = useMemo(
+    () =>
+      resolveSeason(
+        seasons,
+        seasonParam,
+        typeof window === "undefined" ? null : localStorage.getItem(STORAGE_KEY),
+      ),
+    [seasons, seasonParam],
+  );
+
   const selectSeason = useCallback(
     (id: number) => {
-      const season = seasons.find((s) => s.id === id);
-      if (season) {
-        setSelectedSeason(season);
-        if (typeof window !== "undefined") {
-          localStorage.setItem(STORAGE_KEY, String(id));
-        }
-      }
+      if (!seasons.some((s) => s.id === id)) return;
+      if (typeof window === "undefined") return;
+      localStorage.setItem(STORAGE_KEY, String(id));
+      // Read the query off the location rather than useSearchParams: this only
+      // ever runs from a click, and keeping the hook out of the provider is what
+      // lets everything above it still prerender.
+      const next = new URLSearchParams(window.location.search);
+      next.set(SEASON_PARAM, String(id));
+      router.replace(`${pathname}?${next.toString()}`, { scroll: false });
     },
-    [seasons],
+    [seasons, router, pathname],
   );
 
   const derived = useMemo(() => {
@@ -133,6 +173,9 @@ export function SeasonProvider({ children }: { children: React.ReactNode }) {
         ...derived,
       }}
     >
+      <Suspense fallback={null}>
+        <SeasonParam onChange={setSeasonParam} />
+      </Suspense>
       {children}
     </SeasonContext>
   );

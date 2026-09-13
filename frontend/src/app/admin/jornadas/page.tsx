@@ -2,14 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "@/lib/api-client";
-
-interface SeasonDetail {
-  id: number;
-  name: string;
-  status: string;
-  matchday_start: number;
-  matchday_current: number;
-}
+import { useSeason } from "@/contexts/season-context";
 
 interface MatchdaySummary {
   number: number;
@@ -42,32 +35,16 @@ interface MatchdayDetailData {
 }
 
 export default function AdminJornadasPage() {
-  const [seasons, setSeasons] = useState<SeasonDetail[]>([]);
-  const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
+  // Season from the shared context, which reads it off the URL, so this page
+  // can no longer operate on a different one from the menu that linked here.
+  const { seasons, selectedSeason, selectSeason, loading } = useSeason();
+  const selectedSeasonId = selectedSeason?.id ?? null;
   const [matchdays, setMatchdays] = useState<MatchdaySummary[]>([]);
   const [expandedMd, setExpandedMd] = useState<number | null>(null);
   const [matchdayDetail, setMatchdayDetail] =
     useState<MatchdayDetailData | null>(null);
-  const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-
-  const selectedSeason = seasons.find((s) => s.id === selectedSeasonId) ?? null;
-
-  const fetchSeasons = useCallback(async () => {
-    try {
-      const data = await apiClient.get<SeasonDetail[]>("/seasons");
-      setSeasons(data);
-      if (data.length > 0 && selectedSeasonId === null) {
-        const active = data.find((s) => s.status === "active") ?? data[0];
-        setSelectedSeasonId(active.id);
-      }
-    } catch {
-      // handled
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedSeasonId]);
 
   const fetchMatchdays = useCallback(async (seasonId: number) => {
     try {
@@ -79,10 +56,6 @@ export default function AdminJornadasPage() {
       // handled
     }
   }, []);
-
-  useEffect(() => {
-    fetchSeasons();
-  }, [fetchSeasons]);
 
   useEffect(() => {
     if (selectedSeasonId !== null) {
@@ -246,7 +219,7 @@ export default function AdminJornadasPage() {
         <label className="text-sm text-vpv-text-muted">Temporada:</label>
         <select
           value={selectedSeasonId ?? ""}
-          onChange={(e) => setSelectedSeasonId(Number(e.target.value))}
+          onChange={(e) => selectSeason(Number(e.target.value))}
           className="rounded border border-vpv-border bg-vpv-bg px-3 py-1.5 text-sm text-vpv-text"
         >
           {seasons.map((s) => (
