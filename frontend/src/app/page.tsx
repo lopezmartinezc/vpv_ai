@@ -189,7 +189,7 @@ export default function Home() {
       )}
 
       {standings && standings.entries.length > 0 && (
-        <Podium entries={standings.entries} />
+        <Podium entries={standings.entries} seasonId={selectedSeason?.id} />
       )}
 
       {currentCopaMatchday && (
