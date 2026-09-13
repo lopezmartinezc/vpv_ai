@@ -99,6 +99,8 @@ export interface SeasonSummary {
   id: number;
   name: string;
   status: string;
+  /** First jornada that scores. Everything below it is pre-season. */
+  matchday_start: number;
   matchday_current: number;
   matchday_end?: number | null;
   total_participants: number;

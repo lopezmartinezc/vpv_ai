@@ -11,6 +11,11 @@ class SeasonSummary(BaseModel):
     id: int
     name: str
     status: str
+    # Which jornada the season starts scoring on. Admin/jornadas already read it
+    # off this payload to flag pre-season matchdays left with counts=true, but it
+    # was never sent, so that check silently compared against undefined and never
+    # fired. Season 12 starts at J6, so it had five matchdays to say nothing about.
+    matchday_start: int
     matchday_current: int
     matchday_end: int | None = None
     total_participants: int

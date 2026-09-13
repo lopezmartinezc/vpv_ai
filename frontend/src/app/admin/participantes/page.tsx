@@ -2,14 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "@/lib/api-client";
-
-interface SeasonSummary {
-  id: number;
-  name: string;
-  status: string;
-  matchday_current: number;
-  total_participants: number;
-}
+import { useSeason } from "@/contexts/season-context";
 
 interface SeasonParticipant {
   id: number;
@@ -34,10 +27,11 @@ const GROUPS = [
 ] as const;
 
 export default function AdminParticipantesPage() {
-  const [seasons, setSeasons] = useState<SeasonSummary[]>([]);
-  const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
+  // The season comes from the shared context, which reads it off the URL, so
+  // this page can never end up on a different one from the menu that linked here.
+  const { seasons, selectedSeason, selectSeason, loading } = useSeason();
+  const selectedSeasonId = selectedSeason?.id ?? null;
   const [participants, setParticipants] = useState<SeasonParticipant[]>([]);
-  const [loading, setLoading] = useState(true);
   const [participantsLoading, setParticipantsLoading] = useState(false);
   const [togglingId, setTogglingId] = useState<number | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -45,24 +39,6 @@ export default function AdminParticipantesPage() {
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function fetchSeasons() {
-      try {
-        const data = await apiClient.get<SeasonSummary[]>("/seasons");
-        setSeasons(data);
-        if (data.length > 0) {
-          const active = data.find((s) => s.status === "active") ?? data[0];
-          setSelectedSeasonId(active.id);
-        }
-      } catch {
-        // handled by auth context
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchSeasons();
-  }, []);
 
   const fetchParticipants = useCallback(async (seasonId: number) => {
     setParticipantsLoading(true);
@@ -238,7 +214,7 @@ export default function AdminParticipantesPage() {
         <div className="flex items-center gap-2">
           <select
             value={selectedSeasonId ?? ""}
-            onChange={(e) => setSelectedSeasonId(Number(e.target.value))}
+            onChange={(e) => selectSeason(Number(e.target.value))}
             className="rounded border border-vpv-border bg-vpv-bg px-3 py-1.5 text-sm text-vpv-text"
           >
             {seasons.map((s) => (

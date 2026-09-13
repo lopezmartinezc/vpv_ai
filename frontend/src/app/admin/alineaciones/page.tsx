@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiClient } from "@/lib/api-client";
+import { useSeason } from "@/contexts/season-context";
 import { PitchView } from "@/components/ui/pitch-view";
 import type { PitchPlayer } from "@/components/ui/pitch-view";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
@@ -9,13 +10,6 @@ import { PlayerAvatar } from "@/components/ui/player-avatar";
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface SeasonDetail {
-  id: number;
-  name: string;
-  status: string;
-  matchday_current: number;
-}
 
 interface LineupPlayer {
   player_id: number;
@@ -480,36 +474,16 @@ function ParticipantCard({
 // ---------------------------------------------------------------------------
 
 export default function AdminAlineacionesPage() {
-  const [seasons, setSeasons] = useState<SeasonDetail[]>([]);
-  const [selectedSeasonId, setSelectedSeasonId] = useState<number | null>(null);
+  // Season from the shared context, which reads it off the URL, so this page
+  // can no longer edit lineups of a season other than the one the menu named.
+  const { seasons, selectedSeason, selectSeason, loading } = useSeason();
+  const selectedSeasonId = selectedSeason?.id ?? null;
   const [matchdayInput, setMatchdayInput] = useState("");
   const [searchedMatchday, setSearchedMatchday] = useState<number | null>(null);
   const [lineups, setLineups] = useState<ParticipantLineup[]>([]);
-  const [loading, setLoading] = useState(true);
   const [lineupsLoading, setLineupsLoading] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-
-  const selectedSeason = seasons.find((s) => s.id === selectedSeasonId) ?? null;
-
-  useEffect(() => {
-    async function fetchSeasons() {
-      try {
-        const data = await apiClient.get<SeasonDetail[]>("/seasons");
-        setSeasons(data);
-        if (data.length > 0) {
-          const active = data.find((s) => s.status === "active") ?? data[0];
-          setSelectedSeasonId(active.id);
-          setMatchdayInput(String(active.matchday_current));
-        }
-      } catch {
-        /* auth handles */
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchSeasons();
-  }, []);
 
   useEffect(() => {
     if (selectedSeason) {
@@ -589,7 +563,7 @@ export default function AdminAlineacionesPage() {
           <label className="text-xs text-vpv-text-muted">Temporada</label>
           <select
             value={selectedSeasonId ?? ""}
-            onChange={(e) => setSelectedSeasonId(Number(e.target.value))}
+            onChange={(e) => selectSeason(Number(e.target.value))}
             className="rounded border border-vpv-border bg-vpv-bg px-3 py-1.5 text-sm text-vpv-text"
           >
             {seasons.map((s) => (

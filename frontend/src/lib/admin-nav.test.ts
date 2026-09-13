@@ -4,6 +4,7 @@ import {
   ADMIN_ITEMS,
   ROUTE_PERM,
   canSeeAdminItem,
+  hrefForSeason,
   seasonItems,
   operationsItems,
   systemItems,
@@ -106,5 +107,39 @@ describe("ROUTE_PERM + labels", () => {
   it("adminLabelForPath matches nested routes", () => {
     expect(adminLabelForPath("/admin/estadisticas/foo")).toBe("Estadísticas");
     expect(adminLabelForPath("/unknown")).toBe("Admin");
+  });
+});
+
+describe("hrefForSeason", () => {
+  const jornadas = item("/admin/jornadas");
+
+  it("makes the Liga and Torneo links genuinely different", () => {
+    // Both sections are built from the same ADMIN_ITEMS, so without the season
+    // these were the same href and the page picked a season of its own.
+    expect(hrefForSeason(jornadas, 12)).not.toBe(hrefForSeason(jornadas, 13));
+  });
+
+  it("stamps the season on every season-scoped item of both competitions", () => {
+    for (const kind of ["league", "tournament"] as const) {
+      for (const i of seasonItems(kind)) {
+        expect(hrefForSeason(i, 12)).toContain("season=12");
+      }
+    }
+  });
+
+  it("leaves the route itself untouched, so highlighting still matches", () => {
+    expect(hrefForSeason(jornadas, 12).startsWith(jornadas.href)).toBe(true);
+  });
+
+  it("returns the plain href for items with no season (Operaciones, Sistema)", () => {
+    for (const i of [...operationsItems, ...systemItems]) {
+      expect(hrefForSeason(i, null)).toBe(i.href);
+      expect(hrefForSeason(i, undefined)).toBe(i.href);
+    }
+  });
+
+  it("appends rather than replaces when the href already carries a query", () => {
+    const withQuery = { ...jornadas, href: "/admin/jornadas?tab=pendientes" };
+    expect(hrefForSeason(withQuery, 12)).toBe("/admin/jornadas?tab=pendientes&season=12");
   });
 });
