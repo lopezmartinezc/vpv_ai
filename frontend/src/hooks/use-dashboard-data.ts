@@ -12,7 +12,7 @@ export function useDashboardData(
       ? `/dashboard/${seasonId}${matchdayCurrent != null ? `?matchday_current=${matchdayCurrent}` : ""}`
       : null;
 
-  const { data, loading } = useFetch<DashboardResponse>(path);
+  const { data, loading, error, refetch } = useFetch<DashboardResponse>(path);
 
   return {
     standings: data?.standings ?? null,
@@ -20,5 +20,10 @@ export function useDashboardData(
     copaData: data?.copa ?? null,
     economy: data?.economy ?? null,
     loading,
+    /** The whole request failed. */
+    error,
+    refetch,
+    /** Sections the server could not load; the rest of the page is still good. */
+    unavailable: data?.unavailable ?? [],
   };
 }

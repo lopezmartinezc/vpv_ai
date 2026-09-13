@@ -748,6 +748,8 @@ export interface DashboardResponse {
   current_matchday: MatchdayDetailResponse | null;
   copa: CopaFullResponse | null;
   economy: EconomyResponse | null;
+  /** Sections that failed to load, as opposed to having no data. */
+  unavailable?: string[];
 }
 
 // ---------------------------------------------------------------------------
