@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type {
   MatchdayDetailResponse,
@@ -8,8 +8,10 @@ import type {
   LineupPlayerEntry,
   BenchPlayerEntry,
 } from "@/types";
-import { ApiClientError, apiClient } from "@/lib/api-client";
+import { useFetch } from "@/hooks/use-fetch";
+import { withSeason } from "@/lib/season-link";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
+import styles from "./home.module.css";
 
 const POSITION_COLORS: Record<string, string> = {
   POR: "bg-amber-500/20 text-amber-600 dark:text-amber-400",
@@ -66,99 +68,108 @@ const STAT_LABELS: { key: string; label: string; get: (b: Breakdown) => number }
   { key: "as", label: "As", get: (b) => b.pts_as },
 ];
 
-function PlayerRow({ player }: { player: LineupPlayerEntry }) {
-  const [expanded, setExpanded] = useState(false);
-  const b = player.score_breakdown;
-  const didPlay = b ? b.pts_play > 0 : false;
-
+function BreakdownGrid({ b }: { b: Breakdown }) {
   return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setExpanded((prev) => !prev)}
-        className={`flex w-full items-center gap-2 py-1.5 text-sm text-left transition-colors hover:bg-vpv-bg/60 rounded px-1 -mx-1 ${
-          !didPlay ? "opacity-45" : ""
-        }`}
-      >
-        <PlayerAvatar photoPath={player.photo_path} name={player.player_name} size={48} />
-        <PositionBadge pos={player.position_slot} />
-        <span className={`min-w-0 flex-1 truncate ${!didPlay ? "text-vpv-danger" : "text-vpv-text"}`}>
-          {player.player_name}
-        </span>
-        <span className="text-xs text-vpv-text-muted">{player.team_name}</span>
-        <span className="w-8 text-right font-bold tabular-nums text-vpv-text">
-          {player.points}
-        </span>
-        {didPlay && b ? <ChevronIcon open={expanded} /> : <span className="w-4" />}
-      </button>
-
-      {expanded && didPlay && b && (
-        <div className="ml-8 mb-1.5 grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs sm:grid-cols-3">
-          {STAT_LABELS.map(({ key, label, get }) => {
-            const val = get(b);
-            if (val === 0) return null;
-            return (
-              <div key={key} className="flex items-center justify-between gap-2">
-                <span className="text-vpv-text-muted">{label}</span>
-                <span
-                  className={`font-bold tabular-nums ${val > 0 ? "text-vpv-success" : "text-vpv-danger"}`}
-                >
-                  {val > 0 ? `+${val}` : val}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
+    <div className="ml-8 mb-1.5 grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs sm:grid-cols-3">
+      {STAT_LABELS.map(({ key, label, get }) => {
+        const val = get(b);
+        if (val === 0) return null;
+        return (
+          <div key={key} className="flex items-center justify-between gap-2">
+            <span className="text-vpv-text-muted">{label}</span>
+            <span
+              className={`font-bold tabular-nums ${val > 0 ? "text-vpv-success" : "text-vpv-danger"}`}
+            >
+              {val > 0 ? `+${val}` : val}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-function BenchPlayerRow({ player }: { player: BenchPlayerEntry }) {
+/**
+ * One player of a lineup or bench. No breakdown means the stats are not in yet,
+ * which is not the same as not having played: only a breakdown without the
+ * points for playing says the player did not play.
+ */
+function PlayerLine({
+  name,
+  position,
+  team,
+  photo,
+  points,
+  b,
+  bench = false,
+}: {
+  name: string;
+  position: string;
+  team: string;
+  photo: string | null;
+  points: number;
+  b: Breakdown | null | undefined;
+  bench?: boolean;
+}) {
   const [expanded, setExpanded] = useState(false);
-  const b = player.score_breakdown;
-  const didPlay = b ? b.pts_play > 0 : false;
+  const hasBreakdown = b !== null && b !== undefined;
+  const didNotPlay = hasBreakdown && b.pts_play <= 0;
+  const dim = didNotPlay ? "opacity-45" : bench || !hasBreakdown ? "opacity-70" : "";
 
   return (
     <div>
       <button
         type="button"
         onClick={() => setExpanded((prev) => !prev)}
-        className={`flex w-full items-center gap-2 py-1.5 text-sm text-left transition-colors hover:bg-vpv-bg/60 rounded px-1 -mx-1 ${
-          !didPlay ? "opacity-45" : "opacity-70"
-        }`}
+        aria-expanded={expanded}
+        disabled={!hasBreakdown}
+        className={`flex w-full items-center gap-2 py-1.5 text-sm text-left transition-colors hover:bg-vpv-bg/60 rounded px-1 -mx-1 ${dim}`}
       >
-        <PlayerAvatar photoPath={player.photo_path} name={player.player_name} size={48} />
-        <PositionBadge pos={player.position} />
-        <span className={`min-w-0 flex-1 truncate ${!didPlay ? "text-vpv-danger" : "text-vpv-text"}`}>
-          {player.player_name}
+        <PlayerAvatar photoPath={photo} name={name} size={48} />
+        <PositionBadge pos={position} />
+        <span
+          className={`min-w-0 flex-1 truncate ${didNotPlay ? "text-vpv-danger" : "text-vpv-text"}`}
+        >
+          {name}
+          {didNotPlay && <span className="sr-only"> · no jugó</span>}
         </span>
-        <span className="text-xs text-vpv-text-muted">{player.team_name}</span>
+        <span className="text-xs text-vpv-text-muted">{team}</span>
         <span className="w-8 text-right font-bold tabular-nums text-vpv-text">
-          {player.matchday_points}
+          {hasBreakdown ? points : "—"}
         </span>
-        {didPlay && b ? <ChevronIcon open={expanded} /> : <span className="w-4" />}
+        {hasBreakdown ? <ChevronIcon open={expanded} /> : <span className="w-4" />}
       </button>
 
-      {expanded && didPlay && b && (
-        <div className="ml-8 mb-1.5 grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs sm:grid-cols-3">
-          {STAT_LABELS.map(({ key, label, get }) => {
-            const val = get(b);
-            if (val === 0) return null;
-            return (
-              <div key={key} className="flex items-center justify-between gap-2">
-                <span className="text-vpv-text-muted">{label}</span>
-                <span
-                  className={`font-bold tabular-nums ${val > 0 ? "text-vpv-success" : "text-vpv-danger"}`}
-                >
-                  {val > 0 ? `+${val}` : val}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {!hasBreakdown && <p className="ml-8 text-xs text-vpv-text-muted">Sin desglose disponible</p>}
+      {expanded && hasBreakdown && <BreakdownGrid b={b} />}
     </div>
+  );
+}
+
+function PlayerRow({ player }: { player: LineupPlayerEntry }) {
+  return (
+    <PlayerLine
+      name={player.player_name}
+      position={player.position_slot}
+      team={player.team_name}
+      photo={player.photo_path}
+      points={player.points}
+      b={player.score_breakdown}
+    />
+  );
+}
+
+function BenchPlayerRow({ player }: { player: BenchPlayerEntry }) {
+  return (
+    <PlayerLine
+      name={player.player_name}
+      position={player.position}
+      team={player.team_name}
+      photo={player.photo_path}
+      points={player.matchday_points}
+      b={player.score_breakdown}
+      bench
+    />
   );
 }
 
@@ -167,79 +178,73 @@ function AccordionRow({
   rank,
   seasonId,
   matchdayNumber,
+  personalPoints,
+  isYou,
+  refreshKey,
 }: {
   score: MatchdayDetailResponse["scores"][number];
   rank: number;
   seasonId: number;
   matchdayNumber: number;
+  personalPoints?: number;
+  isYou: boolean;
+  refreshKey: number;
 }) {
   const [open, setOpen] = useState(false);
-  const [lineup, setLineup] = useState<LineupDetailResponse | null>(null);
-  const [loading, setLoading] = useState(false);
+  const {
+    data: lineup,
+    loading,
+    error,
+    errorStatus,
+    refetch,
+  } = useFetch<LineupDetailResponse>(
+    open ? `/matchdays/${seasonId}/${matchdayNumber}/lineup/${score.participant_id}` : null,
+  );
   // The server refuses a rival's lineup until the deadline. That is the rule,
-  // not a failure: say when it will show instead of showing nothing.
-  const [hidden, setHidden] = useState(false);
-
-  const isFirst = rank === 1;
-
+  // not a failure: say when it will show instead of offering a retry.
+  const hidden = errorStatus === 403;
+  const previousRefresh = useRef(refreshKey);
+  useEffect(() => {
+    if (previousRefresh.current !== refreshKey && open) refetch();
+    previousRefresh.current = refreshKey;
+  }, [refreshKey, open, refetch]);
+  // Closing drops the request path and reopening restores it, so every reopen
+  // asks again: a lineup refused before the deadline shows once it is public.
   function handleToggle() {
-    if (!open && !lineup && !loading && !hidden) {
-      setLoading(true);
-      apiClient
-        .get<LineupDetailResponse>(
-          `/matchdays/${seasonId}/${matchdayNumber}/lineup/${score.participant_id}`,
-        )
-        .then((data) => setLineup(data))
-        .catch((e: unknown) => {
-          if (e instanceof ApiClientError && e.status === 403) setHidden(true);
-        })
-        .finally(() => setLoading(false));
-    }
-    setOpen((prev) => !prev);
+    setOpen((value) => !value);
   }
 
   return (
-    <div
-      className={`border-b border-vpv-border last:border-0 ${open ? "bg-vpv-bg/50" : ""}`}
-    >
+    <div className={styles.scoreRow} data-you={isYou}>
       <button
         type="button"
         onClick={handleToggle}
-        className="flex w-full items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-vpv-bg/80 active:scale-[0.995]"
+        aria-expanded={open}
+        className={styles.scoreToggle}
       >
-        <span
-          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-            isFirst
-              ? "bg-vpv-gold text-black"
-              : "bg-vpv-border text-vpv-text-muted"
-          }`}
-        >
-          {rank}
+        <span className={styles.scoreRank}>{rank}</span>
+        <span className="min-w-0 flex-1">
+          <span className={styles.scoreName}>
+            {score.display_name}
+            {isYou && <span className={styles.you}>Tú</span>}
+          </span>
+          <span className="flex flex-wrap gap-x-2 text-xs text-vpv-text-muted">
+            {score.formation && (
+              <span className="mt-1 hidden text-[10px] sm:inline">{score.formation}</span>
+            )}
+            {score.pending_players > 0 && (
+              <span className={styles.pending}>{score.pending_players} pendientes de puntuar</span>
+            )}
+          </span>
         </span>
-        <span
-          className={`min-w-0 flex-1 truncate font-medium ${
-            isFirst ? "text-vpv-accent" : "text-vpv-text"
-          }`}
-        >
-          {score.display_name}
-        </span>
-        {score.formation && (
-          <span className="hidden text-xs text-vpv-text-muted sm:inline">
-            {score.formation}
+        <span className={styles.scoreValue}>{score.total_points}</span>
+        {personalPoints !== undefined && (
+          <span className={styles.difference} title="Diferencia respecto a ti">
+            {isYou
+              ? "—"
+              : `${score.total_points - personalPoints > 0 ? "+" : ""}${score.total_points - personalPoints}`}
           </span>
         )}
-        {score.pending_players > 0 && (
-          <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-amber-400">
-            {score.pending_players} pte
-          </span>
-        )}
-        <span
-          className={`min-w-[3rem] text-right text-lg font-bold tabular-nums ${
-            isFirst ? "text-vpv-accent" : "text-vpv-text"
-          }`}
-        >
-          {score.total_points}
-        </span>
         <ChevronIcon open={open} />
       </button>
 
@@ -248,10 +253,7 @@ function AccordionRow({
           {loading && (
             <div className="space-y-2 py-2">
               {Array.from({ length: 5 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="h-7 animate-pulse rounded bg-vpv-border"
-                />
+                <div key={i} className="h-7 animate-pulse rounded bg-vpv-border" />
               ))}
             </div>
           )}
@@ -289,9 +291,12 @@ function AccordionRow({
             </div>
           )}
 
-          {!loading && !lineup && (
+          {!loading && !hidden && (error || !lineup) && (
             <p className="py-2 text-xs text-vpv-text-muted">
-              No se pudo cargar la plantilla
+              No se pudo cargar la plantilla.{" "}
+              <button type="button" onClick={refetch} className="min-h-11 text-vpv-accent">
+                Reintentar
+              </button>
             </p>
           )}
         </div>
@@ -300,42 +305,73 @@ function AccordionRow({
   );
 }
 
+/**
+ * Whether the scores are the final ones. Migrated seasons end in "completed";
+ * the scraper's own end state, "finished", is final once the stats are confirmed.
+ */
+function isFinal(data: MatchdayDetailResponse): boolean {
+  return data.status === "completed" || (data.status === "finished" && data.stats_ok);
+}
+
 export function MatchdayAccordion({
   data,
   seasonId,
   showHeader = true,
+  participantId = null,
+  refreshKey = 0,
 }: {
   data: MatchdayDetailResponse;
   seasonId: number;
   showHeader?: boolean;
+  participantId?: number | null;
+  refreshKey?: number;
 }) {
+  const yourPoints = data.scores.find(
+    (entry) => entry.participant_id === participantId,
+  )?.total_points;
+
   return (
-    <div className="rounded-lg border border-vpv-card-border bg-vpv-card">
+    <div className={styles.card}>
       {showHeader && (
-        <div className="flex items-center justify-between px-4 pt-4 pb-2">
+        <div className={styles.cardHead}>
           <div>
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-vpv-text-muted">
-              Jornada actual
-            </h2>
-            <p className="text-lg font-bold text-vpv-text">
-              Jornada {data.number}
-            </p>
+            <p className={styles.cardKicker}>Así va tu liga</p>
+            <h2 className={styles.cardTitle}>Jornada {data.number}</h2>
           </div>
-          <Link
-            href={`/jornadas/${data.number}`}
-            className="text-xs text-vpv-accent transition-colors hover:text-vpv-accent-hover"
-          >
-            Ver completa &rarr;
+          <Link href={withSeason(`/jornadas/${data.number}`, seasonId)} className={styles.textLink}>
+            Ver completa <span aria-hidden="true">→</span>
           </Link>
         </div>
       )}
-
+      <div className={styles.scoreNote}>
+        <span className={styles.status}>
+          {isFinal(data) ? "Resultados finales" : "Provisional · las estadísticas pueden cambiar"}
+        </span>
+      </div>
+      <details className={styles.help}>
+        <summary>Cómo leer la comparación</summary>
+        <p>
+          Pendientes de puntuar no significa necesariamente pendientes de jugar. Abre un
+          participante para comparar su once y banquillo. La diferencia indica sus puntos respecto a
+          los tuyos.
+        </p>
+      </details>
+      <div className={styles.columns} aria-hidden="true">
+        <span>Participante · abre su once</span>
+        <span>Puntos{participantId !== null ? " / vs. tú" : ""}</span>
+      </div>
+      {data.scores.length === 0 && (
+        <p className="p-4 text-sm text-vpv-text-muted">Todavía no hay puntuaciones disponibles.</p>
+      )}
       <div>
         {data.scores.map((s, i) => (
           <AccordionRow
-            key={s.participant_id}
+            key={`${seasonId}:${data.number}:${s.participant_id}`}
+            refreshKey={refreshKey}
             score={s}
-            rank={i + 1}
+            rank={s.rank ?? i + 1}
+            isYou={s.participant_id === participantId}
+            personalPoints={yourPoints}
             seasonId={seasonId}
             matchdayNumber={data.number}
           />
