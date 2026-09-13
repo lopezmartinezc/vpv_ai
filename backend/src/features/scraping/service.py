@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.features.economy.service import EconomyService
+from src.features.matchdays.closing import MatchdayClosing, expected_ko_pairings
 from src.features.scraping.aggregation import ScoreAggregator
 from src.features.scraping.client import ScrapingClient, ScrapingError
 from src.features.scraping.config import (
@@ -660,43 +660,15 @@ class ScrapingService:
                         total_in_match,
                     )
 
-        # Reload to check if every counting match is now stats_ok.
-        refreshed_matches = await self.repo.get_matches_for_matchday(matchday_id)
-        all_ok = all(m.stats_ok for m in refreshed_matches if m.counts)
-        if all_ok and counting_matches:
-            await self.repo.mark_matchday_stats_ok(matchday_id)
-            await self.repo.update_matchday_status(matchday_id, "finished")
-            logger.info(
-                "scrape_matchday: all counting matches done — matchday_id=%d marked stats_ok",
-                matchday_id,
-            )
-
-        # Run score aggregation regardless of completeness (partial updates are fine).
+        # Score aggregation runs regardless of completeness — partial updates are
+        # fine, and the standings should follow the matchday as it is played.
         await self._aggregator.aggregate_matchday(matchday_id)
 
-        # Generate weekly payments once the matchday is fully scored.
-        if all_ok and counting_matches:
-            economy_svc = EconomyService(self.session)
-            await economy_svc.generate_weekly_payments(season_id, matchday_id)
-            from src.features.achievements.engine import AchievementEngine
-
-            ach_engine = AchievementEngine(self.session)
-            await ach_engine.evaluate_matchday(season_id, matchday_id, matchday_number)
-
-        # Advance the season's scanned pointer when the matchday is fully done.
-        if all_ok and counting_matches:
-            await self.repo.update_season_matchday_scanned(season_id, matchday_number)
-
-        # Advance matchday_current to next matchday when this one is complete.
-        if all_ok and counting_matches and season and matchday_number == season.matchday_current:
-            next_md = matchday_number + 1
-            if next_md <= (season.matchday_end or 38):
-                await self.repo.update_season_matchday_current(season_id, next_md)
-                logger.info(
-                    "scrape_matchday: advanced matchday_current %d -> %d",
-                    matchday_number,
-                    next_md,
-                )
+        # Closing — marking finished, advancing the season, paying and awarding —
+        # is defined once in MatchdayClosing and refuses while anything blocks it.
+        # It used to be written out here and again in scrape_match_players, and
+        # the two copies had already drifted.
+        await MatchdayClosing(self.session).close(season_id, matchday_number, dry_run=False)
 
         summary: dict[str, object] = {
             "processed": total_processed,
@@ -709,28 +681,12 @@ class ScrapingService:
 
     @staticmethod
     def _expected_ko_pairings(season: object, matchday_number: int) -> int | None:
-        """Number of knockout pairings the tournament config declares for
-        ``matchday_number``, or ``None`` when it's not a tournament KO
-        matchday (leagues, group-stage matchdays, missing config).
-
-        Used to avoid advancing ``matchday_current`` past a knockout round
-        whose fixtures aren't all in the DB yet.
+        """Moved to ``matchdays.closing.expected_ko_pairings``, where the rest of
+        the closing conditions now live. Kept as a delegation so the guard keeps
+        its own test (``test_ko_matchday_advance_guard``), which is what proves
+        the move did not change the logic.
         """
-        if getattr(season, "kind", None) != "tournament":
-            return None
-        config = getattr(season, "tournament_config", None)
-        if not isinstance(config, dict):
-            return None
-        knockout = config.get("knockout")
-        if not isinstance(knockout, dict):
-            return None
-        for round_cfg in knockout.get("rounds", []):
-            if not isinstance(round_cfg, dict):
-                continue
-            if int(round_cfg.get("matchday", 0)) == matchday_number:
-                pairings = round_cfg.get("pairings") or []
-                return len(pairings) if pairings else None
-        return None
+        return expected_ko_pairings(season, matchday_number)
 
     async def scrape_match_players(
         self, season_id: int, matchday_number: int, match_id: int
@@ -1010,49 +966,19 @@ class ScrapingService:
 
         await self._aggregator.aggregate_matchday(matchday_id)
 
-        # Check if all counting matches are now done → advance matchday.
+        # Same single definition of closing as scrape_matchday. A run that hit
+        # errors leaves the matchday alone: the picture is incomplete, and closing
+        # pays money out.
         if total_errors == 0:
-            refreshed = await self.repo.get_matches_for_matchday(matchday_id)
-            counting = [m for m in refreshed if m.counts]
-            all_ok = all(m.stats_ok for m in counting)
-            if all_ok and counting:
-                await self.repo.mark_matchday_stats_ok(matchday_id)
-                await self.repo.update_matchday_status(matchday_id, "finished")
-
-                season = await self.repo.get_season(season_id)
-                if season and matchday_number == season.matchday_current:
-                    next_md = matchday_number + 1
-                    # Don't skip a knockout matchday whose fixtures aren't
-                    # all materialised yet: a pending semi/final may still
-                    # be missing its Match row (e.g. published on the source
-                    # calendar under a "1/2"/"Final" round label). Advancing
-                    # on the lone played fixture would jump the home view
-                    # straight to an empty next matchday.
-                    expected = self._expected_ko_pairings(season, matchday_number)
-                    fully_materialised = expected is None or len(counting) >= expected
-                    if not fully_materialised:
-                        logger.info(
-                            "scrape_match_players: NOT advancing past J%d — "
-                            "only %d/%d knockout fixtures materialised",
-                            matchday_number,
-                            len(counting),
-                            expected,
-                        )
-                    elif next_md <= (season.matchday_end or 38):
-                        await self.repo.update_season_matchday_current(season_id, next_md)
-                        logger.info(
-                            "scrape_match_players: advanced matchday_current %d -> %d",
-                            matchday_number,
-                            next_md,
-                        )
-
-                economy_svc = EconomyService(self.session)
-                await economy_svc.generate_weekly_payments(season_id, matchday_id)
-                from src.features.achievements.engine import AchievementEngine
-
-                ach_engine = AchievementEngine(self.session)
-                await ach_engine.evaluate_matchday(season_id, matchday_id, matchday_number)
-                await self.repo.update_season_matchday_scanned(season_id, matchday_number)
+            report = await MatchdayClosing(self.session).close(
+                season_id, matchday_number, dry_run=False
+            )
+            if not report.closed:
+                logger.info(
+                    "scrape_match_players: J%d not closed — %s",
+                    matchday_number,
+                    "; ".join(report.blockers),
+                )
 
         summary: dict[str, object] = {
             "processed": total_processed,

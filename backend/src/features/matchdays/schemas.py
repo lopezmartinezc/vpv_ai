@@ -179,3 +179,49 @@ class AdminMatchResponse(BaseModel):
     stats_ok: bool
     played_at: datetime | None
     ko_winner_team_id: int | None = None
+
+
+# ---------------------------------------------------------------------------
+# Matchday centre — state of a jornada, and what closing it would do
+# ---------------------------------------------------------------------------
+
+
+class CloseStepResponse(BaseModel):
+    name: str
+    outcome: str  # hecho | ya_estaba | bloqueado
+    detail: str
+
+
+class CloseReportResponse(BaseModel):
+    season_id: int
+    matchday_number: int
+    dry_run: bool
+    closed: bool
+    blockers: list[str]
+    steps: list[CloseStepResponse]
+
+
+class MatchdayStatusResponse(BaseModel):
+    """Everything the admin panel needs about one jornada, in one request."""
+
+    season_id: int
+    matchday_number: int
+    matchday_id: int
+    status: str
+    counts: bool
+    stats_ok: bool
+    deadline_at: str | None
+    is_current: bool
+    matches_total: int
+    matches_counting: int
+    matches_without_result: list[str]
+    matches_without_stats: list[str]
+    participants_total: int
+    lineups_missing: list[str]
+    ratings_missing: int
+    last_scrape_at: str | None
+    scrape_errors: list[str]
+    blockers: list[str]
+    can_close: bool
+    # What closing would do right now, without doing it.
+    preview: CloseReportResponse
