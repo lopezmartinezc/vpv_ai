@@ -188,3 +188,36 @@ describe("opening a participant", () => {
     expect(screen.getByText("Total")).toBeInTheDocument();
   });
 });
+
+describe("what each place pays", () => {
+  const ranked: MatchdayDetailResponse = {
+    ...data,
+    scores: [
+      { ...data.scores[0], participant_id: 1, display_name: "Primero", rank: 1, total_points: 50 },
+      { ...data.scores[0], participant_id: 2, display_name: "Segundo", rank: 2, total_points: 30 },
+      { ...data.scores[0], participant_id: 3, display_name: "Tercero", rank: 2, total_points: 30 },
+    ],
+  };
+  const RULES = { 1: 0, 2: 1, 3: 2 };
+
+  it("shows it on each row, a tie paying what the worse place pays", () => {
+    render(<MatchdayAccordion data={ranked} seasonId={1} weeklyRules={RULES} />);
+    expect(screen.getByRole("button", { name: /Primero/ })).not.toHaveTextContent("€");
+    expect(screen.getByRole("button", { name: /Segundo/ })).toHaveTextContent("2 €");
+    expect(screen.getByRole("button", { name: /Tercero/ })).toHaveTextContent("2 €");
+  });
+
+  it("shows nothing in a season without weekly payments", () => {
+    render(<MatchdayAccordion data={ranked} seasonId={1} />);
+    expect(screen.queryByText(/€/)).not.toBeInTheDocument();
+  });
+
+  it("shows nothing before there is a ranking, when everyone is still tied", () => {
+    const unranked = {
+      ...ranked,
+      scores: ranked.scores.map((s) => ({ ...s, rank: null, total_points: 0 })),
+    };
+    render(<MatchdayAccordion data={unranked} seasonId={1} weeklyRules={RULES} />);
+    expect(screen.queryByText(/€/)).not.toBeInTheDocument();
+  });
+});

@@ -7,27 +7,19 @@ import { useDashboardData } from "@/hooks/use-dashboard-data";
 import { useFetch } from "@/hooks/use-fetch";
 import { appliesToCompetition } from "@/lib/competition-scope";
 import { lineupDeadlineMs } from "@/lib/matchday-status";
+import { weeklyRulesFrom, type SeasonPaymentEntry } from "@/lib/weekly-payments";
 import { CompetitiveHome } from "@/components/dashboard/competitive-home";
 import { UnavailableNotice } from "@/components/dashboard/unavailable-notice";
 import { Podium } from "@/components/dashboard/podium";
 import { NavCards } from "@/components/dashboard/nav-cards";
 import { CopaWidget } from "@/components/dashboard/copa-widget";
 import { CopaMatchdayWidget } from "@/components/dashboard/copa-matchday-widget";
-import { PagometroJornadaWidget } from "@/components/dashboard/pagometro-jornada-widget";
 import { PagometroWidget } from "@/components/dashboard/pagometro-widget";
 import { TournamentHero } from "@/components/tournament/tournament-hero";
 import { SkeletonCards } from "@/components/ui/skeleton";
 import homeStyles from "@/components/dashboard/home.module.css";
 import { Logo } from "@/components/ui/logo";
 import type { GroupStandingsResponse, MatchdayDetailResponse } from "@/types";
-
-interface SeasonPaymentEntry {
-  id: number;
-  payment_type: string;
-  position_rank: number | null;
-  amount: number;
-  description: string | null;
-}
 
 export default function Home() {
   const { user } = useAuth();
@@ -58,24 +50,15 @@ export default function Home() {
     selectedSeason ? `/seasons/${selectedSeason.id}/payments` : null,
   );
 
-  const weeklyRules = useMemo(() => {
-    if (!payments) return {};
-    const rules: Record<number, number> = {};
-    for (const p of payments) {
-      if (p.payment_type === "weekly_position" && p.position_rank !== null) {
-        rules[p.position_rank] = p.amount;
-      }
-    }
-    return rules;
-  }, [payments]);
+  const weeklyRules = useMemo(() => weeklyRulesFrom(payments ?? []), [payments]);
 
   const refreshDashboard = useCallback(() => {
     refetch();
     refreshPrevious();
   }, [refetch, refreshPrevious]);
 
-  // Which matchday the Copa and Pagometro widgets follow (re-checked every 30s):
-  // the same effective deadline as the rest of the home, overrides included.
+  // Which matchday the Copa widgets follow (re-checked every 30s): the same
+  // effective deadline as the rest of the home, overrides included.
   const deadlineMs = currentMatchdayDetail
     ? lineupDeadlineMs(currentMatchdayDetail, selectedSeason?.lineup_deadline_min ?? 0)
     : null;
@@ -102,9 +85,6 @@ export default function Home() {
   const displayMatchday = deadlinePassed
     ? currentMatchdayDetail
     : (prevMatchday ?? currentMatchdayDetail);
-
-  // Pagometro uses whichever matchday is being displayed
-  const pagometroMatchday = displayMatchday?.stats_ok ? displayMatchday : null;
 
   // Hide every Pagometro/Economia surface for seasons without the
   // weekly-payments mechanic (typical for Mundial / torneos cortos).
@@ -169,9 +149,7 @@ export default function Home() {
     currentCopaMatchday ||
     copaStandings.length ||
     groupStandings?.groups.length ||
-    (economyEnabled &&
-      (economy?.balances.length ||
-        (pagometroMatchday?.scores.length && Object.keys(weeklyRules).length))),
+    (economyEnabled && economy?.balances.length),
   );
 
   return (
@@ -211,6 +189,7 @@ export default function Home() {
           seasonName={selectedSeason.name}
           economyEnabled={economyEnabled}
           isTournament={isTournamentContext}
+          weeklyRules={economyEnabled ? weeklyRules : undefined}
           current={currentMatchdayDetail}
           previous={prevMatchday}
           authenticated={user !== null}
@@ -241,17 +220,6 @@ export default function Home() {
             {currentCopaMatchday && <CopaMatchdayWidget matchday={currentCopaMatchday} />}
 
             {copaStandings.length > 0 && <CopaWidget entries={copaStandings} />}
-
-            {economyEnabled &&
-              pagometroMatchday &&
-              pagometroMatchday.scores.length > 0 &&
-              Object.keys(weeklyRules).length > 0 && (
-                <PagometroJornadaWidget
-                  scores={pagometroMatchday.scores}
-                  matchdayNumber={pagometroMatchday.number}
-                  weeklyRules={weeklyRules}
-                />
-              )}
 
             {economyEnabled && economy && economy.balances.length > 0 && (
               <PagometroWidget balances={economy.balances} />
