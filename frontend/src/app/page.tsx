@@ -1,23 +1,19 @@
 "use client";
 
-import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useMemo } from "react";
 import { useSeason } from "@/contexts/season-context";
 import { useAuth } from "@/contexts/auth-context";
 import { useDashboardData } from "@/hooks/use-dashboard-data";
 import { useFetch } from "@/hooks/use-fetch";
 import { appliesToCompetition } from "@/lib/competition-scope";
-import { lineupDeadlineMs } from "@/lib/matchday-status";
 import { weeklyRulesFrom, type SeasonPaymentEntry } from "@/lib/weekly-payments";
 import { CompetitiveHome } from "@/components/dashboard/competitive-home";
+import { LeagueSummary } from "@/components/dashboard/league-summary";
 import { UnavailableNotice } from "@/components/dashboard/unavailable-notice";
 import { Podium } from "@/components/dashboard/podium";
 import { NavCards } from "@/components/dashboard/nav-cards";
-import { CopaWidget } from "@/components/dashboard/copa-widget";
-import { CopaMatchdayWidget } from "@/components/dashboard/copa-matchday-widget";
-import { PagometroWidget } from "@/components/dashboard/pagometro-widget";
 import { TournamentHero } from "@/components/tournament/tournament-hero";
 import { SkeletonCards } from "@/components/ui/skeleton";
-import homeStyles from "@/components/dashboard/home.module.css";
 import { Logo } from "@/components/ui/logo";
 import type { GroupStandingsResponse, MatchdayDetailResponse } from "@/types";
 
@@ -57,21 +53,6 @@ export default function Home() {
     refreshPrevious();
   }, [refetch, refreshPrevious]);
 
-  // Which matchday the Copa widgets follow (re-checked every 30s): the same
-  // effective deadline as the rest of the home, overrides included.
-  const deadlineMs = currentMatchdayDetail
-    ? lineupDeadlineMs(currentMatchdayDetail, selectedSeason?.lineup_deadline_min ?? 0)
-    : null;
-  const subscribe = useCallback((cb: () => void) => {
-    const id = setInterval(cb, 30_000);
-    return () => clearInterval(id);
-  }, []);
-  const deadlinePassed = useSyncExternalStore(
-    subscribe,
-    () => deadlineMs === null || Date.now() >= deadlineMs,
-    () => true,
-  );
-
   if (seasonLoading || loading) {
     return (
       <div className="space-y-6">
@@ -81,11 +62,6 @@ export default function Home() {
     );
   }
 
-  // Show previous matchday until deadline passes, then show current
-  const displayMatchday = deadlinePassed
-    ? currentMatchdayDetail
-    : (prevMatchday ?? currentMatchdayDetail);
-
   // Hide every Pagometro/Economia surface for seasons without the
   // weekly-payments mechanic (typical for Mundial / torneos cortos).
   // `undefined` is treated as enabled so older API bundles keep their
@@ -94,15 +70,8 @@ export default function Home() {
 
   // The Copa is a league competition: the same rule as the menu (IN-04).
   const copaApplies = appliesToCompetition("/copa", isTournamentContext);
-  const copaStandings = copaApplies ? (copaData?.standings ?? []) : [];
-  const currentCopaMatchday = copaApplies
-    ? (copaData?.matchdays.find(
-        (md) => md.matchday_number === (displayMatchday?.number ?? mdCurrent),
-      ) ?? null)
-    : null;
-
   const leader = standings?.entries[0] ?? null;
-  const copaLeader = copaStandings[0] ?? null;
+  const copaLeader = copaApplies ? (copaData?.standings[0] ?? null) : null;
 
   const navCards = [
     {
@@ -145,13 +114,6 @@ export default function Home() {
       : []),
   ];
 
-  const hasSecondary = Boolean(
-    currentCopaMatchday ||
-    copaStandings.length ||
-    groupStandings?.groups.length ||
-    (economyEnabled && economy?.balances.length),
-  );
-
   return (
     <div className="space-y-6">
       {!currentMatchdayDetail && (
@@ -190,6 +152,9 @@ export default function Home() {
           economyEnabled={economyEnabled}
           isTournament={isTournamentContext}
           weeklyRules={economyEnabled ? weeklyRules : undefined}
+          copa={copaData}
+          economy={economy}
+          groups={groupStandings}
           current={currentMatchdayDetail}
           previous={prevMatchday}
           authenticated={user !== null}
@@ -213,56 +178,20 @@ export default function Home() {
         <Podium entries={standings.entries} seasonId={selectedSeason?.id} />
       )}
 
-      {(hasSecondary || !currentMatchdayDetail) && (
-        <section className={homeStyles.secondary} aria-label="Más competiciones y gestión">
-          <h2 className={homeStyles.secondaryTitle}>El resto de tu liga</h2>
-          <div className={homeStyles.secondaryGrid}>
-            {currentCopaMatchday && <CopaMatchdayWidget matchday={currentCopaMatchday} />}
-
-            {copaStandings.length > 0 && <CopaWidget entries={copaStandings} />}
-
-            {economyEnabled && economy && economy.balances.length > 0 && (
-              <PagometroWidget balances={economy.balances} />
-            )}
-
-            {/* Group standings */}
-            {groupStandings && groupStandings.groups.length > 0 && (
-              <div className="rounded-lg border border-vpv-card-border bg-vpv-card overflow-hidden">
-                <div className="border-b border-vpv-border bg-vpv-bg px-4 py-2.5">
-                  <h2 className="text-sm font-semibold text-vpv-text">Grupos</h2>
-                </div>
-                <div className="divide-y divide-vpv-border">
-                  {groupStandings.groups.map((g) => {
-                    const isLast = g.rank === groupStandings.groups.length;
-                    return (
-                      <div
-                        key={g.group_name}
-                        className={`flex items-center justify-between px-4 py-2.5 ${
-                          isLast ? "bg-red-500/5" : g.rank === 1 ? "bg-amber-400/5" : ""
-                        }`}
-                      >
-                        <span className="text-sm font-medium text-vpv-text">
-                          {g.rank === 1 && "🏆 "}
-                          {isLast && "🍕 "}
-                          {g.rank}. {g.group_name}
-                        </span>
-                        <span className="text-sm tabular-nums font-bold text-vpv-text">
-                          {g.avg_points}{" "}
-                          <span className="text-xs font-normal text-vpv-text-muted">pts/usr</span>
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-          {!currentMatchdayDetail && (
-            <div className="mt-5">
-              <NavCards cards={navCards} />
-            </div>
-          )}
-        </section>
+      {selectedSeason && !currentMatchdayDetail && (
+        <>
+          <LeagueSummary
+            seasonId={selectedSeason.id}
+            participantId={null}
+            matchdayNumber={null}
+            isTournament={isTournamentContext}
+            economyEnabled={economyEnabled}
+            copa={copaData}
+            economy={economy}
+            groups={groupStandings}
+          />
+          <NavCards cards={navCards} />
+        </>
       )}
     </div>
   );

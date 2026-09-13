@@ -162,6 +162,25 @@ describe("MatchdayIncidents with real useFetch and API client", () => {
     expect(screen.queryByText(/Gol actual/)).not.toBeInTheDocument();
   });
 
+  it("marks the goals left out with the burger, and shows three until asked for all", async () => {
+    const many = response();
+    many.burger.entries[0].goals = Array.from({ length: 5 }, (_, i) => ({
+      matchday_number: 4,
+      player_id: 100 + i,
+      player_name: `Goleador ${i + 1}`,
+      team_name: "Equipo ficticio",
+      goals: 1,
+    }));
+    fetchMock.mockResolvedValueOnce(ok(many));
+    render(<MatchdayIncidents {...props} />);
+    expect(await screen.findByText(/Goleador 3/)).toBeInTheDocument();
+    expect(screen.getByText("🍔")).toBeInTheDocument();
+    expect(screen.queryByText(/Goleador 4/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Ver los 5" }));
+    expect(screen.getByText(/Goleador 5/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Ver los/ })).not.toBeInTheDocument();
+  });
+
   it("refreshes events when matchday or refresh key changes", async () => {
     fetchMock.mockImplementation(async () => ok(response()));
     const { rerender } = render(<MatchdayIncidents {...props} />);

@@ -6,7 +6,15 @@ import { useFetch } from "@/hooks/use-fetch";
 import { appliesToCompetition } from "@/lib/competition-scope";
 import { isMatchdayFinal } from "@/lib/matchday-status";
 import { withSeason } from "@/lib/season-link";
-import type { MatchdayDetailResponse, MyLineupResponse, StandingEntry } from "@/types";
+import type {
+  CopaFullResponse,
+  EconomyResponse,
+  GroupStandingsResponse,
+  MatchdayDetailResponse,
+  MyLineupResponse,
+  StandingEntry,
+} from "@/types";
+import { LeagueSummary } from "./league-summary";
 import { MatchdayAccordion } from "./matchday-accordion";
 import { MatchdayIncidents } from "./matchday-incidents";
 import { PersonalPlayoff, type PlayoffPhase } from "./personal-playoff";
@@ -35,6 +43,9 @@ export function CompetitiveHome({
   economyEnabled = false,
   isTournament = false,
   weeklyRules,
+  copa = null,
+  economy = null,
+  groups = null,
   current,
   previous,
   authenticated,
@@ -48,6 +59,10 @@ export function CompetitiveHome({
   isTournament?: boolean;
   /** Position → euros for the weekly payments; absent when the season has none. */
   weeklyRules?: Record<number, number>;
+  /** For the one-line summary of the rest of the league. */
+  copa?: CopaFullResponse | null;
+  economy?: EconomyResponse | null;
+  groups?: GroupStandingsResponse | null;
   /** The season's current matchday: the one whose lineup is being set. */
   current: MatchdayDetailResponse;
   previous: MatchdayDetailResponse | null;
@@ -210,6 +225,16 @@ export function CompetitiveHome({
               La comparación de esta jornada aparecerá cuando cierre el plazo de alineación.
             </p>
           )}
+          <LeagueSummary
+            seasonId={seasonId}
+            participantId={participantId}
+            matchdayNumber={displayed?.number ?? null}
+            isTournament={isTournament}
+            economyEnabled={economyEnabled}
+            copa={copa}
+            economy={economy}
+            groups={groups}
+          />
         </div>
         <aside
           className={styles.rail}
