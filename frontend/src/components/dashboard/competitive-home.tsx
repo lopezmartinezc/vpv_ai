@@ -9,7 +9,7 @@ import { withSeason } from "@/lib/season-link";
 import type { MatchdayDetailResponse, MyLineupResponse, StandingEntry } from "@/types";
 import { MatchdayAccordion } from "./matchday-accordion";
 import { MatchdayIncidents } from "./matchday-incidents";
-import { PersonalPlayoff } from "./personal-playoff";
+import { PersonalPlayoff, type PlayoffPhase } from "./personal-playoff";
 import { Podium } from "./podium";
 import styles from "./home.module.css";
 
@@ -60,15 +60,14 @@ export function CompetitiveHome({
     authenticated ? `/lineups/${seasonId}/deadline-status` : null,
   );
   const [refreshKey, setRefreshKey] = useState(0);
-  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const refreshMe = me.refetch;
   const refreshDeadline = deadline.refetch;
+  // The home asks again every minute on its own; a button for it only took room.
   const refresh = useCallback(() => {
     refreshMe();
     refreshDeadline();
     onRefresh();
     setRefreshKey((value) => value + 1);
-    setUpdatedAt(new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }));
   }, [refreshMe, refreshDeadline, onRefresh]);
   useEffect(() => {
     const timer = setInterval(refresh, 60_000);
@@ -85,6 +84,7 @@ export function CompetitiveHome({
   );
   const final = isMatchdayFinal(current);
   const showCurrent = passed === true || final;
+  const playoffPhase: PlayoffPhase = final ? "final" : showCurrent ? "during" : "before";
   const displayed = showCurrent
     ? current
     : previous && isMatchdayFinal(previous)
@@ -114,21 +114,8 @@ export function CompetitiveHome({
   return (
     <section className={styles.home} aria-label="Tu jornada y tus rivales">
       <header className={styles.header}>
-        <div>
-          <p className={styles.eyebrow}>
-            {seasonName} <span aria-hidden="true"> / </span> Jornada {current.number}
-          </p>
-          <h1 className={styles.title}>Tu liga. Tu jornada.</h1>
-          <p className={styles.subtitle}>
-            Cada punto cuenta. Sigue tu once y no pierdas de vista a tus rivales.
-          </p>
-        </div>
-        <div className={styles.refresh}>
-          <button type="button" onClick={refresh}>
-            <span aria-hidden="true">↻</span> Actualizar jornada
-          </button>
-          <small>Consulta cada minuto{updatedAt ? ` · solicitada a las ${updatedAt}` : ""}</small>
-        </div>
+        <h1 className={styles.title}>Jornada {current.number}</h1>
+        <p className={styles.eyebrow}>{seasonName}</p>
       </header>
 
       <dl className={styles.metrics} aria-label="Tu resumen competitivo">
@@ -202,9 +189,9 @@ export function CompetitiveHome({
               seasonId={seasonId}
               matchdayNumber={current.number}
               participantId={participantId}
+              phase={playoffPhase}
               scores={showCurrent ? current.scores : undefined}
               refreshKey={refreshKey}
-              matchdayFinal={final}
             />
           )}
           {displayed ? (

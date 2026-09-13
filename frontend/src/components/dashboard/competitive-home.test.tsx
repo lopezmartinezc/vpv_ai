@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CompetitiveHome, isDeadlinePassed } from "./competitive-home";
 import { apiClient } from "@/lib/api-client";
@@ -9,8 +9,10 @@ vi.mock("@/lib/api-client", async (importOriginal) => ({
   apiClient: { get: vi.fn() },
 }));
 vi.mock("./personal-playoff", () => ({
-  PersonalPlayoff: ({ participantId }: { participantId: number }) => (
-    <p>Duelo de participante {participantId}</p>
+  PersonalPlayoff: ({ participantId, phase }: { participantId: number; phase: string }) => (
+    <p>
+      Duelo de participante {participantId} · {phase}
+    </p>
   ),
 }));
 vi.mock("./matchday-incidents", () => ({
@@ -87,7 +89,7 @@ describe("competitive home", () => {
     );
     expect(screen.getByText("Incidencias J3")).toBeInTheDocument();
     expect(screen.queryByText("Incidencias J4")).not.toBeInTheDocument();
-    expect(screen.getByText("Duelo de participante 42")).toBeInTheDocument();
+    expect(screen.getByText("Duelo de participante 42 · before")).toBeInTheDocument();
   });
 
   it("after the deadline shows your points, you, the pending stats and the difference", async () => {
@@ -98,6 +100,13 @@ describe("competitive home", () => {
     expect(screen.getByText("-5")).toBeInTheDocument();
     expect(screen.getByText("2 pendientes de puntuar")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Ver mi alineación" })).toBeInTheDocument();
+    expect(screen.getByText("Duelo de participante 42 · during")).toBeInTheDocument();
+  });
+
+  it("tells the playoff the matchday is closed", async () => {
+    mockApi(status("2020-01-01T20:00:00Z"));
+    render(<CompetitiveHome {...props} current={{ ...current, status: "finished", stats_ok: true }} />);
+    expect(await screen.findByText("Duelo de participante 42 · final")).toBeInTheDocument();
   });
 
   it("does not invent a pending lineup when the personal request fails", async () => {
@@ -110,7 +119,7 @@ describe("competitive home", () => {
     expect(screen.queryByText("Incidencias J4")).not.toBeInTheDocument();
   });
 
-  it("shows a confirmed lineup compactly, and refreshes without any save action", async () => {
+  it("shows a confirmed lineup compactly", async () => {
     mockApi(status("2099-01-01T20:00:00Z"), {
       ...me,
       current_lineup: {
@@ -125,8 +134,6 @@ describe("competitive home", () => {
     render(<CompetitiveHome {...props} />);
     expect(await screen.findByText("Alineación confirmada")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Preparar mi alineación" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Actualizar jornada" }));
-    await waitFor(() => expect(props.onRefresh).toHaveBeenCalled());
   });
 
   it("asks a visitor for no private endpoint and shows no current rival", () => {
@@ -187,6 +194,33 @@ describe("competitive home", () => {
     );
     expect(await screen.findByText(/aparecerá cuando se verifique el cierre/)).toBeInTheDocument();
     expect(screen.queryByText("Incidencias J3")).not.toBeInTheDocument();
+  });
+});
+
+describe("header and refresh", () => {
+  it("names the matchday in one heading, with the season beside it", () => {
+    render(<CompetitiveHome {...props} authenticated={false} seasonName="Liga 2026-27" />);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Jornada 4");
+    expect(screen.getByText("Liga 2026-27")).toBeInTheDocument();
+  });
+
+  it("refreshes by itself every minute, with no button for it", () => {
+    vi.useFakeTimers();
+    try {
+      const onRefresh = vi.fn();
+      render(<CompetitiveHome {...props} authenticated={false} onRefresh={onRefresh} />);
+      expect(screen.queryByRole("button", { name: /Actualizar/ })).not.toBeInTheDocument();
+      act(() => {
+        vi.advanceTimersByTime(59_000);
+      });
+      expect(onRefresh).not.toHaveBeenCalled();
+      act(() => {
+        vi.advanceTimersByTime(1_000);
+      });
+      expect(onRefresh).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
