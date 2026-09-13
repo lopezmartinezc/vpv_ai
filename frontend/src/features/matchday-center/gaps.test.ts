@@ -5,8 +5,24 @@ import {
   gapsOf,
   headline,
   hiddenExampleCount,
+  matchdayForPanel,
   shownExamples,
 } from "@/features/matchday-center/gaps";
+
+describe("matchdayForPanel", () => {
+  it("has nothing to show for a season in preparation (matchday_current 0)", () => {
+    // It used to ask the server for J0, get a 404 and report it as an error.
+    expect(matchdayForPanel({ matchday_current: 0 })).toBeNull();
+  });
+
+  it("has nothing to show without a season", () => {
+    expect(matchdayForPanel(null)).toBeNull();
+  });
+
+  it("shows the current jornada otherwise", () => {
+    expect(matchdayForPanel({ matchday_current: 6 })).toBe(6);
+  });
+});
 import type { MatchdayState } from "@/types";
 
 /**

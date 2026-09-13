@@ -69,6 +69,30 @@ export function canSeeAdminItem(
   return userHasPerm(isAdmin, permissions, item.perm);
 }
 
+/**
+ * Every admin item this user should be offered for this season — one rule for
+ * the rail and the admin home alike.
+ *
+ * The home used to filter by permission only, while the rail also dropped what
+ * does not apply to the competition (Grupos in a league, Logros in a
+ * tournament) and Economía in seasons without weekly payments. Two lists built
+ * two ways disagree; now there is one. Presentation only: the backend still
+ * decides what each route answers.
+ */
+export function visibleAdminItems(
+  isAdmin: boolean,
+  permissions: number,
+  season: { kind?: string | null; weekly_payments_enabled?: boolean } | null,
+): AdminNavItem[] {
+  const kind = season?.kind ?? "league";
+  return ADMIN_ITEMS.filter(
+    (i) =>
+      canSeeAdminItem(isAdmin, permissions, i) &&
+      (i.scope !== "season" || !i.appliesTo || i.appliesTo === kind) &&
+      !(i.href === "/admin/economia" && season?.weekly_payments_enabled === false),
+  );
+}
+
 /** Season-scoped items for a competition kind (respects appliesTo). */
 export function seasonItems(kind: "league" | "tournament"): AdminNavItem[] {
   return ADMIN_ITEMS.filter(
@@ -102,22 +126,48 @@ export const operationsItems: AdminNavItem[] = ADMIN_ITEMS.filter(
 export const systemItems: AdminNavItem[] = ADMIN_ITEMS.filter((i) => i.scope === "system");
 
 /**
- * Resolve which league/tournament drive the per-competition "Temporada"
- * sections. Prefer the active competitions, but fall back to the currently
- * selected season so admin pages stay reachable even when nothing is marked
- * active yet (e.g. a pre-draft season). Missing `kind` counts as league.
+ * Which league/tournament drive the per-competition "Temporada" sections.
+ *
+ * The competition you are looking at wins. Preferring the active one, as this
+ * used to, meant that from a historical season every link in the rail carried
+ * the *active* season's id: the banner said you were operating on 2023-24 and
+ * one click took you to 2026-27. The other kind still falls back to its active
+ * competition, so a tournament stays reachable while you work on the league.
+ * Missing `kind` counts as league.
  */
 export function resolveCompetitionContexts<T extends { kind?: string | null }>(
   activeLeague: T | null,
   activeTournament: T | null,
   selectedSeason: T | null,
 ): { league: T | null; tournament: T | null } {
-  const kindOf = (s: T | null) => (s?.kind ?? "league");
-  const selKind = selectedSeason ? kindOf(selectedSeason) : null;
+  const selKind = selectedSeason ? (selectedSeason.kind ?? "league") : null;
   return {
-    league: activeLeague ?? (selKind === "league" ? selectedSeason : null),
-    tournament: activeTournament ?? (selKind === "tournament" ? selectedSeason : null),
+    league: selKind === "league" ? selectedSeason : activeLeague,
+    tournament: selKind === "tournament" ? selectedSeason : activeTournament,
   };
+}
+
+/**
+ * What the admin should be told about the season being operated on, or null.
+ *
+ * "Not active" is two situations: a season still being prepared, where changes
+ * are expected, and a closed one, where they rewrite history. Warning about
+ * "datos históricos" on a season that has not started yet was simply wrong.
+ */
+export function seasonNotice(
+  season: { name: string; status: string } | null,
+): { tone: "info" | "warning"; text: string } | null {
+  if (!season) return null;
+  if (season.status === "setup") {
+    return { tone: "info", text: `${season.name} está en preparación: aún no ha empezado a puntuar.` };
+  }
+  if (season.status === "finished") {
+    return {
+      tone: "warning",
+      text: `Estás operando sobre ${season.name}, una temporada cerrada. Los cambios afectan a datos históricos.`,
+    };
+  }
+  return null;
 }
 
 /** Label of the admin item matching a pathname (for the mobile header). */

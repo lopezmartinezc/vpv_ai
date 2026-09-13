@@ -3,12 +3,9 @@
 import Link from "next/link";
 import { useAuth } from "@/contexts/auth-context";
 import { useSeason } from "@/contexts/season-context";
+import { matchdayForPanel } from "@/features/matchday-center/gaps";
 import { MatchdayCenterPanel } from "@/features/matchday-center/panel";
-import {
-  ADMIN_ITEMS,
-  canSeeAdminItem,
-  hrefForSeason,
-} from "@/lib/admin-nav";
+import { hrefForSeason, visibleAdminItems } from "@/lib/admin-nav";
 import { PERM, userHasPerm } from "@/lib/permissions";
 
 /**
@@ -34,9 +31,9 @@ export default function AdminPage() {
   }
 
   const canSeeMatchdays = userHasPerm(user.isAdmin, user.permissions, PERM.MATCHDAYS);
-  const reachable = ADMIN_ITEMS.filter((item) =>
-    canSeeAdminItem(user.isAdmin, user.permissions, item),
-  );
+  // The same rule as the rail: permission, competition kind and the economy flag.
+  const reachable = visibleAdminItems(user.isAdmin, user.permissions, selectedSeason);
+  const panelMatchday = matchdayForPanel(selectedSeason);
 
   return (
     <div className="space-y-6">
@@ -47,11 +44,18 @@ export default function AdminPage() {
         )}
       </div>
 
-      {canSeeMatchdays && selectedSeason ? (
-        <MatchdayCenterPanel
-          seasonId={selectedSeason.id}
-          matchdayNumber={selectedSeason.matchday_current}
-        />
+      {canSeeMatchdays && selectedSeason && panelMatchday === null ? (
+        <section className="rounded-lg border border-vpv-card-border bg-vpv-card p-5">
+          <p className="text-sm font-medium text-vpv-text">
+            {selectedSeason.name} todavía no tiene una jornada en curso.
+          </p>
+          <p className="mt-1 text-xs text-vpv-text-muted">
+            La primera jornada que puntúa es la J{selectedSeason.matchday_start}. El panel
+            aparecerá cuando la temporada tenga una jornada en marcha.
+          </p>
+        </section>
+      ) : canSeeMatchdays && selectedSeason && panelMatchday !== null ? (
+        <MatchdayCenterPanel seasonId={selectedSeason.id} matchdayNumber={panelMatchday} />
       ) : (
         <section className="rounded-lg border border-vpv-card-border bg-vpv-card p-5">
           <h2 className="mb-1 text-sm font-semibold text-vpv-text">Tus herramientas</h2>

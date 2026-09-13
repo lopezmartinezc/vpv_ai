@@ -116,3 +116,15 @@ export function headline(state: MatchdayState): string {
   const total = blocking.reduce((n, g) => n + g.count, 0);
   return `Faltan ${total} ${total === 1 ? "cosa" : "cosas"} para poder cerrar`;
 }
+
+/**
+ * The jornada the admin home should show, or null when there is none yet.
+ *
+ * A season in preparation has `matchday_current = 0`. Asking the server for
+ * J0 answered 404, and the panel reported it as an error — for a season that is
+ * simply not playing yet.
+ */
+export function matchdayForPanel(season: { matchday_current: number } | null): number | null {
+  if (!season || season.matchday_current < 1) return null;
+  return season.matchday_current;
+}

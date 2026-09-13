@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { refreshAuthorisation } from "@/lib/auth-me";
 
 interface AuthUser {
   id: string;
@@ -89,12 +90,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (res.status === 401) {
           localStorage.removeItem("vpv_token");
           window.location.href = "/login";
+          return;
+        }
+        if (res.ok) {
+          // The token froze is_admin and permissions at login; the server knows
+          // them now. Apply them, so a revoked permission leaves the menu too
+          // instead of offering a screen that answers 403.
+          const me = await res.json();
+          setUser((current) => (current ? refreshAuthorisation(current, me) : current));
         }
       } catch {
         // Network error — skip
       }
     };
 
+    // Once straight away, so a stale token does not show the wrong menu for the
+    // first thirty seconds after a reload.
+    void check();
     heartbeatRef.current = setInterval(check, 30_000);
     return () => {
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);
