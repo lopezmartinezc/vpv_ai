@@ -11,6 +11,7 @@ import { MatchdayAccordion } from "./matchday-accordion";
 import { MatchdayIncidents } from "./matchday-incidents";
 import { PersonalPlayoff, type PlayoffPhase } from "./personal-playoff";
 import { Podium } from "./podium";
+import { YourMatchday } from "./your-matchday";
 import styles from "./home.module.css";
 
 /**
@@ -32,6 +33,7 @@ export function CompetitiveHome({
   seasonName = "Liga VPV",
   economyEnabled = false,
   isTournament = false,
+  weeklyRules,
   current,
   previous,
   authenticated,
@@ -43,6 +45,8 @@ export function CompetitiveHome({
   economyEnabled?: boolean;
   /** Tournaments have no Copa: the shortcuts follow the same rule as the menu. */
   isTournament?: boolean;
+  /** Position → euros for the weekly payments; absent when the season has none. */
+  weeklyRules?: Record<number, number>;
   /** The season's current matchday: the one whose lineup is being set. */
   current: MatchdayDetailResponse;
   previous: MatchdayDetailResponse | null;
@@ -89,13 +93,11 @@ export function CompetitiveHome({
         : { number: current.number, phase: "before" };
   const personal = authenticated ? me.data : null;
   const participantId = personal?.participant_id ?? null;
-  const position = standings.find((entry) => entry.participant_id === participantId);
   const confirmed = personal?.current_lineup?.confirmed === true;
   const pending = personal !== null && !confirmed;
   const actionProminent = passed === false && pending;
   const link = (path: string) => withSeason(path, seasonId);
 
-  const personalScore = displayed?.scores.find((entry) => entry.participant_id === participantId);
   const lineupState = !authenticated
     ? "Inicia sesión para consultar tu equipo."
     : me.loading
@@ -114,30 +116,6 @@ export function CompetitiveHome({
         <h1 className={styles.title}>Jornada {displayed?.number ?? current.number}</h1>
         <p className={styles.eyebrow}>{seasonName}</p>
       </header>
-
-      <dl className={styles.metrics} aria-label="Tu resumen competitivo">
-        <div className={styles.metric}>
-          <dt>Tus puntos{displayed ? ` · J${displayed.number}` : " de jornada"}</dt>
-          <dd>
-            {personalScore?.total_points ?? "—"}
-            <small>pts</small>
-          </dd>
-        </div>
-        <div className={styles.metric}>
-          <dt>Posición general</dt>
-          <dd>
-            {position ? `${position.rank}.º` : "—"}
-            <small>{position ? `de ${standings.length}` : "sin datos"}</small>
-          </dd>
-        </div>
-        <div className={styles.metric}>
-          <dt>Pendientes de puntuar{displayed ? ` · J${displayed.number}` : ""}</dt>
-          <dd>
-            {personalScore?.pending_players ?? "—"}
-            <small>jugadores</small>
-          </dd>
-        </div>
-      </dl>
 
       <div
         className={styles.lineup}
@@ -179,6 +157,16 @@ export function CompetitiveHome({
         </Link>
       </div>
 
+      {participantId !== null && displayed && (
+        <YourMatchday
+          matchday={displayed}
+          participantId={participantId}
+          standings={standings}
+          weeklyRules={weeklyRules}
+          final={isMatchdayFinal(displayed)}
+        />
+      )}
+
       <div className={styles.layout} data-home-layout>
         <div className={styles.main} data-home-main>
           {participantId !== null && (
@@ -199,6 +187,7 @@ export function CompetitiveHome({
                 data={displayed}
                 seasonId={seasonId}
                 participantId={participantId}
+                weeklyRules={weeklyRules}
               />
               <MatchdayIncidents
                 seasonId={seasonId}

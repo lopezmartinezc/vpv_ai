@@ -5,6 +5,7 @@
   --home-soft: #eef4fd;
   --home-muted: #56677c;
   --home-line: var(--color-card-border);
+  --home-pay: #b42318;
   color: var(--color-text);
   display: grid;
   gap: 24px;
@@ -14,6 +15,7 @@
   --home-link: #fca5a5;
   --home-soft: #292323;
   --home-muted: #a8b5c7;
+  --home-pay: #fca5a5;
 }
 .home :is(button, a, summary):focus-visible {
   outline: 3px solid var(--color-accent);
@@ -38,42 +40,57 @@
   letter-spacing: -0.04em;
   color: var(--home-ink);
 }
-.metrics {
+/* Your matchday: place, points, players still to score, money and the table. */
+.yourDay {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 14px 20px;
   background: var(--color-card);
   border: 1px solid var(--home-line);
   border-radius: 14px;
-  overflow: hidden;
 }
-.metric {
-  padding: 17px 24px;
-  position: relative;
-}
-.metric + .metric {
-  border-left: 1px solid var(--home-line);
-}
-.metric dt {
+.yourDayTitle {
   font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--home-muted);
-  font-weight: 600;
 }
-.metric dd {
+.yourDayMain {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 8px;
-  color: var(--home-ink);
-  font-size: 30px;
-  font-weight: 800;
-  line-height: 1.2;
-  letter-spacing: -0.035em;
-  font-variant-numeric: tabular-nums;
-  margin-top: 5px;
+  gap: 4px 20px;
+  font-size: 13px;
+  color: var(--home-muted);
 }
-.metric dd small {
+.yourDayMain strong {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  color: var(--home-ink);
+}
+.yourDayMoney {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--home-ink);
+}
+.yourDayGeneral {
+  font-size: 12px;
+  color: var(--home-muted);
+}
+.yourDayMoney[data-pays="true"],
+.amount[data-pays="true"] {
+  color: var(--home-pay);
+  font-weight: 700;
+}
+/* What each place of the matchday pays, in the comparison. */
+.amount {
+  min-width: 48px;
+  text-align: right;
   font-size: 11px;
-  font-weight: 400;
-  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
   color: var(--home-muted);
 }
 .lineup {
@@ -512,22 +529,11 @@
   .eyebrow {
     font-size: 12px;
   }
-  .metrics {
-    border-radius: 11px;
+  .yourDay {
+    padding: 12px 14px;
   }
-  .metric {
-    padding: 12px 10px;
-  }
-  .metric dt {
-    font-size: 10px;
-  }
-  .metric dd {
-    font-size: 24px;
-    gap: 4px;
-    flex-wrap: wrap;
-  }
-  .metric dd small {
-    font-size: 10px;
+  .yourDayMain strong {
+    font-size: 22px;
   }
   .lineup {
     padding: 10px 12px;

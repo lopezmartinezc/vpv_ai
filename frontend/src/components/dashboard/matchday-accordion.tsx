@@ -11,6 +11,7 @@ import type {
 import { useFetch } from "@/hooks/use-fetch";
 import { isMatchdayFinal } from "@/lib/matchday-status";
 import { withSeason } from "@/lib/season-link";
+import { formatEuros, weeklyAmounts } from "@/lib/weekly-payments";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
 import styles from "./home.module.css";
 
@@ -182,6 +183,7 @@ function AccordionRow({
   personalPoints,
   isYou,
   refreshKey,
+  amount,
 }: {
   score: MatchdayDetailResponse["scores"][number];
   rank: number;
@@ -190,6 +192,8 @@ function AccordionRow({
   personalPoints?: number;
   isYou: boolean;
   refreshKey: number;
+  /** What this place pays for the matchday; absent without weekly payments. */
+  amount?: number;
 }) {
   const [open, setOpen] = useState(false);
   const {
@@ -244,6 +248,11 @@ function AccordionRow({
             {isYou
               ? "—"
               : `${score.total_points - personalPoints > 0 ? "+" : ""}${score.total_points - personalPoints}`}
+          </span>
+        )}
+        {amount !== undefined && (
+          <span className={styles.amount} data-pays={amount > 0} title="Pago semanal por este puesto">
+            {amount > 0 ? formatEuros(amount) : "—"}
           </span>
         )}
         <ChevronIcon open={open} />
@@ -312,16 +321,25 @@ export function MatchdayAccordion({
   showHeader = true,
   participantId = null,
   refreshKey = 0,
+  weeklyRules,
 }: {
   data: MatchdayDetailResponse;
   seasonId: number;
   showHeader?: boolean;
   participantId?: number | null;
   refreshKey?: number;
+  /** Position → euros; with it, each row shows what its place pays. */
+  weeklyRules?: Record<number, number>;
 }) {
   const yourPoints = data.scores.find(
     (entry) => entry.participant_id === participantId,
   )?.total_points;
+  // What each place pays, once there is a ranking: before any stats everyone
+  // is tied, and a tie would charge them all the worst place.
+  const amounts =
+    weeklyRules && Object.keys(weeklyRules).length > 0 && data.scores.some((s) => s.rank !== null)
+      ? new Map(weeklyAmounts(data.scores, weeklyRules).map((e) => [e.participant_id, e.amount]))
+      : null;
 
   return (
     <div className={styles.card}>
@@ -353,7 +371,10 @@ export function MatchdayAccordion({
       </details>
       <div className={styles.columns} aria-hidden="true">
         <span>Participante · abre su once</span>
-        <span>Puntos{participantId !== null ? " / vs. tú" : ""}</span>
+        <span>
+          Puntos{participantId !== null ? " / vs. tú" : ""}
+          {amounts ? " / €" : ""}
+        </span>
       </div>
       {data.scores.length === 0 && (
         <p className="p-4 text-sm text-vpv-text-muted">Todavía no hay puntuaciones disponibles.</p>
@@ -369,6 +390,7 @@ export function MatchdayAccordion({
             personalPoints={yourPoints}
             seasonId={seasonId}
             matchdayNumber={data.number}
+            amount={amounts?.get(s.participant_id)}
           />
         ))}
       </div>

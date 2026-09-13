@@ -138,18 +138,28 @@ describe("the matchday in play", () => {
     expect(screen.queryByText("Incidencias J4")).not.toBeInTheDocument();
   });
 
-  it("sums up the matchday being followed, never the hidden current points", async () => {
+  it("sums up your matchday in play, never the hidden current points", async () => {
     mockMe();
     const prior = {
       ...previous,
       scores: [{ ...previous.scores[0], total_points: 12, pending_players: 0 }],
     };
     render(<CompetitiveHome {...props} previous={prior} />);
-    await screen.findByRole("link", { name: "Preparar mi alineación" });
-    const summary = screen.getByLabelText("Tu resumen competitivo");
-    expect(summary).toHaveTextContent("Tus puntos · J3");
-    expect(summary).toHaveTextContent("12");
-    expect(summary).not.toHaveTextContent("40");
+    const card = await screen.findByRole("region", { name: "Tu jornada · J3" });
+    expect(card).toHaveTextContent("12 pts");
+    expect(card).not.toHaveTextContent("40");
+  });
+
+  it("gives a visitor no personal card", () => {
+    render(<CompetitiveHome {...props} authenticated={false} />);
+    expect(screen.queryByRole("region", { name: /Tu jornada · J/ })).not.toBeInTheDocument();
+  });
+
+  it("says what you would pay, and what each place pays, with weekly payments", async () => {
+    mockMe();
+    render(<CompetitiveHome {...props} current={afterDeadline} weeklyRules={{ 1: 0, 2: 3 }} />);
+    expect(await screen.findByText("Si acabara ahora: no pagas")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Rival/ })).toHaveTextContent("3 €");
   });
 
   it("reads finished with confirmed stats as final", () => {
