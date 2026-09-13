@@ -58,6 +58,26 @@ async def get_current_user(
     return payload
 
 
+async def get_optional_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: AsyncSession = Depends(get_db),
+) -> dict | None:
+    """The caller if there is one, ``None`` otherwise.
+
+    For routes anyone may read that still answer differently to the owner of the
+    data. A bad or expired token counts as no token: raising 401 here would make
+    the frontend drop the session — api-client clears it on any 401 — and someone
+    whose session lapsed while reading a past jornada would be thrown to the login
+    page for looking at something anyone may see.
+    """
+    if credentials is None:
+        return None
+    try:
+        return await get_current_user(credentials, db)
+    except AuthenticationError:
+        return None
+
+
 async def get_current_admin(
     user: dict = Depends(get_current_user),
 ) -> dict:

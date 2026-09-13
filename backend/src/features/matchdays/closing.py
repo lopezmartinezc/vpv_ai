@@ -118,6 +118,16 @@ class CloseReport:
     steps: list[Step]
 
 
+def moves_money(report: CloseReport) -> bool:
+    """Whether running this close would generate the weekly payments.
+
+    It is the one step that moves money, and it decides whether closing needs
+    ECONOMY on top of MATCHDAYS: a delegate for matchdays may close a jornada,
+    but not pay out on his own.
+    """
+    return any(s.name == STEP_PAYMENTS and s.outcome == "hecho" for s in report.steps)
+
+
 class MatchdayClosing:
     """Reads the state of a jornada, and closes it.
 

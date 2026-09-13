@@ -21,12 +21,13 @@ describe("canSeeAdminItem", () => {
     }
   });
 
-  it("a delegate with only STATS sees Estadísticas and Predicciones, nothing else", () => {
+  it("a delegate with only STATS sees no analytics: it is the creator's alone", () => {
     const perms = PERM.STATS;
     const visible = ADMIN_ITEMS.filter((i) => canSeeAdminItem(false, perms, i)).map(
       (i) => i.href,
     );
-    expect(visible.sort()).toEqual(["/admin/estadisticas", "/admin/predicciones"].sort());
+    expect(visible).not.toContain("/admin/estadisticas");
+    expect(visible).not.toContain("/admin/predicciones");
   });
 
   it("hides null-perm (super-admin) items from non-admins", () => {

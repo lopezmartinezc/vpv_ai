@@ -3,8 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.exceptions import NotFoundError
-from src.features.matchdays.closing import CloseReport, MatchdayClosing
+from src.core.exceptions import AuthorizationError, NotFoundError
+from src.features.matchdays.closing import CloseReport, MatchdayClosing, moves_money
 from src.features.matchdays.schemas import (
     AdminMatchdayResponse,
     AdminMatchResponse,
@@ -19,7 +19,12 @@ from src.features.matchdays.schemas import (
     MatchUpdateRequest,
 )
 from src.features.matchdays.service import MatchdayService
-from src.shared.dependencies import get_db, require_perm, require_season_writable
+from src.shared.dependencies import (
+    get_db,
+    get_optional_user,
+    require_perm,
+    require_season_writable,
+)
 from src.shared.permissions import Perm
 
 router = APIRouter(prefix="/matchdays", tags=["matchdays"])
@@ -71,8 +76,11 @@ async def get_lineup_detail(
     number: int,
     participant_id: int,
     service: MatchdayService = Depends(_get_service),
+    viewer: dict | None = Depends(get_optional_user),
 ) -> LineupDetailResponse:
-    return await service.get_lineup_detail(season_id, number, participant_id)
+    """A participant's lineup. Open to anyone once the deadline has passed;
+    before it, only to its owner and to those who may edit it."""
+    return await service.get_lineup_detail(season_id, number, participant_id, viewer=viewer)
 
 
 # ---------------------------------------------------------------------------
@@ -127,17 +135,33 @@ def _closing(db: AsyncSession = Depends(get_db)) -> MatchdayClosing:
     return MatchdayClosing(db)
 
 
+def _economy_blocker(user: dict, preview: CloseReport) -> str | None:
+    """Why this user may not close the jornada, when the jornada itself could.
+
+    Closing generates the weekly payments. A delegate for matchdays may close
+    one, but not move money on his own: when this close would pay out, ECONOMY
+    is needed as well.
+    """
+    if not moves_money(preview):
+        return None
+    if user.get("is_admin") or user.get("permissions", 0) & Perm.ECONOMY:
+        return None
+    return "Este cierre generaría los pagos semanales: necesitas también el permiso de Economía."
+
+
 @router.get("/admin/{season_id}/{number}/estado", response_model=MatchdayStatusResponse)
 async def get_matchday_state(
     season_id: int,
     number: int,
     closing: MatchdayClosing = Depends(_closing),
-    _admin: dict = Depends(require_perm(Perm.MATCHDAYS)),
+    user: dict = Depends(require_perm(Perm.MATCHDAYS)),
 ) -> MatchdayStatusResponse:
     """State of a jornada and what closing it would do — read-only, both parts.
 
     The preview runs the close with ``dry_run``, so the panel can show the
     consequences of an operation that pays money out before anyone asks for it.
+    Whether *this* user may press the button is stated here too, so the panel
+    relays the server's answer instead of working it out.
     """
     state = await closing.status(season_id, number)
     if state is None:
@@ -146,6 +170,8 @@ async def get_matchday_state(
     return MatchdayStatusResponse(
         **{k: v for k, v in vars(state).items()},
         can_close=state.can_close,
+        requires_economy=moves_money(preview),
+        missing_permission=_economy_blocker(user, preview),
         preview=_report(preview),
     )
 
@@ -155,15 +181,19 @@ async def close_matchday(
     season_id: int,
     number: int,
     closing: MatchdayClosing = Depends(_closing),
-    _admin: dict = Depends(require_perm(Perm.MATCHDAYS)),
+    user: dict = Depends(require_perm(Perm.MATCHDAYS)),
     _writable: dict = Depends(require_season_writable),
 ) -> CloseReportResponse:
     """Close a jornada by hand, for when the automatic path is stuck.
 
     ``require_season_writable`` is what keeps this off historical seasons: a
     finished season refuses unless a super-admin has explicitly unlocked edits,
-    and that override is logged.
+    and that override is logged. A close that would generate payments also needs
+    ECONOMY — decided on the same dry run the panel showed.
     """
+    blocker = _economy_blocker(user, await closing.close(season_id, number, dry_run=True))
+    if blocker:
+        raise AuthorizationError(blocker)
     return _report(await closing.close(season_id, number, dry_run=False))
 
 

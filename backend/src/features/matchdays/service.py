@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.exceptions import BusinessRuleError, NotFoundError
+from src.core.exceptions import AuthorizationError, BusinessRuleError, NotFoundError
 from src.features.matchdays.repository import MatchdayRepository
 from src.features.matchdays.schemas import (
     AdminMatchdayResponse,
@@ -23,10 +23,14 @@ from src.features.matchdays.schemas import (
 )
 from src.features.scraping.aggregation import ScoreAggregator
 from src.features.seasons.repository import SeasonRepository
+from src.shared.lineup_deadline import lineups_are_public
+from src.shared.models.participant import SeasonParticipant
+from src.shared.permissions import Perm
 
 
 class MatchdayService:
     def __init__(self, session: AsyncSession) -> None:
+        self.session = session
         self.repo = MatchdayRepository(session)
         self.season_repo = SeasonRepository(session)
 
@@ -78,6 +82,11 @@ class MatchdayService:
         if not score_rows:
             score_rows = await self.repo.get_lineups_as_scores(matchday.id)
 
+        # This response is public — the dashboard hands it to anyone — and before
+        # the deadline a formation is part of the secret. Who has fielded a side
+        # can show; how they lined up waits for the deadline, like the lineup.
+        lineups_open = lineups_are_public(matchday, season.lineup_deadline_min)
+
         return MatchdayDetailResponse(
             season_id=season_id,
             number=matchday.number,
@@ -107,18 +116,42 @@ class MatchdayService:
                     participant_id=s.participant_id,
                     display_name=s.display_name,
                     total_points=s.total_points,
-                    formation=s.formation,
+                    formation=s.formation if lineups_open else None,
                     pending_players=s.pending_players,
                 )
                 for s in score_rows
             ],
         )
 
+    async def _may_see_lineup(
+        self,
+        viewer: dict | None,
+        participant_id: int,
+        matchday: object,
+        lineup_deadline_min: int,
+    ) -> bool:
+        """Whether ``viewer`` may read this participant's lineup right now.
+
+        A lineup is the one secret in the game: read before the deadline, it can
+        be copied or countered. Until then only its owner sees it, plus an
+        administrator or whoever holds LINEUPS_ADMIN — the people who may already
+        edit it. Afterwards, or once the jornada is played, anyone.
+        """
+        if lineups_are_public(matchday, lineup_deadline_min):
+            return True
+        if viewer is None:
+            return False
+        if viewer.get("is_admin") or viewer.get("permissions", 0) & Perm.LINEUPS_ADMIN:
+            return True
+        participant = await self.session.get(SeasonParticipant, participant_id)
+        return participant is not None and str(participant.user_id) == str(viewer.get("sub"))
+
     async def get_lineup_detail(
         self,
         season_id: int,
         number: int,
         participant_id: int,
+        viewer: dict | None = None,
     ) -> LineupDetailResponse:
         season = await self.season_repo.get_by_id(season_id)
         if season is None:
@@ -127,6 +160,13 @@ class MatchdayService:
         matchday = await self.repo.get_matchday(season_id, number)
         if matchday is None:
             raise NotFoundError("Matchday", f"{season_id}/{number}")
+
+        # Checked before looking the lineup up, so a refusal does not reveal
+        # whether the participant has fielded a side yet.
+        if not await self._may_see_lineup(
+            viewer, participant_id, matchday, season.lineup_deadline_min
+        ):
+            raise AuthorizationError("Las alineaciones de los demás se ven al cerrar el plazo.")
 
         lineup = await self.repo.get_lineup(matchday.id, participant_id)
         if lineup is None:

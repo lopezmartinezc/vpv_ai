@@ -1607,6 +1607,10 @@ export interface MatchdayState {
   scrape_errors: string[];
   blockers: string[];
   can_close: boolean;
+  /** Closing would generate the weekly payments, so it needs ECONOMY too. */
+  requires_economy: boolean;
+  /** Why *this* user may not close it, when the jornada itself could. */
+  missing_permission: string | null;
   /** What closing would do right now, computed server-side without doing it. */
   preview: CloseReport;
 }

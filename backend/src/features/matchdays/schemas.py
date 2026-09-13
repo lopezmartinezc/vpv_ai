@@ -223,5 +223,9 @@ class MatchdayStatusResponse(BaseModel):
     scrape_errors: list[str]
     blockers: list[str]
     can_close: bool
+    # Closing would generate the weekly payments, so it needs ECONOMY as well.
+    requires_economy: bool = False
+    # Why *this* user may not close it, when the jornada itself could.
+    missing_permission: str | None = None
     # What closing would do right now, without doing it.
     preview: CloseReportResponse

@@ -29,8 +29,11 @@ export const ADMIN_ITEMS: AdminNavItem[] = [
   { href: "/admin/jornadas", label: "Jornadas", perm: PERM.MATCHDAYS, scope: "season" },
   { href: "/admin/alineaciones", label: "Alineaciones", perm: PERM.LINEUPS_ADMIN, scope: "season" },
   { href: "/admin/jugadores", label: "Jugadores", perm: PERM.PLAYERS, scope: "season" },
-  { href: "/admin/estadisticas", label: "Estadísticas", perm: PERM.STATS, scope: "season" },
-  { href: "/admin/predicciones", label: "Predicciones", perm: PERM.STATS, scope: "season" },
+  // Analytics is the creator's own preparation, not a delegable task: every
+  // route under /stats requires the administrator, so these do too. A STATS
+  // delegate would otherwise see a link to a screen that answers 403.
+  { href: "/admin/estadisticas", label: "Estadísticas", perm: null, scope: "season" },
+  { href: "/admin/predicciones", label: "Predicciones", perm: null, scope: "season" },
   { href: "/admin/economia", label: "Economía", perm: PERM.ECONOMY, scope: "season" },
   { href: "/admin/participantes", label: "Participantes", perm: PERM.PARTICIPANTS, scope: "season" },
   { href: "/admin/grupos", label: "Grupos", perm: PERM.PLAYERS, scope: "season", appliesTo: "tournament" },

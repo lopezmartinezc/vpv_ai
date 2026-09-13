@@ -8,7 +8,7 @@ import type {
   LineupPlayerEntry,
   BenchPlayerEntry,
 } from "@/types";
-import { apiClient } from "@/lib/api-client";
+import { ApiClientError, apiClient } from "@/lib/api-client";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
 
 const POSITION_COLORS: Record<string, string> = {
@@ -176,18 +176,23 @@ function AccordionRow({
   const [open, setOpen] = useState(false);
   const [lineup, setLineup] = useState<LineupDetailResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  // The server refuses a rival's lineup until the deadline. That is the rule,
+  // not a failure: say when it will show instead of showing nothing.
+  const [hidden, setHidden] = useState(false);
 
   const isFirst = rank === 1;
 
   function handleToggle() {
-    if (!open && !lineup && !loading) {
+    if (!open && !lineup && !loading && !hidden) {
       setLoading(true);
       apiClient
         .get<LineupDetailResponse>(
           `/matchdays/${seasonId}/${matchdayNumber}/lineup/${score.participant_id}`,
         )
         .then((data) => setLineup(data))
-        .catch(() => {})
+        .catch((e: unknown) => {
+          if (e instanceof ApiClientError && e.status === 403) setHidden(true);
+        })
         .finally(() => setLoading(false));
     }
     setOpen((prev) => !prev);
@@ -249,6 +254,12 @@ function AccordionRow({
                 />
               ))}
             </div>
+          )}
+
+          {hidden && (
+            <p className="py-2 text-xs text-vpv-text-muted">
+              Su alineación se verá cuando cierre el plazo.
+            </p>
           )}
 
           {lineup && (

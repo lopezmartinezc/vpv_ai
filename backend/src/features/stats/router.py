@@ -54,8 +54,11 @@ from src.features.stats.schemas_draft_retro import (
 from src.features.stats.service_advanced import AdvancedStatsService
 from src.features.stats.service_draft import DraftValueService
 from src.features.stats.service_draft_retro import DraftRetroService
-from src.shared.dependencies import get_db, require_perm
-from src.shared.permissions import Perm
+
+# Every route here is analytics, and analytics is the creator's own preparation —
+# not a task to delegate. So they require the administrator, not Perm.STATS: a
+# delegate for stats would otherwise read the whole draft preparation.
+from src.shared.dependencies import get_current_admin, get_db
 
 router = APIRouter(prefix="/stats", tags=["stats"])
 
@@ -70,7 +73,7 @@ async def get_draft_values(
     season_id: int,
     min_games: int = Query(default=2, ge=1, le=30),
     participacion: ParticipationModel = Query(default=ParticipationModel.MIXTO),
-    admin: dict = Depends(require_perm(Perm.STATS)),
+    admin: dict = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> DraftValueResponse:
     """Draft value predictions using backtested models.
@@ -92,7 +95,7 @@ async def set_draft_value_override(
     season_id: int,
     player_id: int,
     body: DraftValueOverrideRequest,
-    admin: dict = Depends(require_perm(Perm.STATS)),
+    admin: dict = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> DraftValueResponse:
     """Set/clear the shared admin manual value + note for a player, then return
@@ -120,7 +123,7 @@ async def get_draft_scatter(
         default=None,
         description="Comma-separated phases (default: 'preseason')",
     ),
-    admin: dict = Depends(require_perm(Perm.STATS)),
+    admin: dict = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> DraftScatterResponse:
     """Every historical pick as a scatter point: pick_number vs total_points."""
@@ -136,7 +139,7 @@ async def get_draft_scatter(
 )
 async def get_draft_backtest(
     season_id: int = Query(..., description="Completed season to backtest against"),
-    admin: dict = Depends(require_perm(Perm.STATS)),
+    admin: dict = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> BacktestResponse:
     """Replay the scorecard against a completed season and report hit rate."""
@@ -151,7 +154,7 @@ async def get_draft_backtest(
 async def get_participant_iq(
     phase: str = Query(default="preseason"),
     min_seasons: int = Query(default=2, ge=1, le=10),
-    admin: dict = Depends(require_perm(Perm.STATS)),
+    admin: dict = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> ParticipantIQResponse:
     """Per-participant draft IQ across all seasons in `phase`."""
@@ -165,7 +168,7 @@ async def get_participant_iq(
 )
 async def get_draft_retrospective(
     draft_id: int,
-    admin: dict = Depends(require_perm(Perm.STATS)),
+    admin: dict = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> DraftRetrospectiveResponse:
     """Pick-by-pick post-mortem of a single draft."""
@@ -312,7 +315,7 @@ def _compute_records(
 @router.get("/draft-history", response_model=DraftHistoryResponse)
 async def get_draft_history(
     season_ids: str | None = None,
-    admin: dict = Depends(require_perm(Perm.STATS)),
+    admin: dict = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> DraftHistoryResponse:
     parsed_ids: list[int] | None = None
@@ -328,7 +331,7 @@ async def get_predictions(
     matchday: int | None = Query(
         None, description="Matchday number; defaults to season's current matchday"
     ),
-    admin: dict = Depends(require_perm(Perm.STATS)),
+    admin: dict = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> PredictionsResponse:
     """Expected points forecast for all players with a fixture in the given matchday.
@@ -355,7 +358,7 @@ async def get_player_stats(
         description="Include pre-draft / disabled matchdays (counts=false) — "
         "useful to preview this season before the draft.",
     ),
-    admin: dict = Depends(require_perm(Perm.STATS)),
+    admin: dict = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> PlayerStatsResponse:
     repo = StatsRepository(db)
@@ -396,7 +399,7 @@ async def get_fixtures(
     desde: int = Query(1, ge=1, le=38, description="Primera jornada a devolver"),
     jornadas: int = Query(6, ge=1, le=20, description="Cuantas jornadas"),
     db: AsyncSession = Depends(get_db),
-    admin: dict = Depends(require_perm(Perm.STATS)),
+    admin: dict = Depends(get_current_admin),
 ) -> FixtureListResponse:
     """Upcoming fixtures with each opponent's attack and defence.
 
@@ -434,7 +437,7 @@ async def get_advanced_player_stats(
     min_played: int = 3,
     position: str | None = None,
     include_noncounting: bool = False,
-    admin: dict = Depends(require_perm(Perm.STATS)),
+    admin: dict = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> AdvancedPlayersResponse:
     service = AdvancedStatsService(db)
@@ -445,7 +448,7 @@ async def get_advanced_player_stats(
 async def get_position_value(
     season_id: int,
     min_played: int = 3,
-    admin: dict = Depends(require_perm(Perm.STATS)),
+    admin: dict = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> PositionValueResponse:
     service = AdvancedStatsService(db)
@@ -457,7 +460,7 @@ async def get_compare_players(
     season_id: int,
     player_ids: str = "",
     include_noncounting: bool = False,
-    admin: dict = Depends(require_perm(Perm.STATS)),
+    admin: dict = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> ComparePlayersResponse:
     parsed = [int(s) for s in player_ids.split(",") if s.strip()] if player_ids else []
@@ -470,7 +473,7 @@ async def get_player_splits(
     season_id: int,
     player_id: int,
     include_noncounting: bool = False,
-    admin: dict = Depends(require_perm(Perm.STATS)),
+    admin: dict = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> PlayerSplitsResponse:
     service = AdvancedStatsService(db)
@@ -482,7 +485,7 @@ async def get_team_dependency(
     season_id: int,
     min_played: int = 3,
     include_noncounting: bool = False,
-    admin: dict = Depends(require_perm(Perm.STATS)),
+    admin: dict = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> TeamDependencyResponse:
     service = AdvancedStatsService(db)
@@ -492,7 +495,7 @@ async def get_team_dependency(
 @router.get("/{season_id}/participants", response_model=ParticipantStatsResponse)
 async def get_participant_stats(
     season_id: int,
-    admin: dict = Depends(require_perm(Perm.STATS)),
+    admin: dict = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> ParticipantStatsResponse:
     repo = StatsRepository(db)
@@ -530,7 +533,7 @@ async def get_participant_stats(
 @router.get("/{season_id}/league", response_model=LeagueStatsResponse)
 async def get_league_stats(
     season_id: int,
-    admin: dict = Depends(require_perm(Perm.STATS)),
+    admin: dict = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> LeagueStatsResponse:
     repo = StatsRepository(db)

@@ -14,7 +14,7 @@ export default function LineupDetailPage() {
   const participantId = Number(params.participantId);
   const { selectedSeason, loading: seasonLoading } = useSeason();
 
-  const { data, loading } = useFetch<LineupDetailResponse>(
+  const { data, loading, errorStatus } = useFetch<LineupDetailResponse>(
     selectedSeason
       ? `/matchdays/${selectedSeason.id}/${numero}/lineup/${participantId}`
       : null,
@@ -26,6 +26,16 @@ export default function LineupDetailPage() {
         <div className="h-4 w-60 animate-pulse rounded bg-vpv-border" />
         <div className="h-8 w-40 animate-pulse rounded bg-vpv-border" />
         <SkeletonTable rows={11} />
+      </div>
+    );
+  }
+
+  // Before the deadline the server refuses anyone but the owner: that is the
+  // rule working, not a failure, and it should not read like one.
+  if (errorStatus === 403) {
+    return (
+      <div className="py-10 text-center text-vpv-text-muted">
+        Las alineaciones de los demás se ven cuando cierra el plazo.
       </div>
     );
   }

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +36,7 @@ from src.features.lineups.schemas import (
     PlayerRecentForm,
     SquadPlayerForLineup,
 )
+from src.shared.lineup_deadline import effective_deadline
 from src.shared.models.participant import SeasonParticipant
 
 logger = logging.getLogger(__name__)
@@ -270,13 +271,7 @@ class LineupService:
         if matchday is None:
             return DeadlineStatusResponse(has_lineup=True, matchday_number=md_number)
 
-        # Compute deadline
-        deadline = matchday.deadline_at
-        if deadline is None and matchday.first_match_at is not None:
-            deadline = matchday.first_match_at - timedelta(minutes=season.lineup_deadline_min)
-
-        if deadline is not None and deadline.tzinfo is None:
-            deadline = deadline.replace(tzinfo=UTC)
+        deadline = effective_deadline(matchday, season.lineup_deadline_min)
 
         # Check if user has lineup
         participant = await self.repo.get_participant_for_user(season_id, user_id)
@@ -645,27 +640,20 @@ class LineupService:
 
     async def _validate_deadline(self, matchday: object, season_id: int) -> None:
         """Check that the deadline hasn't passed."""
-        now = datetime.now(UTC)
-
-        # Use pre-computed deadline_at if available
-        deadline = getattr(matchday, "deadline_at", None)
-
-        if deadline is None:
-            # Compute from first_match_at - lineup_deadline_min
-            first_match = getattr(matchday, "first_match_at", None)
-            if first_match is None:
-                return  # No deadline info, allow submission
-
+        # The season is only needed when the matchday has no precomputed
+        # deadline_at, so it is only fetched then — as before.
+        minutes = 0
+        if getattr(matchday, "deadline_at", None) is None:
             season = await self.repo.get_season(season_id)
             if season is None:
                 return
-            deadline = first_match - timedelta(minutes=season.lineup_deadline_min)
+            minutes = season.lineup_deadline_min
 
-        # Make deadline timezone-aware if needed
-        if deadline.tzinfo is None:
-            deadline = deadline.replace(tzinfo=UTC)
+        deadline = effective_deadline(matchday, minutes)
+        if deadline is None:
+            return  # No deadline info, allow submission
 
-        if now >= deadline:
+        if datetime.now(UTC) >= deadline:
             raise BusinessRuleError("El plazo para enviar la alineacion ha finalizado")
 
     def _validate_positions(self, players: list[LineupPlayerSlot], vf: object) -> None:

@@ -5,8 +5,12 @@ player they OWNED ON THAT MATCHDAY (read from player_ownership_log so
 mid-season ownership changes — winter draft — are respected) but did
 NOT include in their lineup_players. Own goals don't count.
 
-Counting matchdays only (matchdays.counts = TRUE); cancelled / friendly
-slots that don't score for the season-wide standings are excluded too.
+Counting matchdays and counting matches only — matchdays.counts AND
+matches.counts, as the project's rules require for anything that scores. It
+used to check the matchday alone, so a goal in a postponed fixture inside a
+counting jornada was charged to the manager as if it had counted. The match is
+LEFT-joined: rows migrated without a match_id keep counting, as they always
+did, and only a fixture known not to count is left out.
 
 Tournaments (Mundial, …) never wrote to player_ownership_log so we
 fall back to the canonical players.owner_id — ownership is fixed for
@@ -56,6 +60,7 @@ _RANKING_SQL_LOG = text(
         (ps.goals + ps.penalty_goals)    AS goals
     FROM       player_stats ps
     JOIN       matchdays md ON md.id = ps.matchday_id
+    LEFT JOIN  matches m    ON m.id = ps.match_id
     JOIN       players p    ON p.id = ps.player_id
     JOIN       teams t      ON t.id = p.team_id
     JOIN LATERAL (
@@ -76,6 +81,7 @@ _RANKING_SQL_LOG = text(
     WHERE      md.season_id = :season_id
       AND      sp.season_id = :season_id
       AND      md.counts             = TRUE
+      AND      (m.id IS NULL OR m.counts = TRUE)   -- postponed fixture: skip
       AND      (ps.goals + ps.penalty_goals) > 0
       AND      lp.player_id IS NULL          -- not lineup'd this matchday
     ORDER BY   sp.id, md.number, p.display_name
@@ -108,6 +114,7 @@ _RANKING_SQL_OWNER = text(
     JOIN       players p        ON p.owner_id = sp.id
     JOIN       player_stats ps  ON ps.player_id = p.id
     JOIN       matchdays md     ON md.id = ps.matchday_id
+    LEFT JOIN  matches m        ON m.id = ps.match_id
     JOIN       teams t          ON t.id = p.team_id
     LEFT JOIN  lineup_pids lp
         ON lp.participant_id = sp.id
@@ -115,6 +122,7 @@ _RANKING_SQL_OWNER = text(
        AND lp.player_id      = p.id
     WHERE      sp.season_id         = :season_id
       AND      md.counts             = TRUE
+      AND      (m.id IS NULL OR m.counts = TRUE)   -- postponed fixture: skip
       AND      (ps.goals + ps.penalty_goals) > 0
       AND      lp.player_id IS NULL
     ORDER BY   sp.id, md.number, p.display_name
