@@ -404,11 +404,44 @@ class ScrapingRepository:
         )
         return result.rowcount  # type: ignore[attr-defined]
 
-    async def mark_match_stats_ok(self, match_id: int) -> None:
-        """Set ``match.stats_ok = True``."""
-        stmt = update(Match).where(Match.id == match_id).values(stats_ok=True)
-        await self.session.execute(stmt)
-        logger.debug("mark_match_stats_ok: match_id=%d", match_id)
+    async def mark_match_stats_ok(self, match_id: int) -> int:
+        """Set ``match.stats_ok = True``, but never on a match still unplayed.
+
+        The four callers mark a match complete on "no errors and at least one
+        player processed". That is not the same thing: the source publishes
+        squads and probable line-ups days ahead, and those parse into perfectly
+        valid rows of zero minutes. A fixture that has not kicked off therefore
+        satisfies ``processed > 0`` and gets marked done.
+
+        The cost is not cosmetic. ``stats_ok`` on every counting match is what
+        closes a matchday, and closing one advances ``matchday_current``,
+        generates the weekly payments and evaluates the achievements — for a
+        matchday nobody has played. So the score is the gate: no result in the
+        database, no completion. The calendar scrape writes scores before the
+        stats scrape runs (see the scheduler's order), so a genuinely finished
+        match always has one by the time we get here.
+
+        Returns the number of rows marked: 0 means it was refused.
+        """
+        stmt = (
+            update(Match)
+            .where(
+                Match.id == match_id,
+                Match.home_score.is_not(None),
+                Match.away_score.is_not(None),
+            )
+            .values(stats_ok=True)
+        )
+        result = await self.session.execute(stmt)
+        marked: int = result.rowcount  # type: ignore[attr-defined]
+        if marked == 0:
+            logger.warning(
+                "mark_match_stats_ok: match_id=%d has no result yet — not marking it complete",
+                match_id,
+            )
+        else:
+            logger.debug("mark_match_stats_ok: match_id=%d", match_id)
+        return marked
 
     async def mark_matchday_stats_ok(self, matchday_id: int) -> None:
         """Set ``matchday.stats_ok = True``."""
