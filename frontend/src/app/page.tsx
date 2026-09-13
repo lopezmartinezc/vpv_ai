@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { useDashboardData } from "@/hooks/use-dashboard-data";
 import { useFetch } from "@/hooks/use-fetch";
 import { appliesToCompetition } from "@/lib/competition-scope";
+import { lineupDeadlineMs } from "@/lib/matchday-status";
 import { CompetitiveHome } from "@/components/dashboard/competitive-home";
 import { UnavailableNotice } from "@/components/dashboard/unavailable-notice";
 import { Podium } from "@/components/dashboard/podium";
@@ -73,21 +74,18 @@ export default function Home() {
     refreshPrevious();
   }, [refetch, refreshPrevious]);
 
-  // Which matchday the Copa and Pagometro widgets follow (re-checked every 30s).
-  // The lineup and the rivals follow the server's deadline, in CompetitiveHome.
-  const firstMatchAt = currentMatchdayDetail?.first_match_at ?? null;
-  const dlMin = selectedSeason?.lineup_deadline_min ?? 0;
+  // Which matchday the Copa and Pagometro widgets follow (re-checked every 30s):
+  // the same effective deadline as the rest of the home, overrides included.
+  const deadlineMs = currentMatchdayDetail
+    ? lineupDeadlineMs(currentMatchdayDetail, selectedSeason?.lineup_deadline_min ?? 0)
+    : null;
   const subscribe = useCallback((cb: () => void) => {
     const id = setInterval(cb, 30_000);
     return () => clearInterval(id);
   }, []);
   const deadlinePassed = useSyncExternalStore(
     subscribe,
-    () => {
-      if (!firstMatchAt) return true;
-      const deadlineMs = new Date(firstMatchAt).getTime() - dlMin * 60_000;
-      return Date.now() >= deadlineMs;
-    },
+    () => deadlineMs === null || Date.now() >= deadlineMs,
     () => true,
   );
 

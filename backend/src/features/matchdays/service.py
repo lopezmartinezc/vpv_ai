@@ -23,7 +23,7 @@ from src.features.matchdays.schemas import (
 )
 from src.features.scraping.aggregation import ScoreAggregator
 from src.features.seasons.repository import SeasonRepository
-from src.shared.lineup_deadline import lineups_are_public
+from src.shared.lineup_deadline import effective_deadline, lineups_are_public
 from src.shared.models.participant import SeasonParticipant
 from src.shared.permissions import Perm
 
@@ -94,6 +94,7 @@ class MatchdayService:
             counts=matchday.counts,
             stats_ok=matchday.stats_ok,
             first_match_at=matchday.first_match_at,
+            deadline_at=effective_deadline(matchday, season.lineup_deadline_min),
             matches=[
                 MatchEntry(
                     id=m.id,
