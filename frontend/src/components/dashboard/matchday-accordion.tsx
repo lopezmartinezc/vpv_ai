@@ -9,6 +9,7 @@ import type {
   BenchPlayerEntry,
 } from "@/types";
 import { useFetch } from "@/hooks/use-fetch";
+import { isMatchdayFinal } from "@/lib/matchday-status";
 import { withSeason } from "@/lib/season-link";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
 import styles from "./home.module.css";
@@ -305,14 +306,6 @@ function AccordionRow({
   );
 }
 
-/**
- * Whether the scores are the final ones. Migrated seasons end in "completed";
- * the scraper's own end state, "finished", is final once the stats are confirmed.
- */
-function isFinal(data: MatchdayDetailResponse): boolean {
-  return data.status === "completed" || (data.status === "finished" && data.stats_ok);
-}
-
 export function MatchdayAccordion({
   data,
   seasonId,
@@ -345,7 +338,9 @@ export function MatchdayAccordion({
       )}
       <div className={styles.scoreNote}>
         <span className={styles.status}>
-          {isFinal(data) ? "Resultados finales" : "Provisional · las estadísticas pueden cambiar"}
+          {isMatchdayFinal(data)
+            ? "Resultados finales"
+            : "Provisional · las estadísticas pueden cambiar"}
         </span>
       </div>
       <details className={styles.help}>
