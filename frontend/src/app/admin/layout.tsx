@@ -8,12 +8,10 @@ import { useSeason } from "@/contexts/season-context";
 import {
   type AdminNavItem,
   adminLabelForPath,
-  canSeeAdminItem,
   hrefForSeason,
-  operationsItems,
   resolveCompetitionContexts,
-  seasonItems,
-  systemItems,
+  seasonNotice,
+  visibleAdminItems,
 } from "@/lib/admin-nav";
 
 /** A nav entry after the season has been stamped into its link. */
@@ -34,18 +32,17 @@ export default function AdminLayout({
     selectedSeason,
   );
   const [mobileOpen, setMobileOpen] = useState(false);
+  const notice = seasonNotice(selectedSeason);
 
   // Same 3-tier structure as the global sidebar, from the shared admin-nav:
   // per-competition "Temporada" sections + "Operaciones" + "Sistema".
   const filteredNav = useMemo(() => {
     if (!user) return [];
     const { isAdmin, permissions } = user;
-    const visible = (items: AdminNavItem[]) =>
-      items.filter((item) => canSeeAdminItem(isAdmin, permissions, item));
-    const dropEconomy = (items: AdminNavItem[], season: typeof activeLeague) =>
-      season?.weekly_payments_enabled === false
-        ? items.filter((i) => i.href !== "/admin/economia")
-        : items;
+    // One rule for what to offer — permission, competition kind, economy flag —
+    // shared with the admin home, which used to apply only the first of the three.
+    const offered = (season: typeof league, scope: AdminNavItem["scope"]) =>
+      visibleAdminItems(isAdmin, permissions, season).filter((i) => i.scope === scope);
 
     // The season travels in the link. Both competition sections are built from
     // the same ADMIN_ITEMS, so without it "Jornadas" under Torneo and "Jornadas"
@@ -58,24 +55,24 @@ export default function AdminLayout({
         label: i.label,
       }));
 
-    const sections: { group: string; items: NavLink[] }[] = [];
+    // seasonId says which section a highlight belongs to; undefined = global.
+    const sections: { group: string; seasonId?: number; items: NavLink[] }[] = [];
     if (league) {
       sections.push({
         group: `⚽ ${league.name}`,
-        items: link(dropEconomy(visible(seasonItems("league")), league), league.id),
+        seasonId: league.id,
+        items: link(offered(league, "season"), league.id),
       });
     }
     if (tournament) {
       sections.push({
         group: `🏆 ${tournament.name}`,
-        items: link(
-          dropEconomy(visible(seasonItems("tournament")), tournament),
-          tournament.id,
-        ),
+        seasonId: tournament.id,
+        items: link(offered(tournament, "season"), tournament.id),
       });
     }
-    sections.push({ group: "Operaciones", items: link(visible(operationsItems)) });
-    sections.push({ group: "Sistema", items: link(visible(systemItems)) });
+    sections.push({ group: "Operaciones", items: link(offered(null, "operations")) });
+    sections.push({ group: "Sistema", items: link(offered(null, "system")) });
     return sections.filter((s) => s.items.length > 0);
   }, [user, league, tournament]);
 
@@ -101,9 +98,14 @@ export default function AdminLayout({
           </p>
           <ul className="space-y-0.5">
             {section.items.map(({ href, base, label }) => {
-              // Highlight on the route, not on the decorated link: the query
-              // string is never part of the pathname.
-              const active = pathname === base || pathname.startsWith(base + "/");
+              // Highlight on the route, not on the decorated link — the query
+              // string is never part of the pathname — and only in the section of
+              // the season being viewed: "Jornadas" used to light up under both
+              // Liga and Torneo at once.
+              const onRoute = pathname === base || pathname.startsWith(base + "/");
+              const active =
+                onRoute &&
+                (section.seasonId === undefined || section.seasonId === selectedSeason?.id);
               return (
                 <li key={href}>
                   <Link
@@ -168,13 +170,16 @@ export default function AdminLayout({
 
         {/* Content */}
         <main className="min-w-0 flex-1">
-          {selectedSeason && selectedSeason.status !== "active" && (
+          {notice && (
             <div
               role="status"
-              className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-400"
+              className={`mb-4 rounded-lg border px-4 py-2.5 text-sm ${
+                notice.tone === "warning"
+                  ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
+                  : "border-vpv-card-border bg-vpv-card text-vpv-text-muted"
+              }`}
             >
-              Estás operando sobre <strong>{selectedSeason.name}</strong>, que no
-              es la temporada activa. Los cambios afectan a datos históricos.
+              {notice.text}
             </div>
           )}
           {children}

@@ -10,6 +10,8 @@ import {
   systemItems,
   adminLabelForPath,
   resolveCompetitionContexts,
+  seasonNotice,
+  visibleAdminItems,
 } from "@/lib/admin-nav";
 
 const item = (href: string) => ADMIN_ITEMS.find((i) => i.href === href)!;
@@ -85,9 +87,19 @@ describe("resolveCompetitionContexts", () => {
     expect(league).toBeNull();
   });
 
-  it("prefers active competitions over the selection", () => {
-    const active = { id: 1, name: "Liga activa", kind: "league" };
-    const { league } = resolveCompetitionContexts(active, null, liga);
+  it("from a historical league, the league section is that season, not the active one", () => {
+    // It used to prefer the active season, so every rail link from 2023-24
+    // carried the id of 2026-27 while the banner said 2023-24.
+    const active = { id: 12, name: "Liga activa", kind: "league" };
+    const historica = { id: 7, name: "2023-24", kind: "league" };
+    const { league } = resolveCompetitionContexts(active, null, historica);
+    expect(league).toBe(historica);
+  });
+
+  it("the other competition still falls back to its active season", () => {
+    const active = { id: 12, name: "Liga activa", kind: "league" };
+    const { league, tournament } = resolveCompetitionContexts(active, mundial, mundial);
+    expect(tournament).toBe(mundial);
     expect(league).toBe(active);
   });
 
@@ -142,5 +154,61 @@ describe("hrefForSeason", () => {
   it("appends rather than replaces when the href already carries a query", () => {
     const withQuery = { ...jornadas, href: "/admin/jornadas?tab=pendientes" };
     expect(hrefForSeason(withQuery, 12)).toBe("/admin/jornadas?tab=pendientes&season=12");
+  });
+});
+
+describe("visibleAdminItems — one rule for the rail and the admin home", () => {
+  const hrefs = (items: { href: string }[]) => items.map((i) => i.href);
+
+  it("offers Logros but not Grupos in a league", () => {
+    const got = hrefs(visibleAdminItems(true, 0, { kind: "league" }));
+    expect(got).toContain("/admin/logros");
+    expect(got).not.toContain("/admin/grupos");
+  });
+
+  it("offers Grupos but not Logros in a tournament", () => {
+    const got = hrefs(visibleAdminItems(true, 0, { kind: "tournament" }));
+    expect(got).toContain("/admin/grupos");
+    expect(got).not.toContain("/admin/logros");
+  });
+
+  it("drops Economía in a season without weekly payments, keeps it otherwise", () => {
+    expect(hrefs(visibleAdminItems(true, 0, { weekly_payments_enabled: false }))).not.toContain(
+      "/admin/economia",
+    );
+    expect(hrefs(visibleAdminItems(true, 0, { weekly_payments_enabled: true }))).toContain(
+      "/admin/economia",
+    );
+    expect(hrefs(visibleAdminItems(true, 0, {}))).toContain("/admin/economia");
+  });
+
+  it("still filters by permission: a matchdays delegate gets Jornadas and no Sistema", () => {
+    const got = visibleAdminItems(false, PERM.MATCHDAYS, { kind: "league" });
+    expect(hrefs(got)).toContain("/admin/jornadas");
+    expect(got.some((i) => i.scope === "system")).toBe(false);
+  });
+
+  it("reads a missing season as a league", () => {
+    expect(hrefs(visibleAdminItems(true, 0, null))).toContain("/admin/logros");
+  });
+});
+
+describe("seasonNotice", () => {
+  it("says a season in preparation is in preparation, not historical", () => {
+    const notice = seasonNotice({ name: "2027-2028", status: "setup" });
+    expect(notice?.tone).toBe("info");
+    expect(notice?.text).toContain("preparación");
+    expect(notice?.text).not.toContain("históricos");
+  });
+
+  it("warns that a closed season is historical data", () => {
+    const notice = seasonNotice({ name: "2023-2024", status: "finished" });
+    expect(notice?.tone).toBe("warning");
+    expect(notice?.text).toContain("históricos");
+  });
+
+  it("says nothing about the active season, or when there is none", () => {
+    expect(seasonNotice({ name: "2026-2027", status: "active" })).toBeNull();
+    expect(seasonNotice(null)).toBeNull();
   });
 });
