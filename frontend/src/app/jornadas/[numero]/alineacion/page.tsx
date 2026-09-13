@@ -597,10 +597,11 @@ export default function AlineacionPage() {
       ? `/stats/${selectedSeason.id}/predictions?matchday=${numero}`
       : null,
   );
-  // Opponent strength for THIS matchday, so each card can say whether the
-  // fixture is soft or hard for that player's position. Measured effect is
-  // 1.4-2.6 points per slot, which over eleven slots is the biggest weekly
-  // lever there is.
+  // Admin-only, like the predictions above. Opponent strength for THIS
+  // matchday, so each card can say whether the fixture is soft or hard for that
+  // player's position. Measured effect is 1.4-2.6 points per slot, which over
+  // eleven slots is the biggest weekly lever there is — which is exactly why it
+  // is not shown to the participants the admin is competing against.
   const { data: fixturesData } = useFetch<{
     fixtures: {
       matchday: number;
@@ -609,7 +610,7 @@ export default function AlineacionPage() {
       opponent_defence: number;
     }[];
   }>(
-    selectedSeason
+    isAdmin && selectedSeason
       ? `/stats/${selectedSeason.id}/fixtures?desde=${numero}&jornadas=1`
       : null,
   );

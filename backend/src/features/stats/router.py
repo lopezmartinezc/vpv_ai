@@ -54,7 +54,7 @@ from src.features.stats.schemas_draft_retro import (
 from src.features.stats.service_advanced import AdvancedStatsService
 from src.features.stats.service_draft import DraftValueService
 from src.features.stats.service_draft_retro import DraftRetroService
-from src.shared.dependencies import get_current_user, get_db, require_perm
+from src.shared.dependencies import get_db, require_perm
 from src.shared.permissions import Perm
 
 router = APIRouter(prefix="/stats", tags=["stats"])
@@ -396,12 +396,14 @@ async def get_fixtures(
     desde: int = Query(1, ge=1, le=38, description="Primera jornada a devolver"),
     jornadas: int = Query(6, ge=1, le=20, description="Cuantas jornadas"),
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(get_current_user),
+    admin: dict = Depends(require_perm(Perm.STATS)),
 ) -> FixtureListResponse:
     """Upcoming fixtures with each opponent's attack and defence.
 
-    Feeds the weekly lineup screen: which of my players face a soft opponent
-    this matchday. Difficulty is position-dependent — a keeper is graded on the
+    Feeds the admin's weekly lineup screen: which of my players face a soft
+    opponent this matchday. Gated like every other route on this router — it is
+    analysis, and handing it to every participant would give them all the read
+    the admin is supposed to be doing himself. Difficulty is position-dependent — a keeper is graded on the
     opponent's attack, a forward on its defence — so the raw strengths are
     returned and the caller grades them.
     """
