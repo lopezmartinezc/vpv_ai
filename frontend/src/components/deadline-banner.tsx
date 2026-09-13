@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { useSeason } from "@/contexts/season-context";
 import { apiClient } from "@/lib/api-client";
-import Link from "next/link";
+import { SeasonLink as Link } from "@/components/ui/season-link";
 
 interface DeadlineStatus {
   has_lineup: boolean;

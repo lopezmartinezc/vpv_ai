@@ -212,3 +212,11 @@ describe("seasonNotice", () => {
     expect(seasonNotice(null)).toBeNull();
   });
 });
+
+describe("hrefForSeason follows the same rule as every other link", () => {
+  it("leaves Sistema and Operaciones plain even when handed a season", () => {
+    for (const i of [...operationsItems, ...systemItems]) {
+      expect(hrefForSeason(i, 12)).toBe(i.href);
+    }
+  });
+});

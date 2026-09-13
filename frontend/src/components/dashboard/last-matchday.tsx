@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { SeasonLink as Link } from "@/components/ui/season-link";
 import type { MatchdayDetailResponse } from "@/types";
 
 export function LastMatchday({ data }: { data: MatchdayDetailResponse }) {

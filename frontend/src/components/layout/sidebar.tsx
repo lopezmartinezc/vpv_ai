@@ -9,13 +9,12 @@ import { useFetch } from "@/hooks/use-fetch";
 import { NavIcon } from "@/components/ui/nav-icon";
 import { Logo } from "@/components/ui/logo";
 import { SeasonSelector } from "./season-selector";
+import { SeasonLink } from "@/components/ui/season-link";
 import {
   type AdminNavItem,
-  canSeeAdminItem,
-  operationsItems,
+  hrefForSeason,
   resolveCompetitionContexts,
-  seasonItems,
-  systemItems,
+  visibleAdminItems,
 } from "@/lib/admin-nav";
 
 interface DeadlineCheck {
@@ -138,20 +137,20 @@ export function Sidebar({
       />
 
       {/* Panel */}
+      {/* inert while closed: the panel stays mounted off-screen, and without it
+          Tab walked through links nobody could see (IN-07). */}
       <aside
+        inert={!open}
+        aria-label="Menú principal"
         className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col bg-vpv-card shadow-xl transition-transform duration-300 ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-vpv-border px-4 py-4">
-          <Link
-            href="/"
-            className="text-vpv-accent"
-            onClick={onClose}
-          >
+          <SeasonLink href="/" className="text-vpv-accent" onClick={onClose}>
             <Logo className="h-12 w-auto" />
-          </Link>
+          </SeasonLink>
           <button
             onClick={onClose}
             className="rounded-md p-1.5 text-vpv-text-muted transition-colors hover:text-vpv-text"
@@ -193,7 +192,7 @@ export function Sidebar({
                   : pathname.startsWith(href);
               return (
                 <li key={href}>
-                  <Link
+                  <SeasonLink
                     href={href}
                     className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
                       active
@@ -203,7 +202,7 @@ export function Sidebar({
                   >
                     <NavIcon name={icon} className="h-5 w-5" />
                     {label}
-                  </Link>
+                  </SeasonLink>
                 </li>
               );
             })}
@@ -218,7 +217,7 @@ export function Sidebar({
               <ul className="space-y-1">
                 {selectedSeason && (
                   <li>
-                    <Link
+                    <SeasonLink
                       href={`/jornadas/${lineupMatchday}/alineacion`}
                       className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
                         pathname.includes("/alineacion")
@@ -228,7 +227,7 @@ export function Sidebar({
                     >
                       <NavIcon name="clipboard" className="h-5 w-5" />
                       Introducir equipo
-                    </Link>
+                    </SeasonLink>
                   </li>
                 )}
                 <li>
@@ -262,17 +261,6 @@ export function Sidebar({
   );
 }
 
-/**
- * Season-scoped admin items for a competition kind, filtered by permissions.
- */
-function filterSeasonItems(
-  kind: "league" | "tournament",
-  isAdmin: boolean,
-  permissions: number,
-): AdminNavItem[] {
-  return seasonItems(kind).filter((item) => canSeeAdminItem(isAdmin, permissions, item));
-}
-
 function AdminSubmenu({
   pathname,
   isAdmin,
@@ -282,7 +270,7 @@ function AdminSubmenu({
   isAdmin: boolean;
   permissions: number;
 }) {
-  const { activeLeague, activeTournament, selectedSeason, selectSeason } = useSeason();
+  const { activeLeague, activeTournament, selectedSeason } = useSeason();
   // Fall back to the selected season so season pages stay reachable even when
   // no competition is marked active (e.g. a pre-draft season).
   const { league, tournament } = resolveCompetitionContexts(
@@ -293,34 +281,17 @@ function AdminSubmenu({
   const isInAdmin = pathname.startsWith("/admin");
   const [expanded, setExpanded] = useState(isInAdmin);
 
-  // Build sections: one per active competition + global. Drop the
-  // per-season admin "Economia" entry when the season has no weekly
-  // payments mechanic — the page would only show empty data.
-  const dropEconomyIfDisabled = (
-    items: AdminNavItem[],
-    season: typeof activeLeague,
-  ) =>
-    season?.weekly_payments_enabled === false
-      ? items.filter((item) => item.href !== "/admin/economia")
-      : items;
+  // One rule for what to offer — the same the admin rail and home use. This
+  // menu used to keep a third copy of it.
+  const offered = (season: typeof league, scope: AdminNavItem["scope"]) =>
+    visibleAdminItems(isAdmin, permissions, season).filter((i) => i.scope === scope);
 
-  const ligaItems = league
-    ? dropEconomyIfDisabled(filterSeasonItems("league", isAdmin, permissions), league)
-    : [];
-  const tournamentItems = tournament
-    ? dropEconomyIfDisabled(filterSeasonItems("tournament", isAdmin, permissions), tournament)
-    : [];
-
-  // Cross-season "Operaciones" and super-admin "Sistema" sections.
+  const ligaItems = league ? offered(league, "season") : [];
+  const tournamentItems = tournament ? offered(tournament, "season") : [];
   const globalSections = [
-    { group: "Operaciones", items: operationsItems },
-    { group: "Sistema", items: systemItems },
-  ]
-    .map((section) => ({
-      ...section,
-      items: section.items.filter((item) => canSeeAdminItem(isAdmin, permissions, item)),
-    }))
-    .filter((section) => section.items.length > 0);
+    { group: "Operaciones", items: offered(null, "operations") },
+    { group: "Sistema", items: offered(null, "system") },
+  ].filter((section) => section.items.length > 0);
 
   const hasAnyItems =
     ligaItems.length > 0 ||
@@ -363,7 +334,7 @@ function AdminSubmenu({
               seasonId={league.id}
               items={ligaItems}
               pathname={pathname}
-              onSelectSeason={selectSeason}
+              selectedSeasonId={selectedSeason?.id}
             />
           )}
           {tournament && tournamentItems.length > 0 && (
@@ -373,7 +344,7 @@ function AdminSubmenu({
               seasonId={tournament.id}
               items={tournamentItems}
               pathname={pathname}
-              onSelectSeason={selectSeason}
+              selectedSeasonId={selectedSeason?.id}
             />
           )}
           {globalSections.map((section) => (
@@ -415,14 +386,14 @@ function CompetitionAdminSection({
   seasonId,
   items,
   pathname,
-  onSelectSeason,
+  selectedSeasonId,
 }: {
   icon: string;
   title: string;
   seasonId: number;
-  items: { href: string; label: string }[];
+  items: AdminNavItem[];
   pathname: string;
-  onSelectSeason: (id: number) => void;
+  selectedSeasonId: number | undefined;
 }) {
   return (
     <div>
@@ -430,14 +401,20 @@ function CompetitionAdminSection({
         {icon} {title}
       </p>
       <ul className="space-y-0.5">
-        {items.map(({ href, label }) => {
+        {items.map((item) => {
+          const { href, label } = item;
+          // Lit only in the section of the season being viewed, not in both.
           const active =
-            pathname === href || pathname.startsWith(href + "/");
+            seasonId === selectedSeasonId &&
+            (pathname === href || pathname.startsWith(href + "/"));
           return (
             <li key={href}>
+              {/* A plain Link on purpose: this href already names its own
+                  season, and SeasonLink would overwrite it with the one viewed.
+                  It replaces an onClick that set the season and then followed
+                  a bare link — which only worked while storage held it. */}
               <Link
-                href={href}
-                onClick={() => onSelectSeason(seasonId)}
+                href={hrefForSeason(item, seasonId)}
                 className={`block rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
                   active
                     ? "text-vpv-accent"

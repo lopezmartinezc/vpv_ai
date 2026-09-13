@@ -1,4 +1,5 @@
 import { PERM, userHasPerm } from "@/lib/permissions";
+import { withSeason } from "@/lib/season-link";
 
 /**
  * Single source of truth for the admin navigation.
@@ -116,8 +117,9 @@ export function hrefForSeason(
   item: AdminNavItem,
   seasonId: number | null | undefined,
 ): string {
-  if (seasonId == null) return item.href;
-  return `${item.href}${item.href.includes("?") ? "&" : "?"}season=${seasonId}`;
+  // The same rule as every other link: global tools (Operaciones, Sistema) are
+  // left as they are even when a season is passed.
+  return withSeason(item.href, seasonId);
 }
 
 export const operationsItems: AdminNavItem[] = ADMIN_ITEMS.filter(
