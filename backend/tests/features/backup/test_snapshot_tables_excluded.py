@@ -1,18 +1,24 @@
-"""The backup download must survive the ad-hoc snapshot tables left in the database.
+"""The backup download: what it leaves out, and what it must never hand back.
 
-pg_dump locks every table it dumps in one LOCK TABLE statement, so a single
-snapshot owned by another role fails the entire backup:
+Two separate failures live here.
+
+The first was a real production outage. pg_dump locks every table it dumps in
+one LOCK TABLE statement, so a single snapshot owned by another role failed the
+entire backup:
 
     ERROR: permiso denegado a la tabla players_pos_snap_20260603_082710
 
-That is what production returned. The fix excludes those tables, and the tests
-below pin both halves: that the flag is actually passed to pg_dump, and that the
-pattern covers the real table names that broke it without touching a real one.
+The second is the one that would have been worse: a dump that breaks partway
+through must not reach the admin looking like a whole one. The response is
+already in flight by then and cannot be taken back, so the gzip trailer is never
+written and the file reads as corrupt — which is the truth about it.
 """
 
 from __future__ import annotations
 
 import asyncio
+import gzip
+import zlib
 from fnmatch import fnmatch
 from typing import Any
 
@@ -20,7 +26,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from src.app import create_app
-from src.features.backup.router import SNAPSHOT_TABLES
+from src.features.backup import router as backup
 from src.shared.dependencies import get_current_admin
 
 # The exact LOCK TABLE list from the failing production backup.
@@ -66,58 +72,153 @@ REAL_TABLES = [
 ]
 
 
+class FakeStream:
+    """Hands out `payload` in pieces, so a test can prove we read incrementally."""
+
+    def __init__(self, payload: bytes) -> None:
+        self._payload = payload
+        self._at = 0
+        self.reads: list[int] = []
+
+    async def read(self, n: int = -1) -> bytes:
+        self.reads.append(n)
+        if n < 0:
+            chunk, self._at = self._payload[self._at :], len(self._payload)
+            return chunk
+        chunk = self._payload[self._at : self._at + n]
+        self._at += len(chunk)
+        return chunk
+
+
 class FakeProcess:
-    def __init__(self, returncode: int, stdout: bytes, stderr: bytes) -> None:
+    def __init__(self, stdout: bytes, stderr: bytes = b"", returncode: int = 0) -> None:
+        self.stdout = FakeStream(stdout)
+        self.stderr = FakeStream(stderr)
         self.returncode = returncode
-        self._out, self._err = stdout, stderr
 
-    async def communicate(self) -> tuple[bytes, bytes]:
-        return self._out, self._err
+    async def wait(self) -> int:
+        return self.returncode
 
 
-def client_with_admin(app: Any) -> AsyncClient:
+def admin_client(app: Any) -> AsyncClient:
     app.dependency_overrides[get_current_admin] = lambda: {"id": 1, "is_admin": True}
     return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
 
+def spawn(process: FakeProcess, captured: dict[str, Any] | None = None) -> Any:
+    async def fake_exec(*argv: str, **_: Any) -> FakeProcess:
+        if captured is not None:
+            captured["argv"] = argv
+        return process
+
+    return fake_exec
+
+
+# --- what the dump leaves out ------------------------------------------------
+
+
 @pytest.mark.parametrize("table", SNAPSHOTS_IN_PRODUCTION)
 def test_pattern_covers_every_snapshot_that_broke_production(table: str) -> None:
-    assert fnmatch(table, SNAPSHOT_TABLES)
+    assert fnmatch(table, backup.SNAPSHOT_TABLES)
 
 
 @pytest.mark.parametrize("table", REAL_TABLES)
 def test_pattern_never_swallows_a_real_table(table: str) -> None:
-    assert not fnmatch(table, SNAPSHOT_TABLES)
+    assert not fnmatch(table, backup.SNAPSHOT_TABLES)
 
 
 @pytest.mark.asyncio
 async def test_pg_dump_is_told_to_exclude_them(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, tuple[str, ...]] = {}
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(
+        asyncio, "create_subprocess_exec", spawn(FakeProcess(b"-- dump\n"), captured)
+    )
 
-    async def fake_exec(*argv: str, **_: Any) -> FakeProcess:
-        captured["argv"] = argv
-        return FakeProcess(0, b"-- PostgreSQL database dump\n", b"")
-
-    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
-
-    async with client_with_admin(create_app()) as ac:
+    async with admin_client(create_app()) as ac:
         response = await ac.post("/api/backup/admin/download")
 
     assert response.status_code == 200
-    assert f"--exclude-table={SNAPSHOT_TABLES}" in captured["argv"]
+    assert f"--exclude-table={backup.SNAPSHOT_TABLES}" in captured["argv"]
+
+
+# --- what the admin actually receives ----------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_a_failing_dump_still_surfaces_why(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A backup that fails must say so — never hand back a truncated .sql as if it worked."""
+async def test_the_download_is_gzip_that_decompresses_to_the_dump(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dump = b"-- PostgreSQL database dump\n" + b"INSERT INTO player_stats ...\n" * 5000
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn(FakeProcess(dump)))
 
-    async def fake_exec(*_: str, **__: Any) -> FakeProcess:
-        return FakeProcess(1, b"", b"pg_dump: error: permiso denegado a la tabla x")
+    async with admin_client(create_app()) as ac:
+        response = await ac.post("/api/backup/admin/download")
 
-    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/gzip"
+    assert response.headers["content-disposition"].endswith('.sql.gz"')
+    assert gzip.decompress(response.content) == dump
+    assert len(response.content) < len(dump), "a gzipped SQL dump should be far smaller"
 
-    async with client_with_admin(create_app()) as ac:
+
+@pytest.mark.asyncio
+async def test_the_dump_is_never_held_in_memory_whole() -> None:
+    """Read in bounded chunks: the old version buffered the entire dump in RAM."""
+    chunks_of_dump = 7
+    dump = b"x" * chunks_of_dump * backup.CHUNK_BYTES
+    process = FakeProcess(dump)
+
+    out = b"".join(
+        [
+            chunk
+            async for chunk in backup._gzipped(
+                process,  # type: ignore[arg-type]
+                asyncio.create_task(process.stderr.read()),
+                await process.stdout.read(backup.CHUNK_BYTES),
+                "ligavpv.sql.gz",
+            )
+        ]
+    )
+
+    assert gzip.decompress(out) == dump
+    assert all(n == backup.CHUNK_BYTES for n in process.stdout.reads)
+    assert len(process.stdout.reads) > chunks_of_dump, "one read per chunk, not one big read"
+
+
+# --- what must never look like a good backup ---------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_dump_that_fails_before_any_output_gets_a_clean_500(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    denied = b"pg_dump: error: permiso denegado a la tabla players_pos_snap_20260603_082710"
+    monkeypatch.setattr(
+        asyncio, "create_subprocess_exec", spawn(FakeProcess(b"", denied, returncode=1))
+    )
+
+    async with admin_client(create_app()) as ac:
         response = await ac.post("/api/backup/admin/download")
 
     assert response.status_code == 500
     assert "permiso denegado" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_a_dump_that_dies_midway_yields_a_file_gunzip_rejects() -> None:
+    """The half-dump must not be a valid .gz — a truncated backup that opens fine
+    is worse than no backup, because it is trusted."""
+    process = FakeProcess(b"-- PostgreSQL database dump\n" * 400, b"server closed", returncode=1)
+
+    chunks: list[bytes] = []
+    with pytest.raises(RuntimeError):
+        async for chunk in backup._gzipped(
+            process,  # type: ignore[arg-type]
+            asyncio.create_task(process.stderr.read()),
+            await process.stdout.read(backup.CHUNK_BYTES),
+            "ligavpv.sql.gz",
+        ):
+            chunks.append(chunk)
+
+    with pytest.raises((EOFError, zlib.error, gzip.BadGzipFile)):
+        gzip.decompress(b"".join(chunks))
