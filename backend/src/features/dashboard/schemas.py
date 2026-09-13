@@ -13,3 +13,6 @@ class DashboardResponse(BaseModel):
     current_matchday: MatchdayDetailResponse | None = None
     copa: CopaFullResponse | None = None
     economy: EconomyResponse | None = None
+    # Sections that failed to load, as opposed to having no data. A missing
+    # section is None either way; only a failure is named here.
+    unavailable: list[str] = []
