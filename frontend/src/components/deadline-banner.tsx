@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { useSeason } from "@/contexts/season-context";
 import { apiClient } from "@/lib/api-client";
@@ -25,11 +26,14 @@ function formatRemaining(minutes: number): string {
 export function DeadlineBanner() {
   const { user } = useAuth();
   const { selectedSeason } = useSeason();
+  // The home has its own lineup strip with the deadline and the action; a
+  // second reminder on top of it only repeated it.
+  const onHome = usePathname() === "/";
   const [status, setStatus] = useState<DeadlineStatus | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    if (!user || !selectedSeason) return;
+    if (onHome || !user || !selectedSeason) return;
 
     let cancelled = false;
 
@@ -52,9 +56,9 @@ export function DeadlineBanner() {
       cancelled = true;
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [user, selectedSeason]);
+  }, [onHome, user, selectedSeason]);
 
-  if (!status) return null;
+  if (onHome || !status) return null;
   if (status.has_lineup) return null;
   if (status.minutes_remaining === null || status.minutes_remaining <= 0) return null;
   if (status.minutes_remaining > 120) return null;

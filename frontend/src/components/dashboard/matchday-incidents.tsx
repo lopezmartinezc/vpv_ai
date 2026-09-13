@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useFetch } from "@/hooks/use-fetch";
 import { withSeason } from "@/lib/season-link";
 import styles from "./home.module.css";
@@ -13,6 +13,9 @@ interface MatchdayIncidentsProps {
   enabled: boolean;
   refreshKey?: number;
 }
+
+/** How many incidents a group shows before "Ver los N". */
+const VISIBLE = 3;
 
 /**
  * Presentation only: the rankings API owns the goal/minutes rules, including
@@ -53,6 +56,36 @@ export function MatchdayIncidents({
         </p>
       )}
     </section>
+  );
+}
+
+/** A list that shows the first few and the rest on request, in place. */
+function Expandable<T>({
+  items,
+  keyOf,
+  render,
+}: {
+  items: T[];
+  keyOf: (item: T) => string;
+  render: (item: T) => ReactNode;
+}) {
+  const [all, setAll] = useState(false);
+  const shown = all ? items : items.slice(0, VISIBLE);
+  return (
+    <>
+      <ul className={styles.incidentList}>
+        {shown.map((item) => (
+          <li key={keyOf(item)} className={styles.incidentItem}>
+            {render(item)}
+          </li>
+        ))}
+      </ul>
+      {!all && items.length > VISIBLE && (
+        <button type="button" className={styles.textLink} onClick={() => setAll(true)}>
+          Ver los {items.length}
+        </button>
+      )}
+    </>
   );
 }
 
@@ -116,7 +149,7 @@ function IncidentsContent({
       <div className={styles.incidentGroup} data-kind="goals">
         <h3 className={styles.incidentHeading}>
           <span className={styles.incidentIcon} aria-hidden="true">
-            ↗
+            🍔
           </span>
           Goleadores fuera del once
         </h3>
@@ -125,15 +158,17 @@ function IncidentsContent({
             Sin goles fuera del once registrados en esta jornada.
           </p>
         ) : (
-          <ul className={styles.incidentList}>
-            {goals.map((goal) => (
-              <li key={`${goal.participantId}:${goal.player_id}`} className={styles.incidentItem}>
+          <Expandable
+            items={goals}
+            keyOf={(goal) => `${goal.participantId}:${goal.player_id}`}
+            render={(goal) => (
+              <>
                 <span>{goal.owner}</span> {goal.player_name} · {goal.goals}{" "}
                 {goal.goals === 1 ? "gol" : "goles"}
                 <span className="block text-xs text-vpv-text-muted">{goal.team_name}</span>
-              </li>
-            ))}
-          </ul>
+              </>
+            )}
+          />
         )}
       </div>
       <div className={styles.incidentGroup} data-kind="bench">
@@ -152,19 +187,18 @@ function IncidentsContent({
             Sin alineados sin minutos registrados en esta jornada.
           </p>
         ) : (
-          <ul className={styles.incidentList}>
-            {bench.map((player) => (
-              <li
-                key={`${player.participantId}:${player.player_id}`}
-                className={styles.incidentItem}
-              >
+          <Expandable
+            items={bench}
+            keyOf={(player) => `${player.participantId}:${player.player_id}`}
+            render={(player) => (
+              <>
                 <span>{player.owner}</span> {player.player_name}
                 <span className="block text-xs text-vpv-text-muted">
                   {player.team_name} · Sin minutos
                 </span>
-              </li>
-            ))}
-          </ul>
+              </>
+            )}
+          />
         )}
       </div>
     </div>

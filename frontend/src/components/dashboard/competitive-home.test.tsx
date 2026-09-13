@@ -2,7 +2,7 @@ import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CompetitiveHome, isDeadlinePassed } from "./competitive-home";
 import { apiClient } from "@/lib/api-client";
-import type { MatchdayDetailResponse, MyLineupResponse } from "@/types";
+import type { CopaFullResponse, MatchdayDetailResponse, MyLineupResponse } from "@/types";
 
 vi.mock("@/lib/api-client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api-client")>()),
@@ -160,6 +160,20 @@ describe("the matchday in play", () => {
     unmount();
     render(<CompetitiveHome {...props} authenticated={false} />);
     expect(screen.queryByText(/Tu once/)).not.toBeInTheDocument();
+  });
+
+  it("sums up the rest of the league at the end, one line with a link", () => {
+    const copa = {
+      season_id: 1,
+      season_name: "x",
+      standings: [{ participant_id: 9, rank: 1, display_name: "Rojo" }],
+      matchdays: [],
+    } as unknown as CopaFullResponse;
+    render(<CompetitiveHome {...props} authenticated={false} copa={copa} />);
+    expect(screen.getByRole("link", { name: /Copa.*lidera Rojo/ })).toHaveAttribute(
+      "href",
+      "/copa?season=1",
+    );
   });
 
   it("gives a visitor no personal card", () => {
