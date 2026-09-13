@@ -34,16 +34,26 @@ async def get_current_user(
 
     payload = decode_token(credentials.credentials)
 
-    # Validate session_id against DB (single session enforcement)
-    session_id = payload.get("session_id")
-    if session_id:
-        from src.shared.models.user import User
+    from src.shared.models.user import User
 
-        user = await db.get(User, int(payload["sub"]))
-        if user is None:
-            raise AuthenticationError("Usuario no encontrado")
-        if user.session_id != session_id:
-            raise AuthenticationError("Sesion invalidada. Inicia sesion de nuevo.")
+    user = await db.get(User, int(payload["sub"]))
+    if user is None:
+        raise AuthenticationError("Usuario no encontrado")
+
+    # Single session enforcement. Tokens predating session_id skip the check,
+    # but not the authorisation refresh below — an old token must not carry old
+    # privileges either.
+    session_id = payload.get("session_id")
+    if session_id and user.session_id != session_id:
+        raise AuthenticationError("Sesion invalidada. Inicia sesion de nuevo.")
+
+    # Authorisation comes from the row, never from the token. The token lives for
+    # jwt_expire_minutes (480), so reading is_admin and permissions out of it left
+    # a revoked administrator holding his old privileges for up to eight hours,
+    # and is_admin bypasses every permission check. The row is already loaded, so
+    # this costs nothing.
+    payload["is_admin"] = user.is_admin
+    payload["permissions"] = user.permissions or 0
 
     return payload
 
