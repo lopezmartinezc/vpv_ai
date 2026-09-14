@@ -378,13 +378,21 @@ class ScrapingRepository:
         logger.debug("update_match_source_url: match_id=%d source_url=%s", match_id, source_url)
 
     async def sync_matchday_first_match_at(self, season_id: int) -> int:
-        """Recalculate ``matchdays.first_match_at`` from match dates for all matchdays."""
+        """Recalculate ``matchdays.first_match_at`` from the dates of the matches that count."""
         from sqlalchemy import func
 
         subq = (
             select(
                 Match.matchday_id,
-                func.min(Match.played_at).label("earliest"),
+                # A match that does not count (brought forward, postponed,
+                # annulled) must not decide when a jornada starts: one played
+                # on 3/09 put J6 2026-27's lineup deadline twelve days early.
+                # Only when no match of the jornada counts is the earliest of
+                # all kept.
+                func.coalesce(
+                    func.min(Match.played_at).filter(Match.counts.is_(True)),
+                    func.min(Match.played_at),
+                ).label("earliest"),
             )
             .join(Matchday, Match.matchday_id == Matchday.id)
             .where(Matchday.season_id == season_id, Match.played_at.isnot(None))
