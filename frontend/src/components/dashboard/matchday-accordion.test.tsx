@@ -207,6 +207,13 @@ describe("what each place pays", () => {
     expect(screen.getByRole("button", { name: /Tercero/ })).toHaveTextContent("2 €");
   });
 
+  it("shows nothing for a matchday that does not count", () => {
+    render(
+      <MatchdayAccordion data={{ ...ranked, counts: false }} seasonId={1} weeklyRules={RULES} />,
+    );
+    expect(screen.queryByText(/€/)).not.toBeInTheDocument();
+  });
+
   it("shows nothing in a season without weekly payments", () => {
     render(<MatchdayAccordion data={ranked} seasonId={1} />);
     expect(screen.queryByText(/€/)).not.toBeInTheDocument();

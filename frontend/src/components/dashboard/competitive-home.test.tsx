@@ -107,6 +107,17 @@ describe("the matchday in play", () => {
     expect(screen.queryByText("Incidencias J4")).not.toBeInTheDocument();
   });
 
+  it("skips a previous matchday that does not count, and shows the one being set", async () => {
+    mockMe();
+    render(<CompetitiveHome {...props} previous={{ ...previous, counts: false }} />);
+    await screen.findByRole("link", { name: "Preparar mi alineación" });
+    expect(heading()).toHaveTextContent("Jornada 4");
+    expect(screen.queryByText("Incidencias J3")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: /Tu jornada · J/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/aparecerá cuando cierre el plazo/)).toBeInTheDocument();
+    expect(screen.getByText("Duelo de participante 42 · J4 · before")).toBeInTheDocument();
+  });
+
   it("goes by the effective deadline, not by an early first kick-off", async () => {
     mockMe();
     render(<CompetitiveHome {...props} />);

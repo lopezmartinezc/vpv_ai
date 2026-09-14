@@ -68,7 +68,20 @@ describe("generalLine", () => {
 });
 
 describe("YourMatchday", () => {
-  const matchday = { number: 5, scores: SCORES } as MatchdayDetailResponse;
+  const matchday = { number: 5, counts: true, scores: SCORES } as MatchdayDetailResponse;
+
+  it("never charges for a matchday that does not count", () => {
+    render(
+      <YourMatchday
+        matchday={{ ...matchday, counts: false }}
+        participantId={2}
+        standings={[]}
+        weeklyRules={RULES}
+        final={false}
+      />,
+    );
+    expect(screen.getByRole("region")).not.toHaveTextContent("pagas");
+  });
 
   it("shows your place, points and players still to score", () => {
     render(
