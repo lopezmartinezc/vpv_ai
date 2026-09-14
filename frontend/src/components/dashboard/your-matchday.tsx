@@ -59,7 +59,10 @@ export function YourMatchday({
   final: boolean;
 }) {
   const score = matchday.scores.find((s) => s.participant_id === participantId);
-  const money = moneyLine(matchday.scores, participantId, weeklyRules, final);
+  // A matchday that does not count charges nobody.
+  const money = matchday.counts
+    ? moneyLine(matchday.scores, participantId, weeklyRules, final)
+    : null;
   const general = generalLine(standings, participantId);
 
   return (

@@ -98,7 +98,9 @@ export function CompetitiveHome({
   const showCurrent = passed === true || final;
   // The matchday in play: until the current one's deadline, the previous one —
   // closed or still being played — while you set the lineup for the current.
-  const displayed = showCurrent ? current : previous;
+  // A previous matchday that does not count (pre-season) is not followed: the
+  // home goes straight to the one being set.
+  const displayed = showCurrent ? current : previous?.counts ? previous : null;
   // The playoff follows the same matchday: a duel still being played, or else
   // the next rival.
   const playoff: { number: number; phase: PlayoffPhase; scores?: MatchdayDetailResponse["scores"] } =

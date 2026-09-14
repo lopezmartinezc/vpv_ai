@@ -380,10 +380,14 @@ export function MatchdayAccordion({
   const yourPoints = data.scores.find(
     (entry) => entry.participant_id === participantId,
   )?.total_points;
-  // What each place pays, once there is a ranking: before any stats everyone
-  // is tied, and a tie would charge them all the worst place.
+  // What each place pays: only in a matchday that counts, and once there is a
+  // ranking — before any stats everyone is tied, and a tie would charge them
+  // all the worst place.
   const amounts =
-    weeklyRules && Object.keys(weeklyRules).length > 0 && data.scores.some((s) => s.rank !== null)
+    weeklyRules &&
+    Object.keys(weeklyRules).length > 0 &&
+    data.counts &&
+    data.scores.some((s) => s.rank !== null)
       ? new Map(weeklyAmounts(data.scores, weeklyRules).map((e) => [e.participant_id, e.amount]))
       : null;
 
