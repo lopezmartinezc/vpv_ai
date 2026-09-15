@@ -1,328 +1,126 @@
-# Playoffs — Diseño + estado actual
+# Playoffs — Diseño y estado
 
-> Estado: **v1 implementado** con el formato `balanced_ko4` para el Mundial 2026.
-> El motor es **pluggable**: añadir un formato nuevo (Berger, 2 grupos, suizo, etc.)
-> se hace creando un fichero en [backend/src/features/competitions/formats/](../backend/src/features/competitions/formats/)
-> y registrándolo en el `FORMAT_REGISTRY`. Nada más cambia.
+> **Estado (15/09/2026):** en producción con tres formatos.
+> - La **Liga 2026-27** usa `liga_berger_ko8_bo3` para la Apertura y la Clausura.
+> - El **Mundial 2026** usó `balanced_ko4`.
+>
+> El motor admite formatos como piezas: uno nuevo es un fichero en
+> [`backend/src/features/competitions/formats/`](../backend/src/features/competitions/formats/)
+> registrado en `FORMAT_REGISTRY`.
 
-> Otros documentos:
-> - [PLAYOFFS_RUNBOOK.md](PLAYOFFS_RUNBOOK.md) — guía operativa paso a paso.
-> - [PLAYOFFS_API.md](PLAYOFFS_API.md) — referencia HTTP de cada endpoint.
-> - [PLAYOFFS_DEV_GUIDE.md](PLAYOFFS_DEV_GUIDE.md) — cómo añadir un formato nuevo.
-
-## Estado v1.1 (entregado)
-
-- **Dos formatos expuestos** y un motor pluggable:
-  - `balanced_ko4` (Mundial): 6 jornadas balanced + KO top-4 (semis + final).
-    Tuned a 13 participantes, 8 jornadas VPV.
-  - `liga_berger_ko8` (Liga): round-robin Berger **completo** dependiente del
-    número de participantes (`N-1` jornadas si par, `N` si impar con descanso)
-    + KO top-8 (cuartos + semis + final). Para 13 participantes: 13 RR + 3 KO
-    = 16 jornadas por playoff.
-- **Multi-playoff por temporada**: el modelo soporta múltiples competitions del
-  tipo `playoff` distinguidos por `name`. Tournament season → 1 playoff
-  (`name="Playoff — …"`). Liga → 2 playoffs (`name="Apertura"` y
-  `name="Clausura"`).
-- **Endpoints públicos**: `/competitions/season/{id}`, `/competitions/{id}/matchups`,
-  `/competitions/{id}/standings`.
-- **Endpoints admin**: `/competitions/admin/season/{id}` (crear),
-  `.../start-regular`, `.../start-ko`.
-- **Discovery**: `GET /competitions/formats` lista los plugins disponibles.
-- **Wiring scraping**: `ScoreAggregator.aggregate_matchday` invoca
-  `CompetitionService.recalculate_matchups_for_matchday` al cerrar cada jornada.
-- **UI admin**: tarjeta "Playoffs" en `/admin/temporadas` (sólo seasons `kind=tournament`).
-- **UI pública**: `/playoffs` con tres tabs (Clasificación, Calendario, Eliminatorias).
-- **Sidebar**: entrada "Playoffs" cuando la season es tournament.
-
-## Cómo añadir un formato nuevo
-
-1. Crear `backend/src/features/competitions/formats/mi_formato.py` con una clase
-   que herede de `FormatPlugin`.
-2. Implementar:
-   - `format_id`, `display_name`.
-   - `required_rounds_regular`, `required_rounds_ko`.
-   - `generate_regular_phase(participants, matchday_ids, seed)`.
-   - `generate_ko_phase(standings, matchday_ids)`.
-   - `resolve_ko_tie(participant_a_id, participant_b_id, standings_snapshot)`.
-   - (Opcional) `standings_groups()` para formatos multi-grupo.
-3. Registrar en `formats/__init__.py`:
-   ```python
-   FORMAT_REGISTRY = {
-       'balanced_ko4': BalancedKo4Plugin(),
-       'mi_formato': MiFormatoPlugin(),   # NUEVO
-   }
-   ```
-4. La UI del admin lo ofrecerá automáticamente en el desplegable de formato.
-
-## Algoritmos reutilizables
-
-- [scheduler.py](backend/src/features/competitions/scheduler.py):
-  - `generate_balanced_schedule()` — 13 jugadores × 4 partidos en 6 jornadas.
-  - `generate_berger()` — round-robin clásico (no usado por v1).
-- [ko_bracket.py](backend/src/features/competitions/ko_bracket.py):
-  - `seed_classic_bracket()` — bracket 1-vs-N, 2-vs-N-1, etc.
-  - `chain_winners()` — encadena ganadores a la siguiente ronda con feeders.
-
-## Decisiones cerradas (aplican a todos los formatos)
-
-- **Desempate clasificación**: `puntos DESC, diff_avg DESC` y **nada más**.
-  Acordado con Oscar para el Mundial 2026: como no jugamos todos contra todos,
-  la diferencia acumulada de puntos VPV resuelve el empate directamente. Si dos
-  participantes acaban iguales en puntos Y en diferencial, comparten `rank` y
-  el plugin del KO se niega a arrancar hasta que se resuelva manualmente.
-  Aplicado en `CompetitionService._compute_standings`.
-- **Empate en cruce regular**: 1 punto cada uno, `winner_participant_id=NULL`.
-- **Empate en KO**: gana el mejor `rank` de la fase regular (snapshot persistido
-  en `competitions.config.regular_standings_snapshot`). El plugin decide via
-  `resolve_ko_tie`.
-- **Descanso**: 0 puntos para el participante en ese cruce. Cuenta como
-  `rests++` en standings. No afecta a `diff_avg`.
-- **Recálculo retroactivo**: hook automático tras cada
-  `ScoreAggregator.aggregate_matchday`.
+Otros documentos:
+- [PLAYOFFS_RUNBOOK.md](PLAYOFFS_RUNBOOK.md): operación paso a paso (crear, generar, problemas).
+- [PLAYOFFS_API.md](PLAYOFFS_API.md): endpoints y esquemas.
+- [PLAYOFFS_DEV_GUIDE.md](PLAYOFFS_DEV_GUIDE.md): cómo añadir un formato.
 
 ---
 
-## Notas históricas (anteriores al v1)
+## Qué es un playoff VPV
 
-## Context
+No es una clasificación acumulada. Es una **liguilla de cruces directos entre participantes**: en cada jornada VPV, cada cruce compara los puntos VPV de los dos en esa jornada. Tras la liguilla, los mejores juegan **eliminatorias**.
 
-La tabla `competitions` se creó en la migración inicial como placeholder
-([backend/src/shared/models/competition.py](backend/src/shared/models/competition.py)) y nunca se cableó a nada.
-Queremos darle uso para introducir el concepto de **Playoff** con el formato real
-que se ha jugado históricamente:
+- **Liga:** 2 playoffs por temporada, **Apertura** y **Clausura**, distinguidos por `name`.
+- **Torneo** (Mundial, Eurocopa): 1 playoff.
 
-- **Liga**: 2 Playoffs por temporada — **Apertura** y **Clausura**.
-- **Torneo** (Mundial / Eurocopa): 1 Playoff.
+## Formatos
 
-El formato **NO es una clasificación acumulada**: es una **liguilla
-round-robin** entre participantes VPV donde cada jornada VPV se transforma en
-una jornada de cruces directos (Dani C vs Xavi V, 3Cerros vs Hector, etc.).
-Tras la fase regular hay **eliminatorias KO** entre el top-N.
+| `format_id` | Para | Liguilla | Eliminatorias | Final |
+|---|---|---|---|---|
+| `liga_berger_ko8_bo3` | **Liga 2026-27** | Todos contra todos: `N` jornadas si N es impar (cada jornada descansa uno), `N-1` si es par | Top-8: cuartos y semis | **3 jornadas, al mejor de 3** |
+| `liga_berger_ko8` | Liga con final de una jornada | Igual | Top-8: cuartos y semis | 1 jornada |
+| `balanced_ko4` | Mundial (13 participantes exactos) | 6 jornadas, 4 cruces cada uno (5, 5, 5, 5, 3, 3) | Top-4: semis | 1 jornada |
 
-## Reglas de Negocio (acordadas)
+## Reglas de la Liga 2026-27 (`liga_berger_ko8_bo3`, 11 participantes)
 
-### Round-robin
+| Fase | Regla |
+|---|---|
+| **Liguilla** | 11 jornadas con 5 cruces; cada participante juega 10 y descansa 1. Victoria 3, empate 1, derrota 0; el descanso da 0 y no cuenta en la diferencia. |
+| **Clasificación** | Puntos. A igualdad de puntos: **1)** enfrentamiento directo (entre dos, su cruce; entre tres o más, una minitabla con los cruces entre ellos, a 3 la victoria y 1 el empate); **2)** diferencia acumulada (puntos a favor − en contra), que es lo que decide si empataron su cruce. Si aun así siguen igualados, comparten puesto y las eliminatorias no arrancan hasta resolverlo. |
+| **Cuartos** (1 jornada) | 1-8, 4-5, 2-7, 3-6. Empate → pasa el mejor clasificado de la liguilla. |
+| **Semis** (1 jornada) | Ganador 1-8 contra ganador 4-5; ganador 2-7 contra ganador 3-6. Mismo desempate. |
+| **Final** (3 jornadas) | Gana quien gane 2. Si alguien gana las dos primeras, la tercera no se disputa. Una jornada empatada la gana quien tenga mejor **diferencia en las otras dos jornadas de la final**, así que un empate siempre lleva la final a la tercera. Si también hay igualdad ahí, gana el mejor clasificado de la liguilla. |
 
-- **Calendario**: round-robin completo. Con N participantes (impar) se juegan
-  **N jornadas** (cada uno descansa una vez); con N par se juegan **N-1**.
-  - Apertura = primera vuelta (las primeras N-1/N jornadas del rango).
-  - Clausura = segunda vuelta (las siguientes).
-  - Si la temporada empieza tarde (J8, J18, ...) o tiene menos jornadas
-    disponibles, el algoritmo se ajusta al rango real.
-- **Cruces por jornada**: pre-generados al iniciar el Playoff via algoritmo
-  de Berger / round-robin clásico. Determinista a partir de la lista de
-  participantes y la jornada inicial.
-- **Puntuación de cada cruce**:
-  - Victoria = **3 pts** (más puntos VPV en esa jornada).
-  - Empate (igualdad de puntos VPV) = **1 pt** a cada uno.
-  - Derrota = **0 pts**.
-  - **Descanso = 0 pts** para el participante que descansa.
-- **Diferencial ("average")**: `pts_VPV(propios) - pts_VPV(rival)` por cruce,
-  acumulado, sirve como desempate en la clasificación.
-- **Clasificación**: orden por `playoff_points DESC, diff_avg DESC, pts_total_VPV DESC`.
+**Ejemplos de la final (A contra B):**
+- **A gana la 1.ª por 3 y B la 2.ª por 10; la 3.ª acaba en empate.** La decide la diferencia de la 1.ª y la 2.ª: B va +7, así que se lleva la 3.ª y gana 2-1.
+- **A gana la 1.ª y la 2.ª es empate.** Se espera a la 3.ª. Si la gana A, campeón. Si la gana B, la 2.ª la decide la diferencia de la 1.ª y la 3.ª.
+- **Las tres jornadas empatadas:** campeón el mejor clasificado.
 
-### Eliminatorias
+**Calendario:**
 
-- Tras el round-robin, **top-N** pasa automáticamente (N configurable: 4, 6, 8...).
-- **Cruces deterministas** estilo Champions (1º vs Nº, 2º vs N-1º, ...).
-- **Tipo configurable por eliminatoria**: partido único o ida-vuelta (decisión
-  del admin en función de jornadas disponibles).
-  - Partido único: resultado = comparación de 1 jornada.
-  - Ida-vuelta: suma de los 2 partidos; en empate, el mejor clasificado del
-    round-robin avanza.
+| Playoff | Liguilla | Cuartos | Semis | Final |
+|---|---|---|---|---|
+| Apertura | J6–J16 | J17 | J18 | J19–J21 |
+| Clausura | J22–J32 | J33 | J34 | J35–J37 |
 
-### Premios
+La J38 queda libre.
 
-- Palmarés (ganador del Playoff queda registrado).
-- Económico configurable: nuevo `payment_type='playoff_prize'` con
-  `position_rank` por puesto (1º obligatorio, 2º/3º opcionales).
+## Reglas de los otros formatos
+
+- **Clasificación:** puntos → diferencia acumulada, y nada más. Se acordó con Oscar para el Mundial 2026: como no se juega todos contra todos, la diferencia resuelve directamente. `liga_berger_ko8` sigue la misma regla.
+- **Empate en eliminatoria, final incluida:** pasa el mejor clasificado de la liguilla.
 
 ---
 
-## Plan de Implementación (cuando se retome)
+## Cómo funciona el motor
 
-### Cambios de BD
+- **Formato como pieza:** `competitions.config.format_id` elige la clase de `FORMAT_REGISTRY`. El motor (`service.py`) no conoce formatos concretos. Un formato activa lo que necesita con atributos:
+  - `final_legs = 3`: final a varias jornadas;
+  - `head_to_head_tiebreak = True`: enfrentamiento directo antes que la diferencia.
+- **Ciclo de vida:** `pending` → `regular` → `ko` → `completed`.
+  - **Crear:** `pending`.
+  - **Generar liguilla (`start-regular`):** sorteo aleatorio del orden (`config.seed`) y todos los cruces, con su jornada, de una vez. Si se pasan las jornadas KO, se guardan en `config.planned_ko_matchday_numbers`.
+  - **Eliminatorias:** arrancan solas al resolverse el último cruce de liguilla, o a mano con `start-ko`. La clasificación queda congelada en `config.regular_standings_snapshot` para los desempates de la eliminatoria.
+  - **`completed`:** cuando hay campeón.
+- **Resultados:** cada vez que se agrega una jornada, `ScoreAggregator.aggregate_matchday` llama a `CompetitionService.recalculate_matchups_for_matchday`. Este:
+  - pone marcador y ganador a los cruces de esa jornada;
+  - escribe los ganadores en los cruces siguientes, que tienen alimentadores;
+  - arranca las eliminatorias y cierra el playoff cuando toca.
+- **Retroactivo:** al generar la liguilla se recalculan las jornadas del rango ya puntuadas. Un playoff creado tarde no pierde jornadas.
+- **Final a 3:**
+  - Son tres cruces con `round_label="final"`, uno por jornada y alimentados por las dos semis.
+  - La serie la resuelve `ko_series.resolve_best_of_three`. Se calcula en cada lectura y se expone como `final_series` en `GET /competitions/{id}/matchups`; no se guarda aparte.
+  - Una jornada empatada de la final deja `winner_participant_id = NULL` en su fila.
+- **Clasificación:** `_compute_standings` la calcula en cada lectura desde los cruces resueltos; no se guarda.
 
-#### Migración 1 — `season_payments` linkadas a competición
+## Dónde se ve
 
-```sql
-ALTER TABLE season_payments
-  ADD COLUMN IF NOT EXISTS competition_id INTEGER REFERENCES competitions(id) ON DELETE CASCADE;
-ALTER TABLE season_payments DROP CONSTRAINT IF EXISTS uq_season_payment;
-ALTER TABLE season_payments ADD CONSTRAINT uq_season_payment
-  UNIQUE (season_id, payment_type, position_rank, competition_id);
-CREATE INDEX IF NOT EXISTS idx_season_payments_competition
-  ON season_payments(competition_id);
-```
+- **Admin, `/admin/temporadas`:** una tarjeta por playoff.
+  - **Temporada de torneo:** «Playoffs».
+  - **Temporada de Liga:** «Playoff Apertura» y «Playoff Clausura», con `liga_berger_ko8_bo3` por defecto.
+  - **Jornadas propuestas:** la tarjeta pide los formatos con `?season_id=` para calcularlas con los participantes reales. La Clausura (`order={1}`) propone empezar donde acaba la final de la Apertura.
+- **Pública, `/playoffs`:**
+  - selector entre los playoffs de la temporada; abre el que está en juego, si no el último terminado;
+  - pestañas Clasificación, Calendario y Eliminatorias;
+  - la final a 3 se muestra como serie: jornadas ganadas, cada jornada, «No se disputa» y campeón.
+- **Menú lateral:** «Playoffs» aparece en Liga y en torneo (`frontend/src/lib/competition-scope.ts`).
+- **Portada:** el duelo de playoff de cada participante en la jornada (`components/dashboard/personal-playoff.tsx`). En la final dice «Jornada 2 de 3 · vas 1-0».
 
-#### Migración 2 — calendario de cruces
+## Piezas reutilizables
 
-```sql
-CREATE TABLE IF NOT EXISTS competition_matchups (
-  id              SERIAL PRIMARY KEY,
-  competition_id  INT NOT NULL REFERENCES competitions(id) ON DELETE CASCADE,
-  phase           VARCHAR(20) NOT NULL,            -- 'round_robin' | 'ko'
-  round_number    SMALLINT NOT NULL,
-  matchday_id     INT REFERENCES matchdays(id),    -- jornada VPV donde se juega
-  -- round-robin
-  participant_a_id INT REFERENCES season_participants(id),
-  participant_b_id INT REFERENCES season_participants(id),
-  rest_participant_id INT REFERENCES season_participants(id),
-  -- ko (puede llenarse en 2 leg: matchday + leg)
-  leg              SMALLINT DEFAULT 1,             -- 1 o 2 (ida/vuelta)
-  feeder_a_id     INT REFERENCES competition_matchups(id),
-  feeder_b_id     INT REFERENCES competition_matchups(id),
-  -- resultado
-  score_a         INT,
-  score_b         INT,
-  winner_participant_id INT REFERENCES season_participants(id),
-  UNIQUE (competition_id, phase, round_number, leg, matchday_id, participant_a_id),
-  CHECK (participant_a_id <> participant_b_id)
-);
-CREATE INDEX idx_matchups_competition ON competition_matchups(competition_id);
-CREATE INDEX idx_matchups_matchday    ON competition_matchups(matchday_id);
-```
+- [`scheduler.py`](../backend/src/features/competitions/scheduler.py):
+  - `generate_berger()`: todos contra todos, con descanso si N es impar; lo usan los dos formatos de Liga;
+  - `generate_balanced_schedule()`: 13 participantes, 4 cruces en 6 jornadas.
+- [`ko_bracket.py`](../backend/src/features/competitions/ko_bracket.py):
+  - `seed_classic_bracket()`: 1-N, 2-(N-1)…, en el orden que mantiene separados a los mejores;
+  - `chain_winners()`: la ronda siguiente, con alimentadores.
+- [`ko_series.py`](../backend/src/features/competitions/ko_series.py):
+  - `resolve_best_of_three()`: la final al mejor de 3.
 
-### Modelo SQLAlchemy
+## Lo que no está hecho (del diseño original)
 
-- `backend/src/shared/models/season.py::SeasonPayment` → añadir `competition_id`.
-- `backend/src/shared/models/competition.py` → añadir relación `matchups`.
-- Nuevo `backend/src/shared/models/competition_matchup.py`.
+- **Premios económicos del playoff:** no hay `payment_type='playoff_prize'` ni `season_payments.competition_id`.
+- **Palmarés de ganadores de playoff.**
+- **Ida y vuelta configurable por ronda, y `top_n` configurable:** el tamaño del cuadro lo fija el formato.
+- **Forzar a mano el orden** de un empate que ningún desempate resuelve. Hoy el KO no arranca y hay que decidirlo fuera; ver el runbook.
+- **Aviso al cambiar `counts`:** si una jornada o partido cambia de «cuenta» después, basta con reagregar la jornada (runbook, «Forzar el recálculo»). Nada avisa de que hace falta.
 
-### Backend — módulo nuevo `features/competitions/`
+## Historia
 
-- `service.py`:
-  - `ensure_playoffs(season_id)` — al setear `matchday_winter` (Liga) o al
-    finalizar fase de grupos (Mundial), crea las 1-2 competitions vacías.
-  - `start_playoff(competition_id, participant_ids)` — genera el round-robin
-    completo via algoritmo de Berger. Inserta filas `competition_matchups`
-    con `matchday_id` asignada secuencialmente. Idempotente con guard.
-  - `recalculate_matchup(matchup_id)` — lee `participant_matchday_scores`
-    para los 2 participantes en su `matchday_id`, asigna `score_a/score_b`
-    y `winner_participant_id`. Llamado desde el aggregator del scraping.
-  - `get_standings(competition_id)` — agrega:
-    - `playoff_points` por participante (3/1/0).
-    - `diff_avg` (suma de diferencias VPV).
-    - `pts_total_VPV` (desempate último).
-  - `start_ko_phase(competition_id, top_n)` — toma los top-N del
-    round-robin, genera bracket KO determinista. Acepta `legs_per_round`
-    (`[1,1,2,2]` etc).
-- `router.py`:
-  - `GET /competitions/{season_id}` (público).
-  - `GET /competitions/{id}/standings` (público).
-  - `GET /competitions/{id}/matchups` (público, calendario).
-  - `POST /competitions/admin/{id}/start-round-robin` (admin).
-  - `POST /competitions/admin/{id}/start-ko` (admin, body: `top_n`, `legs`).
-  - `POST /competitions/admin/{id}/finalize` (admin).
-
-### Wiring con scraping/scoring
-
-`scraping/aggregation.py::aggregate_matchday` — tras recalcular
-`participant_matchday_scores` para una jornada, llamar al servicio para que
-recalcule todos los `competition_matchups` con esa `matchday_id`. El cambio
-es idempotente (puede correr varias veces).
-
-### Frontend
-
-- `/admin/temporadas` → nueva tarjeta **"Playoffs"** (visible para Liga y
-  Tournament):
-  - Apertura / Clausura (Liga) o Playoff único (Tournament).
-  - Botón "Generar round-robin" cuando todavía no se generó.
-  - Premio 1º/2º/3º editables.
-  - Botón "Iniciar eliminatorias" con `top_n` y `legs` configurables.
-  - Botón "Finalizar" cuando todos los matchups estén resueltos.
-- `/playoffs` — página pública:
-  - Tabs por competición (Apertura | Clausura | Playoff).
-  - Sub-tabs: **Calendario** (matchups por jornada) | **Clasificación** | **Eliminatorias** (bracket).
-- `/palmares` — añadir sección "Ganadores Playoff".
-- `sidebar.tsx` → entrada `/playoffs` per-season (kind=tournament o kind=league con `playoffs_enabled`).
-
-### Componentes UI reusables
-
-- Para el bracket KO entre participantes, reusar componentes de
-  `frontend/src/app/bracket/page.tsx` (`CompactMatchCard`, `TwoSidedBracket`)
-  sustituyendo `CountryFlag` por avatar de participante y `team.name` por
-  `participant.display_name`.
-
-### Algoritmo de Berger (round-robin)
-
-Pseudocódigo:
-```
-participants = lista ordenada
-if len(participants) impar:
-    participants.append(BYE)
-n = len(participants)
-fixed = participants[0]
-rotating = participants[1:]
-for round in 1..n-1:
-    pairs = [(fixed, rotating[-1])]
-    for i in 0..n/2-2:
-        pairs.append((rotating[i], rotating[-2-i]))
-    rotating = [rotating[-1]] + rotating[:-1]
-    # 'pairs' = cruces de esta jornada; uno puede tener BYE -> rest
-```
-
-### Premio: `payment_type='playoff_prize'`
-
-- Validación en `seasons/service.py::upsert_payment`:
-  - `competition_id` obligatorio.
-  - `position_rank in {1, 2, 3}`.
-- Generación de transactions: `economy/service.py::generate_playoff_prizes(competition_id)`
-  - Idempotente (delete + recreate).
-  - Llamado desde `finalize`.
-
-### Verificación E2E
-
-1. Migraciones aplicadas; `\d competition_matchups` muestra columnas correctas.
-2. Crear Competition manual via SQL, llamar `start_playoff` con 13
-   participantes; comprobar que se generan 13 jornadas × 6 cruces + 1
-   descanso = 91 filas en `competition_matchups`.
-3. Comprobar que el `matchday_id` asignado es secuencial dentro del rango
-   `config.matchday_start..config.matchday_end`.
-4. Recalcular un matchup tras un scraping → verificar que `winner_participant_id`
-   coincide con el participante con más puntos VPV en esa jornada.
-5. UI admin: generar round-robin → ver calendario en `/playoffs/calendario`.
-6. Iniciar KO con `top_n=4, legs=[1,2]` → verificar bracket generado.
-7. Finalize → transaction de premio creada y reflejada en `/economia`.
-
-### Ficheros críticos
-
-| Capa | Fichero | Acción |
-|---|---|---|
-| Migración | `migration/schema/migrations/2026_..._add_competition_id_to_payments.sql` | nuevo |
-| Migración | `migration/schema/migrations/2026_..._add_competition_matchups.sql` | nuevo |
-| Modelo | `backend/src/shared/models/season.py` | `SeasonPayment.competition_id` |
-| Modelo | `backend/src/shared/models/competition.py` | relación `matchups` |
-| Modelo | `backend/src/shared/models/competition_matchup.py` | nuevo |
-| Servicio | `backend/src/features/seasons/service.py` | `playoff_prize` + trigger `ensure_playoffs` |
-| Servicio | `backend/src/features/economy/service.py` | `generate_playoff_prizes` |
-| Nuevo | `backend/src/features/competitions/{schemas,repository,service,router}.py` | módulo completo |
-| Servicio | `backend/src/features/scraping/aggregation.py` | recálculo de matchups tras agregar jornada |
-| Router | `backend/src/app.py` | registrar `competitions.router` |
-| Frontend | `frontend/src/app/admin/temporadas/page.tsx` | tarjeta Playoffs |
-| Frontend | `frontend/src/app/playoffs/page.tsx` | nuevo |
-| Frontend | `frontend/src/components/layout/sidebar.tsx` | entrada `/playoffs` |
-| Frontend | `frontend/src/app/palmares/page.tsx` | sección playoffs |
-
-### Decisiones que quedan abiertas (pendientes para la retoma)
-
-1. **Sorteo de orden de participantes**: ¿lo decide el admin (drag&drop como
-   en draft order) o se hereda de `season_participants.draft_order`?
-2. **Recálculo retroactivo**: al cambiar `matches.counts` o `matchdays.counts`,
-   ¿qué hacer con matchups ya resueltos? Probablemente: recalcular y avisar.
-3. **Descanso justo**: el algoritmo de Berger garantiza rotación, pero con
-   N impar siempre hay alguien que descansa. ¿Se acepta como tal o se busca
-   compensación (p.ej. doblar puntos en otra jornada)? Acordado: no
-   compensar — descanso = 0 pts.
-4. **Coexistencia Liga + Mundial**: si una season tiene un Mundial paralelo,
-   ¿el Playoff del Mundial es una competition separada en una season Tournament
-   distinta? Sí — cada season tiene sus propias competitions.
-
----
-
-## Próxima acción sugerida
-
-Cuando se retome este tema:
-1. Mover este fichero a `docs/PLAYOFFS_DESIGN.md` del repo.
-2. Confirmar las "decisiones abiertas" con un AskUserQuestion.
-3. Implementar en el orden: migraciones → módulo backend → wiring scraping → admin UI → /playoffs pública → palmarés.
+- **Junio de 2026, v1:** motor de formatos como piezas, `balanced_ko4` para el Mundial y la tabla `competition_matchups` (migración `2026_06_08_add_competition_matchups.sql`).
+- **v1.1:** `liga_berger_ko8`, varios playoffs por temporada (Apertura y Clausura), y las eliminatorias arrancan solas.
+- **Septiembre de 2026:**
+  - `liga_berger_ko8_bo3`, con la final al mejor de 3 (#164);
+  - pantallas con el selector de playoff y la serie final (#165);
+  - desempate de la liguilla puntos → directo → diferencia;
+  - los rechazos de un formato dan un 422 con el motivo, no un 500;
+  - «Playoffs» visible en el menú de Liga.

@@ -7,8 +7,10 @@ The Liga 2026-27 playoffs, Apertura and Clausura (11 participants):
 * semis in one jornada: winner 1-8 v winner 4-5, winner 2-7 v winner 3-6;
 * the final over three jornadas, best of three (``ko_series``).
 
-The regular table breaks a tie on points by point difference, then head to
-head. A drawn cuartos or semis goes to the better regular-phase seed.
+The regular table breaks a tie on points head to head first (a mini-table
+of the cruces among the tied), then by point difference — so two who drew
+their cruce are split by the difference. A drawn cuartos or semis goes to
+the better regular-phase seed.
 """
 
 from __future__ import annotations

@@ -10,6 +10,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.exceptions import BusinessRuleError
 from src.features.competitions.service import CompetitionService
 from src.shared.models.competition_matchup import CompetitionMatchup
 from src.shared.models.matchday import Matchday
@@ -214,18 +215,39 @@ async def standings_for(db: AsyncSession, liga: SimpleNamespace, format_id: str,
     return (await service.get_standings(comp.id)).groups[0].entries
 
 
-async def test_level_on_points_and_difference_the_head_to_head_decides(
+async def test_level_on_points_the_head_to_head_comes_before_the_difference(
     db_session: AsyncSession, liga: SimpleNamespace
 ) -> None:
-    x, y, w = liga.p[:3]
-    # All three win once: W +2, and X and Y both -1 — but X beat Y.
-    cruces = [(x, y, 12, 10), (w, x, 13, 10), (y, w, 11, 10)]
+    v, x, y, w = liga.p[:4]
+    # X and Y end on 3 points. X beat Y, but Y has the far better difference.
+    cruces = [(x, y, 11, 10), (y, w, 30, 10), (v, x, 12, 10), (v, w, 10, 10)]
     rows = await standings_for(db_session, liga, "liga_berger_ko8_bo3", cruces)
-    assert [(e.participant_id, e.rank) for e in rows] == [(w, 1), (x, 2), (y, 3)]
+    assert [(e.participant_id, e.rank) for e in rows] == [(v, 1), (x, 2), (y, 3), (w, 4)]
 
-    # The Mundial rule stops at the difference: X and Y share second.
+    # The Mundial rule has no head to head: the difference puts Y ahead.
     old = await standings_for(db_session, liga, "liga_berger_ko8", cruces)
-    assert {(e.participant_id, e.rank) for e in old} == {(w, 1), (x, 2), (y, 2)}
+    assert [(e.participant_id, e.rank) for e in old] == [(v, 1), (y, 2), (x, 3), (w, 4)]
+
+
+async def test_a_drawn_head_to_head_goes_to_the_difference(
+    db_session: AsyncSession, liga: SimpleNamespace
+) -> None:
+    x, y, v, w = liga.p[:4]
+    # X and Y drew their cruce and both end on 4 points: X +5, Y +2.
+    cruces = [(x, y, 10, 10), (x, w, 15, 10), (y, v, 12, 10)]
+    rows = await standings_for(db_session, liga, "liga_berger_ko8_bo3", cruces)
+    assert [(e.participant_id, e.rank) for e in rows] == [(x, 1), (y, 2), (v, 3), (w, 4)]
+
+
+async def test_three_in_a_circle_are_split_by_the_difference(
+    db_session: AsyncSession, liga: SimpleNamespace
+) -> None:
+    x, y, z = liga.p[:3]
+    # Each beat one and lost to one: the mini-table is level, so the
+    # difference decides. X +4, Z -1, Y -3.
+    cruces = [(x, y, 15, 10), (y, z, 12, 10), (z, x, 11, 10)]
+    rows = await standings_for(db_session, liga, "liga_berger_ko8_bo3", cruces)
+    assert [(e.participant_id, e.rank) for e in rows] == [(x, 1), (z, 2), (y, 3)]
 
 
 async def test_a_circle_of_three_stays_level(
@@ -240,19 +262,36 @@ async def test_a_circle_of_three_stays_level(
 async def test_the_mini_table_counts_a_win_over_two_draws(
     db_session: AsyncSession, liga: SimpleNamespace
 ) -> None:
-    a, b, c, z1, z2 = liga.p[:5]
-    # A, B and C end on 4 points and 0 difference. Among themselves A beat B,
-    # and both drew with C: A 4, C 2, B 1. Z1 also has 4 points, but -2.
+    a, b, c, o1, o2 = liga.p[:5]
+    # A, B and C end on 4 points. Among themselves A beat B and both drew
+    # with C: A 4, C 2, B 1 — so A goes first despite the worst difference
+    # (-9, against 0 for B and C).
     cruces = [
-        (a, b, 12, 10),
+        (a, b, 11, 10),
         (a, c, 10, 10),
-        (z1, a, 11, 10),
-        (z2, a, 11, 10),
+        (o2, a, 20, 10),
         (b, c, 10, 10),
-        (b, z1, 13, 10),
-        (z2, b, 11, 10),
-        (c, z1, 10, 10),
-        (c, z2, 10, 10),
+        (b, o1, 11, 10),
+        (c, o1, 10, 10),
+        (c, o2, 10, 10),
+        (o2, o1, 11, 10),
     ]
     rows = await standings_for(db_session, liga, "liga_berger_ko8_bo3", cruces)
-    assert [(e.participant_id, e.rank) for e in rows] == [(z2, 1), (a, 2), (c, 3), (b, 4), (z1, 5)]
+    assert [(e.participant_id, e.rank) for e in rows] == [(o2, 1), (a, 2), (c, 3), (b, 4), (o1, 5)]
+
+
+async def test_a_format_that_refuses_is_a_business_error_not_a_crash(
+    liga: SimpleNamespace,
+) -> None:
+    # balanced_ko4 is for 13 participants; this season has 11.
+    mundial = await liga.service.create_playoff(liga.season.id, "balanced_ko4", "Mundial")
+    with pytest.raises(BusinessRuleError, match="13 participants"):
+        await liga.service.start_regular_phase(mundial.id, 6, 11)
+
+    # Every cruce drawn: all eleven level on everything, so no clean cut.
+    apertura = await liga.service.create_playoff(liga.season.id, "liga_berger_ko8_bo3", "Apertura")
+    await liga.service.start_regular_phase(apertura.id, 6, 16)
+    for n in range(6, 17):
+        await score(liga, n, dict.fromkeys(liga.p, 50))
+    with pytest.raises(BusinessRuleError, match="Empate sin desempate"):
+        await liga.service.start_ko_phase(apertura.id, KO)

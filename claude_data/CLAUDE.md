@@ -118,10 +118,9 @@ location /static/ {
 21. Reparto premios según clasificación final
 22. Balance: pagado vs recibido por participante
 
-### Competiciones futuras (NO implementar ahora, solo preparar BD)
-- 2 playoffs
-- Competición de copa
-- La tabla `competitions` existe en el modelo pero no se implementa
+### Competiciones
+- Playoffs: 2 por temporada de Liga (Apertura y Clausura) y 1 por torneo, en `features/competitions/` (tablas `competitions` y `competition_matchups`). Reglas y formatos: `docs/PLAYOFFS_DESIGN.md`
+- Copa: `features/copa/`
 
 ---
 
@@ -209,7 +208,7 @@ pts_total = pts_play + pts_starter + pts_result + pts_clean_sheet
 | 14 | `lineup_players` | Los 11 jugadores alineados (posición, orden, puntos) |
 | 15 | `participant_matchday_scores` | Puntuación total del participante por jornada + ranking |
 | 16 | `transactions` | Movimientos económicos (initial_fee, weekly_payment, winter_draft_fee, prize) |
-| 17 | `competitions` | Futuro: playoffs, copa (solo estructura, no implementar) |
+| 17 | `competitions` | Playoffs (Apertura/Clausura, torneo); cruces en `competition_matchups` |
 | 18 | `valid_formations` | Formaciones permitidas (datos fijos) |
 
 ### Relaciones clave
