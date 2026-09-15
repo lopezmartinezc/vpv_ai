@@ -76,9 +76,38 @@ class CompetitionDetail(BaseModel):
     config: dict[str, Any] | None = None
 
 
+class FinalLeg(BaseModel):
+    """One jornada of a final played over several."""
+
+    matchup_id: int
+    matchday_number: int | None = None
+    score_a: int | None = None
+    score_b: int | None = None
+    result: str  # 'a' | 'b' | 'pending' | 'not_needed'
+    # How the jornada was won: on the day, by the difference over the other
+    # jornadas of the final, or by the regular-phase seed. None until it is.
+    decided_by: str | None = None
+
+
+class FinalSeries(BaseModel):
+    """A best-of-three final as a whole: jornadas won and the champion."""
+
+    participant_a_id: int | None = None
+    participant_a_name: str | None = None
+    participant_b_id: int | None = None
+    participant_b_name: str | None = None
+    wins_a: int = 0
+    wins_b: int = 0
+    winner_participant_id: int | None = None
+    winner_name: str | None = None
+    legs: list[FinalLeg]
+
+
 class CompetitionMatchupsResponse(BaseModel):
     competition: CompetitionDetail
     matchups: list[MatchupEntry]
+    # Only for formats whose final spans several jornadas.
+    final_series: FinalSeries | None = None
 
 
 class CompetitionStandingsResponse(BaseModel):

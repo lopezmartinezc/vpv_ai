@@ -157,6 +157,16 @@ class CompetitionRepository:
         )
         return list((await self.session.execute(stmt)).scalars().all())
 
+    async def get_regular_matchups(
+        self, competition_id: int, group_label: str
+    ) -> list[CompetitionMatchup]:
+        stmt = select(CompetitionMatchup).where(
+            CompetitionMatchup.competition_id == competition_id,
+            CompetitionMatchup.phase == "regular",
+            CompetitionMatchup.group_label == group_label,
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
     async def update_matchup_result(
         self,
         matchup_id: int,

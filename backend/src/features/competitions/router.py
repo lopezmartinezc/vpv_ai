@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.competitions.schemas import (
@@ -33,9 +33,16 @@ def _get_service(db: AsyncSession = Depends(get_db)) -> CompetitionService:
 
 @router.get("/formats", response_model=list[FormatInfo])
 async def list_formats(
+    season_id: int | None = Query(None, description="Count its active participants"),
     service: CompetitionService = Depends(_get_service),
 ) -> list[FormatInfo]:
-    return service.list_formats()
+    """Formats with their jornada counts. A round-robin's count depends on
+    how many take part, so pass the season: with 11 participants the Liga
+    playoff has 11 regular jornadas, not the 13 of the default probe."""
+    n_participants = (
+        len(await service.repo.get_participant_ids(season_id)) if season_id is not None else None
+    )
+    return service.list_formats(n_participants or None)
 
 
 # ---------------------------------------------------------------------------
