@@ -515,9 +515,35 @@ export interface MatchupEntry {
   winner_name: string | null;
 }
 
+export interface FinalLeg {
+  matchup_id: number;
+  matchday_number: number | null;
+  score_a: number | null;
+  score_b: number | null;
+  result: "a" | "b" | "pending" | "not_needed" | string;
+  /** How the jornada was won: on the day, on the difference over the other
+   *  jornadas of the final, or by regular-phase seed. Null until it is. */
+  decided_by: "points" | "difference" | "seed" | null | string;
+}
+
+/** A final played over several jornadas, best of three. */
+export interface FinalSeries {
+  participant_a_id: number | null;
+  participant_a_name: string | null;
+  participant_b_id: number | null;
+  participant_b_name: string | null;
+  wins_a: number;
+  wins_b: number;
+  winner_participant_id: number | null;
+  winner_name: string | null;
+  legs: FinalLeg[];
+}
+
 export interface CompetitionMatchupsResponse {
   competition: CompetitionDetail;
   matchups: MatchupEntry[];
+  /** Only for formats whose final spans several jornadas. */
+  final_series?: FinalSeries | null;
 }
 
 export interface StandingEntry {

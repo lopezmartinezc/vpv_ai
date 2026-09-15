@@ -4,10 +4,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useSeason } from "@/contexts/season-context";
 import { apiClient } from "@/lib/api-client";
+import {
+  FinalSeriesView,
+  PLAYOFF_STATUS_LABEL,
+  defaultPlayoff,
+} from "@/components/playoffs/final-series";
 import type {
   CompetitionListResponse,
   CompetitionMatchupsResponse,
   CompetitionStandingsResponse,
+  CompetitionSummary,
+  FinalSeries,
   GroupStandings,
   MatchupEntry,
 } from "@/types";
@@ -22,6 +29,9 @@ export default function PlayoffsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("standings");
+  // The Liga has two playoffs a season (Apertura and Clausura).
+  const [playoffs, setPlayoffs] = useState<CompetitionSummary[]>([]);
+  const [chosenId, setChosenId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     if (!selectedSeason) return;
@@ -31,7 +41,9 @@ export default function PlayoffsPage() {
       const list = await apiClient.get<CompetitionListResponse>(
         `/competitions/season/${selectedSeason.id}`,
       );
-      const playoff = list.competitions.find((c) => c.type === "playoff");
+      const all = list.competitions.filter((c) => c.type === "playoff");
+      setPlayoffs(all);
+      const playoff = all.find((c) => c.id === chosenId) ?? defaultPlayoff(all);
       if (!playoff) {
         setCompetitionId(null);
         setStandings(null);
@@ -54,7 +66,7 @@ export default function PlayoffsPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedSeason]);
+  }, [selectedSeason, chosenId]);
 
   useEffect(() => {
     load();
@@ -109,9 +121,32 @@ export default function PlayoffsPage() {
           </h1>
           <p className="text-xs text-vpv-text-muted">
             Estado:{" "}
-            <span className="text-vpv-text">{standings.competition.status}</span>
+            <span className="text-vpv-text">
+              {PLAYOFF_STATUS_LABEL[standings.competition.status] ??
+                standings.competition.status}
+            </span>
           </p>
         </div>
+        {playoffs.length > 1 && (
+          <div className="flex gap-1 rounded-lg bg-vpv-card p-1" role="tablist" aria-label="Playoff">
+            {playoffs.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                role="tab"
+                aria-selected={p.id === competitionId}
+                onClick={() => setChosenId(p.id)}
+                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                  p.id === competitionId
+                    ? "bg-vpv-accent text-vpv-bg"
+                    : "text-vpv-text-muted hover:text-vpv-text"
+                }`}
+              >
+                {p.name}
+              </button>
+            ))}
+          </div>
+        )}
       </header>
 
       <nav className="flex gap-2">
@@ -136,7 +171,9 @@ export default function PlayoffsPage() {
 
       {tab === "standings" && <StandingsView groups={standings.groups} />}
       {tab === "calendar" && <CalendarView matchups={matchups.matchups} />}
-      {tab === "ko" && <KoView matchups={matchups.matchups} />}
+      {tab === "ko" && (
+        <KoView matchups={matchups.matchups} series={matchups.final_series ?? null} />
+      )}
     </div>
   );
 }
@@ -224,7 +261,7 @@ function CalendarView({ matchups }: { matchups: MatchupEntry[] }) {
               Jornada {round}
               {list[0]?.matchday_number && (
                 <span className="ml-2 text-vpv-text-muted/60">
-                  (Mundial J{list[0].matchday_number})
+                  · J{list[0].matchday_number}
                 </span>
               )}
             </div>
@@ -262,7 +299,13 @@ function CalendarView({ matchups }: { matchups: MatchupEntry[] }) {
   );
 }
 
-function KoView({ matchups }: { matchups: MatchupEntry[] }) {
+function KoView({
+  matchups,
+  series,
+}: {
+  matchups: MatchupEntry[];
+  series: FinalSeries | null;
+}) {
   const koByLabel = useMemo(() => {
     const out = new Map<string, MatchupEntry[]>();
     matchups
@@ -276,9 +319,12 @@ function KoView({ matchups }: { matchups: MatchupEntry[] }) {
     return out;
   }, [matchups]);
 
-  const orderedLabels = ["quarter", "semi", "final"].filter((l) => koByLabel.has(l));
+  // A final over several jornadas is shown as one series, not three cruces.
+  const orderedLabels = ["quarter", "semi", "final"].filter(
+    (l) => koByLabel.has(l) && !(series && l === "final"),
+  );
 
-  if (orderedLabels.length === 0) {
+  if (orderedLabels.length === 0 && !series) {
     return (
       <p className="text-sm text-vpv-text-muted">
         Las eliminatorias aún no han comenzado.
@@ -324,6 +370,7 @@ function KoView({ matchups }: { matchups: MatchupEntry[] }) {
           </ul>
         </div>
       ))}
+      {series && <FinalSeriesView series={series} />}
     </div>
   );
 }
