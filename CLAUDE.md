@@ -47,7 +47,7 @@ Aplicacion web (ligavpv.com) para gestionar una liga fantasy de futbol entre ami
 ## Modelo de Datos (25 tablas PostgreSQL)
 Referencia completa: `claude_data/modelo_datos_vpv.md`
 
-Tablas core: users (`session_id`, `permissions` bitmap), seasons (`kind` league|tournament + `tournament_config` JSONB + `edit_unlocked`), scoring_rules, season_payments, season_participants (`group_name`), teams (`tournament_group`), players, drafts, draft_picks, matchdays, matches, player_stats, lineups, lineup_players, participant_matchday_scores, transactions, competitions (futuro), valid_formations.
+Tablas core: users (`session_id`, `permissions` bitmap), seasons (`kind` league|tournament + `tournament_config` JSONB + `edit_unlocked`), scoring_rules, season_payments, season_participants (`group_name`), teams (`tournament_group`), players, drafts, draft_picks, matchdays, matches, player_stats, lineups, lineup_players, participant_matchday_scores, transactions, competitions + competition_matchups (playoffs), valid_formations.
 
 Tablas adicionales: invites, player_ownership_log, push_subscriptions, scraping_logs, achievement_definitions, achievements, tournament_predictions (`bracket_predictions` JSONB).
 

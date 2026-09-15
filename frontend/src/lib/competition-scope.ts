@@ -3,7 +3,9 @@
  *
  * The menu hid the Copa in a tournament while the home still offered it, and
  * the Copa page then refused (IN-04): two lists, two answers. Both read this
- * table now. A route not listed applies to leagues and tournaments alike.
+ * table now. A route not listed applies to leagues and tournaments alike —
+ * like /playoffs: a tournament's single playoff, the Liga's Apertura and
+ * Clausura.
  */
 export type CompetitionKind = "league" | "tournament";
 
@@ -12,7 +14,6 @@ const ONLY_IN: Record<string, CompetitionKind> = {
   "/copa": "league",
   "/grupos": "tournament",
   "/bracket": "tournament",
-  "/playoffs": "tournament",
   "/predicciones": "tournament",
 };
 

@@ -25,8 +25,9 @@ class FormatPlugin(ABC):
     display_name: str = ""
     #: Jornadas of the final: 1, or 3 for a best-of-three (see ``ko_series``).
     final_legs: int = 1
-    #: Whether a tie on points and point difference in the regular table is
-    #: then broken head to head. The Mundial rule stops at the difference.
+    #: Whether a tie on points in the regular table is broken head to head
+    #: first, and only then by point difference. The Mundial rule goes
+    #: straight to the difference.
     head_to_head_tiebreak: bool = False
 
     @abstractmethod

@@ -8,14 +8,14 @@ describe("appliesToCompetition", () => {
   });
 
   it("keeps the tournament pages to tournaments", () => {
-    for (const path of ["/grupos", "/bracket", "/playoffs", "/predicciones"]) {
+    for (const path of ["/grupos", "/bracket", "/predicciones"]) {
       expect(appliesToCompetition(path, true)).toBe(true);
       expect(appliesToCompetition(path, false)).toBe(false);
     }
   });
 
-  it("lets every other page apply to both", () => {
-    for (const path of ["/", "/clasificacion", "/jornadas", "/ranking", "/economia"]) {
+  it("lets every other page apply to both, the playoffs included (Apertura and Clausura)", () => {
+    for (const path of ["/", "/clasificacion", "/jornadas", "/ranking", "/economia", "/playoffs"]) {
       expect(appliesToCompetition(path, true)).toBe(true);
       expect(appliesToCompetition(path, false)).toBe(true);
     }

@@ -563,7 +563,7 @@ CREATE INDEX idx_transactions_season ON transactions(season_id);
 
 ---
 
-### 17. `competitions` — Preparada para futuro (playoffs, copa)
+### 17. `competitions` — Playoffs
 
 ```sql
 CREATE TABLE competitions (
@@ -577,7 +577,7 @@ CREATE TABLE competitions (
 );
 ```
 
-**Nota**: No se implementa ahora. Solo existe la estructura para no tener que rediseñar cuando lleguen playoffs y copa.
+**Nota**: En uso para los playoffs (`type='playoff'`, uno por `name`: Apertura, Clausura o el del torneo). `config` guarda el formato (`format_id`), el sorteo y las jornadas. Los cruces viven en `competition_matchups` (migración `2026_06_08_add_competition_matchups.sql`). Reglas y formatos: `docs/PLAYOFFS_DESIGN.md`.
 
 ---
 
@@ -723,7 +723,7 @@ Estructura esperada de `bracket_predictions`:
 | `vpv_audit` | *(campo en seasons)* | Innecesario con el nuevo modelo |
 | *(no existía)* | `drafts` + `draft_picks` | Sistema completo de draft |
 | *(no existía)* | `transactions` | Sistema económico |
-| *(no existía)* | `competitions` | Preparado para playoffs/copa |
+| *(no existía)* | `competitions` | Playoffs |
 | *(no existía)* | `scoring_rules` | Puntuación configurable |
 | *(no existía)* | `valid_formations` | Validación de formaciones |
 | *(no existía)* | `player_ownership_log` | Historico de propiedad de jugadores |
@@ -811,7 +811,7 @@ ORDER BY dp.pick_number;
 | 14 | `lineup_players` | 11 jugadores alineados |
 | 15 | `participant_matchday_scores` | Puntuación del participante por jornada |
 | 16 | `transactions` | Movimientos económicos |
-| 17 | `competitions` | Futuro: playoffs, copa |
+| 17 | `competitions` | Playoffs (cruces en `competition_matchups`) |
 | 18 | `valid_formations` | Formaciones permitidas |
 | 19 | `invites` | Invitaciones de registro |
 | 20 | `player_ownership_log` | Historico de propiedad de jugadores |

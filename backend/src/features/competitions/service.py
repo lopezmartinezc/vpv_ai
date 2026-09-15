@@ -161,7 +161,12 @@ class CompetitionService:
             )
 
         seed = random.randint(0, 2**31)
-        drafts = plugin.generate_regular_phase(participant_ids, matchday_ids, seed)
+        try:
+            drafts = plugin.generate_regular_phase(participant_ids, matchday_ids, seed)
+        except ValueError as exc:
+            # A format refusing its input (the wrong number of participants,
+            # say) is for the operator to fix: a 422 with the reason, not a 500.
+            raise BusinessRuleError(str(exc)) from exc
         await self._persist_drafts(competition_id, drafts)
 
         config_patch: dict[str, Any] = {
@@ -222,7 +227,11 @@ class CompetitionService:
             else 0
         )
 
-        drafts = plugin.generate_ko_phase(flat, matchday_ids, n_regular_rounds)
+        try:
+            drafts = plugin.generate_ko_phase(flat, matchday_ids, n_regular_rounds)
+        except ValueError as exc:
+            # An unresolved tie at the cut, for one: the operator sees why.
+            raise BusinessRuleError(str(exc)) from exc
         await self._persist_drafts(competition_id, drafts)
 
         await self.repo.update_config_patch(
@@ -420,15 +429,16 @@ class CompetitionService:
     async def _head_to_head(
         self, competition_id: int, group_label: str, rows: list[StandingsRow]
     ) -> dict[int, int]:
-        """Points each participant took off the others he is level with.
+        """Points each participant took off the others level with him on points.
 
-        Participants level on points and point difference form a group; a
-        mini-table of the cruces among them (3 a win, 1 a draw) separates
-        them. Between two, that is simply their own cruce.
+        Participants level on points form a group; a mini-table of the
+        cruces among them (3 a win, 1 a draw) orders them. Between two, that
+        is simply their own cruce — and if they drew it, both take 1 and the
+        point difference decides.
         """
-        groups: dict[tuple[int, int], set[int]] = {}
+        groups: dict[int, set[int]] = {}
         for r in rows:
-            groups.setdefault((r.points, r.diff_avg), set()).add(r.participant_id)
+            groups.setdefault(r.points, set()).add(r.participant_id)
         tied = [members for members in groups.values() if len(members) > 1]
         if not tied:
             return {}
@@ -448,15 +458,15 @@ class CompetitionService:
         return mini
 
     async def _compute_standings(self, comp: Competition) -> list[GroupStandings]:
-        """Compute standings sorted by points, then point difference.
+        """Compute standings sorted by points, then the format's tiebreak.
 
         Per the rule agreed with Oscar (Mundial 2026): since the format
         is not a full round-robin, ties are broken by accumulated point
-        difference and nothing else. A format may add a head-to-head step
-        after the difference (the Liga playoffs, a full round-robin). If
-        participants are still level they get the same rank — the operator
-        is expected to resolve it manually (the KO start guard surfaces the
-        case).
+        difference and nothing else. The Liga playoffs (a full round-robin)
+        break a tie on points head to head first, and only then by the
+        difference. If participants are still level they get the same rank
+        — the operator is expected to resolve it manually (the KO start
+        guard surfaces the case).
         """
         plugin = self._plugin_for(comp)
         out: list[GroupStandings] = []
@@ -465,16 +475,22 @@ class CompetitionService:
             h2h = (
                 await self._head_to_head(comp.id, label, rows)
                 if plugin.head_to_head_tiebreak
-                else {}
+                else None
             )
-            sorted_rows = sorted(
-                rows, key=lambda r: (-r.points, -r.diff_avg, -h2h.get(r.participant_id, 0))
-            )
+
+            def rank_key(
+                r: StandingsRow, h2h: dict[int, int] | None = h2h
+            ) -> tuple[int, int, int]:
+                if h2h is None:
+                    return (r.points, r.diff_avg, 0)
+                return (r.points, h2h.get(r.participant_id, 0), r.diff_avg)
+
+            sorted_rows = sorted(rows, key=lambda r: tuple(-k for k in rank_key(r)))
             entries: list[StandingEntry] = []
             prev_key: tuple[int, int, int] | None = None
             prev_rank: int = 0
             for idx, r in enumerate(sorted_rows, start=1):
-                key = (r.points, r.diff_avg, h2h.get(r.participant_id, 0))
+                key = rank_key(r)
                 if key == prev_key:
                     rank = prev_rank
                 else:
