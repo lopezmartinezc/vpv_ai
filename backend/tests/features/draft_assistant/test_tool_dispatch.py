@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from src.features.draft_assistant.tools import (
+from src.shared.assistant.tools import (
     ToolSpec,
     run_tool,
     to_anthropic_tools,

@@ -1,4 +1,4 @@
-"""Provider-neutral tool definitions and dispatch for the draft assistant.
+"""Provider-neutral tool definitions and dispatch for the chat assistants.
 
 A tool is declared ONCE as a JSON Schema plus an async handler, then adapted to
 whatever shape the active provider wants. That is what makes the assistant
@@ -23,8 +23,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +97,7 @@ def sanitize_arguments(spec: ToolSpec, raw: dict[str, Any]) -> dict[str, Any]:
     for key, value in raw.items():
         prop = properties.get(key)
         if prop is None:
-            logger.warning("draft_assistant: dropped undeclared arg %r for %s", key, spec.name)
+            logger.warning("assistant: dropped undeclared arg %r for %s", key, spec.name)
             continue
         clean[key] = _clamp(value, prop)
     return clean
@@ -103,7 +107,7 @@ async def run_tool(tools: Sequence[ToolSpec], name: str, arguments: dict[str, An
     """Dispatch one model-requested tool call. Never raises."""
     spec = next((t for t in tools if t.name == name), None)
     if spec is None:
-        logger.warning("draft_assistant: unknown tool %r", name)
+        logger.warning("assistant: unknown tool %r", name)
         return (
             f"Error: la herramienta '{name}' no existe. "
             f"Disponibles: {', '.join(t.name for t in tools)}."
@@ -113,5 +117,24 @@ async def run_tool(tools: Sequence[ToolSpec], name: str, arguments: dict[str, An
     try:
         return await spec.handler(**clean)
     except Exception:
-        logger.exception("draft_assistant: tool %s failed", name)
+        logger.exception("assistant: tool %s failed", name)
         return f"Error al ejecutar '{name}'. Prueba otra consulta o dilo en la respuesta."
+
+
+def guarded(session: AsyncSession, fn: ToolHandler) -> ToolHandler:
+    """Roll the DB session back if a read-only tool blows up.
+
+    A failed query leaves the transaction aborted, so without this the FIRST
+    failure poisons every later tool: the model burns its whole round budget on
+    errors and answers nothing. Rolling back is safe because the tools only read.
+    """
+
+    async def wrapped(**kwargs: Any) -> str:
+        try:
+            return await fn(**kwargs)
+        except Exception:
+            with suppress(Exception):
+                await session.rollback()
+            raise
+
+    return wrapped

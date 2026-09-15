@@ -1,4 +1,4 @@
-"""Anthropic backend for the draft assistant.
+"""Anthropic backend for the chat assistants.
 
 Uses the stable Messages API with a hand-written tool loop rather than the SDK's
 ``tool_runner``. Two reasons: the runner is beta, and it wants tools declared
@@ -13,14 +13,14 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
-from src.features.draft_assistant.providers.base import (
+from src.shared.assistant.providers.base import (
     AssistantReply,
     ChatMessage,
     ProgressCallback,
     ProgressEvent,
     ToolCallTrace,
 )
-from src.features.draft_assistant.tools import ToolSpec, run_tool, to_anthropic_tools
+from src.shared.assistant.tools import ToolSpec, run_tool, to_anthropic_tools
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +115,7 @@ class AnthropicProvider:
 
         consulted = ", ".join(dict.fromkeys(t.name for t in trace)) or "ninguna"
         logger.warning(
-            "draft_assistant: anthropic hit the %d-round cap after consulting %s",
+            "assistant: anthropic hit the %d-round cap after consulting %s",
             self._max_iterations,
             consulted,
         )

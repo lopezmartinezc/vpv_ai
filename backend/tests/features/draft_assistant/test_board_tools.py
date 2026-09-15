@@ -9,7 +9,7 @@ import pytest
 
 from src.features.draft_assistant import board_tools
 from src.features.draft_assistant.board_tools import AssistantContext, build_tools
-from src.features.draft_assistant.tools import run_tool
+from src.shared.assistant.tools import run_tool
 
 
 @dataclass
@@ -285,10 +285,10 @@ async def test_the_board_cache_is_keyed_by_participation_model(monkeypatch) -> N
     calls: list[ParticipationModel] = []
 
     class _FakeService:
-        def __init__(self, session):  # noqa: ARG002
+        def __init__(self, session):
             pass
 
-        async def get_draft_values(self, season_id, participation_model, **kw):  # noqa: ARG002
+        async def get_draft_values(self, season_id, participation_model, **kw):
             calls.append(participation_model)
             return f"board-{participation_model.value}"
 

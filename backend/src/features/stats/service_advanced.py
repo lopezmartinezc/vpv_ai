@@ -717,6 +717,7 @@ class AdvancedStatsService:
                     location_avg=location_avg_out,
                     rival_factor=round(rival_factor, 2),
                     xpts=round(xpts, 1),
+                    xpts_if_plays=round(raw_xpts, 1),
                     xpts_floor=round(xpts - std_dev, 1),
                     xpts_ceiling=round(xpts + std_dev, 1),
                     confidence=confidence,
