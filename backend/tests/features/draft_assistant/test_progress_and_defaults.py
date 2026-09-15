@@ -15,11 +15,11 @@ from typing import Any
 import pytest
 
 from src.core.config import Settings
-from src.features.draft_assistant.providers.anthropic_provider import AnthropicProvider
-from src.features.draft_assistant.providers.base import ChatMessage, ProgressEvent
-from src.features.draft_assistant.providers.openai_provider import OpenAIProvider
-from src.features.draft_assistant.service import sse_line
-from src.features.draft_assistant.tools import ToolSpec
+from src.shared.assistant.backends import sse_line
+from src.shared.assistant.providers.anthropic_provider import AnthropicProvider
+from src.shared.assistant.providers.base import ChatMessage, ProgressEvent
+from src.shared.assistant.providers.openai_provider import OpenAIProvider
+from src.shared.assistant.tools import ToolSpec
 
 
 def _tool() -> ToolSpec:

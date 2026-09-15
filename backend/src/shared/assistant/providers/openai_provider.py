@@ -1,4 +1,4 @@
-"""OpenAI backend for the draft assistant.
+"""OpenAI backend for the chat assistants.
 
 Uses the Responses API (``client.responses.create``), which is the current
 primary surface in the 3.x SDK — not the older chat-completions endpoint. The
@@ -21,14 +21,14 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
-from src.features.draft_assistant.providers.base import (
+from src.shared.assistant.providers.base import (
     AssistantReply,
     ChatMessage,
     ProgressCallback,
     ProgressEvent,
     ToolCallTrace,
 )
-from src.features.draft_assistant.tools import ToolSpec, run_tool, to_openai_tools
+from src.shared.assistant.tools import ToolSpec, run_tool, to_openai_tools
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ class OpenAIProvider:
                 try:
                     arguments = json.loads(call.arguments or "{}")
                 except json.JSONDecodeError:
-                    logger.warning("draft_assistant: bad JSON args for %s", call.name)
+                    logger.warning("assistant: bad JSON args for %s", call.name)
                     arguments = {}
                 if on_progress is not None:
                     await on_progress(ProgressEvent("tool", call.name, arguments))
@@ -100,7 +100,7 @@ class OpenAIProvider:
 
         consulted = ", ".join(dict.fromkeys(t.name for t in trace)) or "ninguna"
         logger.warning(
-            "draft_assistant: openai hit the %d-round cap after consulting %s",
+            "assistant: openai hit the %d-round cap after consulting %s",
             self._max_iterations,
             consulted,
         )

@@ -8,7 +8,7 @@ key — at the first question of a live draft.
 
 from __future__ import annotations
 
-from src.features.draft_assistant.service import clean_setting
+from src.shared.assistant.backends import clean_setting
 
 
 def test_strips_a_trailing_comment() -> None:

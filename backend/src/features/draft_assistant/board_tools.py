@@ -13,14 +13,11 @@ from __future__ import annotations
 
 import time
 from collections.abc import Collection
-from contextlib import suppress
 from dataclasses import dataclass, field
-from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.features.draft_assistant.tools import ToolHandler, ToolSpec
 from src.features.draft_assistant.turn_math import next_pick_for, upcoming_picks
 from src.features.drafts.schemas import DraftDetailResponse
 from src.features.drafts.service import DraftService
@@ -32,6 +29,7 @@ from src.features.stats.schemas_draft import DraftValuePlayer, DraftValueRespons
 from src.features.stats.scorecard import STARTER_SLOTS
 from src.features.stats.service_advanced import AdvancedStatsService
 from src.features.stats.service_draft import DraftValueService
+from src.shared.assistant.tools import ToolHandler, ToolSpec, guarded
 
 POSITIONS = ("POR", "DEF", "MED", "DEL")
 
@@ -382,23 +380,8 @@ def _player_row(p: DraftValuePlayer, drafted: bool) -> str:
 
 
 def _guarded(ctx: AssistantContext, fn: ToolHandler) -> ToolHandler:
-    """Roll the DB session back if a tool blows up.
-
-    A failed query leaves the transaction aborted, so without this the FIRST
-    failure poisons every later tool: the model burns its whole round budget on
-    errors and answers nothing. Rolling back is safe here because these tools
-    only read.
-    """
-
-    async def wrapped(**kwargs: Any) -> str:
-        try:
-            return await fn(**kwargs)
-        except Exception:
-            with suppress(Exception):
-                await ctx.session.rollback()
-            raise
-
-    return wrapped
+    """Roll the DB session back if a tool blows up (see ``guarded``)."""
+    return guarded(ctx.session, fn)
 
 
 def build_tools(ctx: AssistantContext) -> list[ToolSpec]:

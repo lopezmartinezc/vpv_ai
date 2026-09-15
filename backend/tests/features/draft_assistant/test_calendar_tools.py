@@ -14,8 +14,8 @@ from typing import Any, ClassVar
 import pytest
 
 from src.features.draft_assistant.board_tools import AssistantContext, build_tools
-from src.features.draft_assistant.tools import run_tool
 from src.features.stats.fixtures import Fixture
+from src.shared.assistant.tools import run_tool
 
 
 def fx(md: int, team: str, rival: str, atk: float, dfc: float, home: bool = True) -> Fixture:

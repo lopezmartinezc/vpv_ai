@@ -1,4 +1,4 @@
-"""The provider contract the draft assistant talks to.
+"""The provider contract the chat assistants talk to.
 
 Conversation history is kept as plain user/assistant text. Tool calls live and
 die inside a single ``run()``: the model sees its own tool results within the
@@ -16,7 +16,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
-from src.features.draft_assistant.tools import ToolSpec
+from src.shared.assistant.tools import ToolSpec
 
 
 @dataclass(frozen=True)

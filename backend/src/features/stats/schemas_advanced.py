@@ -188,7 +188,13 @@ class PlayerPrediction(BaseModel):
     form_5: float | None
     location_avg: float | None
     rival_factor: float
+    # Expected points already discounted by starter_pct, the share of recent
+    # matches started.
     xpts: float
+    # The same forecast before that discount: what he scores if he plays. For
+    # whoever knows better than recent history whether he plays (a probable
+    # lineup), so it is not discounted twice.
+    xpts_if_plays: float
     xpts_floor: float
     xpts_ceiling: float
     confidence: str  # "alta" | "media" | "baja"

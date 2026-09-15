@@ -12,7 +12,7 @@ import pytest
 
 from src.core.config import settings
 from src.core.exceptions import BusinessRuleError
-from src.features.draft_assistant.service import available_providers, build_provider
+from src.shared.assistant.backends import available_providers, build_provider
 
 
 @pytest.fixture

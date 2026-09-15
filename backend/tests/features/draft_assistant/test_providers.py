@@ -13,10 +13,10 @@ from typing import Any
 
 import pytest
 
-from src.features.draft_assistant.providers.anthropic_provider import AnthropicProvider
-from src.features.draft_assistant.providers.base import ChatMessage
-from src.features.draft_assistant.providers.openai_provider import OpenAIProvider
-from src.features.draft_assistant.tools import ToolSpec
+from src.shared.assistant.providers.anthropic_provider import AnthropicProvider
+from src.shared.assistant.providers.base import ChatMessage
+from src.shared.assistant.providers.openai_provider import OpenAIProvider
+from src.shared.assistant.tools import ToolSpec
 
 TOOL_CALLS: list[dict[str, Any]] = []
 

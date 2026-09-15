@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import asyncio
 import logging
-from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
@@ -11,16 +9,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
 from src.core.exceptions import BusinessRuleError
-from src.features.draft_assistant.providers.base import ChatMessage, ProgressEvent
-from src.features.draft_assistant.service import (
-    DraftAssistantService,
+from src.features.draft_assistant.service import DraftAssistantService
+from src.features.stats.participation import ParticipationModel
+from src.shared.assistant.backends import (
     available_providers,
     clean_setting,
     default_model_for,
     list_models,
-    sse_line,
 )
-from src.features.stats.participation import ParticipationModel
+from src.shared.assistant.endpoint import stream_answer
+from src.shared.assistant.providers.base import AssistantReply, ChatMessage, ProgressCallback
 from src.shared.dependencies import get_current_admin, get_db
 
 router = APIRouter(prefix="/draft-assistant", tags=["draft-assistant"])
@@ -150,63 +148,20 @@ async def ask_stream(
     if not settings.assistant_enabled:
         raise BusinessRuleError("El asistente de draft esta desactivado")
 
-    queue: asyncio.Queue[str | None] = asyncio.Queue()
+    async def run(on_progress: ProgressCallback) -> AssistantReply:
+        return await DraftAssistantService(db).ask(
+            season_id=season_id,
+            phase=phase,
+            question=payload.question,
+            history=[ChatMessage(role=m.role, content=m.content) for m in payload.history],  # type: ignore[arg-type]
+            user_id=_user_id(user),
+            provider_name=payload.provider,
+            model=payload.model,
+            participation_model=payload.participacion,
+            on_progress=on_progress,
+        )
 
-    async def on_progress(event: ProgressEvent) -> None:
-        await queue.put(sse_line(event.kind, {"name": event.name, "arguments": event.arguments}))
-
-    async def worker() -> None:
-        try:
-            reply = await DraftAssistantService(db).ask(
-                season_id=season_id,
-                phase=phase,
-                question=payload.question,
-                history=[ChatMessage(role=m.role, content=m.content) for m in payload.history],  # type: ignore[arg-type]
-                user_id=_user_id(user),
-                provider_name=payload.provider,
-                model=payload.model,
-                participation_model=payload.participacion,
-                on_progress=on_progress,
-            )
-            await queue.put(
-                sse_line(
-                    "done",
-                    {
-                        "reply": reply.text,
-                        "provider": reply.provider,
-                        "model": reply.model,
-                        "tool_calls": [
-                            {"name": t.name, "arguments": t.arguments} for t in reply.tool_calls
-                        ],
-                        "truncated": reply.truncated,
-                    },
-                )
-            )
-        except BusinessRuleError as exc:
-            await queue.put(sse_line("error", {"message": exc.message}))
-        except Exception:
-            logger.exception("draft_assistant: stream failed")
-            await queue.put(sse_line("error", {"message": "El asistente ha fallado."}))
-        finally:
-            await queue.put(None)
-
-    async def body() -> AsyncIterator[str]:
-        task = asyncio.create_task(worker())
-        try:
-            while True:
-                item = await queue.get()
-                if item is None:
-                    break
-                yield item
-        finally:
-            if not task.done():
-                task.cancel()
-
-    return StreamingResponse(
-        body(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+    return stream_answer(run, "draft_assistant")
 
 
 @router.get("/providers", response_model=AssistantProvidersResponse)

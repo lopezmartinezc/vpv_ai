@@ -15,9 +15,9 @@ import pytest
 
 from src.core.config import settings
 from src.features.draft_assistant.board_tools import AssistantContext, build_tools
-from src.features.draft_assistant.providers.anthropic_provider import AnthropicProvider
-from src.features.draft_assistant.providers.base import ChatMessage
-from src.features.draft_assistant.tools import ToolSpec, run_tool
+from src.shared.assistant.providers.anthropic_provider import AnthropicProvider
+from src.shared.assistant.providers.base import ChatMessage
+from src.shared.assistant.tools import ToolSpec, run_tool
 
 
 def _tool() -> ToolSpec:

@@ -15,7 +15,7 @@ import pytest
 
 from src.features.draft_assistant import board_tools
 from src.features.draft_assistant.board_tools import AssistantContext, build_tools
-from src.features.draft_assistant.tools import run_tool
+from src.shared.assistant.tools import run_tool
 
 
 @dataclass
