@@ -17,13 +17,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.exceptions import BusinessRuleError, NotFoundError
 from src.features.competitions.formats import FORMAT_REGISTRY, get_format
 from src.features.competitions.formats.base import FormatPlugin
-from src.features.competitions.repository import CompetitionRepository
+from src.features.competitions.ko_series import Leg, resolve_best_of_three
+from src.features.competitions.repository import CompetitionRepository, StandingsRow
 from src.features.competitions.schemas import (
     CompetitionDetail,
     CompetitionListResponse,
     CompetitionMatchupsResponse,
     CompetitionStandingsResponse,
     CompetitionSummary,
+    FinalLeg,
+    FinalSeries,
     FormatInfo,
     GroupStandings,
     MatchupDraft,
@@ -170,6 +173,12 @@ class CompetitionService:
         await self.repo.update_config_patch(competition_id, config_patch)
         await self.repo.update_status(competition_id, "regular")
         await self.session.commit()
+
+        # A jornada of the regular phase may already be scored — the playoff
+        # created after it closed. Settle its cruces now instead of waiting
+        # for a rescrape of that jornada.
+        for matchday_id in matchday_ids:
+            await self.recalculate_matchups_for_matchday(matchday_id)
         return len(drafts)
 
     async def start_ko_phase(self, competition_id: int, ko_matchday_numbers: list[int]) -> int:
@@ -237,9 +246,10 @@ class CompetitionService:
             return {"resolved": 0, "pending": 0}
 
         resolved = pending = 0
-        last_competition_id: int | None = None
+        touched: list[int] = []
         for m in matchups:
-            last_competition_id = m.competition_id
+            if m.competition_id not in touched:
+                touched.append(m.competition_id)
             if m.participant_a_id is None or m.participant_b_id is None:
                 pending += 1
                 continue
@@ -262,21 +272,27 @@ class CompetitionService:
                         pending += 1
                         continue
                     plugin = self._plugin_for(comp)
-                    snapshot = [
-                        StandingEntry(**s)
-                        for s in (comp.config or {}).get("regular_standings_snapshot", [])
-                    ]
-                    winner = plugin.resolve_ko_tie(
-                        m.participant_a_id, m.participant_b_id, snapshot
-                    )
+                    if plugin.final_legs > 1 and m.round_label == "final":
+                        # A drawn jornada of a best-of-three final is settled
+                        # by the whole series (ko_series), not on its own.
+                        winner = None
+                    else:
+                        snapshot = [
+                            StandingEntry(**s)
+                            for s in (comp.config or {}).get("regular_standings_snapshot", [])
+                        ]
+                        winner = plugin.resolve_ko_tie(
+                            m.participant_a_id, m.participant_b_id, snapshot
+                        )
 
             await self.repo.update_matchup_result(m.id, score_a, score_b, winner)
             if winner is not None:
                 await self.repo.propagate_winner_to_feeders(m.id, winner)
             resolved += 1
 
-        await self._maybe_auto_start_ko(last_competition_id)
-        await self._maybe_mark_completed(last_competition_id)
+        for competition_id in touched:
+            await self._maybe_auto_start_ko(competition_id)
+            await self._maybe_mark_completed(competition_id)
         await self.session.commit()
         return {"resolved": resolved, "pending": pending}
 
@@ -312,6 +328,14 @@ class CompetitionService:
         comp = await self.repo.get(competition_id)
         if comp is None or comp.status == "completed":
             return
+        if self._plugin_for(comp).final_legs > 1:
+            # Completed when the series has a champion, which can be one
+            # jornada early (2-0) or need all three.
+            rows = await self.repo.list_matchups_with_names(competition_id)
+            series = self._final_series(comp, [MatchupEntry(**r) for r in rows])
+            if series is not None and series.winner_participant_id is not None:
+                await self.repo.update_status(competition_id, "completed")
+            return
         # Completed when the highest round_number matchup (final) has a winner.
         all_matchups = await self.repo.get_matchups_with_competition(competition_id)
         finals = [m for m in all_matchups if m.phase == "ko"]
@@ -329,9 +353,11 @@ class CompetitionService:
     async def get_matchups(self, competition_id: int) -> CompetitionMatchupsResponse:
         comp = await self._require_competition(competition_id)
         rows = await self.repo.list_matchups_with_names(competition_id)
+        entries = [MatchupEntry(**r) for r in rows]
         return CompetitionMatchupsResponse(
             competition=self._to_detail(comp),
-            matchups=[MatchupEntry(**r) for r in rows],
+            matchups=entries,
+            final_series=self._final_series(comp, entries),
         )
 
     async def get_standings(self, competition_id: int) -> CompetitionStandingsResponse:
@@ -391,25 +417,64 @@ class CompetitionService:
             )
             created_ids.append(row.id)
 
+    async def _head_to_head(
+        self, competition_id: int, group_label: str, rows: list[StandingsRow]
+    ) -> dict[int, int]:
+        """Points each participant took off the others he is level with.
+
+        Participants level on points and point difference form a group; a
+        mini-table of the cruces among them (3 a win, 1 a draw) separates
+        them. Between two, that is simply their own cruce.
+        """
+        groups: dict[tuple[int, int], set[int]] = {}
+        for r in rows:
+            groups.setdefault((r.points, r.diff_avg), set()).add(r.participant_id)
+        tied = [members for members in groups.values() if len(members) > 1]
+        if not tied:
+            return {}
+        matchups = await self.repo.get_regular_matchups(competition_id, group_label)
+        mini: dict[int, int] = {}
+        for members in tied:
+            for m in matchups:
+                if m.score_a is None or m.score_b is None:
+                    continue
+                if m.participant_a_id not in members or m.participant_b_id not in members:
+                    continue
+                if m.winner_participant_id is None:
+                    for pid in (m.participant_a_id, m.participant_b_id):
+                        mini[pid] = mini.get(pid, 0) + 1
+                else:
+                    mini[m.winner_participant_id] = mini.get(m.winner_participant_id, 0) + 3
+        return mini
+
     async def _compute_standings(self, comp: Competition) -> list[GroupStandings]:
-        """Compute standings sorted by ``(-points, -diff_avg)`` only.
+        """Compute standings sorted by points, then point difference.
 
         Per the rule agreed with Oscar (Mundial 2026): since the format
         is not a full round-robin, ties are broken by accumulated point
-        difference and nothing else. If two participants happen to tie
-        on BOTH, they get the same rank — the operator is expected to
-        resolve it manually (the KO start guard surfaces the case).
+        difference and nothing else. A format may add a head-to-head step
+        after the difference (the Liga playoffs, a full round-robin). If
+        participants are still level they get the same rank — the operator
+        is expected to resolve it manually (the KO start guard surfaces the
+        case).
         """
         plugin = self._plugin_for(comp)
         out: list[GroupStandings] = []
         for label in plugin.standings_groups():
             rows = await self.repo.get_standings_rows(comp.id, group_label=label)
-            sorted_rows = sorted(rows, key=lambda r: (-r.points, -r.diff_avg))
+            h2h = (
+                await self._head_to_head(comp.id, label, rows)
+                if plugin.head_to_head_tiebreak
+                else {}
+            )
+            sorted_rows = sorted(
+                rows, key=lambda r: (-r.points, -r.diff_avg, -h2h.get(r.participant_id, 0))
+            )
             entries: list[StandingEntry] = []
-            prev_key: tuple[int, int] | None = None
+            prev_key: tuple[int, int, int] | None = None
             prev_rank: int = 0
             for idx, r in enumerate(sorted_rows, start=1):
-                key = (r.points, r.diff_avg)
+                key = (r.points, r.diff_avg, h2h.get(r.participant_id, 0))
                 if key == prev_key:
                     rank = prev_rank
                 else:
@@ -434,6 +499,62 @@ class CompetitionService:
                 )
             out.append(GroupStandings(label=label, entries=entries))
         return out
+
+    def _final_series(self, comp: Competition, entries: list[MatchupEntry]) -> FinalSeries | None:
+        """The final as a series, for formats that play it over several
+        jornadas. None for a one-jornada final or before the KO starts."""
+        plugin = self._plugin_for(comp)
+        if plugin.final_legs <= 1:
+            return None
+        legs = sorted(
+            (m for m in entries if m.phase == "ko" and m.round_label == "final"),
+            key=lambda m: m.round_number,
+        )
+        if len(legs) != plugin.final_legs:
+            return None
+        first = legs[0]
+        a, b = first.participant_a_id, first.participant_b_id
+        ranks = {
+            s["participant_id"]: s["rank"]
+            for s in (comp.config or {}).get("regular_standings_snapshot", [])
+        }
+        known = a is not None and b is not None
+        series = resolve_best_of_three(
+            [
+                Leg(
+                    matchup_id=m.id,
+                    matchday_number=m.matchday_number,
+                    score_a=m.score_a if known else None,
+                    score_b=m.score_b if known else None,
+                )
+                for m in legs
+            ],
+            better_seed="a" if ranks.get(a, 10_000) <= ranks.get(b, 10_000) else "b",
+        )
+        winner_id = {"a": a, "b": b}.get(series.winner) if series.winner else None
+        return FinalSeries(
+            participant_a_id=a,
+            participant_a_name=first.participant_a_name,
+            participant_b_id=b,
+            participant_b_name=first.participant_b_name,
+            wins_a=series.wins_a,
+            wins_b=series.wins_b,
+            winner_participant_id=winner_id,
+            winner_name=(first.participant_a_name if winner_id == a else first.participant_b_name)
+            if winner_id is not None
+            else None,
+            legs=[
+                FinalLeg(
+                    matchup_id=o.leg.matchup_id,
+                    matchday_number=o.leg.matchday_number,
+                    score_a=o.leg.score_a,
+                    score_b=o.leg.score_b,
+                    result=o.result,
+                    decided_by=o.decided_by,
+                )
+                for o in series.legs
+            ],
+        )
 
     @staticmethod
     def _to_detail(comp: Competition) -> CompetitionDetail:

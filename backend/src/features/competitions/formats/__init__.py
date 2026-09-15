@@ -11,10 +11,12 @@ from __future__ import annotations
 from src.features.competitions.formats.balanced_ko4 import BalancedKo4Plugin
 from src.features.competitions.formats.base import FormatPlugin
 from src.features.competitions.formats.liga_berger_ko8 import LigaBergerKo8Plugin
+from src.features.competitions.formats.liga_berger_ko8_bo3 import LigaBergerKo8Bo3Plugin
 
 FORMAT_REGISTRY: dict[str, FormatPlugin] = {
     "balanced_ko4": BalancedKo4Plugin(),
     "liga_berger_ko8": LigaBergerKo8Plugin(),
+    "liga_berger_ko8_bo3": LigaBergerKo8Bo3Plugin(),
 }
 
 

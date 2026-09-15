@@ -85,22 +85,7 @@ class LigaBergerKo8Plugin(FormatPlugin):
                 f"liga_berger_ko8 expects {self.required_rounds_ko()} KO matchdays, "
                 f"got {len(matchday_ids)}"
             )
-        # Same tie-detection contract as balanced_ko4 — refuse to start
-        # if there is an unresolved tie in the top-8 cutoff (or at the
-        # 8º/9º boundary that decides who's in).
-        boundary = standings[:9]
-        seen_ranks: dict[int, list[str]] = {}
-        for s in boundary:
-            seen_ranks.setdefault(s.rank, []).append(s.display_name)
-        ties = [(rank, names) for rank, names in seen_ranks.items() if len(names) > 1]
-        if ties:
-            tied_msg = "; ".join(f"rank {rank}: {', '.join(names)}" for rank, names in ties)
-            raise ValueError(
-                "Empate sin desempate dentro del top-8 del playoff. "
-                "Resuelve antes de iniciar las eliminatorias: " + tied_msg
-            )
-
-        top8 = [s.participant_id for s in standings[:8]]
+        top8 = self.top8(standings)
         cuartos = seed_classic_bracket(
             top8, round_label="quarter", round_number=n_regular_rounds + 1
         )
@@ -134,6 +119,27 @@ class LigaBergerKo8Plugin(FormatPlugin):
                 )
             )
         return drafts
+
+    @staticmethod
+    def top8(standings: list[StandingEntry]) -> list[int]:
+        """The eight who go through, or ValueError on an unresolved tie.
+
+        Same tie-detection contract as balanced_ko4 — refuse to start if
+        there is an unresolved tie in the top-8 cutoff (or at the 8º/9º
+        boundary that decides who's in).
+        """
+        boundary = standings[:9]
+        seen_ranks: dict[int, list[str]] = {}
+        for s in boundary:
+            seen_ranks.setdefault(s.rank, []).append(s.display_name)
+        ties = [(rank, names) for rank, names in seen_ranks.items() if len(names) > 1]
+        if ties:
+            tied_msg = "; ".join(f"rank {rank}: {', '.join(names)}" for rank, names in ties)
+            raise ValueError(
+                "Empate sin desempate dentro del top-8 del playoff. "
+                "Resuelve antes de iniciar las eliminatorias: " + tied_msg
+            )
+        return [s.participant_id for s in standings[:8]]
 
     def resolve_ko_tie(
         self,

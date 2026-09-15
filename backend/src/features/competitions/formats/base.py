@@ -23,6 +23,11 @@ class FormatPlugin(ABC):
 
     format_id: str = ""
     display_name: str = ""
+    #: Jornadas of the final: 1, or 3 for a best-of-three (see ``ko_series``).
+    final_legs: int = 1
+    #: Whether a tie on points and point difference in the regular table is
+    #: then broken head to head. The Mundial rule stops at the difference.
+    head_to_head_tiebreak: bool = False
 
     @abstractmethod
     def required_rounds_regular(self, n_participants: int) -> int:
