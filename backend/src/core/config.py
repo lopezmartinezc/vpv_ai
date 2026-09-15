@@ -92,7 +92,7 @@ class Settings(BaseSettings):
 
     # Probable starts read from external sites for the lineup assistant.
     # Comma-separated; drop one to stop reading it without a deploy.
-    lineup_intel_sources: str = "futbolfantasy,analiticafantasy"
+    lineup_intel_sources: str = "futbolfantasy,analiticafantasy,predicted11"
 
     # Legacy MySQL (for reverse sync PG → MySQL)
     mysql_host: str = ""

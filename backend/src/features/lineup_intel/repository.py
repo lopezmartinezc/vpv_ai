@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import case, delete, func, select
@@ -9,6 +10,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.lineup_intel.matching import RosterPlayer, TeamRef
+from src.shared.models.matchday import Match, Matchday
 from src.shared.models.player import Player
 from src.shared.models.player_availability import PlayerAvailability, TeamNews
 from src.shared.models.team import Team
@@ -127,6 +129,34 @@ class LineupIntelRepository:
             )
         )
         return list(result.scalars())
+
+    async def match_source_urls(self, season_id: int, matchday: int) -> list[str]:
+        """futbolfantasy URLs of the matchday's matches. predicted11 uses the
+        same ``{id}-{slug}`` for its match pages."""
+        result = await self.session.execute(
+            select(Match.source_url)
+            .join(Matchday, Matchday.id == Match.matchday_id)
+            .where(
+                Matchday.season_id == season_id,
+                Matchday.number == matchday,
+                Match.source_url.is_not(None),
+            )
+            .order_by(Match.id)
+        )
+        return [url for url in result.scalars() if url]
+
+    async def last_fetched(
+        self, season_id: int, matchday: int, source_prefix: str
+    ) -> datetime | None:
+        """When sources starting with ``source_prefix`` were last read."""
+        result = await self.session.execute(
+            select(func.max(PlayerAvailability.fetched_at)).where(
+                PlayerAvailability.season_id == season_id,
+                PlayerAvailability.matchday_number == matchday,
+                PlayerAvailability.source.startswith(source_prefix),
+            )
+        )
+        return result.scalar_one_or_none()
 
     async def news(self, season_id: int, per_team: int = 5) -> list[TeamNews]:
         """The latest headlines of each team, newest first."""

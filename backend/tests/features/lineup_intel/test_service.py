@@ -1,4 +1,4 @@
-"""Refreshing both sources, keeping the change, and surviving a source down."""
+"""Refreshing the sources, keeping the change, and surviving a source down."""
 
 from __future__ import annotations
 
@@ -15,18 +15,39 @@ from src.features.lineup_intel.service import (
     AF_BASE_URL,
     AF_MATCHDAY_URL,
     FF_TEAM_URL,
+    P11_BASE_URL,
+    P11_LINEUP_URL,
+    P11_MATCH_URL,
     LineupIntelService,
     claim_manual_refresh,
     should_refresh,
 )
 from src.features.scraping.client import ScrapingError
+from src.shared.models.matchday import Match, Matchday
 from src.shared.models.player import Player
 from src.shared.models.player_availability import PlayerAvailability, TeamNews
 from src.shared.models.season import Season
 from src.shared.models.team import Team
-from tests.features.lineup_intel.test_parsers import BLOB, NOW, af_page, ff_player
+from tests.features.lineup_intel.test_parsers import (
+    BLOB,
+    ESPANYOL_TOP,
+    NOW,
+    P11_KEY_JS,
+    RAYO_TOP,
+    af_page,
+    ff_player,
+    p11_lineup,
+    p11_page,
+)
 
 MATCH = "/partido/100011989-rayo-vallecano-espanyol"
+P11_SLUG = "22480-rayo-espanyol"
+P11_SCRIPT = P11_BASE_URL + "/js/partido-show.js?id=bb"
+P11_KEY = "1234567890-0123456789abcdef0123456789abcdef"
+
+
+def p11_url(team: int, user: str, matchday: int = 6) -> str:
+    return P11_LINEUP_URL.format(season=143, matchday=matchday, team=team, user=user, key=P11_KEY)
 
 
 def ff_page(*players: str) -> str:
@@ -89,6 +110,17 @@ async def league(db_session: AsyncSession) -> dict:
         "palazon": add("Isi Palazón", "isi-palazon", "rayo-vallecano", "DEL"),
         "de_frutos": add("Jorge de Frutos", "jorge-de-frutos", "espanyol", "DEL"),
     }
+    matchday = Matchday(season_id=season.id, number=6)
+    db_session.add(matchday)
+    await db_session.flush()
+    db_session.add(
+        Match(
+            matchday_id=matchday.id,
+            home_team_id=teams["rayo-vallecano"].id,
+            away_team_id=teams["espanyol"].id,
+            source_url=f"https://www.futbolfantasy.com/partidos/{P11_SLUG}",
+        )
+    )
     await db_session.flush()
     FakeClient.pages = {
         FF_TEAM_URL.format(slug="barcelona"): ff_page(
@@ -96,6 +128,23 @@ async def league(db_session: AsyncSession) -> dict:
         ),
         AF_MATCHDAY_URL.format(year=2026, matchday=6): f'<a href="{MATCH}">Ver partido</a>',
         AF_BASE_URL + MATCH: af_page(BLOB),
+        # predicted11: the match page, its script with the visitor key, and the
+        # elevens of each team's best predictors (the third Rayo one has none;
+        # the fourth is not among the best three).
+        P11_MATCH_URL.format(slug=P11_SLUG): p11_page(
+            ("Rayo Vallecano", 14, [*RAYO_TOP, ("cuarto", 40, "70")]),
+            ("Espanyol", 5, ESPANYOL_TOP),
+        ),
+        P11_SCRIPT: P11_KEY_JS,
+        p11_url(14, "watusi74"): p11_lineup(
+            "watusi74", ("Emil Audero", "Portero"), ("Isi Palazón", "Delantero")
+        ),
+        p11_url(14, "PilaAlcalinaAAA"): p11_lineup(
+            "PilaAlcalinaAAA", ("Emil Audero", "Portero"), ("Augusto Batalla", "Portero")
+        ),
+        p11_url(14, "Aroodii"): p11_lineup("Aroodii"),
+        p11_url(14, "cuarto"): p11_lineup("cuarto", ("Isi Palazón", "Delantero")),
+        p11_url(5, "huugo_21"): p11_lineup("huugo_21", ("Jorge de Frutos", "Delantero")),
     }
     intel._last_manual_refresh.clear()
     return {"season": season, "teams": teams, "players": players}
@@ -216,3 +265,70 @@ def test_a_manual_refresh_waits_ten_minutes() -> None:
         claim_manual_refresh(1, 6, NOW + timedelta(minutes=9))
     claim_manual_refresh(1, 6, NOW + timedelta(minutes=10))
     claim_manual_refresh(1, 7, NOW)
+
+
+async def test_each_top_predictor_of_predicted11_is_a_source_of_his_own(
+    db_session: AsyncSession, league: dict
+) -> None:
+    season = league["season"].id
+    result = await service(db_session).refresh(season, 6, now=NOW)
+    assert result["predicted11"].errors == []
+    rayo = league["teams"]["rayo-vallecano"].id
+    first = {r.raw_name: r for r in await rows(db_session, "predicted11_1") if r.team_id == rayo}
+    palazon = first["Isi Palazón"]
+    assert palazon.player_id == league["players"]["palazon"].id
+    assert (palazon.probability, palazon.starter) == (100, True)
+    assert palazon.note == "watusi74, 1.º del destacado del Rayo Vallecano (83,6 % de acierto)"
+    second = {r.raw_name: r for r in await rows(db_session, "predicted11_2")}
+    assert set(second) == {"Emil Audero", "Augusto Batalla"}
+    assert second["Augusto Batalla"].player_id is None
+    # No eleven from the third: he does not count, not even as a 0. The
+    # fourth is not read at all.
+    assert not await rows(db_session, "predicted11_3")
+    assert not await rows(db_session, "predicted11_4")
+
+    view = await service(db_session).read(season, 6)
+    assert {(c.source, c.team_name) for c in view.coverage} == {
+        ("predicted11_1", "Rayo Vallecano"),
+        ("predicted11_2", "Rayo Vallecano"),
+        ("predicted11_1", "Espanyol"),
+    }
+    readings = next(
+        p.readings for p in view.players if p.player_id == league["players"]["palazon"].id
+    )
+    assert [r.source for r in readings] == ["analiticafantasy", "predicted11_1"]
+
+
+async def test_predicted11_is_read_every_six_hours_unless_asked(
+    db_session: AsyncSession, league: dict
+) -> None:
+    season = league["season"].id
+    now = datetime.now(UTC)
+    assert "predicted11" in await service(db_session).refresh(season, 6, now=now)
+    soon = now + timedelta(hours=1)
+    assert "predicted11" not in await service(db_session).refresh(season, 6, now=soon)
+    asked = await service(db_session).refresh(season, 6, now=soon, force_p11=True)
+    assert "predicted11" in asked
+    later = now + timedelta(hours=7)
+    assert "predicted11" in await service(db_session).refresh(season, 6, now=later)
+
+
+async def test_predicted11_down_or_on_another_matchday_leaves_the_rest(
+    db_session: AsyncSession, league: dict
+) -> None:
+    season = league["season"].id
+    del FakeClient.pages[P11_SCRIPT]
+    result = await service(db_session).refresh(season, 6, now=NOW)
+    assert result["predicted11"].errors
+    assert await rows(db_session, "futbolfantasy")
+    assert await rows(db_session, "analiticafantasy")
+    assert not await rows(db_session, "predicted11_1")
+
+    # Its page is already on another matchday: nothing is read from it.
+    FakeClient.pages[P11_SCRIPT] = P11_KEY_JS
+    FakeClient.pages[P11_MATCH_URL.format(slug=P11_SLUG)] = p11_page(
+        ("Rayo Vallecano", 14, RAYO_TOP), ("Espanyol", 5, ESPANYOL_TOP), matchday=7
+    )
+    result = await service(db_session).refresh(season, 6, now=NOW, force_p11=True)
+    assert any("J7" in e for e in result["predicted11"].errors)
+    assert not await rows(db_session, "predicted11_1")

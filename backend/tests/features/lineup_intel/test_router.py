@@ -55,8 +55,10 @@ async def test_a_participant_can_neither_read_nor_refresh(
 
 
 async def test_the_admin_reads_and_refreshes_once_per_ten_minutes(
-    client: AsyncClient, db_session: AsyncSession, season: Season
+    client: AsyncClient, db_session: AsyncSession, season: Season, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    started: list[tuple[int, int]] = []
+    monkeypatch.setattr(intel, "start_background_refresh", lambda s, m: started.append((s, m)))
     admin = await person(db_session, "Admin", admin=True)
     base = f"/api/lineup-intel/{season.id}/6"
     read = await client.get(base, headers=token(admin))
@@ -64,7 +66,10 @@ async def test_the_admin_reads_and_refreshes_once_per_ten_minutes(
     assert read.json()["players"] == []
 
     first = await client.post(f"{base}/refresh", headers=token(admin))
-    assert first.status_code == 200
-    assert set(first.json()["sources"]) == {"futbolfantasy", "analiticafantasy"}
+    # Answered at once; the reading goes on in the background.
+    assert first.status_code == 202
+    assert first.json()["started"] is True
+    assert started == [(season.id, 6)]
     again = await client.post(f"{base}/refresh", headers=token(admin))
     assert again.status_code == 422
+    assert started == [(season.id, 6)]

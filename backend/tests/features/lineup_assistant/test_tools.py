@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.lineup_assistant.context import LineupContext
 from src.features.lineup_assistant.tools import NOT_A_PARTICIPANT, build_tools
 from src.shared.assistant.tools import run_tool
+from src.shared.models.player import Player
+from src.shared.models.player_availability import PlayerAvailability
+from src.shared.models.team import Team
 
 SCOPE_WORDS = {
     "season_id",
@@ -165,3 +169,53 @@ async def test_someone_outside_the_season_has_no_squad(
     ctx = context(db_session, league, user_id=league.stranger.id)
     assert await call(ctx, "mi_plantilla") == NOT_A_PARTICIPANT
     assert await call(ctx, "proponer_once") == NOT_A_PARTICIPANT
+
+
+async def test_a_predicted11_eleven_counts_for_who_is_in_it_and_against_who_is_not(
+    db_session: AsyncSession, league: SimpleNamespace
+) -> None:
+    barcelona = (
+        await db_session.execute(
+            select(Team).where(Team.season_id == league.season.id, Team.name == "Barcelona")
+        )
+    ).scalar_one()
+    raphinha = (
+        await db_session.execute(
+            select(Player).where(
+                Player.season_id == league.season.id, Player.display_name == "Raphinha"
+            )
+        )
+    ).scalar_one()
+    who = "watusi74, 1.º del destacado del Barcelona (80,0 % de acierto)"
+    db_session.add(
+        PlayerAvailability(
+            season_id=league.season.id,
+            matchday_number=6,
+            source="predicted11_1",
+            team_id=barcelona.id,
+            player_id=raphinha.id,
+            raw_name="Raphinha",
+            probability=100,
+            starter=True,
+            note=who,
+        )
+    )
+    await db_session.flush()
+    ctx = context(db_session, league)
+
+    squad = await call(ctx, "mi_plantilla")
+    lines = {line.split(" | ")[0]: line for line in squad.splitlines()}
+    assert f"P11 1/1 (le ponen: {who})" in lines["Raphinha"]
+    assert "P11 0/1" in lines["Pedri"]
+    # The predictor's note is not a report on the player.
+    assert "parte:" not in lines["Raphinha"]
+    assert "parte: Molestias en el pie" in lines["Pedri"]
+
+    proposal = await call(context(db_session, league), "proponer_once")
+    assert "AF 70 % · FF 80 % · P11 1/1" in proposal
+    # Left out of that eleven: FF 50 % and P11 0 make 25 %.
+    assert "MED | Pedri | Barcelona | 1.5 = 6.0 si juega x 25%" in proposal
+
+    team = await call(context(db_session, league), "disponibilidad", equipo="barcelona")
+    assert "P11 le pone en su once" in team
+    assert f"Once de predicted11 para Barcelona: {who}" in team

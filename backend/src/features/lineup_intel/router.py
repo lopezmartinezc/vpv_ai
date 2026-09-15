@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import asdict
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.features.lineup_intel.schemas import LineupIntelResponse, RefreshResponse, SourceSummary
+from src.features.lineup_intel import service as intel_service
+from src.features.lineup_intel.schemas import LineupIntelResponse, RefreshStarted
 from src.features.lineup_intel.service import LineupIntelService, claim_manual_refresh
 from src.shared.dependencies import get_current_admin, get_db
 
@@ -20,20 +20,19 @@ async def read_availability(
     db: AsyncSession = Depends(get_db),
     admin: dict = Depends(get_current_admin),
 ) -> LineupIntelResponse:
-    """What futbolfantasy and analiticafantasy say about each player. Admin only."""
+    """What the probable-lineup sources say about each player. Admin only."""
     return await LineupIntelService(db).read(season_id, matchday)
 
 
-@router.post("/{season_id}/{matchday}/refresh", response_model=RefreshResponse)
+@router.post("/{season_id}/{matchday}/refresh", response_model=RefreshStarted, status_code=202)
 async def refresh_availability(
     season_id: int,
     matchday: int,
-    db: AsyncSession = Depends(get_db),
     admin: dict = Depends(get_current_admin),
-) -> RefreshResponse:
-    """Read both sources now. Admin only, and at most once every 10 minutes."""
+) -> RefreshStarted:
+    """Read every source now, predicted11 included, in the background. Admin
+    only, and at most once every 10 minutes. The screen reads the availability
+    again until its time changes."""
     claim_manual_refresh(season_id, matchday, datetime.now(UTC))
-    results = await LineupIntelService(db).refresh(season_id, matchday)
-    return RefreshResponse(
-        sources={name: SourceSummary(**asdict(result)) for name, result in results.items()}
-    )
+    intel_service.start_background_refresh(season_id, matchday)
+    return RefreshStarted()

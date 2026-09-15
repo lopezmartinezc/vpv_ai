@@ -90,14 +90,25 @@ class LineupContext:
             return display_name
         return f"Participante {participant_id}"
 
+    async def p11_coverage(self) -> dict[str, set[str]]:
+        """Team name → the predicted11 predictors with an eleven for it. A
+        player of that team missing from one of those elevens counts 0 for it."""
+        out: dict[str, set[str]] = {}
+        for item in (await self.intel()).coverage:
+            out.setdefault(item.team_name, set()).add(item.source)
+        return out
+
     async def candidates(self) -> list[Candidate]:
         squad = await self.squad()
         predictions = await self.predictions()
         readings = await self.readings()
+        covered = await self.p11_coverage()
         out: list[Candidate] = []
         for player in squad.squad:
             forecast = predictions.get(player.player_id)
             said = readings.get(player.player_id, [])
+            probs: dict[str, int | None] = dict.fromkeys(covered.get(player.team_name, ()), 0)
+            probs.update({r.source: r.probability for r in said})
             out.append(
                 Candidate(
                     player_id=player.player_id,
@@ -108,7 +119,7 @@ class LineupContext:
                     has_match=player.opponent_team_name is not None,
                     spread=(forecast.xpts_ceiling - forecast.xpts) if forecast else 0.0,
                     starter_pct=forecast.starter_pct if forecast else None,
-                    source_probs={r.source: r.probability for r in said},
+                    source_probs=probs,
                     statuses=frozenset(r.status for r in said if r.status),
                 )
             )
