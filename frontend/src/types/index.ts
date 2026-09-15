@@ -10,7 +10,10 @@ export interface PlayerPrediction {
   form_5: number | null;
   location_avg: number | null;
   rival_factor: number;
+  /** Expected points, already discounted by starter_pct. */
   xpts: number;
+  /** The same forecast before that discount: what he scores if he plays. */
+  xpts_if_plays: number;
   xpts_floor: number;
   xpts_ceiling: number;
   confidence: string;

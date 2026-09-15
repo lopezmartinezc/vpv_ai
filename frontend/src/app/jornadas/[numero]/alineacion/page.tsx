@@ -17,6 +17,17 @@ import { PlayerAvatar } from "@/components/ui/player-avatar";
 import { PitchView } from "@/components/ui/pitch-view";
 import type { PitchPlayer } from "@/components/ui/pitch-view";
 import { SkeletonTable } from "@/components/ui/skeleton";
+import { AssistantPanel } from "@/components/assistant/assistant-panel";
+import {
+  LineupAdminBar,
+  SourceBadges,
+  SuggestionPanel,
+  applySuggestion,
+  readingsByPlayer,
+  type LineupIntelResponse,
+  type SourceReading,
+  type SuggestionResponse,
+} from "@/components/lineup/lineup-intel";
 import type {
   MatchdayDetailResponse,
   MatchEntry,
@@ -46,6 +57,13 @@ const POSITION_LABELS: Record<Position, string> = {
   MED: "Centrocampistas",
   DEL: "Delanteros",
 };
+
+const LINEUP_SUGGESTIONS = [
+  "Propón mi once y explica los casos dudosos",
+  "¿Quién de mi plantilla es duda esta jornada?",
+  "¿Qué dicen las webs de mis delanteros?",
+  "¿Qué ha alineado mi rival de playoff?",
+];
 
 const POSITION_COLORS: Record<Position, string> = {
   POR: "bg-amber-500/15 text-amber-400 border-amber-500/30",
@@ -392,6 +410,7 @@ function PlayerCard({
   showPoints = false,
   prediction,
   fixture,
+  readings,
 }: {
   player: SquadPlayerEntry;
   isSelected: boolean;
@@ -400,6 +419,7 @@ function PlayerCard({
   showPoints?: boolean;
   prediction?: PlayerPrediction;
   fixture?: OpponentStrength;
+  readings?: SourceReading[];
 }) {
   const pos = player.position as Position;
 
@@ -467,7 +487,10 @@ function PlayerCard({
         )}
         {prediction && (
           <div className="mt-0.5 flex items-center gap-2 text-[10px]">
-            <span className="font-bold text-vpv-accent tabular-nums" title="Puntos esperados">
+            <span
+              className="font-bold text-vpv-accent tabular-nums"
+              title={`Puntos esperados · ${prediction.xpts_if_plays.toFixed(1)} si juega`}
+            >
               xPts {prediction.xpts.toFixed(1)}
             </span>
             <span className="text-vpv-text-muted" title={prediction.is_home ? "Casa" : "Fuera"}>
@@ -481,6 +504,7 @@ function PlayerCard({
             </span>
           </div>
         )}
+        <SourceBadges readings={readings} />
       </div>
 
       <div className="flex shrink-0 flex-col items-end gap-0.5">
@@ -631,6 +655,15 @@ export default function AlineacionPage() {
     return new Map(predictionsData.predictions.map((p) => [p.player_id, p]));
   }, [predictionsData]);
 
+  // Admin-only, like the predictions: what futbolfantasy and analiticafantasy
+  // say about each player this matchday.
+  const { data: intelData, refetch: refetchIntel } = useFetch<LineupIntelResponse>(
+    isAdmin && selectedSeason
+      ? `/lineup-intel/${selectedSeason.id}/${numero}`
+      : null,
+  );
+  const readingsMap = useMemo(() => readingsByPlayer(intelData), [intelData]);
+
   // ---------------------------------------------------------------------------
   // Local state
   // ---------------------------------------------------------------------------
@@ -645,6 +678,8 @@ export default function AlineacionPage() {
     message: string;
   } | null>(null);
   const [initialized, setInitialized] = useState(false);
+  // The eleven last proposed by the optimizer, to show why each one is there.
+  const [suggestion, setSuggestion] = useState<SuggestionResponse | null>(null);
   const prevCountRef = useRef(0);
 
   // Initialize from existing lineup
@@ -827,6 +862,18 @@ export default function AlineacionPage() {
     );
   }, []);
 
+  // Fills the pitch with the proposed eleven. Sends nothing: the admin
+  // adjusts and submits as with any other lineup.
+  const handleSuggestion = useCallback(
+    (proposed: SuggestionResponse) => {
+      if (!myLineup) return;
+      setSubmitResult(null);
+      setSelectedPlayers(applySuggestion(myLineup.squad, proposed));
+      setSuggestion(proposed);
+    },
+    [myLineup],
+  );
+
   const handleSubmit = useCallback(async () => {
     if (!selectedSeason || !detectedFormation || submitting) return;
 
@@ -961,6 +1008,19 @@ export default function AlineacionPage() {
         deadlineMin={myLineup.lineup_deadline_min}
       />
 
+      {isAdmin && (
+        <LineupAdminBar
+          seasonId={selectedSeason.id}
+          matchday={numero}
+          updatedAt={intelData?.updated_at ?? null}
+          onRefreshed={refetchIntel}
+          onSuggestion={handleSuggestion}
+        />
+      )}
+      {isAdmin && suggestion && (
+        <SuggestionPanel suggestion={suggestion} onClose={() => setSuggestion(null)} />
+      )}
+
       {/* Formation auto-detect + counter */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -1044,12 +1104,24 @@ export default function AlineacionPage() {
                   showPoints={isAdmin}
                   prediction={predictionsMap.get(player.player_id)}
                   fixture={fixtureByTeam.get(player.team_name)}
+                  readings={readingsMap.get(player.player_id)}
                 />
               );
             })}
           </div>
         </div>
       </div>
+
+      {isAdmin && (
+        <AssistantPanel
+          title="Asistente de alineación"
+          endpoint={`/lineup-assistant/${selectedSeason.id}/${numero}/ask/stream`}
+          intro="Pregunta por tu once. Consulta tu plantilla, las previsiones y las alineaciones probables de futbolfantasy y analiticafantasy; no opina por su cuenta."
+          suggestions={LINEUP_SUGGESTIONS}
+          placeholder="Pregunta algo sobre tu alineación…"
+          historyLimit={40}
+        />
+      )}
 
       {/* Submit area */}
       <div className="sticky bottom-0 -mx-4 border-t border-vpv-border bg-vpv-bg px-4 py-4 sm:mx-0 sm:static sm:border-0 sm:bg-transparent sm:p-0">
