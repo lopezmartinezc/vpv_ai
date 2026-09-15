@@ -4,10 +4,12 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useFetch } from "@/hooks/use-fetch";
 import { withSeason } from "@/lib/season-link";
+import { seriesLine } from "@/components/playoffs/final-series";
 import styles from "./personal-playoff.module.css";
 import type {
   CompetitionListResponse,
   CompetitionMatchupsResponse,
+  FinalSeries,
   MatchdayDetailResponse,
   MatchupEntry,
 } from "@/types";
@@ -118,7 +120,13 @@ function PlayoffDuels({
   return (
     <>
       {duels.map((matchup) => (
-        <Duel key={matchup.id} {...props} matchup={matchup} competition={data.competition.name} />
+        <Duel
+          key={matchup.id}
+          {...props}
+          matchup={matchup}
+          competition={data.competition.name}
+          series={data.final_series ?? null}
+        />
       ))}
     </>
   );
@@ -145,7 +153,8 @@ function Duel({
   participantId,
   phase,
   scores,
-}: Props & { matchup: MatchupEntry; competition: string }) {
+  series,
+}: Props & { matchup: MatchupEntry; competition: string; series?: FinalSeries | null }) {
   const isA = matchup.participant_a_id === participantId;
   // null is "not scored yet", never 0: the scoreboard shows "—" for it.
   const own = isA ? matchup.score_a : matchup.score_b;
@@ -157,6 +166,9 @@ function Duel({
     ROUND_LABELS[matchup.round_label ?? ""] ?? matchup.round_label ?? `Ronda ${matchup.round_number}`;
   const title = `${competition} · ${round}`;
   const label = `Tu playoff · ${competition}`;
+  // A final over three jornadas: where the series stands.
+  const seriesInfo =
+    matchup.round_label === "final" ? seriesLine(series, matchup.id, participantId) : null;
   const link = (
     <Link className={styles.link} href={withSeason("/playoffs", seasonId)}>
       Ver playoffs
@@ -177,6 +189,7 @@ function Duel({
           ) : (
             "sin rival asignado"
           )}
+          {seriesInfo && <> · {seriesInfo}</>}
         </p>
         {link}
       </section>
@@ -209,6 +222,7 @@ function Duel({
           Pendientes de puntuar: tú {ownPending ?? "sin datos"} · rival {rivalPending ?? "sin datos"}
         </p>
       )}
+      {seriesInfo && <p className={styles.note}>{seriesInfo}</p>}
       {outcome && <p className={styles.outcome}>{outcome}</p>}
     </section>
   );

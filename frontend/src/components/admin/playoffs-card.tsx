@@ -22,6 +22,9 @@ interface PlayoffsCardProps {
   title?: string;
   /** Default format suggested in the create dropdown. */
   defaultFormatId?: string;
+  /** Place among the season's playoffs: 0 for the first (Apertura), 1 for
+   *  the next (Clausura). The suggested start follows the ones before it. */
+  order?: number;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -45,6 +48,7 @@ export function PlayoffsCard({
   playoffName,
   title = "Playoffs",
   defaultFormatId,
+  order = 0,
 }: PlayoffsCardProps) {
   const [formats, setFormats] = useState<FormatInfo[]>([]);
   const [selectedFormat, setSelectedFormat] = useState<string>(defaultFormatId ?? "");
@@ -64,7 +68,8 @@ export function PlayoffsCard({
     setLoading(true);
     try {
       const [formatList, comps] = await Promise.all([
-        apiClient.get<FormatInfo[]>("/competitions/formats"),
+        // With the season, jornada counts use its real number of participants.
+        apiClient.get<FormatInfo[]>(`/competitions/formats?season_id=${seasonId}`),
         apiClient.get<CompetitionListResponse>(`/competitions/season/${seasonId}`),
       ]);
       setFormats(formatList);
@@ -90,6 +95,15 @@ export function PlayoffsCard({
   }, [load]);
 
   const currentFormat = formats.find((f) => f.format_id === selectedFormat);
+
+  // Suggest the start after the playoffs before this one (the Clausura
+  // starts where the Apertura's final ends), until the operator types one.
+  const [startTouched, setStartTouched] = useState(false);
+  useEffect(() => {
+    if (!currentFormat || startTouched) return;
+    const span = currentFormat.n_rounds_regular + currentFormat.n_rounds_ko;
+    setRegularStart(String(matchdayStart + order * span));
+  }, [currentFormat, matchdayStart, order, startTouched]);
 
   // Keep the KO CSV input in sync with the regular start + format.
   // Only seeds the default value — the operator can still override.
@@ -265,7 +279,10 @@ export function PlayoffsCard({
               <input
                 type="number"
                 value={regularStart}
-                onChange={(e) => setRegularStart(e.target.value)}
+                onChange={(e) => {
+                  setStartTouched(true);
+                  setRegularStart(e.target.value);
+                }}
                 className="ml-2 w-16 rounded border border-vpv-border bg-vpv-bg px-2 py-1 text-xs text-vpv-text"
               />
             </label>
