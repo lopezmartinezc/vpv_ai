@@ -696,6 +696,19 @@ def start_scheduler(**_kwargs: object) -> None:
             replace_existing=True,
             misfire_grace_time=30,
         )
+    # Probable starts for the matchday being set: every 3 h, acting only in the
+    # last 48 h before its deadline (the job checks the window itself).
+    from src.features.lineup_intel.service import refresh_current_matchday
+
+    _scheduler.add_job(
+        refresh_current_matchday,
+        trigger="interval",
+        hours=3,
+        id="lineup_intel",
+        max_instances=1,
+        replace_existing=True,
+        misfire_grace_time=600,
+    )
     _scheduler.start()
     logger.info(
         "scheduler.start: started, tick_interval=%ds, calendar_sync=daily@06:00, deadline_check=60s, live_monitor=%ds",
