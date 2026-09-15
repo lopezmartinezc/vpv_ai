@@ -105,6 +105,7 @@ class LineupContext:
                     position=player.position,
                     team_name=player.team_name,
                     xpts_if_plays=forecast.xpts_if_plays if forecast else None,
+                    has_match=player.opponent_team_name is not None,
                     spread=(forecast.xpts_ceiling - forecast.xpts) if forecast else 0.0,
                     starter_pct=forecast.starter_pct if forecast else None,
                     source_probs={r.source: r.probability for r in said},

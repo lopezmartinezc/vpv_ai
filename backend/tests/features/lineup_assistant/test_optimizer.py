@@ -115,9 +115,14 @@ def test_without_sources_the_history_decides_and_a_doubt_halves_it() -> None:
     assert play_probability(c(4, "DEF", 5.0, starter_pct=None))[0] == 0
 
 
-def test_no_match_this_matchday_is_worth_nothing() -> None:
-    v = value_of(c(1, "DEL", None))
-    assert (v.value, v.basis) == (0.0, "sin partido ni prevision esta jornada")
+def test_no_match_or_no_forecast_is_worth_nothing_and_says_which() -> None:
+    idle = value_of(c(1, "DEL", 5.0, has_match=False))
+    assert (idle.value, idle.basis) == (0.0, "sin partido esta jornada")
+    unknown = value_of(c(2, "DEL", None))
+    assert (unknown.value, unknown.basis) == (
+        0.0,
+        "sin prevision: aun no ha jugado esta temporada",
+    )
 
 
 def test_on_equal_totals_the_higher_ceiling_wins() -> None:

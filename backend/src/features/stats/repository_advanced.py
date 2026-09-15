@@ -699,8 +699,9 @@ class AdvancedStatsRepository:
     async def get_opponent_stats(self, season_id: int) -> dict[int, dict[str, float | str]]:
         """Goals conceded average and clean-sheet % per team for a season.
 
-        Only counts completed matches (home_score IS NOT NULL) on counting
-        matchdays.  Returns a dict keyed by team_id.
+        Only counts completed matches (home_score IS NOT NULL), counting
+        matchdays or not (see ``get_player_season_stats_for_predictions``).
+        Returns a dict keyed by team_id.
         """
         home_case = case(
             (Match.home_team_id == Team.id, Match.away_score),
@@ -734,7 +735,6 @@ class AdvancedStatsRepository:
             .where(
                 Team.season_id == season_id,
                 Matchday.season_id == season_id,
-                Matchday.counts.is_(True),
                 Match.home_score.is_not(None),
             )
             .group_by(Team.id, Team.name)
@@ -801,7 +801,7 @@ class AdvancedStatsRepository:
         """Average fantasy points per player when playing home vs away.
 
         Uses player's current team_id to determine home/away from matches.
-        Only counting matchdays and played stats are considered.
+        Every played matchday of the season is considered, counting or not.
         """
         # Per-matchday team (fallback to current) so transfers don't relabel
         # a player's earlier home/away points.
@@ -827,7 +827,6 @@ class AdvancedStatsRepository:
             .where(
                 Player.season_id == season_id,
                 Matchday.season_id == season_id,
-                Matchday.counts.is_(True),
                 PlayerStat.played.is_(True),
             )
             .group_by(PlayerStat.player_id)
@@ -847,6 +846,12 @@ class AdvancedStatsRepository:
 
         Groups by player and most-common position (mode via window function
         on the raw stats).  Returns a dict keyed by player_id.
+
+        Every played matchday of the season counts here, whether it scores for
+        VPV or not. The forecast asks how a player plays, and a pre-season
+        jornada (J1-J5, ``counts = false``) is a real match: right after the
+        draft it is all there is. Filtering them out left almost the whole
+        squad without a forecast until several counting jornadas were in.
         """
         stmt = (
             select(
@@ -868,7 +873,6 @@ class AdvancedStatsRepository:
             .where(
                 Player.season_id == season_id,
                 Matchday.season_id == season_id,
-                Matchday.counts.is_(True),
                 PlayerStat.played.is_(True),
             )
             .group_by(
@@ -923,7 +927,6 @@ class AdvancedStatsRepository:
             .where(
                 Player.season_id == season_id,
                 Matchday.season_id == season_id,
-                Matchday.counts.is_(True),
                 PlayerStat.played.is_(True),
             )
             .subquery()
@@ -969,7 +972,6 @@ class AdvancedStatsRepository:
             .where(
                 Player.season_id == season_id,
                 Matchday.season_id == season_id,
-                Matchday.counts.is_(True),
                 PlayerStat.played.is_(True),
             )
             .subquery()
@@ -1001,7 +1003,6 @@ class AdvancedStatsRepository:
             .where(
                 Player.season_id == season_id,
                 Matchday.season_id == season_id,
-                Matchday.counts.is_(True),
                 PlayerStat.penalty_goals > 0,
             )
             .group_by(PlayerStat.player_id)
@@ -1031,7 +1032,6 @@ class AdvancedStatsRepository:
             .join(Matchday, Match.matchday_id == Matchday.id)
             .where(
                 Matchday.season_id == season_id,
-                Matchday.counts.is_(True),
                 Match.home_score.is_not(None),
             )
             .subquery()
@@ -1050,7 +1050,6 @@ class AdvancedStatsRepository:
             .join(Matchday, Match.matchday_id == Matchday.id)
             .where(
                 Matchday.season_id == season_id,
-                Matchday.counts.is_(True),
                 Match.home_score.is_not(None),
             )
             .subquery()
