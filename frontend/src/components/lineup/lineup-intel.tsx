@@ -281,8 +281,9 @@ export function SuggestionPanel({
           <li key={p.player_id} className="tabular-nums">
             <span className="text-vpv-text-muted">{p.position}</span>{" "}
             <span className="font-medium text-vpv-text">{p.name}</span> ·{" "}
+            {/* Without a forecast the basis says why: no match, or no data yet. */}
             {p.xpts_if_plays === null
-              ? "sin previsión"
+              ? "0 puntos"
               : `${p.value.toFixed(1)} = ${p.xpts_if_plays.toFixed(1)} si juega × ${Math.round(p.play_prob * 100)}%`}{" "}
             · <span className="text-vpv-text-muted">{p.basis}</span>
           </li>

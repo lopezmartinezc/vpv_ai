@@ -32,8 +32,11 @@ class Candidate:
     name: str
     position: str
     team_name: str
-    # None: no forecast, usually because his team does not play this matchday.
+    # None: no forecast — his team does not play, or he has not played a match
+    # this season yet.
     xpts_if_plays: float | None
+    # Whether his team plays this matchday.
+    has_match: bool = True
     # The forecast's spread (ceiling minus expected), for the tie-break.
     spread: float = 0.0
     # Share of recent matches started, 0-100.
@@ -97,8 +100,10 @@ def play_probability(c: Candidate) -> tuple[float, str]:
 
 
 def value_of(c: Candidate) -> Valued:
+    if not c.has_match:
+        return Valued(c, 0.0, 0.0, 0.0, "sin partido esta jornada")
     if c.xpts_if_plays is None:
-        return Valued(c, 0.0, 0.0, 0.0, "sin partido ni prevision esta jornada")
+        return Valued(c, 0.0, 0.0, 0.0, "sin prevision: aun no ha jugado esta temporada")
     prob, basis = play_probability(c)
     return Valued(
         candidate=c,

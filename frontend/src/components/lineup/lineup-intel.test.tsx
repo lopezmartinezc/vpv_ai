@@ -70,7 +70,7 @@ const suggestion: SuggestionResponse = {
       value: 0,
       xpts_if_plays: null,
       play_prob: 0,
-      basis: "sin partido ni prevision esta jornada",
+      basis: "sin prevision: aun no ha jugado esta temporada",
     },
   ],
   bench: [],
@@ -177,6 +177,8 @@ describe("SuggestionPanel", () => {
     render(<SuggestionPanel suggestion={suggestion} onClose={vi.fn()} />);
     expect(screen.getByText(/Once propuesto 1-4-3-3/)).toBeInTheDocument();
     expect(screen.getByText(/5\.3 = 7\.0 si juega × 75%/)).toBeInTheDocument();
-    expect(screen.getByText(/sin previsión/)).toBeInTheDocument();
+    // Without a forecast: nothing to multiply, and the reason in words.
+    expect(screen.getByText(/0 puntos/)).toBeInTheDocument();
+    expect(screen.getByText("sin prevision: aun no ha jugado esta temporada")).toBeInTheDocument();
   });
 });

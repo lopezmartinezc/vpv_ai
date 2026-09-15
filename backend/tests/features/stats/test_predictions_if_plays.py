@@ -83,3 +83,62 @@ async def test_xpts_is_the_if_plays_forecast_discounted_by_starts(
     s = by_name["Siempre"]
     assert s.starter_pct == 100
     assert s.xpts_if_plays == s.xpts
+
+
+async def test_pre_season_matches_feed_the_forecast(db_session: AsyncSession) -> None:
+    """J1-J5 do not score for VPV but are real matches: right after the draft,
+    before the first counting jornada is played, they are all there is."""
+    db = db_session
+    season = Season(name="2026-2027", status="active", matchday_start=6, matchday_end=38)
+    db.add(season)
+    await db.flush()
+    home = Team(season_id=season.id, name="Local", slug="local")
+    away = Team(season_id=season.id, name="Visitante", slug="visitante")
+    db.add_all([home, away])
+    await db.flush()
+    pre = [
+        Matchday(season_id=season.id, number=n, status="completed", counts=False) for n in (1, 2)
+    ]
+    first = Matchday(season_id=season.id, number=6, status="pending")
+    db.add_all([*pre, first])
+    await db.flush()
+    db.add_all(
+        [
+            Match(
+                matchday_id=d.id,
+                home_team_id=home.id,
+                away_team_id=away.id,
+                home_score=2,
+                away_score=0,
+            )
+            for d in pre
+        ]
+        + [Match(matchday_id=first.id, home_team_id=home.id, away_team_id=away.id)]
+    )
+    player = Player(
+        season_id=season.id,
+        team_id=home.id,
+        name="Nuevo",
+        display_name="Nuevo",
+        slug="nuevo",
+        position="DEL",
+    )
+    db.add(player)
+    await db.flush()
+    db.add_all(
+        PlayerStat(
+            player_id=player.id,
+            matchday_id=d.id,
+            position="DEL",
+            played=True,
+            minutes_played=90,
+            pts_total=8,
+        )
+        for d in pre
+    )
+    await db.flush()
+
+    forecast = await AdvancedStatsService(db).get_predictions(season.id, 6)
+    [nuevo] = forecast.predictions
+    assert (nuevo.player_name, nuevo.matchdays_played, nuevo.starter_pct) == ("Nuevo", 2, 100)
+    assert nuevo.xpts_if_plays > 0
