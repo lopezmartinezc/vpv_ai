@@ -19,6 +19,12 @@ they contain ``"lineupBlock": {"home": …, "away": …}`` with every player's
 ``chance``, ``esTitular`` and ``playerExtras`` (injury, doubt, sanction), and
 the team names in ``"homeTeam"`` / ``"awayTeam"``. Reading that JSON is far
 sturdier than scraping Tailwind class names.
+
+predicted11, match page ``/es/laliga/partido/{id}-{slug}`` (futbolfantasy's
+ids and slugs): ``window.currentTemporada``, ``window.jornada`` and each side's
+team id (``window.equipoLocalId`` / ``equipoVisitanteId``), plus each team's
+«Ranking destacado» as ``li.p11-item`` rows. A predictor's eleven comes from
+its API as JSON, with the players under ``participacion``.
 """
 
 from __future__ import annotations
@@ -358,4 +364,164 @@ def parse_af_match(html: str) -> tuple[SourceTeam, SourceTeam] | None:
         logger.warning(
             "lineup_intel: could not parse an analiticafantasy match page", exc_info=True
         )
+        return None
+
+
+# --- predicted11 -------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class P11Predictor:
+    """One row of a team's «Ranking destacado»."""
+
+    rank: int
+    username: str
+    hits: int
+    pct: float
+
+
+@dataclass(frozen=True)
+class P11Side:
+    name: str
+    # predicted11's team id, which is futbolfantasy's: the API wants it.
+    team_id: int
+    featured: list[P11Predictor]
+
+
+@dataclass(frozen=True)
+class P11Match:
+    season: int
+    matchday: int
+    sides: list[P11Side]
+
+
+@dataclass(frozen=True)
+class P11Lineup:
+    username: str
+    players: list[SourcePlayer]
+    updated: str | None = None
+
+
+_P11_POSITIONS = {
+    "portero": "POR",
+    "defensa": "DEF",
+    "centrocampista": "MED",
+    "mediocampista": "MED",
+    "delantero": "DEL",
+}
+_P11_ROW = re.compile(r"(\d+)\s+(\S+)\s+(\d+)\s+([\d.,]+)\s*%")
+
+
+def _window_int(html: str, key: str) -> int | None:
+    match = re.search(rf"window\.{key}\s*=\s*(\d+)", html)
+    return int(match.group(1)) if match else None
+
+
+def _p11_featured(soup: BeautifulSoup) -> dict[str, list[P11Predictor]]:
+    """Team name → its «Ranking destacado», in the order the page lists them."""
+    out: dict[str, list[P11Predictor]] = {}
+    for heading in soup.find_all(string=re.compile(r"^\s*Ranking destacado\s")):
+        name = " ".join(str(heading).split())[len("Ranking destacado") :].strip()
+        box = heading.parent
+        for _ in range(6):
+            if box is None or box.select("li.p11-item"):
+                break
+            box = box.parent
+        if box is None:
+            continue
+        rows: list[P11Predictor] = []
+        for li in box.select("li.p11-item"):
+            match = _P11_ROW.match(" ".join(li.get_text(" ", strip=True).split()))
+            if match:
+                rows.append(
+                    P11Predictor(
+                        rank=int(match.group(1)),
+                        username=match.group(2),
+                        hits=int(match.group(3)),
+                        pct=float(match.group(4).replace(",", ".")),
+                    )
+                )
+        if name and rows:
+            out.setdefault(name, rows)
+    return out
+
+
+def parse_p11_match(html: str) -> P11Match | None:
+    """Season, matchday and each side's «Ranking destacado» of a predicted11
+    match page (``/es/laliga/partido/{id}-{slug}``), or None if unreadable."""
+    try:
+        season = _window_int(html, "currentTemporada")
+        matchday = _window_int(html, "jornada")
+        home_id = _window_int(html, "equipoLocalId")
+        away_id = _window_int(html, "equipoVisitanteId")
+        if season is None or matchday is None or home_id is None or away_id is None:
+            logger.warning("lineup_intel: predicted11 match page without its ids")
+            return None
+        soup = BeautifulSoup(html, "lxml")
+        featured = _p11_featured(soup)
+        # The tabs say which name is home and which away; the rankings come in
+        # the same order when the tabs are missing.
+        tabs: dict[str, str] = {}
+        for control in soup.select("[data-bs-target], a[href^='#equipo-']"):
+            target = str(control.get("data-bs-target") or control.get("href") or "")
+            label = " ".join(control.get_text(" ", strip=True).split())
+            if target in ("#equipo-local", "#equipo-visitante") and label:
+                tabs[target] = label
+        names = list(featured)
+        home = tabs.get("#equipo-local") or (names[0] if names else None)
+        away = tabs.get("#equipo-visitante") or (names[1] if len(names) > 1 else None)
+        sides = [
+            P11Side(name=name, team_id=team_id, featured=featured.get(name, []))
+            for name, team_id in ((home, home_id), (away, away_id))
+            if name
+        ]
+        if len(sides) != 2:
+            logger.warning("lineup_intel: predicted11 match page without both teams")
+            return None
+        return P11Match(season=season, matchday=matchday, sides=sides)
+    except Exception:
+        logger.warning("lineup_intel: could not parse a predicted11 match page", exc_info=True)
+        return None
+
+
+def parse_p11_script_path(html: str) -> str | None:
+    """The page's own script (``/js/partido-show.js?id=…``), which carries the
+    key predicted11 gives every visitor."""
+    match = re.search(r'src="(/js/(?:partido|equipo)-show\.js[^"]*)"', html or "")
+    return match.group(1) if match else None
+
+
+def parse_p11_guest_key(js: str) -> str | None:
+    """The visitor's ``{id}-{apiToken}`` the site's script sends to its API."""
+    match = re.search(r'id:"(\d+)",apiToken:"([0-9a-f]{32})"', js or "")
+    return f"{match.group(1)}-{match.group(2)}" if match else None
+
+
+def parse_p11_lineup(text: str) -> P11Lineup | None:
+    """One predictor's eleven for a team, from predicted11's JSON."""
+    try:
+        data = json.loads(text)
+        if not isinstance(data, dict):
+            return None
+        players: list[SourcePlayer] = []
+        for raw in data.get("participacion") or []:
+            name = str(raw.get("nombre") or raw.get("nombreCorto") or "").strip()
+            if not name:
+                continue
+            position = str(raw.get("posicion") or "").strip().lower()
+            players.append(
+                SourcePlayer(
+                    name=name,
+                    probability=100,
+                    starter=True,
+                    position=_P11_POSITIONS.get(position),
+                )
+            )
+        return P11Lineup(
+            username=str(data.get("username") or ""),
+            players=players,
+            updated=data.get("fecha_actualizacion"),
+        )
+    except Exception:
+        logger.warning("lineup_intel: could not parse a predicted11 lineup", exc_info=True)
         return None

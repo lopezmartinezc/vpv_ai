@@ -105,6 +105,28 @@ def test_the_chance_is_the_mean_of_the_sources_and_counted_once() -> None:
     assert play_probability(one)[0] == 0.5
 
 
+def test_each_predicted11_eleven_counts_like_one_more_site() -> None:
+    # FF 70, AF 60, and two of the three best predictors put him in.
+    picked = c(
+        1,
+        "MED",
+        10.0,
+        source_probs={
+            "futbolfantasy": 70,
+            "analiticafantasy": 60,
+            "predicted11_1": 100,
+            "predicted11_2": 100,
+            "predicted11_3": 0,
+        },
+    )
+    prob, basis = play_probability(picked)
+    assert prob == 0.66
+    assert basis == "alineaciones probables (AF 60 % · FF 70 % · P11 2/3)"
+    assert value_of(picked).value == 6.6
+    # Left out by the only predictor with an eleven: that alone says 0.
+    assert play_probability(c(2, "MED", 10.0, source_probs={"predicted11_1": 0}))[0] == 0
+
+
 def test_without_sources_the_history_decides_and_a_doubt_halves_it() -> None:
     assert play_probability(c(1, "DEF", 5.0, starter_pct=80.0))[0] == 0.8
     doubt = c(2, "DEF", 5.0, starter_pct=80.0, statuses=frozenset({"duda"}))

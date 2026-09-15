@@ -1,4 +1,4 @@
-"""The parsers read what the two sites actually publish, and nothing breaks
+"""The parsers read what the sites actually publish, and nothing breaks
 when a page changes shape.
 
 The HTML here is written by hand to mirror the structure verified on
@@ -15,6 +15,10 @@ from src.features.lineup_intel.parsers import (
     parse_af_match,
     parse_af_matchday_links,
     parse_ff_team,
+    parse_p11_guest_key,
+    parse_p11_lineup,
+    parse_p11_match,
+    parse_p11_script_path,
 )
 
 NOW = datetime(2026, 9, 15, 12, 0, tzinfo=UTC)
@@ -292,3 +296,112 @@ def test_analiticafantasy_lists_the_matchday_matches_once_each_in_order() -> Non
         "/partido/100011991-atletico-madrid-real-madrid",
         "/partido/100011992-athletic-club-alaves",
     ]
+
+
+# --- predicted11 -------------------------------------------------------------------
+# Hand-written to the structure seen on 15/09/2026: the ids in window.*, the
+# tabs, and each team's «Ranking destacado» as li.p11-item rows. The key below
+# is made up.
+
+P11_KEY_JS = 'fetch(u,{auth:{id:"1234567890",apiToken:"0123456789abcdef0123456789abcdef"}})'
+
+
+def p11_ranking(team: str, rows: list[tuple[str, int, str]]) -> str:
+    items = "".join(
+        f'<li class="p11-item"><span class="pos">{i}</span> <a href="#">{user}</a> '
+        f"<span>{hits}</span> <span>{pct}%</span></li>"
+        for i, (user, hits, pct) in enumerate(rows, start=1)
+    )
+    return f'<div class="card"><div class="card-header"><h5>Ranking destacado {team}</h5></div><ul>{items}</ul></div>'
+
+
+def p11_page(
+    home: tuple[str, int, list[tuple[str, int, str]]],
+    away: tuple[str, int, list[tuple[str, int, str]]],
+    matchday: int = 6,
+) -> str:
+    return (
+        f"<script>window.currentTemporada = 143; window.jornada = {matchday};"
+        f" window.equipoLocalId = {home[1]}; window.equipoVisitanteId = {away[1]};</script>"
+        '<script src="/js/components/dynamic-auth.js?id=aa"></script>'
+        '<script src="/js/partido-show.js?id=bb"></script>'
+        '<ul class="nav nav-tabs">'
+        f'<li><button data-bs-target="#equipo-local">{home[0]}</button></li>'
+        f'<li><button data-bs-target="#equipo-visitante">{away[0]}</button></li></ul>'
+        + p11_ranking(home[0], home[2])
+        + p11_ranking(away[0], away[2])
+    )
+
+
+def p11_lineup(user: str, *players: tuple[str, str]) -> str:
+    return json.dumps(
+        {
+            "username": user,
+            "porcentaje": "83.64",
+            "fecha_actualizacion": "2026-09-13 12:57:00",
+            "participacion": [
+                {"id": i, "nombre": name, "nombreCorto": name.split()[-1], "posicion": pos}
+                for i, (name, pos) in enumerate(players, start=1)
+            ],
+        }
+    )
+
+
+RAYO_TOP = [("watusi74", 46, "83.64"), ("PilaAlcalinaAAA", 45, "81.82"), ("Aroodii", 44, "80")]
+ESPANYOL_TOP = [("huugo_21", 55, "83.33")]
+
+
+def test_predicted11_reads_both_teams_ranking_with_their_ids() -> None:
+    match = parse_p11_match(
+        p11_page(
+            ("Rayo Vallecano", 14, [*RAYO_TOP, ("cuarto", 40, "70")]),
+            ("Espanyol", 5, ESPANYOL_TOP),
+        )
+    )
+    assert match is not None
+    assert (match.season, match.matchday) == (143, 6)
+    rayo, espanyol = match.sides
+    assert (rayo.name, rayo.team_id, espanyol.name, espanyol.team_id) == (
+        "Rayo Vallecano",
+        14,
+        "Espanyol",
+        5,
+    )
+    assert [p.username for p in rayo.featured][:3] == ["watusi74", "PilaAlcalinaAAA", "Aroodii"]
+    assert (rayo.featured[0].rank, rayo.featured[0].hits, rayo.featured[0].pct) == (1, 46, 83.64)
+    assert espanyol.featured[0].pct == 83.33
+
+
+def test_predicted11_finds_the_script_with_the_visitor_key() -> None:
+    page = p11_page(("Rayo Vallecano", 14, RAYO_TOP), ("Espanyol", 5, ESPANYOL_TOP))
+    assert parse_p11_script_path(page) == "/js/partido-show.js?id=bb"
+    assert parse_p11_guest_key(P11_KEY_JS) == "1234567890-0123456789abcdef0123456789abcdef"
+    assert parse_p11_guest_key("var nothing = 1;") is None
+
+
+def test_predicted11_reads_a_predictors_eleven() -> None:
+    lineup = parse_p11_lineup(
+        p11_lineup("watusi74", ("Augusto Batalla", "Portero"), ("Andrei Ratiu", "Defensa"))
+    )
+    assert lineup is not None
+    assert lineup.username == "watusi74"
+    assert [(p.name, p.position, p.probability, p.starter) for p in lineup.players] == [
+        ("Augusto Batalla", "POR", 100, True),
+        ("Andrei Ratiu", "DEF", 100, True),
+    ]
+
+
+def test_a_changed_predicted11_page_or_answer_gives_nothing() -> None:
+    assert parse_p11_match("<html><body>Mantenimiento</body></html>") is None
+    # Ids but no teams.
+    assert (
+        parse_p11_match(
+            "<script>window.currentTemporada = 143; window.jornada = 6;"
+            " window.equipoLocalId = 1; window.equipoVisitanteId = 2;</script>"
+        )
+        is None
+    )
+    assert parse_p11_lineup("<html>error</html>") is None
+    assert parse_p11_lineup("[]") is None
+    empty = parse_p11_lineup('{"username": "x", "participacion": []}')
+    assert empty is not None and empty.players == []

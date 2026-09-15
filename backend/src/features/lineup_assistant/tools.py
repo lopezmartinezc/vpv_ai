@@ -7,6 +7,7 @@ plain text: about half the tokens of JSON, and the model reads it as well.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from datetime import datetime
 
 import httpx
@@ -14,7 +15,13 @@ import httpx
 from src.core.exceptions import NotFoundError
 from src.features.lineup_assistant.context import LineupContext
 from src.features.lineup_assistant.news_reader import NewsUrlError, read_article
-from src.features.lineup_assistant.optimizer import POSITIONS, SOURCE_LABELS, Suggestion, Valued
+from src.features.lineup_assistant.optimizer import (
+    P11_PREFIX,
+    POSITIONS,
+    SOURCE_LABELS,
+    Suggestion,
+    Valued,
+)
 from src.features.lineup_assistant.repository import LineupAssistantRepository
 from src.features.lineup_intel.matching import normalize
 from src.features.lineup_intel.parsers import MADRID
@@ -51,6 +58,8 @@ def source_bit(
     fetched_at: datetime | None,
 ) -> str:
     """ "FF 70 % (antes 50 %) titular, duda [lun 15/09 18:00]"."""
+    if source.startswith(P11_PREFIX):
+        return f"P11 le pone en su once [{when(fetched_at)}]"
     pct = f"{probability} %" if probability is not None else "sin %"
     if previous is not None and previous != probability:
         pct += f" (antes {previous} %)"
@@ -59,15 +68,25 @@ def source_bit(
     return f"{SOURCE_LABELS.get(source, source)} {pct} {role}{state} [{when(fetched_at)}]"
 
 
-def readings_text(readings: list[SourceReading]) -> str:
-    if not readings:
-        return "sin datos de las webs"
-    return " · ".join(
+def readings_text(readings: list[SourceReading], p11_covered: Collection[str] = ()) -> str:
+    """The sources in a line. predicted11's elevens go together: "P11 2/3 (le
+    ponen: watusi74, 1.º del destacado…)". ``p11_covered`` are the predictors
+    with an eleven for his team, so the count includes those who leave him out."""
+    plain = [r for r in readings if not r.source.startswith(P11_PREFIX)]
+    picks = sorted(
+        (r for r in readings if r.source.startswith(P11_PREFIX)), key=lambda r: r.source
+    )
+    bits = [
         source_bit(
             r.source, r.probability, r.previous_probability, r.starter, r.status, r.fetched_at
         )
-        for r in readings
-    )
+        for r in plain
+    ]
+    covered = set(p11_covered) | {r.source for r in picks}
+    if covered:
+        who = "; ".join(r.note or r.source for r in picks)
+        bits.append(f"P11 {len(picks)}/{len(covered)}" + (f" (le ponen: {who})" if picks else ""))
+    return " · ".join(bits) if bits else "sin datos de las webs"
 
 
 def valued_line(v: Valued) -> str:
@@ -107,6 +126,7 @@ def build_tools(ctx: LineupContext) -> list[ToolSpec]:
         predictions = await ctx.predictions()
         readings = await ctx.readings()
         fixtures = await ctx.fixtures()
+        covered = await ctx.p11_coverage()
         current = squad.current_lineup
         in_eleven = {p.player_id for p in current.players} if current else set()
         saved = (
@@ -136,7 +156,10 @@ def build_tools(ctx: LineupContext) -> list[ToolSpec]:
             )
             starter = f"{forecast.starter_pct:.0f} %" if forecast else "-"
             said = readings.get(p.player_id, [])
-            note = next((r.note for r in said if r.note), None)
+            # predicted11's note says who the predictor is, not how the player is.
+            note = next(
+                (r.note for r in said if r.note and not r.source.startswith(P11_PREFIX)), None
+            )
             flags = []
             if forecast and forecast.is_penalty_taker:
                 flags.append("penaltis")
@@ -144,7 +167,8 @@ def build_tools(ctx: LineupContext) -> list[ToolSpec]:
                 flags.append("EN TU ONCE")
             lines.append(
                 f"{p.display_name} | {p.position} | {p.team_name} | {match} | {p.season_points} | "
-                f"{form} | {xpts} | {starter} | {readings_text(said)}"
+                f"{form} | {xpts} | {starter} | "
+                f"{readings_text(said, covered.get(p.team_name, ()))}"
                 + (f" · parte: {note[:120]}" if note else "")
                 + (f" [{', '.join(flags)}]" if flags else "")
             )
@@ -183,6 +207,14 @@ def build_tools(ctx: LineupContext) -> list[ToolSpec]:
             lines.append(f"{name} | {r.team_name} | {bit}" + (f" | {a.note}" if a.note else ""))
         if len(hits) > 40:
             lines.append(f"(y {len(hits) - 40} lecturas mas: concreta)")
+        # Who has an eleven for those teams: whoever of them does not list a
+        # player leaves him out.
+        teams = {r.team_name for r in hits}
+        for item in (await ctx.intel()).coverage:
+            if item.team_name in teams:
+                lines.append(
+                    f"Once de predicted11 para {item.team_name}: {item.note or item.source}"
+                )
         return "\n".join(lines)
 
     async def noticias_equipo(equipo: str) -> str:

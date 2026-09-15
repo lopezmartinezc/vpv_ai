@@ -44,6 +44,10 @@ DE DONDE SALE CADA DATO (dilo siempre al citarlo):
   de ser titular esta semana, con la hora de la lectura. Es la mejor senal de
   QUIEN JUEGA: recogen lesiones, rotaciones y noticias. Cita la web y la hora
   ("FF 70 %, lectura del sab 20/09 12:00"). Si las dos discrepan, dilo.
+- P11 (predicted11): los onces de los 3 mejores pronosticadores del ranking
+  destacado de ese equipo. Cada once cuenta como una web mas en la
+  probabilidad de jugar: 100 si le pone, 0 si no. Di cuantos le ponen, quienes
+  son y su % de acierto ("P11 2/3").
 - Titular historico: % de sus ultimos partidos en que fue titular. Mira hacia
   atras: no sabe de la lesion de ayer.
 - xPts: puntos esperados por el modelo interno (forma, media, rival, casa o

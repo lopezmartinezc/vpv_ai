@@ -6,8 +6,9 @@ A player is worth what he scores if he plays times the chance that he plays:
   prediction BEFORE its own starter discount, so the chance is not counted
   twice;
 * the chance comes from the probable lineups when there are any (the mean of
-  the sources that give a percentage): they know this week's news, recent
-  history does not. Without them, the share of recent matches started;
+  the sources that give a percentage; each of predicted11's three elevens is
+  one such source, 100 or 0): they know this week's news, recent history does
+  not. Without them, the share of recent matches started;
 * injured, suspended or unavailable is zero whatever the percentage says; a
   doubt with no percentage from any source halves the historical share. When a
   source gives a percentage, the doubt is already in it.
@@ -24,6 +25,23 @@ from dataclasses import dataclass, field
 POSITIONS = ("POR", "DEF", "MED", "DEL")
 OUT_STATUSES = ("sancionado", "no_disponible", "lesionado")
 SOURCE_LABELS = {"futbolfantasy": "FF", "analiticafantasy": "AF"}
+#: predicted11 is one source per predictor (predicted11_1, _2, _3): 100 for
+#: the players in his eleven, 0 for the rest of that team.
+P11_PREFIX = "predicted11_"
+
+
+def source_detail(given: Mapping[str, int]) -> str:
+    """ "AF 60 % · FF 70 % · P11 2/3": the predicted11 elevens are shown
+    together, as how many of them put him in."""
+    parts = [
+        f"{SOURCE_LABELS.get(s, s)} {p} %"
+        for s, p in sorted(given.items())
+        if not s.startswith(P11_PREFIX)
+    ]
+    p11 = [p for s, p in given.items() if s.startswith(P11_PREFIX)]
+    if p11:
+        parts.append(f"P11 {sum(1 for p in p11 if p >= 100)}/{len(p11)}")
+    return " · ".join(parts)
 
 
 @dataclass(frozen=True)
@@ -86,8 +104,7 @@ def play_probability(c: Candidate) -> tuple[float, str]:
     given = {s: p for s, p in c.source_probs.items() if p is not None}
     if given:
         prob = sum(given.values()) / len(given) / 100
-        detail = " · ".join(f"{SOURCE_LABELS.get(s, s)} {p} %" for s, p in sorted(given.items()))
-        return prob, f"alineaciones probables ({detail})"
+        return prob, f"alineaciones probables ({source_detail(given)})"
     if c.starter_pct is not None:
         prob = c.starter_pct / 100
         if "duda" in c.statuses:

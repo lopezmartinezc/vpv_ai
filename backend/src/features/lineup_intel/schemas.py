@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SourceReading(BaseModel):
@@ -36,6 +36,17 @@ class NewsItem(BaseModel):
     published_at: datetime | None
 
 
+class SourceCoverage(BaseModel):
+    """A predicted11 predictor has an eleven for this team: the players in it
+    count 100 for that predictor, and the rest of the team 0."""
+
+    source: str  # predicted11_1 | predicted11_2 | predicted11_3
+    team_id: int
+    team_name: str
+    # Who the predictor is: "watusi74, 1.º del destacado del Rayo (81,8 % de acierto)".
+    note: str | None
+
+
 class LineupIntelResponse(BaseModel):
     season_id: int
     matchday_number: int
@@ -43,14 +54,12 @@ class LineupIntelResponse(BaseModel):
     players: list[PlayerReadings]
     unmatched: list[UnmatchedReading]
     news: list[NewsItem]
+    coverage: list[SourceCoverage] = Field(default_factory=list)
 
 
-class SourceSummary(BaseModel):
-    rows: int
-    matched: int
-    news: int
-    errors: list[str]
+class RefreshStarted(BaseModel):
+    """A refresh runs in the background: with predicted11 it takes minutes,
+    longer than a request may wait behind the proxy."""
 
-
-class RefreshResponse(BaseModel):
-    sources: dict[str, SourceSummary]
+    started: bool = True
+    message: str = "Actualizando las alineaciones probables en segundo plano: tarda unos minutos."

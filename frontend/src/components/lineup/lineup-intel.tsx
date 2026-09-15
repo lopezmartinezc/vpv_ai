@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { apiClient, ApiClientError } from "@/lib/api-client";
 import type { SquadPlayerEntry } from "@/types";
 
-// What futbolfantasy and analiticafantasy say about each player this matchday,
-// and the eleven the optimizer proposes. Admin only, like the predictions.
+// What futbolfantasy, analiticafantasy and predicted11's best predictors say
+// about each player this matchday, and the eleven the optimizer proposes.
+// Admin only, like the predictions.
 
 export interface SourceReading {
   source: string;
@@ -18,16 +19,32 @@ export interface SourceReading {
   fetched_at: string;
 }
 
+/** A predicted11 predictor with an eleven for a team: whoever of that team
+ * is missing from it counts 0 for him. */
+export interface SourceCoverage {
+  source: string;
+  team_id: number;
+  team_name: string;
+  note: string | null;
+}
+
 export interface LineupIntelResponse {
   season_id: number;
   matchday_number: number;
   updated_at: string | null;
   players: { player_id: number; readings: SourceReading[] }[];
+  coverage?: SourceCoverage[];
 }
 
-interface RefreshResponse {
-  sources: Record<string, { rows: number; matched: number; news: number; errors: string[] }>;
+interface RefreshStarted {
+  started: boolean;
+  message: string;
 }
+
+// With predicted11 a refresh takes minutes: it runs in the background and the
+// screen reads the sources again until their time changes.
+export const REFRESH_POLL_MS = 15_000;
+export const REFRESH_MAX_WAIT_MS = 8 * 60_000;
 
 export interface SuggestedPlayer {
   player_id: number;
@@ -53,6 +70,9 @@ const SOURCE_LABEL: Record<string, string> = {
   futbolfantasy: "FF",
   analiticafantasy: "AF",
 };
+
+// predicted11_1 … _3: one source per predictor, shown together as "P11 2/3".
+const isP11 = (source: string) => source.startsWith("predicted11_");
 
 // Gravest first, as the backend ranks them.
 const STATUS_ORDER = [
@@ -95,6 +115,17 @@ export function readingsByPlayer(
   return new Map((intel?.players ?? []).map((p) => [p.player_id, p.readings]));
 }
 
+/** The predicted11 predictors with an eleven for each team, by team name. */
+export function coverageByTeam(
+  intel: LineupIntelResponse | null | undefined,
+): Map<string, SourceCoverage[]> {
+  const out = new Map<string, SourceCoverage[]>();
+  for (const item of intel?.coverage ?? []) {
+    out.set(item.team_name, [...(out.get(item.team_name) ?? []), item]);
+  }
+  return out;
+}
+
 /** The squad entries of the proposed eleven, in its order. */
 export function applySuggestion(
   squad: SquadPlayerEntry[],
@@ -106,18 +137,31 @@ export function applySuggestion(
     .filter((p): p is SquadPlayerEntry => p !== undefined);
 }
 
-/** "FF 70% ↑ · AF 60% · Duda" under a player card. */
-export function SourceBadges({ readings }: { readings?: SourceReading[] }) {
-  if (!readings || readings.length === 0) return null;
-  const gravest = STATUS_ORDER.find((s) => readings.some((r) => r.status === s));
-  const notes = readings
+/** "FF 70% ↑ · AF 60% · P11 2/3 · Duda" under a player card. */
+export function SourceBadges({
+  readings = [],
+  coverage = [],
+}: {
+  readings?: SourceReading[];
+  coverage?: SourceCoverage[];
+}) {
+  const plain = readings.filter((r) => !isP11(r.source));
+  const picked = new Set(readings.filter((r) => isP11(r.source)).map((r) => r.source));
+  // Who has an eleven for his team, plus anyone who picks him: the rest leave him out.
+  const predictors = new Map(coverage.map((c) => [c.source, c.note ?? c.source]));
+  for (const r of readings) {
+    if (isP11(r.source) && !predictors.has(r.source)) predictors.set(r.source, r.note ?? r.source);
+  }
+  if (plain.length === 0 && predictors.size === 0) return null;
+  const gravest = STATUS_ORDER.find((s) => plain.some((r) => r.status === s));
+  const notes = plain
     .filter((r) => r.note)
     .map((r) => `${SOURCE_LABEL[r.source] ?? r.source}: ${r.note}`)
     .join("\n");
 
   return (
     <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px]">
-      {readings.map((r) => {
+      {plain.map((r) => {
         const label = SOURCE_LABEL[r.source] ?? r.source;
         const changed =
           r.probability !== null &&
@@ -146,6 +190,17 @@ export function SourceBadges({ readings }: { readings?: SourceReading[] }) {
           </span>
         );
       })}
+      {predictors.size > 0 && (
+        <span
+          className="tabular-nums text-vpv-text-muted"
+          title={[...predictors.entries()]
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([source, who]) => `${picked.has(source) ? "✓" : "✗"} ${who}`)
+            .join("\n")}
+        >
+          <span className="font-semibold text-vpv-text">P11</span> {picked.size}/{predictors.size}
+        </span>
+      )}
       {gravest && (
         <span
           className={`rounded px-1 py-px font-medium ${STATUS_STYLE[gravest]}`}
@@ -174,22 +229,34 @@ export function LineupAdminBar({
 }) {
   const [busy, setBusy] = useState<"refresh" | "propose" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  // A refresh running in the background: the time the sources had when it
+  // started, and when it started.
+  const [pending, setPending] = useState<{ from: string | null; at: number } | null>(null);
+  const waiting = pending !== null && pending.from === updatedAt;
+  const reread = useRef(onRefreshed);
+  useEffect(() => {
+    reread.current = onRefreshed;
+  });
+
+  useEffect(() => {
+    if (!waiting || pending === null) return;
+    const id = setInterval(() => {
+      if (Date.now() - pending.at > REFRESH_MAX_WAIT_MS) {
+        setPending(null);
+        setMessage("La actualización no ha terminado: vuelve a mirar dentro de un rato.");
+        return;
+      }
+      reread.current();
+    }, REFRESH_POLL_MS);
+    return () => clearInterval(id);
+  }, [waiting, pending]);
 
   async function refresh() {
     setBusy("refresh");
     setMessage(null);
     try {
-      const res = await apiClient.post<RefreshResponse>(
-        `/lineup-intel/${seasonId}/${matchday}/refresh`,
-        {},
-      );
-      const failed = Object.entries(res.sources).filter(([, s]) => s.errors.length > 0);
-      if (failed.length > 0) {
-        setMessage(
-          `Con avisos: ${failed.map(([name, s]) => `${SOURCE_LABEL[name] ?? name} (${s.errors.length})`).join(", ")}.`,
-        );
-      }
-      onRefreshed();
+      await apiClient.post<RefreshStarted>(`/lineup-intel/${seasonId}/${matchday}/refresh`, {});
+      setPending({ from: updatedAt, at: Date.now() });
     } catch (err) {
       setMessage(
         err instanceof ApiClientError ? err.error.message : "No se ha podido actualizar.",
@@ -227,10 +294,14 @@ export function LineupAdminBar({
         <button
           type="button"
           onClick={() => void refresh()}
-          disabled={busy !== null}
+          disabled={busy !== null || waiting}
           className="rounded-md border border-vpv-card-border px-3 py-1 text-vpv-text hover:border-vpv-border disabled:opacity-40"
         >
-          {busy === "refresh" ? "Actualizando…" : "Actualizar"}
+          {waiting
+            ? "Actualizando… (unos minutos)"
+            : busy === "refresh"
+              ? "Actualizando…"
+              : "Actualizar"}
         </button>
         <button
           type="button"

@@ -1,11 +1,15 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   LineupAdminBar,
+  REFRESH_MAX_WAIT_MS,
+  REFRESH_POLL_MS,
   SourceBadges,
   SuggestionPanel,
   applySuggestion,
+  coverageByTeam,
+  type SourceCoverage,
   type SourceReading,
   type SuggestionResponse,
 } from "./lineup-intel";
@@ -76,6 +80,28 @@ const suggestion: SuggestionResponse = {
   bench: [],
 };
 
+const rayo: SourceCoverage[] = [
+  { source: "predicted11_1", team_id: 3, team_name: "Rayo Vallecano", note: "watusi74, 1.º" },
+  { source: "predicted11_2", team_id: 3, team_name: "Rayo Vallecano", note: "PilaAlcalinaAAA, 2.º" },
+];
+
+describe("coverageByTeam", () => {
+  it("groups predicted11's predictors by team name", () => {
+    const map = coverageByTeam({
+      season_id: 12,
+      matchday_number: 6,
+      updated_at: null,
+      players: [],
+      coverage: rayo,
+    });
+    expect(map.get("Rayo Vallecano")?.map((c) => c.source)).toEqual([
+      "predicted11_1",
+      "predicted11_2",
+    ]);
+    expect(coverageByTeam(null).size).toBe(0);
+  });
+});
+
 describe("SourceBadges", () => {
   it("shows each source's percentage and which way it moved", () => {
     render(
@@ -105,6 +131,27 @@ describe("SourceBadges", () => {
     expect(chip.getAttribute("title")).toContain("FF: Molestias en el pie");
     expect(chip.getAttribute("title")).toContain("AF: Rotura");
     expect(screen.queryByText("Duda")).not.toBeInTheDocument();
+  });
+
+  it("shows how many of predicted11's best predictors pick him, and who", () => {
+    render(
+      <SourceBadges
+        readings={[
+          reading({}),
+          reading({ source: "predicted11_1", probability: 100, note: "watusi74, 1.º" }),
+        ]}
+        coverage={rayo}
+      />,
+    );
+    const p11 = screen.getByText("P11").parentElement!;
+    expect(p11).toHaveTextContent("P11 1/2");
+    expect(p11.getAttribute("title")).toBe("✓ watusi74, 1.º\n✗ PilaAlcalinaAAA, 2.º");
+    expect(screen.getByText("FF")).toBeInTheDocument();
+  });
+
+  it("counts a player left out of every eleven as 0 of them", () => {
+    render(<SourceBadges coverage={rayo} />);
+    expect(screen.getByText("P11").parentElement).toHaveTextContent("P11 0/2");
   });
 
   it("renders nothing without readings", () => {
@@ -143,18 +190,61 @@ describe("LineupAdminBar", () => {
     expect(post).not.toHaveBeenCalled();
   });
 
-  it("refreshes the sources and says when one had trouble", async () => {
-    post.mockResolvedValue({
-      sources: {
-        futbolfantasy: { rows: 500, matched: 480, news: 90, errors: [] },
-        analiticafantasy: { rows: 0, matched: 0, news: 0, errors: ["jornada: 404"] },
-      },
+  describe("refresh in the background", () => {
+    const started = { started: true, message: "Actualizando…" };
+    const props = {
+      seasonId: 12,
+      matchday: 6,
+      updatedAt: "2026-09-19T10:00:00Z",
+      onSuggestion: vi.fn(),
+    };
+
+    afterEach(() => {
+      vi.useRealTimers();
     });
-    const props = bar();
-    fireEvent.click(screen.getByText("Actualizar"));
-    await waitFor(() => expect(props.onRefreshed).toHaveBeenCalled());
-    expect(post).toHaveBeenCalledWith("/lineup-intel/12/6/refresh", {});
-    expect(screen.getByRole("status")).toHaveTextContent("Con avisos: AF (1).");
+
+    it("reads the sources again until their time changes", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      post.mockResolvedValue(started);
+      const onRefreshed = vi.fn();
+      const { rerender } = render(<LineupAdminBar {...props} onRefreshed={onRefreshed} />);
+      fireEvent.click(screen.getByText("Actualizar"));
+      expect(await screen.findByText("Actualizando… (unos minutos)")).toBeInTheDocument();
+      expect(post).toHaveBeenCalledWith("/lineup-intel/12/6/refresh", {});
+
+      await act(async () => {
+        vi.advanceTimersByTime(REFRESH_POLL_MS);
+      });
+      expect(onRefreshed).toHaveBeenCalledTimes(1);
+
+      rerender(
+        <LineupAdminBar {...props} updatedAt="2026-09-19T10:04:00Z" onRefreshed={onRefreshed} />,
+      );
+      expect(screen.getByText("Actualizar")).toBeInTheDocument();
+      await act(async () => {
+        vi.advanceTimersByTime(REFRESH_POLL_MS * 2);
+      });
+      expect(onRefreshed).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops waiting after a few minutes and says so", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      post.mockResolvedValue(started);
+      const onRefreshed = vi.fn();
+      render(<LineupAdminBar {...props} onRefreshed={onRefreshed} />);
+      fireEvent.click(screen.getByText("Actualizar"));
+      await screen.findByText("Actualizando… (unos minutos)");
+      await act(async () => {
+        vi.advanceTimersByTime(REFRESH_MAX_WAIT_MS + REFRESH_POLL_MS);
+      });
+      expect(screen.getByRole("status")).toHaveTextContent("no ha terminado");
+      expect(screen.getByText("Actualizar")).toBeInTheDocument();
+      const calls = onRefreshed.mock.calls.length;
+      await act(async () => {
+        vi.advanceTimersByTime(REFRESH_POLL_MS * 2);
+      });
+      expect(onRefreshed).toHaveBeenCalledTimes(calls);
+    });
   });
 
   it("shows the reason when a refresh is refused", async () => {

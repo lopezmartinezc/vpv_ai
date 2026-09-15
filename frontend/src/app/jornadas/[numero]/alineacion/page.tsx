@@ -24,7 +24,9 @@ import {
   SuggestionPanel,
   applySuggestion,
   readingsByPlayer,
+  coverageByTeam,
   type LineupIntelResponse,
+  type SourceCoverage,
   type SourceReading,
   type SuggestionResponse,
 } from "@/components/lineup/lineup-intel";
@@ -411,6 +413,7 @@ function PlayerCard({
   prediction,
   fixture,
   readings,
+  coverage,
 }: {
   player: SquadPlayerEntry;
   isSelected: boolean;
@@ -420,6 +423,7 @@ function PlayerCard({
   prediction?: PlayerPrediction;
   fixture?: OpponentStrength;
   readings?: SourceReading[];
+  coverage?: SourceCoverage[];
 }) {
   const pos = player.position as Position;
 
@@ -504,7 +508,7 @@ function PlayerCard({
             </span>
           </div>
         )}
-        <SourceBadges readings={readings} />
+        <SourceBadges readings={readings} coverage={coverage} />
       </div>
 
       <div className="flex shrink-0 flex-col items-end gap-0.5">
@@ -655,14 +659,15 @@ export default function AlineacionPage() {
     return new Map(predictionsData.predictions.map((p) => [p.player_id, p]));
   }, [predictionsData]);
 
-  // Admin-only, like the predictions: what futbolfantasy and analiticafantasy
-  // say about each player this matchday.
+  // Admin-only, like the predictions: what futbolfantasy, analiticafantasy and
+  // predicted11's best predictors say about each player this matchday.
   const { data: intelData, refetch: refetchIntel } = useFetch<LineupIntelResponse>(
     isAdmin && selectedSeason
       ? `/lineup-intel/${selectedSeason.id}/${numero}`
       : null,
   );
   const readingsMap = useMemo(() => readingsByPlayer(intelData), [intelData]);
+  const coverageMap = useMemo(() => coverageByTeam(intelData), [intelData]);
 
   // ---------------------------------------------------------------------------
   // Local state
@@ -1105,6 +1110,7 @@ export default function AlineacionPage() {
                   prediction={predictionsMap.get(player.player_id)}
                   fixture={fixtureByTeam.get(player.team_name)}
                   readings={readingsMap.get(player.player_id)}
+                  coverage={coverageMap.get(player.team_name)}
                 />
               );
             })}
