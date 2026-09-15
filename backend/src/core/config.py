@@ -90,6 +90,10 @@ class Settings(BaseSettings):
     # answers. Still bounded, so a model stuck in a loop cannot bleed tokens.
     assistant_max_tool_rounds: int = 20
 
+    # Probable starts read from external sites for the lineup assistant.
+    # Comma-separated; drop one to stop reading it without a deploy.
+    lineup_intel_sources: str = "futbolfantasy,analiticafantasy"
+
     # Legacy MySQL (for reverse sync PG → MySQL)
     mysql_host: str = ""
     mysql_port: int = 3306
