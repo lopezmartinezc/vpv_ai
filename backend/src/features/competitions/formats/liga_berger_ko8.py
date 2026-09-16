@@ -15,6 +15,7 @@ from src.features.competitions.formats.base import FormatPlugin
 from src.features.competitions.ko_bracket import chain_winners, seed_classic_bracket
 from src.features.competitions.scheduler import generate_berger
 from src.features.competitions.schemas import MatchupDraft, StandingEntry
+from src.shared.playoff_name import LIGA_PLAYOFF_NAME
 
 
 class LigaBergerKo8Plugin(FormatPlugin):
@@ -136,7 +137,7 @@ class LigaBergerKo8Plugin(FormatPlugin):
         if ties:
             tied_msg = "; ".join(f"rank {rank}: {', '.join(names)}" for rank, names in ties)
             raise ValueError(
-                "Empate sin desempate dentro del top-8 del playoff. "
+                f"Empate sin desempate dentro del top-8 de la {LIGA_PLAYOFF_NAME}. "
                 "Resuelve antes de iniciar las eliminatorias: " + tied_msg
             )
         return [s.participant_id for s in standings[:8]]

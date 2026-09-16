@@ -18,7 +18,7 @@ interface PlayoffsCardProps {
   /** Distinct playoff name within the season (e.g. "Apertura",
    *  "Clausura", or just "Playoff" for a tournament). */
   playoffName?: string;
-  /** Card title shown in the header. Defaults to "Playoffs". */
+  /** Card title shown in the header. Defaults to "Playoff". */
   title?: string;
   /** Default format suggested in the create dropdown. */
   defaultFormatId?: string;
@@ -46,7 +46,7 @@ export function PlayoffsCard({
   matchdayStart,
   matchdayEnd,
   playoffName,
-  title = "Playoffs",
+  title = "Playoff",
   defaultFormatId,
   order = 0,
 }: PlayoffsCardProps) {
@@ -84,7 +84,7 @@ export function PlayoffsCard({
         : playoffComps[0] ?? null;
       setPlayoff(existing);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Error cargando playoff");
+      setError(e instanceof Error ? e.message : "Error cargando los datos");
     } finally {
       setLoading(false);
     }
@@ -138,7 +138,7 @@ export function PlayoffsCard({
         status: comp.status,
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Error creando el playoff");
+      setError(e instanceof Error ? e.message : `No se ha podido crear ${title}`);
     } finally {
       setBusy(null);
     }
@@ -254,7 +254,7 @@ export function PlayoffsCard({
               disabled={!selectedFormat || busy === "create"}
               className="rounded bg-vpv-accent px-3 py-1 text-xs font-medium text-vpv-bg transition-opacity disabled:opacity-40"
             >
-              {busy === "create" ? "Creando…" : "Crear Playoff"}
+              {busy === "create" ? "Creando…" : `Crear ${title}`}
             </button>
           </div>
           {currentFormat && (
@@ -358,7 +358,7 @@ export function PlayoffsCard({
       {playoff && (status === "ko" || status === "completed") && (
         <p className="text-xs text-vpv-text-muted">
           {status === "completed"
-            ? "Playoff finalizado."
+            ? `${title} finalizada.`
             : "Eliminatorias en curso."}{" "}
           <SeasonLink
             href="/playoffs"

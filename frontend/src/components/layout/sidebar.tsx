@@ -17,7 +17,7 @@ import {
   visibleAdminItems,
 } from "@/lib/admin-nav";
 import { appliesToCompetition } from "@/lib/competition-scope";
-import { LIGA_PLAYOFF_LABEL } from "@/components/playoffs/playoff-ds-hero";
+import { LIGA_PLAYOFF_NAME } from "@/lib/playoff-name";
 
 interface DeadlineCheck {
   has_lineup: boolean;
@@ -188,7 +188,7 @@ export function Sidebar({
           <ul className="space-y-1">
             {visibleNavItems.map(({ href, label: base, icon }) => {
               const label =
-                href === "/playoffs" && !isTournamentContext ? LIGA_PLAYOFF_LABEL : base;
+                href === "/playoffs" && !isTournamentContext ? LIGA_PLAYOFF_NAME : base;
               const active =
                 href === "/"
                   ? pathname === "/"
