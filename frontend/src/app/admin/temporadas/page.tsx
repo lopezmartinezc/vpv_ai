@@ -1493,7 +1493,7 @@ export default function AdminTemporadasPage() {
                 matchdayStart={season.matchday_start}
                 matchdayEnd={season.matchday_end}
                 playoffName="Apertura"
-                title="Playoff Apertura"
+                title="Playoff DS Apertura"
                 defaultFormatId="liga_berger_ko8_bo3"
               />
               <PlayoffsCard
@@ -1501,7 +1501,7 @@ export default function AdminTemporadasPage() {
                 matchdayStart={season.matchday_start}
                 matchdayEnd={season.matchday_end}
                 playoffName="Clausura"
-                title="Playoff Clausura"
+                title="Playoff DS Clausura"
                 defaultFormatId="liga_berger_ko8_bo3"
                 order={1}
               />
