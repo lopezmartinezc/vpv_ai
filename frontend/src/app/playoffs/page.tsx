@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { useSeason } from "@/contexts/season-context";
 import { apiClient } from "@/lib/api-client";
@@ -9,6 +9,7 @@ import {
   PLAYOFF_STATUS_LABEL,
   defaultPlayoff,
 } from "@/components/playoffs/final-series";
+import { PlayoffDsHero } from "@/components/playoffs/playoff-ds-hero";
 import type {
   CompetitionListResponse,
   CompetitionMatchupsResponse,
@@ -22,7 +23,7 @@ import type {
 type Tab = "standings" | "calendar" | "ko";
 
 export default function PlayoffsPage() {
-  const { selectedSeason, loading: seasonLoading } = useSeason();
+  const { selectedSeason, loading: seasonLoading, isTournamentContext } = useSeason();
   const [competitionId, setCompetitionId] = useState<number | null>(null);
   const [standings, setStandings] = useState<CompetitionStandingsResponse | null>(null);
   const [matchups, setMatchups] = useState<CompetitionMatchupsResponse | null>(null);
@@ -84,6 +85,18 @@ export default function PlayoffsPage() {
     return <div className="h-8 w-40 animate-pulse rounded bg-vpv-border" />;
   }
 
+  // The Liga's playoffs carry David Silva's name: his banner goes on top in
+  // every state, the playoff being shown under it.
+  const hero = selectedSeason && !isTournamentContext && (
+    <PlayoffDsHero subtitle={selectedSeason.name} />
+  );
+  const withHero = (body: ReactNode) => (
+    <div className="space-y-4">
+      {hero}
+      {body}
+    </div>
+  );
+
   if (!selectedSeason) {
     return (
       <p className="text-sm text-vpv-text-muted">
@@ -93,32 +106,34 @@ export default function PlayoffsPage() {
   }
 
   if (loading && !standings) {
-    return <p className="text-sm text-vpv-text-muted">Cargando playoff…</p>;
+    return withHero(<p className="text-sm text-vpv-text-muted">Cargando playoff…</p>);
   }
 
   if (error) {
-    return (
+    return withHero(
       <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
         {error}
-      </div>
+      </div>,
     );
   }
 
   if (!competitionId || !standings || !matchups) {
-    return (
+    return withHero(
       <p className="text-sm text-vpv-text-muted">
         Esta temporada aún no tiene playoff configurado.
-      </p>
+      </p>,
     );
   }
 
-  return (
-    <div className="space-y-4">
+  return withHero(
+    <>
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-xl font-bold text-vpv-text">
-            {standings.competition.name}
-          </h1>
+          {hero ? (
+            <h2 className="text-lg font-bold text-vpv-text">{standings.competition.name}</h2>
+          ) : (
+            <h1 className="text-xl font-bold text-vpv-text">{standings.competition.name}</h1>
+          )}
           <p className="text-xs text-vpv-text-muted">
             Estado:{" "}
             <span className="text-vpv-text">
@@ -174,7 +189,7 @@ export default function PlayoffsPage() {
       {tab === "ko" && (
         <KoView matchups={matchups.matchups} series={matchups.final_series ?? null} />
       )}
-    </div>
+    </>,
   );
 }
 
