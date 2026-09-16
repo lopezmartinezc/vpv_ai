@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "@/lib/api-client";
 import { PlayoffsCard } from "@/components/admin/playoffs-card";
+import { LIGA_PLAYOFF_NAME } from "@/lib/playoff-name";
 import { ScrapeStatusCard } from "@/components/admin/scrape-status-card";
 
 interface Season {
@@ -1493,7 +1494,7 @@ export default function AdminTemporadasPage() {
                 matchdayStart={season.matchday_start}
                 matchdayEnd={season.matchday_end}
                 playoffName="Apertura"
-                title="Playoff DS Apertura"
+                title={`${LIGA_PLAYOFF_NAME} Apertura`}
                 defaultFormatId="liga_berger_ko8_bo3"
               />
               <PlayoffsCard
@@ -1501,7 +1502,7 @@ export default function AdminTemporadasPage() {
                 matchdayStart={season.matchday_start}
                 matchdayEnd={season.matchday_end}
                 playoffName="Clausura"
-                title="Playoff DS Clausura"
+                title={`${LIGA_PLAYOFF_NAME} Clausura`}
                 defaultFormatId="liga_berger_ko8_bo3"
                 order={1}
               />

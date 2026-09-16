@@ -30,6 +30,7 @@ from src.features.lineups.service import LineupService
 from src.features.stats.fixtures import difficulty
 from src.shared.assistant.tools import ToolSpec, guarded
 from src.shared.lineup_deadline import effective_deadline
+from src.shared.playoff_name import LIGA_PLAYOFF_NAME
 
 _DAYS = ("lun", "mar", "mie", "jue", "vie", "sab", "dom")
 _ORDER = {p: i for i, p in enumerate(POSITIONS)}
@@ -320,7 +321,7 @@ def build_tools(ctx: LineupContext) -> list[ToolSpec]:
                 continue
             label = ctx.participant_label(p.participant_id, p.display_name)
             if p.participant_id == rival:
-                label += " (TU RIVAL DE PLAYOFF esta jornada)"
+                label += f" (TU RIVAL DE LA {LIGA_PLAYOFF_NAME} esta jornada)"
             if not p.has_lineup or not p.players:
                 lines.append(f"{label}: sin alineacion guardada todavia.")
                 continue
@@ -453,7 +454,7 @@ def build_tools(ctx: LineupContext) -> list[ToolSpec]:
         spec(
             "alineaciones_rivales",
             "Alineaciones que los demas participantes ya han guardado esta jornada, y quien es "
-            "tu rival de playoff si lo hay.",
+            f"tu rival de la {LIGA_PLAYOFF_NAME} (el playoff) si lo hay.",
             {},
             [],
             alineaciones_rivales,

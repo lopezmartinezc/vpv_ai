@@ -20,6 +20,7 @@ from src.shared.assistant.providers.base import (
     ChatMessage,
     ProgressCallback,
 )
+from src.shared.playoff_name import LIGA_PLAYOFF_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ MAX_HISTORY_MESSAGES = 40
 
 # Nothing variable here (no dates, no names): the prompt is cached as a prefix
 # and anything that changes between questions would make every one pay in full.
-SYSTEM_PROMPT = """\
+SYSTEM_PROMPT = f"""\
 Eres el asistente de alineacion de la Liga VPV Fantasy, una liga fantasy de La
 Liga espanola entre amigos. Hablas con el administrador mientras prepara SU once
 de la jornada.
@@ -63,8 +64,10 @@ COMO TRABAJAR:
   entra por poco, quien depende de una sola web, quien es duda.
 - Si falta un dato (sin lectura de las webs, sin prevision), dilo en vez de
   rellenarlo.
+- Los playoffs de la Liga se llaman {LIGA_PLAYOFF_NAME} ({LIGA_PLAYOFF_NAME} Apertura,
+  {LIGA_PLAYOFF_NAME} Clausura): llamalos siempre asi, nunca "playoff".
 - alineaciones_rivales da lo que los demas ya han guardado esta jornada y tu
-  rival de playoff si lo hay. Usalo cuando te lo pidan, por ejemplo para
+  rival de la {LIGA_PLAYOFF_NAME} si lo hay. Usalo cuando te lo pidan, por ejemplo para
   diferenciarte de tu rival.
 
 ESTILO:

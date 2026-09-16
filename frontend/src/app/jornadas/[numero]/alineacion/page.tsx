@@ -18,6 +18,7 @@ import { PitchView } from "@/components/ui/pitch-view";
 import type { PitchPlayer } from "@/components/ui/pitch-view";
 import { SkeletonTable } from "@/components/ui/skeleton";
 import { AssistantPanel } from "@/components/assistant/assistant-panel";
+import { LIGA_PLAYOFF_NAME } from "@/lib/playoff-name";
 import {
   LineupAdminBar,
   SourceBadges,
@@ -64,7 +65,7 @@ const LINEUP_SUGGESTIONS = [
   "Propón mi once y explica los casos dudosos",
   "¿Quién de mi plantilla es duda esta jornada?",
   "¿Qué dicen las webs de mis delanteros?",
-  "¿Qué ha alineado mi rival de playoff?",
+  `¿Qué ha alineado mi rival de la ${LIGA_PLAYOFF_NAME}?`,
 ];
 
 const POSITION_COLORS: Record<Position, string> = {

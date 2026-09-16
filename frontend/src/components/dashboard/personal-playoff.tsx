@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useFetch } from "@/hooks/use-fetch";
 import { withSeason } from "@/lib/season-link";
+import { playoffName, playoffTitle } from "@/lib/playoff-name";
+import { useSeason } from "@/contexts/season-context";
 import { seriesLine } from "@/components/playoffs/final-series";
 import styles from "./personal-playoff.module.css";
 import type {
@@ -64,9 +66,10 @@ function useParentRefresh(refreshKey: number | undefined, refetch: () => void) {
 type Retry = { onRetry: () => void };
 
 function Failure({ onRetry }: Retry) {
+  const { isTournamentContext } = useSeason();
   return (
     <p role="alert" className={styles.failure}>
-      No se pudo cargar tu playoff.{" "}
+      No se pudo cargar tu duelo de {playoffName(isTournamentContext)}.{" "}
       <button type="button" onClick={onRetry} className={styles.retry}>
         Reintentar
       </button>
@@ -155,6 +158,7 @@ function Duel({
   scores,
   series,
 }: Props & { matchup: MatchupEntry; competition: string; series?: FinalSeries | null }) {
+  const { isTournamentContext } = useSeason();
   const isA = matchup.participant_a_id === participantId;
   // null is "not scored yet", never 0: the scoreboard shows "—" for it.
   const own = isA ? matchup.score_a : matchup.score_b;
@@ -164,14 +168,15 @@ function Duel({
   const rivalFeeder = isA ? matchup.feeder_b_id : matchup.feeder_a_id;
   const round =
     ROUND_LABELS[matchup.round_label ?? ""] ?? matchup.round_label ?? `Ronda ${matchup.round_number}`;
-  const title = `${competition} · ${round}`;
-  const label = `Tu playoff · ${competition}`;
+  const cup = playoffTitle(isTournamentContext, competition);
+  const title = `${cup} · ${round}`;
+  const label = `Tu duelo · ${cup}`;
   // A final over three jornadas: where the series stands.
   const seriesInfo =
     matchup.round_label === "final" ? seriesLine(series, matchup.id, participantId) : null;
   const link = (
     <Link className={styles.link} href={withSeason("/playoffs", seasonId)}>
-      Ver playoffs
+      {isTournamentContext ? "Ver playoffs" : `Ver ${playoffName(false)}`}
     </Link>
   );
 

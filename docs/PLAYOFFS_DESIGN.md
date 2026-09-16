@@ -1,5 +1,12 @@
 # Playoffs — Diseño y estado
 
+> **Nombre (16/09/2026):** en la Liga, los playoffs se llaman **DAVID Cup**
+> (DAVID Cup Apertura, DAVID Cup Clausura), en memoria de David Silva. Las
+> competiciones siguen llamándose «Apertura» y «Clausura» en la base de datos;
+> el nombre visible sale de `frontend/src/lib/playoff-name.ts` y, para el chat,
+> de `backend/src/shared/playoff_name.py`. Para renombrarla se cambian esas dos
+> constantes. Los torneos siguen diciendo «Playoff».
+
 > **Estado (15/09/2026):** en producción con tres formatos.
 > - La **Liga 2026-27** usa `liga_berger_ko8_bo3` para la Apertura y la Clausura.
 > - El **Mundial 2026** usó `balanced_ko4`.
