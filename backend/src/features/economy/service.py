@@ -214,52 +214,104 @@ class EconomyService:
             )
             return 0
 
-        if not await self._points_are_final(matchday_id):
+        due = await self._weekly_due(season_id, matchday_id)
+        if due is None:
             return 0
+        await self._write_weekly(season_id, matchday_id, due)
+        logger.info(
+            "generate_weekly_payments: matchday_id=%d — created %d transactions",
+            matchday_id,
+            len(due),
+        )
+        return len(due)
+
+    async def _weekly_due(self, season_id: int, matchday_id: int) -> dict[int, Decimal] | None:
+        """What this matchday should charge each participant, or None while it
+        cannot be charged at all."""
+        if not await self._can_be_paid(season_id, matchday_id):
+            return None
 
         rankings = await self.repo.get_matchday_rankings(matchday_id)
         if not rankings:
-            return 0
+            return None
         # Every participant on the same points is not a ranking: it is a
         # matchday that has not been scored, and paying it charges everyone the
         # last one's amount.
         if len({row.total_points for row in rankings}) == 1:
             logger.warning(
-                "generate_weekly_payments: matchday_id=%d has every participant on %d points, "
+                "weekly payments: matchday_id=%d has every participant on %d points, "
                 "nothing to rank, skip",
                 matchday_id,
                 rankings[0].total_points,
             )
-            return 0
+            return None
 
         rules = await self._get_weekly_rules(season_id)
         if not rules:
             logger.warning(
-                "generate_weekly_payments: no weekly_position rules for season %d",
+                "weekly payments: no weekly_position rules for season %d",
                 season_id,
             )
-            return 0
+            return None
 
-        pairs = compute_weekly_amounts(rankings, rules)
-        created = 0
-        for participant_id, amount in pairs:
-            if amount > 0:
-                await self.repo.create_transaction(
-                    season_id=season_id,
-                    participant_id=participant_id,
-                    tx_type="weekly_payment",
-                    amount=amount,
-                    description=None,
-                    matchday_id=matchday_id,
-                )
-                created += 1
+        # Only who pays gets a row.
+        return {
+            participant_id: amount
+            for participant_id, amount in compute_weekly_amounts(rankings, rules)
+            if amount > 0
+        }
 
+    async def _write_weekly(
+        self, season_id: int, matchday_id: int, due: dict[int, Decimal]
+    ) -> None:
+        for participant_id, amount in due.items():
+            await self.repo.create_transaction(
+                season_id=season_id,
+                participant_id=participant_id,
+                tx_type="weekly_payment",
+                amount=amount,
+                description=None,
+                matchday_id=matchday_id,
+            )
+
+    async def _can_be_paid(self, season_id: int, matchday_id: int) -> bool:
+        season = await self.season_repo.get_by_id(season_id)
+        if season is not None and not season.weekly_payments_enabled:
+            return False
+        return await self._points_are_final(matchday_id)
+
+    async def weekly_payments_need_redoing(self, season_id: int, matchday_id: int) -> bool:
+        """Whether what this matchday charges differs from what its ranking
+        says it should. Answers without writing, for the close preview — which
+        asks before the close has written the scores, and is told yes then,
+        since that close is going to pay."""
+        if not await self._can_be_paid(season_id, matchday_id):
+            return False
+        if not await self.repo.get_matchday_rankings(matchday_id):
+            return True
+        due = await self._weekly_due(season_id, matchday_id)
+        return due is not None and due != await self.repo.weekly_payments(matchday_id)
+
+    async def sync_weekly_payments(self, season_id: int, matchday_id: int) -> tuple[int, int]:
+        """Make the matchday charge what its ranking says: (removed, written).
+
+        Closing a matchday goes through here, so payments written while its
+        points were still coming in are put right the moment it is closed for
+        real. Payments that already match are left untouched, so closing again
+        moves no money.
+        """
+        due = await self._weekly_due(season_id, matchday_id)
+        if due is None or due == await self.repo.weekly_payments(matchday_id):
+            return 0, 0
+        deleted = await self.repo.delete_weekly_payments(matchday_id)
+        await self._write_weekly(season_id, matchday_id, due)
         logger.info(
-            "generate_weekly_payments: matchday_id=%d — created %d transactions",
+            "sync_weekly_payments: matchday_id=%d — removed %d, wrote %d",
             matchday_id,
-            created,
+            deleted,
+            len(due),
         )
-        return created
+        return deleted, len(due)
 
     async def regenerate_weekly_payments(
         self,
@@ -283,15 +335,28 @@ class EconomyService:
         return await self.generate_weekly_payments(season_id, matchday_id)
 
     async def _points_are_final(self, matchday_id: int) -> bool:
-        """Whether the matchday can be paid: every counting match of it is
-        scraped (``stats_ok``), so the ranking that decides who pays what is
-        the real one. Its status is not read: the seasons brought over from the
-        old site call it "completed" and the new ones "finished"."""
+        """Whether the matchday can be paid: every counting match of it has its
+        result and its player stats, so the ranking that decides who pays what
+        is the real one. A postponed match that still counts holds the whole
+        matchday back until it is played.
+
+        The matchday's own ``stats_ok`` also answers yes, for the seasons
+        brought over from the old site, whose matches carry no such flag. The
+        status is not read: those seasons call it "completed" and the new ones
+        "finished"."""
         matchday = await self.repo.get_matchday(matchday_id)
-        if matchday is None or not matchday.stats_ok:
+        if matchday is None:
+            return False
+        if matchday.stats_ok:
+            return True
+        counting, pending = await self.repo.counting_matches(matchday_id)
+        if counting == 0 or pending:
             logger.info(
-                "weekly payments: matchday_id=%d has no final points yet, not paying",
+                "weekly payments: matchday_id=%d has %d counting match(es), %d still to play or "
+                "scrape, not paying",
                 matchday_id,
+                counting,
+                pending,
             )
             return False
         return True

@@ -8,7 +8,7 @@ from sqlalchemy import case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.shared.models.draft import Draft, DraftPick
-from src.shared.models.matchday import Matchday
+from src.shared.models.matchday import Match, Matchday
 from src.shared.models.participant import SeasonParticipant
 from src.shared.models.score import ParticipantMatchdayScore
 from src.shared.models.transaction import Transaction
@@ -311,6 +311,31 @@ class EconomyRepository:
         )
         result = await self.session.execute(stmt)
         return getattr(result, "rowcount", 0) or 0
+
+    async def counting_matches(self, matchday_id: int) -> tuple[int, int]:
+        """(counting matches, how many of them are still without a result or
+        without their player stats). A postponed match that still counts is one
+        of the pending ones."""
+        result = await self.session.execute(
+            select(
+                func.count(),
+                func.count().filter(Match.stats_ok.is_(False) | Match.home_score.is_(None)),
+            )
+            .select_from(Match)
+            .where(Match.matchday_id == matchday_id, Match.counts.is_(True))
+        )
+        total, pending = result.one()
+        return int(total), int(pending)
+
+    async def weekly_payments(self, matchday_id: int) -> dict[int, Decimal]:
+        """What each participant is charged for this matchday, as it stands."""
+        result = await self.session.execute(
+            select(Transaction.participant_id, Transaction.amount).where(
+                Transaction.matchday_id == matchday_id,
+                Transaction.type == "weekly_payment",
+            )
+        )
+        return {row.participant_id: row.amount for row in result.all()}
 
     async def get_matchday(self, matchday_id: int) -> Matchday | None:
         return await self.session.get(Matchday, matchday_id)

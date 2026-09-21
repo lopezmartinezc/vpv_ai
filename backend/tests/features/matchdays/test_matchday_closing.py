@@ -16,11 +16,14 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import func, select
 
-from src.features.matchdays.closing import MatchdayClosing
+from src.features.matchdays.closing import STEP_PAYMENTS, MatchdayClosing, moves_money
 from src.shared.models.matchday import Match, Matchday
-from src.shared.models.season import Season
+from src.shared.models.participant import SeasonParticipant
+from src.shared.models.score import ParticipantMatchdayScore
+from src.shared.models.season import Season, SeasonPayment
 from src.shared.models.team import Team
 from src.shared.models.transaction import Transaction
+from src.shared.models.user import User
 
 
 @pytest.fixture
@@ -182,6 +185,50 @@ async def test_closing_twice_does_not_pay_twice(db_session, scene) -> None:
     assert "hecho" not in [
         outcomes[k] for k in outcomes if "terminada" in k or "estadísticas completas" in k
     ]
+
+
+async def test_closing_again_when_the_payments_are_already_right_moves_no_money(
+    db_session, scene
+) -> None:
+    """With the payments already the ones the ranking says, the second close
+    leaves them alone — and so does not ask for ECONOMY on top of MATCHDAYS."""
+    season = scene["season"]
+    db_session.add_all(
+        [
+            SeasonPayment(
+                season_id=season.id, payment_type="weekly_position", position_rank=1, amount=0
+            ),
+            SeasonPayment(
+                season_id=season.id, payment_type="weekly_position", position_rank=2, amount=2
+            ),
+        ]
+    )
+    for i, points in enumerate([80, 40]):
+        user = User(username=f"c{i}{season.id}", password_hash="x", display_name=f"C{i}")
+        db_session.add(user)
+        await db_session.flush()
+        part = SeasonParticipant(season_id=season.id, user_id=user.id)
+        db_session.add(part)
+        await db_session.flush()
+        db_session.add(
+            ParticipantMatchdayScore(
+                participant_id=part.id,
+                matchday_id=scene["matchday"].id,
+                total_points=points,
+                ranking=i + 1,
+            )
+        )
+    await db_session.flush()
+
+    first = await MatchdayClosing(db_session).close(season.id, 5, dry_run=False)
+    assert {s.name: s.outcome for s in first.steps}[STEP_PAYMENTS] == "hecho"
+    assert moves_money(first) is True
+    assert await payments(db_session, scene["matchday"].id) == 1
+
+    second = await MatchdayClosing(db_session).close(season.id, 5, dry_run=False)
+    assert {s.name: s.outcome for s in second.steps}[STEP_PAYMENTS] == "ya_estaba"
+    assert moves_money(second) is False
+    assert await payments(db_session, scene["matchday"].id) == 1
 
 
 async def test_the_last_matchday_of_the_season_does_not_advance_past_the_end(
