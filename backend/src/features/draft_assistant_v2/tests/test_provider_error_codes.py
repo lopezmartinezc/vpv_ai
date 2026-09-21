@@ -81,7 +81,6 @@ async def test_anthropic_error_shape_is_read_too(caplog: pytest.LogCaptureFixtur
         return httpx.Response(529, json={"type": "error", "error": {"type": "overloaded_error"}})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        with pytest.raises(AssistantError):
-            with caplog.at_level(logging.WARNING):
-                await Gateway(client, "anthropic", "m").request("s", [])
+        with pytest.raises(AssistantError), caplog.at_level(logging.WARNING):
+            await Gateway(client, "anthropic", "m").request("s", [])
     assert "overloaded_error" in caplog.text

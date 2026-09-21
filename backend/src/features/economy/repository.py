@@ -312,6 +312,9 @@ class EconomyRepository:
         result = await self.session.execute(stmt)
         return getattr(result, "rowcount", 0) or 0
 
+    async def get_matchday(self, matchday_id: int) -> Matchday | None:
+        return await self.session.get(Matchday, matchday_id)
+
     async def get_matchday_rankings(self, matchday_id: int) -> list[MatchdayRankingRow]:
         stmt = (
             select(
