@@ -29,6 +29,9 @@ def compute_weekly_amounts(
     ``rules`` maps position_rank -> amount from season_payments table.
     Positions not in rules default to 0 (no payment).
     Tie adjustment: from worst to best, same points = same (worse) payment.
+    Which is why a matchday whose points are not in yet must never be paid:
+    everyone still at zero ties with the last one and pays his amount, the
+    highest of the table (J6 of 2026-27 charged 2 € to whoever finished first).
     """
     n = len(rankings)
     if n == 0 or not rules:
@@ -211,8 +214,22 @@ class EconomyService:
             )
             return 0
 
+        if not await self._points_are_final(matchday_id):
+            return 0
+
         rankings = await self.repo.get_matchday_rankings(matchday_id)
         if not rankings:
+            return 0
+        # Every participant on the same points is not a ranking: it is a
+        # matchday that has not been scored, and paying it charges everyone the
+        # last one's amount.
+        if len({row.total_points for row in rankings}) == 1:
+            logger.warning(
+                "generate_weekly_payments: matchday_id=%d has every participant on %d points, "
+                "nothing to rank, skip",
+                matchday_id,
+                rankings[0].total_points,
+            )
             return 0
 
         rules = await self._get_weekly_rules(season_id)
@@ -249,7 +266,13 @@ class EconomyService:
         season_id: int,
         matchday_id: int,
     ) -> int:
-        """Delete existing weekly_payment transactions and regenerate from current rankings."""
+        """Delete existing weekly_payment transactions and regenerate from current rankings.
+
+        With the points still coming in, what is there is left alone: deleting
+        it and writing nothing would look like a paid-up matchday.
+        """
+        if not await self._points_are_final(matchday_id):
+            return 0
         deleted = await self.repo.delete_weekly_payments(matchday_id)
         if deleted:
             logger.info(
@@ -258,6 +281,20 @@ class EconomyService:
                 deleted,
             )
         return await self.generate_weekly_payments(season_id, matchday_id)
+
+    async def _points_are_final(self, matchday_id: int) -> bool:
+        """Whether the matchday can be paid: every counting match of it is
+        scraped (``stats_ok``), so the ranking that decides who pays what is
+        the real one. Its status is not read: the seasons brought over from the
+        old site call it "completed" and the new ones "finished"."""
+        matchday = await self.repo.get_matchday(matchday_id)
+        if matchday is None or not matchday.stats_ok:
+            logger.info(
+                "weekly payments: matchday_id=%d has no final points yet, not paying",
+                matchday_id,
+            )
+            return False
+        return True
 
     async def regenerate_all_weekly_payments(
         self,
