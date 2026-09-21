@@ -12,10 +12,12 @@ definition, and gives an administrator two things he did not have: a way to ask
 what state a jornada is in, and a way to close one by hand when the automation is
 stuck — after being shown exactly what that would do.
 
-Re-running is safe, and was already: ``generate_weekly_payments`` skips a matchday
-that already has payments, ``evaluate_matchday`` lets the unique constraint absorb
-duplicates, and the aggregation recomputes from the player rows. So the steps do
-not need protecting; they needed naming, ordering and reporting.
+Re-running is safe: the payments step writes only when what the matchday charges
+differs from what its ranking says (so payments written while the points were
+still coming in are put right on the real close, and a second close moves no
+money), ``evaluate_matchday`` lets the unique constraint absorb duplicates, and
+the aggregation recomputes from the player rows. So the steps do not need
+protecting; they needed naming, ordering and reporting.
 """
 
 from __future__ import annotations
@@ -306,12 +308,30 @@ class MatchdayClosing:
         if season is not None and not season.weekly_payments_enabled:
             return Step(STEP_PAYMENTS, "ya_estaba", "Esta temporada no tiene pagos semanales.")
         existing = await economy.repo.count_weekly_payments(state.matchday_id)
-        if existing > 0:
-            return Step(STEP_PAYMENTS, "ya_estaba", f"Ya tiene {existing} pago(s) generados.")
+        if not await economy.weekly_payments_need_redoing(state.season_id, state.matchday_id):
+            return Step(
+                STEP_PAYMENTS,
+                "ya_estaba",
+                f"Ya tiene {existing} pago(s), y son los que le tocan."
+                if existing
+                else "No hay nada que cobrar en esta jornada.",
+            )
         if dry_run:
-            return Step(STEP_PAYMENTS, "hecho", "Generaría los pagos semanales de esta jornada.")
-        created = await economy.generate_weekly_payments(state.season_id, state.matchday_id)
-        return Step(STEP_PAYMENTS, "hecho", f"Genera {created} pago(s).")
+            return Step(
+                STEP_PAYMENTS,
+                "hecho",
+                "Rehace los pagos semanales de esta jornada."
+                if existing
+                else "Generaría los pagos semanales de esta jornada.",
+            )
+        removed, written = await economy.sync_weekly_payments(state.season_id, state.matchday_id)
+        return Step(
+            STEP_PAYMENTS,
+            "hecho",
+            f"Rehace los pagos: quita {removed} y pone {written}."
+            if removed
+            else f"Genera {written} pago(s).",
+        )
 
     async def _achievements(self, state: MatchdayStatus, dry_run: bool) -> Step:
         if dry_run:
