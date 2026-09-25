@@ -651,7 +651,8 @@ class ScrapingRepository:
             .join(Matchday, Match.matchday_id == Matchday.id)
             .where(Matchday.season_id == season_id, Match.source_id.isnot(None))
         )
-        return {row[0] for row in result.all()}
+        # The query drops them, but the column is nullable: say so here too.
+        return {row[0] for row in result.all() if row[0] is not None}
 
     # ------------------------------------------------------------------
     # CRC persistence (file-based, not in DB) — legacy homepage CRC
