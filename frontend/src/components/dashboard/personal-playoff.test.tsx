@@ -61,7 +61,7 @@ describe("PersonalPlayoff, sized to the moment", () => {
     expect(await screen.findByText("Luis")).toBeInTheDocument();
     expect(screen.getByText(/tu rival:/)).toHaveTextContent("Apertura · Ronda 3 tu rival: Luis");
     expect(screen.queryByText("0 : —")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Ver DAVID Cup" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Ver DAVID SILVA Cup" })).toHaveAttribute(
       "href",
       "/playoffs?season=1",
     );
@@ -183,7 +183,7 @@ describe("PersonalPlayoff, other cases", () => {
       ),
     );
     render(<PersonalPlayoff {...props} />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("No se pudo cargar tu duelo de DAVID Cup");
+    expect(await screen.findByRole("alert")).toHaveTextContent("No se pudo cargar tu duelo de DAVID SILVA Cup");
     expect(screen.queryByText("Luis")).not.toBeInTheDocument();
   });
 
@@ -193,7 +193,7 @@ describe("PersonalPlayoff, other cases", () => {
       vi.fn(async () => new Response("{}", { status: 500 })),
     );
     render(<PersonalPlayoff {...props} />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("No se pudo cargar tu duelo de DAVID Cup");
+    expect(await screen.findByRole("alert")).toHaveTextContent("No se pudo cargar tu duelo de DAVID SILVA Cup");
     serve();
     fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
     expect(await screen.findByText("0 : —")).toBeInTheDocument();

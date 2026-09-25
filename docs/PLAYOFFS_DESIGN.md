@@ -1,7 +1,7 @@
 # Playoffs — Diseño y estado
 
-> **Nombre (16/09/2026):** en la Liga, los playoffs se llaman **DAVID Cup**
-> (DAVID Cup Apertura, DAVID Cup Clausura), en memoria de David Silva. Las
+> **Nombre (16/09/2026):** en la Liga, los playoffs se llaman **DAVID SILVA Cup**
+> (DAVID SILVA Cup Apertura, DAVID SILVA Cup Clausura), en memoria de David Silva. Las
 > competiciones siguen llamándose «Apertura» y «Clausura» en la base de datos;
 > el nombre visible sale de `frontend/src/lib/playoff-name.ts` y, para el chat,
 > de `backend/src/shared/playoff_name.py`. Para renombrarla se cambian esas dos

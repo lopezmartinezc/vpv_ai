@@ -125,7 +125,7 @@ async def test_rival_lineups_show_the_playoff_rival_and_hide_names_by_default(
 ) -> None:
     out = await call(context(db_session, league), "alineaciones_rivales")
     rival = (
-        f"Participante {league.parts['rival'].id} (TU RIVAL DE LA DAVID Cup esta jornada): 1-4-4-2"
+        f"Participante {league.parts['rival'].id} (TU RIVAL DE LA DAVID SILVA Cup esta jornada): 1-4-4-2"
     )
     assert rival in out
     assert "POR Dani Cardenas; DEL Jorge de Frutos" in out
@@ -135,7 +135,7 @@ async def test_rival_lineups_show_the_playoff_rival_and_hide_names_by_default(
     named = await call(
         context(db_session, league, anonymize_participants=False), "alineaciones_rivales"
     )
-    assert "Lucia (TU RIVAL DE LA DAVID Cup" in named
+    assert "Lucia (TU RIVAL DE LA DAVID SILVA Cup" in named
 
 
 async def test_calendar_rules_news_and_history(

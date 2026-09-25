@@ -86,7 +86,7 @@ export default function PlayoffsPage() {
     return <div className="h-8 w-40 animate-pulse rounded bg-vpv-border" />;
   }
 
-  // The Liga's playoffs are the DAVID Cup: its banner goes on top in every
+  // The Liga's playoffs are the DAVID SILVA Cup: its banner goes on top in every
   // state, the Apertura or Clausura being shown under it.
   const name = playoffName(isTournamentContext);
   const hero = selectedSeason && !isTournamentContext && (
