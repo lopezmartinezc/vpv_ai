@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
+import { DeadlineBanner } from "@/features/lineup/deadline-banner";
 import { SeasonLink as Link } from "@/components/ui/season-link";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
@@ -90,12 +91,6 @@ function countsByPosition(
   };
 }
 
-function minutesUntil(isoDate: string | null): number | null {
-  if (!isoDate) return null;
-  const diff = new Date(isoDate).getTime() - Date.now();
-  return diff > 0 ? Math.floor(diff / 60_000) : null;
-}
-
 function formatMatchTime(playedAt: string | null): string {
   if (!playedAt) return "";
   const d = new Date(playedAt);
@@ -129,54 +124,6 @@ function canAddToPosition(
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
-
-function DeadlineBanner({
-  firstMatchAt,
-  deadlineMin,
-}: {
-  firstMatchAt: string | null;
-  deadlineMin: number;
-}) {
-  const [remaining, setRemaining] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (!firstMatchAt) return;
-    const deadlineMs =
-      new Date(firstMatchAt).getTime() - deadlineMin * 60_000;
-    const deadlineIso = new Date(deadlineMs).toISOString();
-    const update = () => setRemaining(minutesUntil(deadlineIso));
-    update();
-    const id = setInterval(update, 30_000);
-    return () => clearInterval(id);
-  }, [firstMatchAt, deadlineMin]);
-
-  if (remaining === null) return null;
-
-  const isUrgent = remaining <= 30;
-  const hours = Math.floor(remaining / 60);
-  const mins = remaining % 60;
-  const label =
-    hours > 0
-      ? `${hours}h ${mins}m`
-      : `${mins} minuto${mins !== 1 ? "s" : ""}`;
-
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      className={`flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium ${
-        isUrgent
-          ? "border-vpv-danger/40 bg-vpv-danger/10 text-vpv-danger"
-          : "border-amber-500/30 bg-amber-500/10 text-amber-400"
-      }`}
-    >
-      <span aria-hidden="true">{isUrgent ? "!" : "\u23F1"}</span>
-      <span>
-        Deadline: <strong>{label}</strong>
-      </span>
-    </div>
-  );
-}
 
 function MatchCards({
   matches,
@@ -598,7 +545,14 @@ function PositionTabs({
 // Main page
 // ---------------------------------------------------------------------------
 
-export default function AlineacionPage() {
+export default function AlineacionPage(): JSX.Element {
+  const { user } = useAuth();
+  const { selectedSeason } = useSeason();
+  const { numero } = useParams<{ numero: string }>();
+  return <LineupEditor key={`${user?.id}:${selectedSeason?.id}:${numero}`} />;
+}
+
+function LineupEditor(): JSX.Element {
   const params = useParams<{ numero: string }>();
   const numero = Number(params.numero);
   const { user, loading: authLoading } = useAuth();
@@ -916,6 +870,7 @@ export default function AlineacionPage() {
     submitting,
     selectedPlayers,
     numero,
+    refetchLineup,
   ]);
 
   // ---------------------------------------------------------------------------
@@ -1010,8 +965,7 @@ export default function AlineacionPage() {
 
       {/* Deadline */}
       <DeadlineBanner
-        firstMatchAt={matchdayData?.first_match_at ?? null}
-        deadlineMin={myLineup.lineup_deadline_min}
+        deadlineAt={matchdayData?.deadline_at ?? null}
       />
 
       {isAdmin && (
