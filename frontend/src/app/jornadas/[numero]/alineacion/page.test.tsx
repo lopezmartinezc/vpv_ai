@@ -23,7 +23,9 @@ vi.mock("@/components/lineup/lineup-intel", () => ({
   coverageByTeam: () => new Map(),
 }));
 vi.mock("@/components/assistant/assistant-panel", () => ({
-  AssistantPanel: () => <input aria-label="Chat draft" defaultValue="" />,
+  AssistantPanel: ({ extraBody }: { extraBody?: Record<string, unknown> }) => (
+    <input aria-label="Chat draft" defaultValue="" data-draft={JSON.stringify(extraBody?.draft)} />
+  ),
 }));
 vi.mock("@/hooks/use-fetch", () => ({
   useFetch: (path: string | null) => ({
@@ -67,6 +69,14 @@ describe("lineup context isolation", () => {
     view.rerender(<Page />);
     expect(screen.queryByText("Selecciona exactamente 11 jugadores")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Chat draft")).toHaveValue("");
+  });
+
+  it("tells the chat the eleven on screen, unsent", () => {
+    render(<Page />);
+    const draft = () => JSON.parse(screen.getByLabelText("Chat draft").getAttribute("data-draft") ?? "null");
+    expect(draft()).toEqual({ formation: null, players: [] });
+    fireEvent.click(screen.getByRole("button", { name: /Goalkeeper/ }));
+    expect(draft()).toEqual({ formation: null, players: [{ player_id: 1, position_slot: "POR" }] });
   });
 
   it("uses the effective deadline instead of kick-off minus margin", () => {

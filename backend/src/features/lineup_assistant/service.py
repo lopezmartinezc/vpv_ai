@@ -10,8 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import settings
 from src.core.exceptions import BusinessRuleError
 from src.features.lineup_assistant.context import LineupContext
+from src.features.lineup_assistant.draft import draft_text, validate_draft
 from src.features.lineup_assistant.optimizer import Valued
-from src.features.lineup_assistant.schemas import SuggestedPlayer, SuggestionResponse
+from src.features.lineup_assistant.schemas import (
+    LineupDraft,
+    SuggestedPlayer,
+    SuggestionResponse,
+)
 from src.features.lineup_assistant.tools import build_tools
 from src.shared.assistant.backends import build_provider
 from src.shared.assistant.providers.base import (
@@ -38,6 +43,9 @@ REGLAS DE LA ALINEACION:
 - 11 jugadores: 1 portero y 10 de campo, en una formacion valida (reglas).
 - Solo puntua quien juega su partido de la jornada.
 - La alineacion se guarda en la pantalla, no aqui: tu propones, el decide.
+- Si la pregunta empieza por "ONCE EN EDICION", eso es lo que tiene ahora en
+  la pantalla sin enviar; el "once guardado" es el ultimo que envio. Opina
+  sobre el que esta editando y distingue siempre los dos.
 - Hay un cierre antes del primer partido que puntua (calendario_jornada).
 
 DE DONDE SALE CADA DATO (dilo siempre al citarlo):
@@ -114,12 +122,18 @@ class LineupAssistantService:
         model: str | None = None,
         provider: AssistantProvider | None = None,
         on_progress: ProgressCallback | None = None,
+        draft: LineupDraft | None = None,
     ) -> AssistantReply:
         question = question.strip()
         if not question:
             raise BusinessRuleError("La pregunta no puede estar vacia")
 
         ctx = self.context(season_id, matchday, user_id)
+        if draft is not None:
+            mine = await ctx.squad()
+            validate_draft(draft, mine)
+            ctx.draft = draft
+            question = f"{draft_text(draft, mine)}\n\n{question}"
         active = provider or build_provider(provider_name, model)
         reply = await active.run(
             system=SYSTEM_PROMPT,

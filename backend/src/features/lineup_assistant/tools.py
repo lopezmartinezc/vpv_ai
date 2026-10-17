@@ -130,9 +130,12 @@ def build_tools(ctx: LineupContext) -> list[ToolSpec]:
         covered = await ctx.p11_coverage()
         current = squad.current_lineup
         in_eleven = {p.player_id for p in current.players} if current else set()
+        in_draft = {p.player_id for p in ctx.draft.players} if ctx.draft else set()
         saved = (
             f"Once guardado: {current.formation}." if current else "Todavia no hay once guardado."
         )
+        if ctx.draft:
+            saved += f" En edicion sin enviar: {len(in_draft)} de 11."
         lines = [
             f"Tu plantilla para la jornada {ctx.matchday} ({len(squad.squad)} jugadores). {saved}",
             "Nombre | Pos | Equipo | Partido | Pts temporada | Ultimas 5 (- no jugo) | "
@@ -164,8 +167,10 @@ def build_tools(ctx: LineupContext) -> list[ToolSpec]:
             flags = []
             if forecast and forecast.is_penalty_taker:
                 flags.append("penaltis")
+            if p.player_id in in_draft:
+                flags.append("EN TU ONCE EN EDICION")
             if p.player_id in in_eleven:
-                flags.append("EN TU ONCE")
+                flags.append("EN TU ONCE GUARDADO")
             lines.append(
                 f"{p.display_name} | {p.position} | {p.team_name} | {match} | {p.season_points} | "
                 f"{form} | {xpts} | {starter} | "
