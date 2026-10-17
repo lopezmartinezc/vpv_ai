@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 # Overridable per provider; the real default lives in settings so it can be
 # raised in production without a deploy.
 DEFAULT_MAX_ITERATIONS = 20
+DEFAULT_MAX_OUTPUT_TOKENS = 2000
 
 
 class OpenAIProvider:
@@ -45,10 +46,12 @@ class OpenAIProvider:
         client: Any,
         model: str,
         max_iterations: int = DEFAULT_MAX_ITERATIONS,
+        max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
     ) -> None:
         self._client = client
         self.model = model
         self._max_iterations = max_iterations
+        self._max_output_tokens = max_output_tokens
 
     async def run(
         self,
@@ -68,6 +71,7 @@ class OpenAIProvider:
                 instructions=system,
                 tools=tool_params,
                 input=items,
+                max_output_tokens=self._max_output_tokens,
             )
 
             output = list(response.output)

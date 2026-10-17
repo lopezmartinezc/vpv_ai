@@ -253,6 +253,17 @@ los acepta como parámetro.
   `proximos_turnos` → `plantilla` → `escasez_posicional` → `buscar_jugadores` en
   las 4 posiciones = 8 llamadas, y se cortaba justo antes de responder. Si vuelve
   a pasar, el mensaje dice qué llegó a consultar y se sube por `.env` sin desplegar.
+- **Presupuesto por pregunta** (`backends.answer`): `ASSISTANT_MAX_OUTPUT_TOKENS`
+  (2000) acota la respuesta; `ASSISTANT_REQUEST_TIMEOUT_SECONDS` (60) cada llamada
+  al proveedor; `ASSISTANT_TIMEOUT_SECONDS` (150) la pregunta entera con todas sus
+  vueltas; `ASSISTANT_MAX_CONCURRENT` (2) cuántas preguntas corren a la vez entre
+  los dos chats. Al pasarse, la pregunta se corta con un mensaje claro ("ha tardado
+  más de N s", "está ocupado") en vez de colgar. Cada turno deja en el log
+  proveedor, modelo, segundos y herramientas.
+- **Catálogo autorizado** (`backends.ensure_model_offered`): el modelo que llega del
+  selector tiene que estar en la lista que el proveedor devuelve para esa clave, o
+  ser el configurado por defecto. Un default que el proveedor no lista no se ofrece
+  en el desplegable y deja un aviso en el log: el `.env` está mal, no el proveedor.
 - **Entrada acotada**: pregunta ≤ 4.000 caracteres, historial ≤ 80 mensajes. Es
   para que un cliente roto no mande un megabyte, no para racionar la conversación.
 - **Límite de gasto** en la consola del proveedor. Es el sitio correcto para un

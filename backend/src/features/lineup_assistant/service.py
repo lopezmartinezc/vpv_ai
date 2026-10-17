@@ -18,7 +18,7 @@ from src.features.lineup_assistant.schemas import (
     SuggestionResponse,
 )
 from src.features.lineup_assistant.tools import build_tools
-from src.shared.assistant.backends import build_provider
+from src.shared.assistant.backends import answer, build_provider, ensure_model_offered
 from src.shared.assistant.providers.base import (
     AssistantProvider,
     AssistantReply,
@@ -137,8 +137,11 @@ class LineupAssistantService:
             validate_draft(draft, mine)
             ctx.draft = draft
             question = f"{draft_text(draft, mine)}\n\n{question}"
+        if provider is None:
+            await ensure_model_offered(provider_name, model)
         active = provider or build_provider(provider_name, model)
-        reply = await active.run(
+        reply = await answer(
+            active,
             system=SYSTEM_PROMPT,
             messages=[
                 *list(history)[-MAX_HISTORY_MESSAGES:],

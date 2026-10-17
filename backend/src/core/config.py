@@ -89,6 +89,13 @@ class Settings(BaseSettings):
     # -> buscar_jugadores per position, so a low cap cuts it off just before it
     # answers. Still bounded, so a model stuck in a loop cannot bleed tokens.
     assistant_max_tool_rounds: int = 20
+    # What one question may cost besides rounds: the answer's length in tokens,
+    # each vendor call in seconds, the whole turn (rounds included) in seconds,
+    # and how many questions may run at once across both chats.
+    assistant_max_output_tokens: int = 2000
+    assistant_request_timeout_seconds: float = 60.0
+    assistant_timeout_seconds: float = 150.0
+    assistant_max_concurrent: int = 2
 
     # Probable starts read from external sites for the lineup assistant.
     # Comma-separated; drop one to stop reading it without a deploy.
