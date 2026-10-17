@@ -98,6 +98,83 @@ describe("AssistantPanel", () => {
   });
 });
 
+function panel(): void {
+  render(<AssistantPanel title="t" endpoint="/e" intro="i" suggestions={["hola"]} placeholder="p" />);
+}
+
+function pending(): (response: Response) => void {
+  let resolve: (response: Response) => void = () => { throw new Error("Not started"); };
+  fetchMock.mockReturnValueOnce(new Promise<Response>((done) => { resolve = done; }));
+  return () => resolve;
+}
+
+describe("controls", () => {
+  it("stops a question in flight and offers to retry it without repeating it", async () => {
+    const resolve = pending();
+    panel();
+    fireEvent.click(screen.getByText("hola"));
+    expect(screen.getByText("Pensando…")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Detener" }));
+    expect((fetchMock.mock.calls[0][1].signal as AbortSignal).aborted).toBe(true);
+    expect(screen.queryByText("Pensando…")).not.toBeInTheDocument();
+    expect(screen.getByText("Respuesta detenida.")).toBeInTheDocument();
+    fetchMock.mockResolvedValueOnce(streamed());
+    fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+    expect(await screen.findByText(DONE.reply)).toBeInTheDocument();
+    expect(screen.getAllByText("hola")).toHaveLength(1);
+    const retried = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+    expect(retried).toMatchObject({ question: "hola", history: [] });
+    void resolve;
+  });
+
+  it("offers to retry after a failure", async () => {
+    fetchMock.mockResolvedValueOnce(new Response('{"message": "Falta la clave"}', { status: 422 }));
+    panel();
+    fireEvent.click(screen.getByText("hola"));
+    expect(await screen.findByText("Falta la clave")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+    expect(await screen.findByText(DONE.reply)).toBeInTheDocument();
+    expect(screen.queryByText("Falta la clave")).not.toBeInTheDocument();
+  });
+
+  it("marks an answer the round cap cut short", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(`event: done\ndata: ${JSON.stringify({ ...DONE, truncated: true })}\n\n`),
+    );
+    panel();
+    fireEvent.click(screen.getByText("hola"));
+    expect(await screen.findByText(DONE.reply)).toBeInTheDocument();
+    expect(screen.getByText(/Respuesta incompleta/)).toBeInTheDocument();
+  });
+
+  it("treats an empty answer as a failure, with retry", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(`event: done\ndata: ${JSON.stringify({ ...DONE, reply: "  " })}\n\n`),
+    );
+    panel();
+    fireEvent.click(screen.getByText("hola"));
+    expect(await screen.findByText("El asistente no ha respondido.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reintentar" })).toBeInTheDocument();
+  });
+
+  it("starts a new conversation, dropping history and any question in flight", async () => {
+    panel();
+    fireEvent.click(screen.getByText("hola"));
+    expect(await screen.findByText(DONE.reply)).toBeInTheDocument();
+    pending();
+    fireEvent.change(screen.getByLabelText("p"), { target: { value: "otra" } });
+    fireEvent.submit(screen.getByLabelText("p").closest("form")!);
+    expect(screen.getByText("Pensando…")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Nueva conversación" }));
+    expect((fetchMock.mock.calls[1][1].signal as AbortSignal).aborted).toBe(true);
+    expect(screen.queryByText(DONE.reply)).not.toBeInTheDocument();
+    expect(screen.queryByText("otra")).not.toBeInTheDocument();
+    expect(screen.getByText("i")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("hola"));
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body as string)).toMatchObject({ history: [] });
+  });
+});
+
 describe("the draft chat", () => {
   it("still asks the draft endpoint with the board's participation model", async () => {
     render(<DraftAssistantPanel seasonId={3} phase="preseason" />);

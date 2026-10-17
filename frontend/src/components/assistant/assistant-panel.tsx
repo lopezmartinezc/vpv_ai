@@ -10,6 +10,8 @@ interface Message {
   content: string;
   tools?: string[];
   model?: string;
+  /** The round cap stopped the model before it finished answering. */
+  truncated?: boolean;
 }
 
 export interface AskResponse {
@@ -82,8 +84,12 @@ export function AssistantPanel({
   // spends its seconds here, so showing it is most of the perceived wait.
   const [progress, setProgress] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // The question that failed or was stopped, so it can be sent again without
+  // being typed (or shown) twice.
+  const [retryable, setRetryable] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const requestRef = useRef<AbortController | null>(null);
+  const questionRef = useRef<string>("");
 
   useEffect(() => () => requestRef.current?.abort(), []);
 
@@ -121,22 +127,56 @@ export function AssistantPanel({
     setModel(next?.default_model || next?.models[0] || "");
   }
 
-  async function send(question: string) {
+  /** Abort the question in flight; the screen settles as if it had failed. */
+  function stop(reason: string | null) {
+    const controller = requestRef.current;
+    if (!controller) return;
+    controller.abort();
+    requestRef.current = null;
+    setLoading(false);
+    setProgress([]);
+    setError(reason);
+    setRetryable(reason ? questionRef.current : null);
+  }
+
+  function reset() {
+    stop(null);
+    setMessages([]);
+    setError(null);
+    setRetryable(null);
+    setInput("");
+  }
+
+  function retry() {
+    const question = retryable;
+    if (!question) return;
+    void send(question, { again: true });
+  }
+
+  async function send(question: string, { again = false } = {}) {
     const trimmed = question.trim();
     if (!trimmed || loading || requestRef.current) return;
     const controller = new AbortController();
     requestRef.current = controller;
+    questionRef.current = trimmed;
 
-    const history = messages.slice(-historyLimit).map((m) => ({
+    // A retry re-sends the last message already on screen, so the history is
+    // everything before it and it is not shown twice.
+    const prior =
+      again && messages[messages.length - 1]?.role === "user"
+        ? messages.slice(0, -1)
+        : messages;
+    const history = prior.slice(-historyLimit).map((m) => ({
       role: m.role,
       content: m.content,
     }));
 
-    setMessages((prev) => [...prev, { role: "user", content: trimmed }]);
+    if (!again) setMessages((prev) => [...prev, { role: "user", content: trimmed }]);
     setInput("");
     setLoading(true);
     setProgress([]);
     setError(null);
+    setRetryable(null);
 
     try {
       // Streamed over SSE by hand: EventSource cannot POST a body or carry
@@ -182,6 +222,12 @@ export function AssistantPanel({
       }
       if (controller.signal.aborted) return;
       if (!res) throw new Error("stream ended without a reply");
+      if (!res.reply.trim()) {
+        throw new ApiClientError(502, {
+          code: "EMPTY",
+          message: "El asistente no ha respondido.",
+        });
+      }
 
       setMessages((prev) => [
         ...prev,
@@ -190,6 +236,7 @@ export function AssistantPanel({
           content: res!.reply,
           tools: res!.tool_calls.map((t) => t.name),
           model: `${PROVIDER_LABEL[res!.provider] ?? res!.provider} · ${res!.model}`,
+          truncated: res!.truncated,
         },
       ]);
       onReply?.(res);
@@ -200,6 +247,7 @@ export function AssistantPanel({
           ? err.error.message
           : "No he podido contactar con el asistente.";
       setError(message);
+      setRetryable(trimmed);
     } finally {
       requestRef.current = null;
       if (!controller.signal.aborted) {
@@ -285,6 +333,11 @@ export function AssistantPanel({
               }
             >
               <p className="whitespace-pre-wrap">{m.content}</p>
+              {m.truncated && (
+                <p className="mt-1 text-[11px] text-amber-400">
+                  Respuesta incompleta: el asistente agotó las consultas permitidas.
+                </p>
+              )}
               {m.role === "assistant" && (m.model || m.tools?.length) && (
                 <p className="mt-1 text-[10px] text-vpv-text-muted">
                   {m.model}
@@ -298,7 +351,7 @@ export function AssistantPanel({
           ))}
 
           {loading && (
-            <div className="text-xs text-vpv-text-muted">
+            <div className="flex items-center justify-between gap-2 text-xs text-vpv-text-muted">
               {progress.length === 0 ? (
                 <p>Pensando…</p>
               ) : (
@@ -314,9 +367,29 @@ export function AssistantPanel({
                   )}
                 </p>
               )}
+              <button
+                type="button"
+                onClick={() => stop("Respuesta detenida.")}
+                className="shrink-0 rounded-md border border-vpv-card-border px-2 py-0.5 text-vpv-text-muted hover:text-vpv-text"
+              >
+                Detener
+              </button>
             </div>
           )}
-          {error && <p className="text-xs text-red-400">{error}</p>}
+          {error && (
+            <p className="flex items-center gap-2 text-xs text-red-400">
+              <span>{error}</span>
+              {retryable && (
+                <button
+                  type="button"
+                  onClick={retry}
+                  className="rounded-md border border-vpv-card-border px-2 py-0.5 text-vpv-text-muted hover:text-vpv-text"
+                >
+                  Reintentar
+                </button>
+              )}
+            </p>
+          )}
           <div ref={endRef} />
         </div>
 
@@ -343,6 +416,15 @@ export function AssistantPanel({
             Enviar
           </button>
         </form>
+        {(messages.length > 0 || loading) && (
+          <button
+            type="button"
+            onClick={reset}
+            className="mt-2 text-xs text-vpv-text-muted hover:text-vpv-text"
+          >
+            Nueva conversación
+          </button>
+        )}
       </div>
     </details>
   );
