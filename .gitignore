@@ -66,3 +66,7 @@ backend/static/
 
 # Sensitive config files
 claude_data/telegram/_conn.ini
+
+# Key material (JWT signing keys live outside the repo)
+*.pem
+*.key

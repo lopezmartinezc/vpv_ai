@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type JSX } from "react";
 
 import { API_BASE_URL, apiClient, ApiClientError } from "@/lib/api-client";
 import { readSse } from "@/lib/sse";
@@ -66,7 +66,7 @@ export function AssistantPanel({
   placeholder,
   extraBody,
   historyLimit = 80,
-}: AssistantPanelProps) {
+}: AssistantPanelProps): JSX.Element {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [provider, setProvider] = useState<string>("");
   const [model, setModel] = useState<string>("");
@@ -78,6 +78,9 @@ export function AssistantPanel({
   const [progress, setProgress] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const requestRef = useRef<AbortController | null>(null);
+
+  useEffect(() => () => requestRef.current?.abort(), []);
 
   // Which backends have a key, and what models each one offers. Shared by
   // every chat; model lists come live from the vendor.
@@ -115,7 +118,9 @@ export function AssistantPanel({
 
   async function send(question: string) {
     const trimmed = question.trim();
-    if (!trimmed || loading) return;
+    if (!trimmed || loading || requestRef.current) return;
+    const controller = new AbortController();
+    requestRef.current = controller;
 
     const history = messages.slice(-historyLimit).map((m) => ({
       role: m.role,
@@ -137,6 +142,7 @@ export function AssistantPanel({
       if (token) headers["Authorization"] = `Bearer ${token}`;
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: "POST",
+        signal: controller.signal,
         headers,
         body: JSON.stringify({
           question: trimmed,
@@ -158,6 +164,7 @@ export function AssistantPanel({
 
       let res: AskResponse | null = null;
       for await (const frame of readSse(response)) {
+        if (controller.signal.aborted) return;
         if (frame.event === "tool") {
           const { name } = JSON.parse(frame.data) as { name: string };
           setProgress((prev) => [...prev, name]);
@@ -168,6 +175,7 @@ export function AssistantPanel({
           throw new ApiClientError(500, { code: "ASSISTANT", message });
         }
       }
+      if (controller.signal.aborted) return;
       if (!res) throw new Error("stream ended without a reply");
 
       setMessages((prev) => [
@@ -180,17 +188,21 @@ export function AssistantPanel({
         },
       ]);
     } catch (err) {
+      if (controller.signal.aborted) return;
       const message =
         err instanceof ApiClientError
           ? err.error.message
           : "No he podido contactar con el asistente.";
       setError(message);
     } finally {
-      setLoading(false);
-      setProgress([]);
-      requestAnimationFrame(() =>
-        endRef.current?.scrollIntoView({ behavior: "smooth" }),
-      );
+      requestRef.current = null;
+      if (!controller.signal.aborted) {
+        setLoading(false);
+        setProgress([]);
+        requestAnimationFrame(() =>
+          endRef.current?.scrollIntoView({ behavior: "smooth" }),
+        );
+      }
     }
   }
 

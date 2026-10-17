@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AssistantPanel } from "./assistant-panel";
@@ -44,6 +44,22 @@ function sentBody(): Record<string, unknown> {
 }
 
 describe("AssistantPanel", () => {
+  it("aborts a pending request on unmount and ignores its late answer", async () => {
+    let resolve: (response: Response) => void = () => { throw new Error("Not started"); };
+    fetchMock.mockReturnValue(new Promise<Response>((done) => { resolve = done; }));
+    const view = render(<AssistantPanel title="t" endpoint="/old" intro="i"
+      suggestions={["hola"]} placeholder="p" />);
+    fireEvent.click(screen.getByText("hola"));
+    const signal = fetchMock.mock.calls[0][1].signal as AbortSignal;
+    expect(signal.aborted).toBe(false);
+    view.unmount();
+    expect(signal.aborted).toBe(true);
+    render(<AssistantPanel title="t" endpoint="/new" intro="i"
+      suggestions={["hola"]} placeholder="p" />);
+    await act(async () => { resolve(streamed()); });
+    expect(screen.queryByText(DONE.reply)).not.toBeInTheDocument();
+  });
+
   it("asks the endpoint it is given, with its extra fields, and shows the answer", async () => {
     render(
       <AssistantPanel
