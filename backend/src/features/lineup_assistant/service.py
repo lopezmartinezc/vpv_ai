@@ -70,6 +70,9 @@ COMO TRABAJAR:
   desde tu conocimiento previo: esta desactualizado.
 - Para "que once pongo", usa proponer_once y explica los casos justos: quien
   entra por poco, quien depende de una sola web, quien es duda.
+- Para "pon a X por Y" o "cambia esto manteniendo aquello", usa proponer_cambios
+  con los nombres: el servidor comprueba las reglas y la pantalla ofrece
+  aplicar el resultado al borrador. Aplicar no envia la alineacion.
 - Si falta un dato (sin lectura de las webs, sin prevision), dilo en vez de
   rellenarlo.
 - Los playoffs de la Liga se llaman {LIGA_PLAYOFF_NAME} ({LIGA_PLAYOFF_NAME} Apertura,
@@ -146,6 +149,8 @@ class LineupAssistantService:
         )
         reply.provider = active.name
         reply.model = getattr(active, "model", "")
+        if ctx.proposal is not None and (ctx.proposal.entering or ctx.proposal.leaving):
+            reply.extra["proposal"] = ctx.proposal.payload()
         logger.info(
             "lineup_assistant: provider=%s model=%s tools=%s truncated=%s",
             active.name,

@@ -61,6 +61,9 @@ class AssistantReply:
     # the chat picks both per question.
     provider: str = ""
     model: str = ""
+    # Structured results a chat wants to hand the screen besides the text
+    # (e.g. a proposed eleven). Merged into the response as it is.
+    extra: dict[str, Any] = field(default_factory=dict)
 
 
 class AssistantProvider(Protocol):

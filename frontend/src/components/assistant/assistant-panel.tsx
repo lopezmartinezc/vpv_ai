@@ -12,12 +12,14 @@ interface Message {
   model?: string;
 }
 
-interface AskResponse {
+export interface AskResponse {
   reply: string;
   provider: string;
   model: string;
   tool_calls: { name: string; arguments: Record<string, unknown> }[];
   truncated: boolean;
+  /** Anything else the chat's backend adds, e.g. a proposed eleven. */
+  [extra: string]: unknown;
 }
 
 interface ProviderInfo {
@@ -50,6 +52,8 @@ export interface AssistantPanelProps {
   extraBody?: Record<string, unknown>;
   /** Messages of history sent with each question. */
   historyLimit?: number;
+  /** Called with every full answer, for the screen to pick up structured results. */
+  onReply?: (res: AskResponse) => void;
 }
 
 /**
@@ -66,6 +70,7 @@ export function AssistantPanel({
   placeholder,
   extraBody,
   historyLimit = 80,
+  onReply,
 }: AssistantPanelProps): JSX.Element {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [provider, setProvider] = useState<string>("");
@@ -187,6 +192,7 @@ export function AssistantPanel({
           model: `${PROVIDER_LABEL[res!.provider] ?? res!.provider} · ${res!.model}`,
         },
       ]);
+      onReply?.(res);
     } catch (err) {
       if (controller.signal.aborted) return;
       const message =
