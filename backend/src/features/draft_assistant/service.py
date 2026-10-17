@@ -11,7 +11,7 @@ from src.core.config import settings
 from src.core.exceptions import BusinessRuleError
 from src.features.draft_assistant.board_tools import AssistantContext, build_tools
 from src.features.stats.participation import ParticipationModel
-from src.shared.assistant.backends import build_provider
+from src.shared.assistant.backends import answer, build_provider, ensure_model_offered
 from src.shared.assistant.providers.base import (
     AssistantProvider,
     AssistantReply,
@@ -156,13 +156,16 @@ class DraftAssistantService:
             anonymize_participants=settings.assistant_anonymize_participants,
             participation_model=participation_model,
         )
+        if provider is None:
+            await ensure_model_offered(provider_name, model)
         active = provider or build_provider(provider_name, model)
         messages = [
             *list(history)[-MAX_HISTORY_MESSAGES:],
             ChatMessage(role="user", content=question),
         ]
 
-        reply = await active.run(
+        reply = await answer(
+            active,
             system=SYSTEM_PROMPT,
             messages=messages,
             tools=build_tools(ctx),
