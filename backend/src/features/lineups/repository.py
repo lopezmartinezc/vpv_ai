@@ -48,12 +48,25 @@ class LineupRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_participant_player_ids(self, participant_id: int) -> set[int]:
-        stmt = select(Player.id).where(
-            Player.owner_id == participant_id,
+    async def get_participant(
+        self, season_id: int, participant_id: int
+    ) -> SeasonParticipant | None:
+        stmt = select(SeasonParticipant).where(
+            SeasonParticipant.id == participant_id,
+            SeasonParticipant.season_id == season_id,
         )
         result = await self.session.execute(stmt)
-        return set(result.scalars().all())
+        return result.scalar_one_or_none()
+
+    async def get_squad_positions(self, participant_id: int) -> dict[int, str]:
+        """player_id -> position for every player the participant owns.
+
+        ``players.position`` is the VPV position frozen at the draft, the one
+        a lineup slot has to match.
+        """
+        stmt = select(Player.id, Player.position).where(Player.owner_id == participant_id)
+        result = await self.session.execute(stmt)
+        return {row.id: row.position for row in result.all()}
 
     async def get_lineup(self, participant_id: int, matchday_id: int) -> Lineup | None:
         stmt = select(Lineup).where(

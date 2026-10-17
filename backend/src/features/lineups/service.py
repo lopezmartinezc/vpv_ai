@@ -172,8 +172,8 @@ class LineupService:
         # 4. Validate positions match formation
         self._validate_positions(data.players, vf)
 
-        # 5. Validate player ownership
-        await self._validate_ownership(participant.id, data.players)
+        # 5. Validate player ownership and that each slot is the player's position
+        await self._validate_squad(participant.id, data.players)
 
         # 6. Validate no duplicate players
         self._validate_no_duplicates(data.players)
@@ -674,15 +674,25 @@ class LineupService:
                 f"esperado {expected}, recibido {counts}"
             )
 
-    async def _validate_ownership(
-        self, participant_id: int, players: list[LineupPlayerSlot]
-    ) -> None:
-        """Validate all players belong to the participant's squad."""
-        owned = await self.repo.get_participant_player_ids(participant_id)
-        submitted = {p.player_id for p in players}
-        not_owned = submitted - owned
+    async def _validate_squad(self, participant_id: int, players: list[LineupPlayerSlot]) -> None:
+        """Every player is the participant's, and lines up in his own position.
+
+        The slot counts already match the formation; without this check a
+        hand-built request could call a forward a defender and field four
+        forwards. The position is the server's (frozen at the draft), never
+        the request's.
+        """
+        positions = await self.repo.get_squad_positions(participant_id)
+        not_owned = {p.player_id for p in players} - positions.keys()
         if not_owned:
             raise BusinessRuleError(f"Jugadores no pertenecen a tu plantilla: {not_owned}")
+        misplaced = {
+            p.player_id: f"{p.position_slot} (es {positions[p.player_id]})"
+            for p in players
+            if p.position_slot != positions[p.player_id]
+        }
+        if misplaced:
+            raise BusinessRuleError(f"Jugadores fuera de su posicion: {misplaced}")
 
     def _validate_no_duplicates(self, players: list[LineupPlayerSlot]) -> None:
         ids = [p.player_id for p in players]
@@ -792,15 +802,16 @@ class LineupService:
         if matchday is None:
             raise NotFoundError("Jornada", matchday_number)
 
-        # Validate formation
+        participant = await self.repo.get_participant(season_id, participant_id)
+        if participant is None:
+            raise NotFoundError("Participante", f"id={participant_id}, season={season_id}")
+
+        # Same rules as the owner's own submission, minus the deadline
         vf = await self.repo.get_valid_formation(data.formation)
         if vf is None:
             raise BusinessRuleError(f"Formacion invalida: {data.formation}")
-
-        # Validate positions match formation
         self._validate_positions(data.players, vf)
-
-        # Validate no duplicates
+        await self._validate_squad(participant.id, data.players)
         self._validate_no_duplicates(data.players)
 
         # Get old total points
