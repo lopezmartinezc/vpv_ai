@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from functools import partial
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -137,11 +138,12 @@ class LineupAssistantService:
             validate_draft(draft, mine)
             ctx.draft = draft
             question = f"{draft_text(draft, mine)}\n\n{question}"
-        if provider is None:
-            await ensure_model_offered(provider_name, model)
         active = provider or build_provider(provider_name, model)
         reply = await answer(
             active,
+            prepare=partial(ensure_model_offered, provider_name, model)
+            if provider is None
+            else None,
             system=SYSTEM_PROMPT,
             messages=[
                 *list(history)[-MAX_HISTORY_MESSAGES:],

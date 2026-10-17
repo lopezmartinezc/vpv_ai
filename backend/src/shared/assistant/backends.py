@@ -11,19 +11,14 @@ import json
 import logging
 import re
 import time
-from collections.abc import Sequence
 
 from src.core.config import settings
 from src.core.exceptions import BusinessRuleError
+from src.shared.assistant.execution import _reset_budget as _reset_budget
+from src.shared.assistant.execution import answer as answer
 from src.shared.assistant.providers.anthropic_provider import AnthropicProvider
-from src.shared.assistant.providers.base import (
-    AssistantProvider,
-    AssistantReply,
-    ChatMessage,
-    ProgressCallback,
-)
+from src.shared.assistant.providers.base import AssistantProvider
 from src.shared.assistant.providers.openai_provider import OpenAIProvider
-from src.shared.assistant.tools import ToolSpec
 
 logger = logging.getLogger(__name__)
 
@@ -105,24 +100,26 @@ def _usable_openai_model(model_id: str) -> bool:
 
 
 async def _vendor_model_ids(provider: str, key: str) -> list[str]:
-    """What the vendor says the key can use. Raises on any failure."""
+    """Fetch with a short timeout, no retries, and a closed SDK client."""
+    timeout = settings.assistant_request_timeout_seconds
     if provider == "anthropic":
         import anthropic
 
-        claude_page = await anthropic.AsyncAnthropic(api_key=key).models.list(limit=100)
-        return [m.id for m in claude_page.data]
+        async with anthropic.AsyncAnthropic(api_key=key, timeout=timeout, max_retries=0) as client:
+            claude_page = await client.models.list(limit=100)
+            return [m.id for m in claude_page.data]
     import openai
 
-    gpt_page = await openai.AsyncOpenAI(api_key=key).models.list()
-    return sorted({m.id for m in gpt_page.data if _usable_openai_model(m.id)})
+    async with openai.AsyncOpenAI(api_key=key, timeout=timeout, max_retries=0) as gpt:
+        gpt_page = await gpt.models.list()
+        return sorted({m.id for m in gpt_page.data if _usable_openai_model(m.id)})
 
 
 async def _catalogue(provider: str) -> tuple[list[str], list[str]]:
     """(what the vendor listed, what the dropdown offers), cached.
 
-    Never raises: if the vendor call fails (no network, revoked key, changed
-    endpoint) the dropdown falls back to the configured default, which is the
-    one thing known to work. A broken model list must not break the chat.
+    On failure only, offer the configured default as an unverified fallback.
+    A successful empty list authorizes no models.
     """
     default = default_model_for(provider)
     key = _key_for(provider)
@@ -134,13 +131,23 @@ async def _catalogue(provider: str) -> tuple[list[str], list[str]]:
     if cached is not None and now - cached[0] < MODELS_TTL_SECONDS:
         return cached[1], cached[2]
 
+    listed, offered = await _fetch_catalogue(provider, key, default)
+    _MODELS_CACHE[provider] = (now, listed, offered)
+    return listed, offered
+
+
+async def _fetch_catalogue(provider: str, key: str, default: str) -> tuple[list[str], list[str]]:
     listed: list[str] = []
+    failed = False
     try:
-        listed = await _vendor_model_ids(provider, key)
+        listed = await asyncio.wait_for(
+            _vendor_model_ids(provider, key), timeout=settings.assistant_request_timeout_seconds
+        )
     except Exception:
+        failed = True
         logger.warning("assistant: could not list %s models", provider, exc_info=True)
 
-    if not listed:
+    if failed:
         offered = [default] if default else []
     elif default in listed:
         offered = [default] + [m for m in listed if m != default]
@@ -151,7 +158,6 @@ async def _catalogue(provider: str) -> tuple[list[str], list[str]]:
             "assistant: configured %s model %r is not in the vendor's list", provider, default
         )
         offered = list(listed)
-    _MODELS_CACHE[provider] = (now, listed, offered)
     return listed, offered
 
 
@@ -162,19 +168,13 @@ async def list_models(provider: str) -> list[str]:
 
 
 async def ensure_model_offered(provider: str | None, model: str | None) -> None:
-    """Refuse a model the vendor did not list for this key.
-
-    The configured default always passes: it is the operator's choice, and the
-    one thing that works when the vendor list cannot be fetched.
-    """
-    chosen = clean_setting(model)
-    if not chosen:
-        return
+    """Only a catalogue outage permits an unverified configured default."""
     name = clean_setting(provider or settings.assistant_provider).lower()
-    if chosen == default_model_for(name):
-        return
-    listed, _ = await _catalogue(name)
-    if chosen not in listed:
+    if name not in PROVIDERS:
+        raise BusinessRuleError("Proveedor no valido")
+    chosen = clean_setting(model) or default_model_for(name)
+    _, offered = await _catalogue(name)
+    if chosen not in offered:
         raise BusinessRuleError(f"Modelo no disponible para {name}: {chosen!r}")
 
 
@@ -219,77 +219,8 @@ def build_provider(name: str | None = None, model: str | None = None) -> Assista
         client=openai.AsyncOpenAI(api_key=key, timeout=timeout),
         model=chosen,
         max_iterations=settings.assistant_max_tool_rounds,
-        max_output_tokens=settings.assistant_max_output_tokens,
+        max_output_tokens=settings.assistant_openai_max_output_tokens,
     )
-
-
-# Questions in flight across both chats. Created lazily so a settings change
-# in tests (or a different event loop) is honoured.
-_budget: asyncio.Semaphore | None = None
-_budget_size = 0
-
-
-def _reset_budget() -> None:
-    global _budget, _budget_size
-    _budget, _budget_size = None, 0
-
-
-def _slots() -> asyncio.Semaphore:
-    global _budget, _budget_size
-    size = max(1, settings.assistant_max_concurrent)
-    if _budget is None or _budget_size != size:
-        _budget, _budget_size = asyncio.Semaphore(size), size
-    return _budget
-
-
-async def answer(
-    provider: AssistantProvider,
-    *,
-    system: str,
-    messages: Sequence[ChatMessage],
-    tools: Sequence[ToolSpec],
-    on_progress: ProgressCallback | None = None,
-) -> AssistantReply:
-    """One turn under the budget: at most ASSISTANT_MAX_CONCURRENT at once,
-    and the whole turn (every round included) within ASSISTANT_TIMEOUT_SECONDS.
-
-    A question over the limit is refused at once rather than queued: in a chat
-    a clear "busy, try again" beats an answer that arrives a minute late.
-    """
-    slots = _slots()
-    if slots.locked():
-        raise BusinessRuleError(
-            "El asistente esta ocupado con otras preguntas. Prueba en unos segundos."
-        )
-    started = time.monotonic()
-    async with slots:
-        try:
-            reply = await asyncio.wait_for(
-                provider.run(
-                    system=system, messages=messages, tools=tools, on_progress=on_progress
-                ),
-                timeout=settings.assistant_timeout_seconds,
-            )
-        except TimeoutError:
-            logger.warning(
-                "assistant: %s/%s gave up after %.0fs",
-                provider.name,
-                getattr(provider, "model", ""),
-                settings.assistant_timeout_seconds,
-            )
-            raise BusinessRuleError(
-                f"El asistente ha tardado mas de {settings.assistant_timeout_seconds:.0f} s "
-                "y se ha cortado. Prueba una pregunta mas concreta."
-            ) from None
-    logger.info(
-        "assistant: %s/%s answered in %.1fs after %d tool calls%s",
-        provider.name,
-        getattr(provider, "model", ""),
-        time.monotonic() - started,
-        len(reply.tool_calls),
-        " (truncated)" if reply.truncated else "",
-    )
-    return reply
 
 
 def sse_line(event: str, data: dict[str, object]) -> str:

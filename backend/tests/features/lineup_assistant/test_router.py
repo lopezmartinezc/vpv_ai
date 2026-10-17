@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from httpx import AsyncClient
@@ -41,6 +42,7 @@ def chat(league: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> SimpleName
     monkeypatch.setattr(LineupContext, "predictions", predictions)
     monkeypatch.setattr(settings, "assistant_enabled", True)
     monkeypatch.setattr(lineup_service, "build_provider", lambda *a, **k: FakeProvider())
+    monkeypatch.setattr(lineup_service, "ensure_model_offered", AsyncMock())
     base = f"/api/lineup-assistant/{league.season.id}/6"
     return SimpleNamespace(base=base, admin=token(league.me))
 

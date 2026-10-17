@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from urllib.parse import quote_plus
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -93,6 +93,8 @@ class Settings(BaseSettings):
     # each vendor call in seconds, the whole turn (rounds included) in seconds,
     # and how many questions may run at once across both chats.
     assistant_max_output_tokens: int = 2000
+    # OpenAI counts reasoning and visible text together; do not use a prose-only budget.
+    assistant_openai_max_output_tokens: int = Field(default=8000, ge=1, le=32768)
     assistant_request_timeout_seconds: float = 60.0
     assistant_timeout_seconds: float = 150.0
     assistant_max_concurrent: int = 2

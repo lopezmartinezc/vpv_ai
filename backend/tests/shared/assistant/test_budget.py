@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -58,7 +59,7 @@ async def test_a_default_the_vendor_does_not_list_is_not_offered(
 async def test_without_a_vendor_list_the_default_is_all_there_is(
     keys: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(backends, "_vendor_model_ids", vendor({}))
+    monkeypatch.setattr(backends, "_vendor_model_ids", AsyncMock(side_effect=TimeoutError))
     assert await list_models("openai") == ["gpt-5"]
 
 
@@ -72,17 +73,18 @@ async def test_a_model_the_vendor_did_not_list_is_refused(
         await ensure_model_offered("openai", "gpt-9-astra")
 
 
-async def test_the_configured_default_is_always_allowed(
+async def test_the_configured_default_must_be_listed(
     keys: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(backends, "_vendor_model_ids", vendor({"openai": ["gpt-5-mini"]}))
-    await ensure_model_offered("openai", "gpt-5")
+    with pytest.raises(BusinessRuleError, match="no disponible"):
+        await ensure_model_offered("openai", "gpt-5")
 
 
 async def test_without_a_vendor_list_only_the_default_is_allowed(
     keys: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(backends, "_vendor_model_ids", vendor({}))
+    monkeypatch.setattr(backends, "_vendor_model_ids", AsyncMock(side_effect=TimeoutError))
     await ensure_model_offered("openai", "gpt-5")
     with pytest.raises(BusinessRuleError, match="no disponible"):
         await ensure_model_offered("openai", "gpt-5-mini")
@@ -95,10 +97,11 @@ def test_providers_are_built_with_the_output_budget_and_request_timeout(
     keys: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(settings, "assistant_max_output_tokens", 1234)
+    monkeypatch.setattr(settings, "assistant_openai_max_output_tokens", 5678)
     monkeypatch.setattr(settings, "assistant_request_timeout_seconds", 7.0)
     oai = build_provider("openai")
     ant = build_provider("anthropic")
-    assert oai._max_output_tokens == 1234
+    assert oai._max_output_tokens == 5678
     assert ant._max_tokens == 1234
     assert oai._client.timeout == 7.0
     assert ant._client.timeout == 7.0

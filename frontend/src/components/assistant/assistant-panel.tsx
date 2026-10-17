@@ -106,7 +106,11 @@ export function AssistantPanel({
           res.providers.find((p) => p.name === res.default) ?? res.providers[0];
         if (initial) {
           setProvider(initial.name);
-          setModel(initial.default_model || initial.models[0] || "");
+          setModel(
+            initial.models.includes(initial.default_model)
+              ? initial.default_model
+              : initial.models[0] || "",
+          );
         }
       })
       .catch(() => {
@@ -124,7 +128,11 @@ export function AssistantPanel({
     setProvider(name);
     // Models do not carry across vendors — reset to that provider's default.
     const next = providers.find((p) => p.name === name);
-    setModel(next?.default_model || next?.models[0] || "");
+    setModel(
+      next?.models.includes(next.default_model)
+        ? next.default_model
+        : next?.models[0] || "",
+    );
   }
 
   /** Abort the question in flight; the screen settles as if it had failed. */
@@ -249,7 +257,7 @@ export function AssistantPanel({
       setError(message);
       setRetryable(trimmed);
     } finally {
-      requestRef.current = null;
+      if (requestRef.current === controller) requestRef.current = null;
       if (!controller.signal.aborted) {
         setLoading(false);
         setProgress([]);

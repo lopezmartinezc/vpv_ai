@@ -14,7 +14,6 @@ from src.features.stats.participation import ParticipationModel
 from src.shared.assistant.backends import (
     available_providers,
     clean_setting,
-    default_model_for,
     list_models,
 )
 from src.shared.assistant.endpoint import stream_answer
@@ -178,8 +177,8 @@ async def providers(
         providers=[
             ProviderInfo(
                 name=name,
-                models=await list_models(name),
-                default_model=default_model_for(name),
+                models=(models := await list_models(name)),
+                default_model=models[0] if models else "",
             )
             for name in names
         ],

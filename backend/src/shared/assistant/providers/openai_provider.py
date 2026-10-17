@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 # Overridable per provider; the real default lives in settings so it can be
 # raised in production without a deploy.
 DEFAULT_MAX_ITERATIONS = 20
-DEFAULT_MAX_OUTPUT_TOKENS = 2000
+DEFAULT_MAX_OUTPUT_TOKENS = 8000
 
 
 class OpenAIProvider:
@@ -74,6 +74,13 @@ class OpenAIProvider:
                 max_output_tokens=self._max_output_tokens,
             )
 
+            if getattr(response, "status", None) == "incomplete":
+                return AssistantReply(
+                    text=(response.output_text or "").strip()
+                    or "La respuesta se ha interrumpido antes de completarse. Prueba una pregunta mas concreta.",
+                    tool_calls=trace,
+                    truncated=True,
+                )
             output = list(response.output)
             calls = [o for o in output if getattr(o, "type", None) == "function_call"]
             if not calls:
