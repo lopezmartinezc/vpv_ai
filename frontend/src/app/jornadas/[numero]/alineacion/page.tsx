@@ -2,6 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
 import { DeadlineBanner } from "@/features/lineup/deadline-banner";
+import { MatchCards } from "@/features/lineup/match-cards";
+import { PlayerCard } from "@/features/lineup/player-card";
+import { PositionTabs } from "@/features/lineup/position-tabs";
+import {
+  POSITION_LABELS,
+  POSITION_ORDER,
+  canAddToPosition,
+  countsByPosition,
+  type Position,
+} from "@/features/lineup/positions";
 import {
   ProposalCard,
   isLineupProposal,
@@ -13,13 +23,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { useSeason } from "@/contexts/season-context";
 import { useFetch } from "@/hooks/use-fetch";
 import { apiClient, ApiClientError } from "@/lib/api-client";
-import {
-  DIFFICULTY_STYLE,
-  difficultyTitle,
-  fixtureDifficulty,
-  type OpponentStrength,
-} from "@/lib/fixture-difficulty";
-import { PlayerAvatar } from "@/components/ui/player-avatar";
+import { type OpponentStrength } from "@/lib/fixture-difficulty";
 import { PitchView } from "@/components/ui/pitch-view";
 import type { PitchPlayer } from "@/components/ui/pitch-view";
 import { SkeletonTable } from "@/components/ui/skeleton";
@@ -27,22 +31,17 @@ import { AssistantPanel, type AskResponse } from "@/components/assistant/assista
 import { LIGA_PLAYOFF_NAME } from "@/lib/playoff-name";
 import {
   LineupAdminBar,
-  SourceBadges,
   SuggestionPanel,
   applySuggestion,
   readingsByPlayer,
   coverageByTeam,
   type LineupIntelResponse,
-  type SourceCoverage,
-  type SourceReading,
   type SuggestionResponse,
 } from "@/components/lineup/lineup-intel";
 import type {
   MatchdayDetailResponse,
-  MatchEntry,
   MyLineupResponse,
   PlayerPrediction,
-  PlayerRecentForm,
   PredictionsResponse,
   SquadPlayerEntry,
   ValidFormation,
@@ -57,494 +56,12 @@ interface LineupSubmitBody {
   players: { player_id: number; position_slot: string }[];
 }
 
-const POSITION_ORDER = ["POR", "DEF", "MED", "DEL"] as const;
-type Position = (typeof POSITION_ORDER)[number];
-
-const POSITION_LABELS: Record<Position, string> = {
-  POR: "Porteros",
-  DEF: "Defensas",
-  MED: "Centrocampistas",
-  DEL: "Delanteros",
-};
-
 const LINEUP_SUGGESTIONS = [
   "Propón mi once y explica los casos dudosos",
   "¿Quién de mi plantilla es duda esta jornada?",
   "¿Qué dicen las webs de mis delanteros?",
   `¿Qué ha alineado mi rival de la ${LIGA_PLAYOFF_NAME}?`,
 ];
-
-const POSITION_COLORS: Record<Position, string> = {
-  POR: "bg-amber-500/15 text-amber-400 border-amber-500/30",
-  DEF: "bg-blue-500/15 text-blue-400 border-blue-500/30",
-  MED: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-  DEL: "bg-rose-500/15 text-rose-400 border-rose-500/30",
-};
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function countsByPosition(
-  selected: SquadPlayerEntry[],
-): Record<Position, number> {
-  return {
-    POR: selected.filter((p) => p.position === "POR").length,
-    DEF: selected.filter((p) => p.position === "DEF").length,
-    MED: selected.filter((p) => p.position === "MED").length,
-    DEL: selected.filter((p) => p.position === "DEL").length,
-  };
-}
-
-function formatMatchTime(playedAt: string | null): string {
-  if (!playedAt) return "";
-  const d = new Date(playedAt);
-  const day = d.toLocaleDateString("es-ES", { weekday: "short" });
-  const time = d.toLocaleTimeString("es-ES", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  return `${day} ${time}`;
-}
-
-/** Check if a player of the given position can be added without making it
- *  impossible to reach any valid formation. */
-function canAddToPosition(
-  pos: Position,
-  counts: Record<Position, number>,
-  formations: ValidFormation[],
-  total: number,
-): boolean {
-  if (total >= 11) return false;
-  if (pos === "POR") return counts.POR < 1;
-  const next = { ...counts, [pos]: counts[pos] + 1 };
-  return formations.some(
-    (f) =>
-      next.DEF <= f.defenders &&
-      next.MED <= f.midfielders &&
-      next.DEL <= f.forwards,
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
-
-function MatchCards({
-  matches,
-  squad,
-  selectedIds,
-}: {
-  matches: MatchEntry[];
-  squad: SquadPlayerEntry[];
-  selectedIds: Set<number>;
-}) {
-  const [open, setOpen] = useState(false);
-
-  const squadByTeam = useMemo(() => {
-    const map = new Map<string, SquadPlayerEntry[]>();
-    for (const p of squad) {
-      const list = map.get(p.team_name) ?? [];
-      list.push(p);
-      map.set(p.team_name, list);
-    }
-    return map;
-  }, [squad]);
-
-  if (matches.length === 0) return null;
-
-  return (
-    <div className="rounded-lg border border-vpv-border bg-vpv-card">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between px-3 py-2.5"
-      >
-        <span className="text-xs font-semibold uppercase tracking-wide text-vpv-text-muted">
-          Partidos ({matches.length})
-        </span>
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 14 14"
-          className={`text-vpv-text-muted transition-transform ${open ? "rotate-180" : ""}`}
-        >
-          <path
-            d="M3.5 5.5l3.5 3.5 3.5-3.5"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            fill="none"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </button>
-
-      {open && (
-        <div className="divide-y divide-vpv-border/50 border-t border-vpv-border">
-          {matches.map((m) => {
-            const homePlayers = squadByTeam.get(m.home_team) ?? [];
-            const awayPlayers = squadByTeam.get(m.away_team) ?? [];
-            const hasPlayers =
-              homePlayers.length > 0 || awayPlayers.length > 0;
-
-            return (
-              <div key={m.id} className="px-3 py-2">
-                {/* Match header */}
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium text-vpv-text">
-                    {m.home_team} - {m.away_team}
-                  </span>
-                  {m.played_at && (
-                    <span className="text-xs text-vpv-text-muted">
-                      {formatMatchTime(m.played_at)}
-                    </span>
-                  )}
-                </div>
-
-                {/* Squad players per team */}
-                {hasPlayers && (
-                  <div className="mt-1.5 grid grid-cols-2 gap-x-3">
-                    <SquadColumn
-                      players={homePlayers}
-                      selectedIds={selectedIds}
-                    />
-                    <SquadColumn
-                      players={awayPlayers}
-                      selectedIds={selectedIds}
-                    />
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SquadColumn({
-  players,
-  selectedIds,
-}: {
-  players: SquadPlayerEntry[];
-  selectedIds: Set<number>;
-}) {
-  if (players.length === 0) return <div />;
-
-  return (
-    <div className="space-y-0.5">
-      {players.map((p) => {
-        const selected = selectedIds.has(p.player_id);
-        const pos = p.position as Position;
-        return (
-          <div key={p.player_id} className="flex items-center gap-1.5">
-            <span
-              className={`rounded px-1 py-px text-[9px] font-bold ${POSITION_COLORS[pos]}`}
-            >
-              {pos}
-            </span>
-            <span
-              className={`truncate text-xs ${
-                selected
-                  ? "font-semibold text-vpv-accent"
-                  : "text-vpv-text-muted"
-              }`}
-            >
-              {p.display_name}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-const RESULT_BG: Record<number, string> = {
-  2: "bg-emerald-500",
-  1: "bg-amber-400",
-  0: "bg-red-500",
-};
-
-function FormIndicator({ form }: { form: PlayerRecentForm }) {
-  return (
-    <div className="flex items-center gap-[3px]">
-      {form.matches.map((m, i) => (
-        <div
-          key={i}
-          className="flex flex-col items-center gap-px"
-          title={
-            m.played
-              ? `${m.result === 2 ? "Victoria" : m.result === 1 ? "Empate" : "Derrota"} ${m.is_home ? "(Casa)" : "(Fuera)"} — ${m.points} pts`
-              : "No jugo"
-          }
-        >
-          <div
-            className={`flex h-4 w-4 items-center justify-center rounded-sm text-[8px] font-bold leading-none ${
-              m.played
-                ? `${RESULT_BG[m.result] ?? "bg-red-500"} text-white`
-                : "border border-dashed border-vpv-border text-vpv-text-muted/30"
-            }`}
-          >
-            {m.played ? m.points : "-"}
-          </div>
-          {m.played && (
-            <span className="text-[7px] leading-none text-vpv-text-muted/50">
-              {m.is_home ? "C" : "F"}
-            </span>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function StatBadge({
-  icon,
-  value,
-  title,
-  color = "text-vpv-text-muted",
-}: {
-  icon: string;
-  value: number;
-  title: string;
-  color?: string;
-}) {
-  if (value === 0) return null;
-  return (
-    <span
-      className={`inline-flex items-center gap-px ${color}`}
-      title={title}
-    >
-      <span className="text-[9px]">{icon}</span>
-      <span className="tabular-nums">{value}</span>
-    </span>
-  );
-}
-
-function PlayerFormStats({
-  form,
-  position,
-}: {
-  form: PlayerRecentForm;
-  position: string;
-}) {
-  const isDef = position === "POR" || position === "DEF";
-  const totalGoals = form.goals + form.penalty_goals;
-
-  return (
-    <div className="flex items-center gap-1.5 text-[10px]">
-      {isDef && (
-        <StatBadge icon={"\uD83D\uDEE1\uFE0F"} value={form.clean_sheets} title="Imbatibilidades" color="text-sky-400" />
-      )}
-      <StatBadge icon={"\u26BD"} value={totalGoals} title="Goles" color="text-vpv-text-muted" />
-      <StatBadge icon={"\uD83C\uDFAF"} value={form.assists} title="Asistencias" color="text-vpv-text-muted" />
-      <StatBadge icon={"\uD83D\uDFE8"} value={form.yellow_cards} title="Tarjetas" color="text-yellow-400" />
-    </div>
-  );
-}
-
-const TREND_ICONS: Record<string, string> = {
-  rising: "\u2197",   // ↗
-  stable: "\u2192",   // →
-  falling: "\u2198",  // ↘
-};
-
-const TREND_COLORS: Record<string, string> = {
-  rising: "text-emerald-400",
-  stable: "text-vpv-text-muted",
-  falling: "text-red-400",
-};
-
-function PlayerCard({
-  player,
-  isSelected,
-  isDisabled,
-  onToggle,
-  showPoints = false,
-  prediction,
-  fixture,
-  readings,
-  coverage,
-}: {
-  player: SquadPlayerEntry;
-  isSelected: boolean;
-  isDisabled: boolean;
-  onToggle: (player: SquadPlayerEntry) => void;
-  showPoints?: boolean;
-  prediction?: PlayerPrediction;
-  fixture?: OpponentStrength;
-  readings?: SourceReading[];
-  coverage?: SourceCoverage[];
-}) {
-  const pos = player.position as Position;
-
-  return (
-    <button
-      type="button"
-      onClick={() => !isDisabled && onToggle(player)}
-      disabled={isDisabled}
-      className={`flex w-full items-center gap-2.5 rounded-lg border p-2.5 text-left transition-all ${
-        isSelected
-          ? "border-vpv-accent bg-vpv-accent/10"
-          : isDisabled
-            ? "cursor-not-allowed border-vpv-border bg-vpv-card opacity-40"
-            : "border-vpv-card-border bg-vpv-card hover:border-vpv-border active:bg-vpv-bg"
-      }`}
-    >
-      <PlayerAvatar
-        photoPath={player.photo_path}
-        name={player.display_name}
-        size={36}
-      />
-
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-vpv-text">
-          {player.display_name}
-        </p>
-        <p className="truncate text-xs text-vpv-text-muted">
-          {player.team_name}
-          {player.opponent_team_name && (
-            <>
-              <span className="mx-1 text-vpv-text-muted/40">·</span>
-              <span
-                className={
-                  player.is_home
-                    ? "text-emerald-400"
-                    : "text-amber-400"
-                }
-                title={player.is_home ? "Local" : "Visitante"}
-              >
-                {player.is_home ? "vs" : "@"} {player.opponent_team_name}
-              </span>
-              {(() => {
-                const grade = fixtureDifficulty(player.position, fixture);
-                if (!grade || !fixture) return null;
-                return (
-                  <span
-                    className={`ml-1.5 rounded px-1 py-px text-[9px] font-medium ${DIFFICULTY_STYLE[grade]}`}
-                    title={difficultyTitle(player.position, fixture, grade)}
-                  >
-                    {grade === "facil" ? "fácil" : grade === "dificil" ? "difícil" : "media"}
-                  </span>
-                );
-              })()}
-            </>
-          )}
-        </p>
-        {player.recent_form && player.recent_form.matches.length > 0 && (
-          <div className="mt-0.5 flex items-center gap-2">
-            <FormIndicator form={player.recent_form} />
-            <PlayerFormStats
-              form={player.recent_form}
-              position={player.position}
-            />
-          </div>
-        )}
-        {prediction && (
-          <div className="mt-0.5 flex items-center gap-2 text-[10px]">
-            <span
-              className="font-bold text-vpv-accent tabular-nums"
-              title={`Puntos esperados · ${prediction.xpts_if_plays.toFixed(1)} si juega`}
-            >
-              xPts {prediction.xpts.toFixed(1)}
-            </span>
-            <span className="text-vpv-text-muted" title={prediction.is_home ? "Casa" : "Fuera"}>
-              vs {prediction.opponent_name} ({prediction.is_home ? "C" : "F"})
-            </span>
-            <span className="text-vpv-text-muted tabular-nums" title="Probabilidad de titular">
-              {Math.round(prediction.starter_pct)}%
-            </span>
-            <span className={TREND_COLORS[prediction.trend] ?? "text-vpv-text-muted"} title={`Tendencia: ${prediction.trend}`}>
-              {TREND_ICONS[prediction.trend] ?? "→"}
-            </span>
-          </div>
-        )}
-        <SourceBadges readings={readings} coverage={coverage} />
-      </div>
-
-      <div className="flex shrink-0 flex-col items-end gap-0.5">
-        <span
-          className={`rounded border px-1.5 py-0.5 text-[10px] font-bold ${POSITION_COLORS[pos]}`}
-        >
-          {pos}
-        </span>
-        {showPoints && (
-          <span className="text-xs tabular-nums text-vpv-text-muted">
-            {player.season_points} pts
-          </span>
-        )}
-      </div>
-
-      {isSelected && (
-        <span aria-hidden="true" className="shrink-0 text-vpv-accent">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <circle cx="8" cy="8" r="8" fill="currentColor" opacity="0.2" />
-            <path
-              d="M4.5 8l2.5 2.5 4.5-5"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </span>
-      )}
-    </button>
-  );
-}
-
-function PositionTabs({
-  activeTab,
-  onTabChange,
-  counts,
-  canAdd,
-}: {
-  activeTab: Position;
-  onTabChange: (pos: Position) => void;
-  counts: Record<Position, number>;
-  canAdd: Record<Position, boolean>;
-}) {
-  return (
-    <div
-      className="flex rounded-xl bg-vpv-bg p-1"
-      role="tablist"
-      aria-label="Posiciones"
-    >
-      {POSITION_ORDER.map((pos) => {
-        const active = pos === activeTab;
-        const full = !canAdd[pos] && counts[pos] > 0;
-        return (
-          <button
-            key={pos}
-            role="tab"
-            aria-selected={active}
-            onClick={() => onTabChange(pos)}
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2.5 text-sm font-medium transition-all ${
-              active
-                ? "bg-vpv-card text-vpv-text shadow-sm"
-                : "text-vpv-text-muted hover:text-vpv-text"
-            }`}
-          >
-            <span>{pos}</span>
-            {counts[pos] > 0 && (
-              <span
-                className={`min-w-[18px] rounded-full px-1 text-center text-[11px] font-bold ${
-                  full
-                    ? "bg-vpv-success/20 text-vpv-success"
-                    : "bg-vpv-accent/20 text-vpv-accent"
-                }`}
-              >
-                {counts[pos]}
-              </span>
-            )}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Main page
