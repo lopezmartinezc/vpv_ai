@@ -13,7 +13,7 @@ Aplicacion web (ligavpv.com) para gestionar una liga fantasy de futbol entre ami
 - Frontend: Next.js (App Router, `output: "standalone"`) + Tailwind CSS (TypeScript) — frontend puro, consume API REST
 - Frontend libs: `@dnd-kit/core` + `@dnd-kit/sortable` + `@dnd-kit/utilities` (drag & drop en wizard de predicciones), `recharts`, `clsx`, `tailwind-merge`
 - Backend: Python + FastAPI + SQLAlchemy — API unica para TODA la logica de negocio + scraping
-- Database: PostgreSQL (migracion desde MySQL actual)
+- Database: PostgreSQL 16 (asyncpg). La migracion desde MySQL ya esta hecha; ver "Estado de la migracion"
 - ORM: SQLAlchemy 2.0+ async (asyncpg)
 - Auth: NextAuth.js (frontend) + JWT validado en FastAPI (backend)
 - Notificaciones: Bot Telegram (python-telegram-bot)
@@ -65,15 +65,33 @@ Referencia completa: `claude_data/normas_puntuacion_vpv.md`
 9. Posicion congelada por eras: la posicion VPV de un jugador se fija al hacer el draft y se mantiene aunque cambie en futbolfantasy hasta el draft de invierno, cuando se re-sincroniza. Cambios de posicion desde la fuente solo se aplican en dos ventanas (`scraping/config.py::position_writes_allowed`): pre-draft (`current_md < matchday_start`) y re-sync invierno (`current_md == matchday_winter`); fuera de ahi solo se rellenan posiciones vacias (altas nuevas)
 10. Equipo por jornada: `player_stats.team_id` es la verdad del equipo con el que jugo el jugador ESA jornada (regla 6 permite fichajes intra-temporada). Se scrapea via `match_page` (opt-in por temporada con `tournament_config={"stats_source":"match_page"}`), resolviendo al jugador por `slug` en toda la temporada — idempotente ante traspasos
 
-## Estrategia de Migracion
-FASE 1: Next.js -> FastAPI -> MySQL existente
-FASE 2: Next.js -> FastAPI -> PostgreSQL (solo cambia connection string)
+## Estado de la migracion
+- Completada: la aplicacion corre sobre PostgreSQL 16 (`DATABASE_URL=postgresql+asyncpg://...`).
+- MySQL solo queda para la sincronizacion inversa hacia el sitio antiguo (`backend/src/features/mysql_sync/`), que escribe alineaciones y player_stats en `jornadas_temp` mientras conviven ambos sitios. No es la base de la aplicacion.
 
-## Memory Protocol (Engram)
-- START of session: Always `mem_context` to recover state
-- END of session: Always `mem_session_summary`
-- After significant decisions: `mem_save` with type and structured content
-- After bugfixes: `mem_save` with What/Why/Where/Learned format
+## Memorias: que herramienta para que
+
+| Necesito... | Lo busco en |
+| --- | --- |
+| Por que algo es como es, reglas del dominio | Este archivo, `AGENTS.md` y los documentos del repositorio |
+| Estructura del codigo, quien llama a que, impacto de un cambio | codebase-memory-mcp |
+| Que se hizo en sesiones anteriores, decisiones y fallos ya resueltos | engram |
+
+**Nada que solo viva en una cache local cuenta como fuente de verdad.** El grafo de codigo es derivado: se regenera indexando y no sustituye a este archivo.
+
+### codebase-memory-mcp
+
+- Indexar: `index_repository` con `repo_path` absoluto. Consultar: el resto de herramientas usan `project`, que es el nombre que devuelve `list_projects` (aqui `home-carloslopez-dev-vpv_ai`).
+- `trace_path` admite `direction` con `inbound` (quien llama), `outbound` (a quien llama) o `both`.
+- En los puntos calientes, `fan_in` cuenta **cuantos sitios distintos** usan algo, no cuantas veces aparece.
+- En Python su resolucion semantica ronda el 75-89 %: sirve para orientarse, pero lo que se vaya a modificar se confirma leyendo el archivo.
+- Ignora lo que ya ignora Git, asi que no indexa datos generados ni secretos.
+
+### engram
+
+- Al empezar la sesion: `mem_context` para recuperar el estado.
+- Tras una decision importante o un fallo corregido: `mem_save` con el formato What/Why/Where/Learned.
+- Al terminar: `mem_session_summary`.
 
 ## SDD Workflow (for non-trivial tasks)
 1. EXPLORE -> analyze codebase + recover Engram context
