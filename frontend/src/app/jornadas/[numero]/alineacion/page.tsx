@@ -698,6 +698,18 @@ function LineupEditor(): JSX.Element {
     );
   }, [selectedPlayers.length, currentCounts, formationsData]);
 
+  /** What the chat is told the user has on screen right now, unsent. */
+  const chatDraft = useMemo(
+    () => ({
+      formation: detectedFormation?.formation ?? null,
+      players: selectedPlayers.map((p) => ({
+        player_id: p.player_id,
+        position_slot: p.position,
+      })),
+    }),
+    [detectedFormation, selectedPlayers],
+  );
+
   /** Formation string for PitchView display. */
   const displayFormation =
     detectedFormation?.formation ??
@@ -1081,6 +1093,7 @@ function LineupEditor(): JSX.Element {
           suggestions={LINEUP_SUGGESTIONS}
           placeholder="Pregunta algo sobre tu alineación…"
           historyLimit={40}
+          extraBody={{ draft: chatDraft }}
         />
       )}
 

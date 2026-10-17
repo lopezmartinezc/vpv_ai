@@ -45,6 +45,7 @@ async def _ask(
         provider_name=payload.provider,
         model=payload.model,
         on_progress=on_progress,
+        draft=payload.draft,
     )
 
 

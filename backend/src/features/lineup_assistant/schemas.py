@@ -8,9 +8,24 @@ class LineupChatMessage(BaseModel):
     content: str = Field(max_length=8000)
 
 
+class LineupDraftSlot(BaseModel):
+    player_id: int
+    position_slot: str = Field(pattern="^(POR|DEF|MED|DEL)$")
+
+
+class LineupDraft(BaseModel):
+    """The eleven being edited on the screen, not yet sent. Partial while the
+    user is still picking; the formation only once eleven are in."""
+
+    formation: str | None = Field(default=None, pattern=r"^1-\d-\d-\d$")
+    players: list[LineupDraftSlot] = Field(default_factory=list, max_length=11)
+
+
 class LineupAskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
     history: list[LineupChatMessage] = Field(default_factory=list, max_length=40)
+    # What the screen shows right now; null when asked from elsewhere.
+    draft: LineupDraft | None = None
     # Null uses ASSISTANT_PROVIDER / the provider's default model.
     provider: str | None = Field(default=None, pattern="^(anthropic|openai)$")
     model: str | None = Field(default=None, max_length=100, pattern=r"^[A-Za-z0-9._:@-]+$")

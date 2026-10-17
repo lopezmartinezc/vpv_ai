@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.lineup_assistant.optimizer import Candidate, Formation, Suggestion, best_lineup
+from src.features.lineup_assistant.schemas import LineupDraft
 from src.features.lineup_intel.schemas import LineupIntelResponse, SourceReading
 from src.features.lineup_intel.service import LineupIntelService
 from src.features.lineups.schemas import MyLineupResponse
@@ -30,6 +31,9 @@ class LineupContext:
     # Who is asking, from the JWT: "my squad" is theirs.
     user_id: int
     anonymize_participants: bool = True
+    # The eleven on the screen, already validated against the squad; None when
+    # the question came without one.
+    draft: LineupDraft | None = None
     _squad: MyLineupResponse | None = field(default=None, init=False, repr=False)
     _predictions: dict[int, PlayerPrediction] | None = field(default=None, init=False, repr=False)
     _intel: LineupIntelResponse | None = field(default=None, init=False, repr=False)
