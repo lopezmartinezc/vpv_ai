@@ -31,6 +31,7 @@ def reply_payload(reply: AssistantReply) -> dict[str, object]:
         "model": reply.model,
         "tool_calls": [{"name": t.name, "arguments": t.arguments} for t in reply.tool_calls],
         "truncated": reply.truncated,
+        **reply.extra,
     }
 
 

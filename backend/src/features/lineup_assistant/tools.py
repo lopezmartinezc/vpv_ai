@@ -22,6 +22,7 @@ from src.features.lineup_assistant.optimizer import (
     Suggestion,
     Valued,
 )
+from src.features.lineup_assistant.proposals import ProposalError, from_suggestion, swap
 from src.features.lineup_assistant.repository import LineupAssistantRepository
 from src.features.lineup_intel.matching import normalize
 from src.features.lineup_intel.parsers import MADRID
@@ -109,6 +110,19 @@ def suggestion_text(s: Suggestion) -> str:
         lines.append("Fuera del once, los de mas valor:")
         lines += [valued_line(v) for v in s.bench[:5]]
     return "\n".join(lines)
+
+
+def _proposal_note(ctx: LineupContext) -> str:
+    p = ctx.proposal
+    if p is None:
+        return ""
+    against = "el once en edicion" if ctx.draft is not None else "el once guardado"
+    if not p.entering and not p.leaving:
+        return f"Es el mismo once que {against}. La pantalla no ofrecera aplicarlo."
+    return (
+        f"Respecto a {against}: entran {', '.join(p.entering) or '-'}; "
+        f"salen {', '.join(p.leaving) or '-'}. La pantalla ofrecera aplicarlo al borrador."
+    )
 
 
 def _pick(needle: str, names: list[str]) -> list[int]:
@@ -351,7 +365,44 @@ def build_tools(ctx: LineupContext) -> list[ToolSpec]:
             return (
                 f"Con esta plantilla no se puede formar {formacion or 'ninguna formacion valida'}."
             )
-        return suggestion_text(suggestion)
+        ctx.proposal = from_suggestion(
+            suggestion, await ctx.base_eleven_ids(), (await ctx.squad()).squad
+        )
+        return suggestion_text(suggestion) + "\n" + _proposal_note(ctx)
+
+    async def proponer_cambios(
+        entran: list[str] | None = None, salen: list[str] | None = None
+    ) -> str:
+        try:
+            squad = (await ctx.squad()).squad
+        except NotFoundError:
+            return NOT_A_PARTICIPANT
+        names = [p.display_name for p in squad]
+        resolved: dict[str, list[int]] = {"entran": [], "salen": []}
+        for key, wanted in (("entran", entran or []), ("salen", salen or [])):
+            for needle in wanted:
+                hits = _pick(needle, names)
+                if not hits:
+                    return f"'{needle}' no esta en tu plantilla."
+                if len(hits) > 1:
+                    found = ", ".join(names[i] for i in hits)
+                    return f"'{needle}' es ambiguo: {found}. Concreta mas."
+                resolved[key].append(squad[hits[0]].player_id)
+        try:
+            proposal = swap(
+                await ctx.base_eleven_ids(),
+                entering=resolved["entran"],
+                leaving=resolved["salen"],
+                squad=squad,
+                formations=await ctx.formations(),
+                basis="Cambio propuesto en el chat.",
+            )
+        except ProposalError as exc:
+            return f"No vale: {exc}"
+        ctx.proposal = proposal
+        lines = [f"Once resultante ({proposal.formation}):"]
+        lines += [f"- {p.position} {p.name}" for p in proposal.players]
+        return "\n".join(lines) + "\n" + _proposal_note(ctx)
 
     async def reglas() -> str:
         formations = await ctx.formations()
@@ -479,6 +530,20 @@ def build_tools(ctx: LineupContext) -> list[ToolSpec]:
             },
             [],
             proponer_once,
+        ),
+        spec(
+            "proponer_cambios",
+            "Propone un cambio concreto sobre el once que el usuario tiene en pantalla (o el "
+            "guardado si no hay borrador): quienes entran y quienes salen, por nombre. El "
+            "servidor comprueba plantilla, 11 jugadores, un portero y formacion valida, y "
+            "devuelve el once resultante; la pantalla ofrecera aplicarlo. Usala cuando el "
+            "usuario pida cambiar jugadores concretos o mantener algunos fijos.",
+            {
+                "entran": {"type": "array", "items": nombre, "description": "Quienes entran."},
+                "salen": {"type": "array", "items": nombre, "description": "Quienes salen."},
+            },
+            [],
+            proponer_cambios,
         ),
         spec(
             "reglas",

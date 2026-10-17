@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.lineup_assistant.optimizer import Candidate, Formation, Suggestion, best_lineup
+from src.features.lineup_assistant.proposals import Proposal
 from src.features.lineup_assistant.schemas import LineupDraft
 from src.features.lineup_intel.schemas import LineupIntelResponse, SourceReading
 from src.features.lineup_intel.service import LineupIntelService
@@ -34,6 +35,8 @@ class LineupContext:
     # The eleven on the screen, already validated against the squad; None when
     # the question came without one.
     draft: LineupDraft | None = None
+    # The last eleven a tool proposed this turn; goes back with the answer.
+    proposal: Proposal | None = None
     _squad: MyLineupResponse | None = field(default=None, init=False, repr=False)
     _predictions: dict[int, PlayerPrediction] | None = field(default=None, init=False, repr=False)
     _intel: LineupIntelResponse | None = field(default=None, init=False, repr=False)
@@ -128,6 +131,13 @@ class LineupContext:
                 )
             )
         return out
+
+    async def base_eleven_ids(self) -> list[int]:
+        """What a proposal starts from: the draft on screen, else the saved eleven."""
+        if self.draft is not None:
+            return [p.player_id for p in self.draft.players]
+        current = (await self.squad()).current_lineup
+        return [p.player_id for p in current.players] if current else []
 
     async def suggestion(self, formation: str | None = None) -> Suggestion | None:
         return best_lineup(await self.candidates(), await self.formations(), only=formation)

@@ -36,12 +36,31 @@ class LineupToolCall(BaseModel):
     arguments: dict[str, object]
 
 
+class ProposedPlayerOut(BaseModel):
+    player_id: int
+    name: str
+    position: str
+
+
+class LineupProposal(BaseModel):
+    """An eleven the chat proposes, checked by the server, for the screen to
+    apply in one click. Entering/leaving are against the draft it was asked
+    about (or the saved eleven when there was no draft)."""
+
+    formation: str
+    players: list[ProposedPlayerOut]
+    entering: list[str]
+    leaving: list[str]
+    basis: str
+
+
 class LineupAskResponse(BaseModel):
     reply: str
     provider: str
     model: str
     tool_calls: list[LineupToolCall]
     truncated: bool
+    proposal: LineupProposal | None = None
 
 
 class SuggestedPlayer(BaseModel):

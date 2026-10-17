@@ -23,8 +23,37 @@ vi.mock("@/components/lineup/lineup-intel", () => ({
   coverageByTeam: () => new Map(),
 }));
 vi.mock("@/components/assistant/assistant-panel", () => ({
-  AssistantPanel: ({ extraBody }: { extraBody?: Record<string, unknown> }) => (
-    <input aria-label="Chat draft" defaultValue="" data-draft={JSON.stringify(extraBody?.draft)} />
+  AssistantPanel: ({
+    extraBody,
+    onReply,
+  }: {
+    extraBody?: Record<string, unknown>;
+    onReply?: (res: Record<string, unknown>) => void;
+  }) => (
+    <>
+      <input aria-label="Chat draft" defaultValue="" data-draft={JSON.stringify(extraBody?.draft)} />
+      <button
+        type="button"
+        onClick={() =>
+          onReply?.({
+            reply: "Pon a Keeper Two",
+            provider: "fake",
+            model: "fake-1",
+            tool_calls: [],
+            truncated: false,
+            proposal: {
+              formation: "1-4-3-3",
+              players: [{ player_id: 2, name: "Keeper Two", position: "POR" }],
+              entering: ["Keeper Two"],
+              leaving: ["Goalkeeper"],
+              basis: "",
+            },
+          })
+        }
+      >
+        Fake answer
+      </button>
+    </>
   ),
 }));
 vi.mock("@/hooks/use-fetch", () => ({
@@ -36,7 +65,10 @@ vi.mock("@/hooks/use-fetch", () => ({
           display_name: "Manager",
           current_lineup: null,
           lineup_deadline_min: 30,
-          squad: [{ player_id: 1, display_name: "Goalkeeper", position: "POR", team_name: "Team" }],
+          squad: [
+            { player_id: 1, display_name: "Goalkeeper", position: "POR", team_name: "Team" },
+            { player_id: 2, display_name: "Keeper Two", position: "POR", team_name: "Team" },
+          ],
         }
       : path === "/seasons/formations"
         ? [{ formation: "1-4-3-3", defenders: 4, midfielders: 3, forwards: 3 }]
@@ -77,6 +109,22 @@ describe("lineup context isolation", () => {
     expect(draft()).toEqual({ formation: null, players: [] });
     fireEvent.click(screen.getByRole("button", { name: /Goalkeeper/ }));
     expect(draft()).toEqual({ formation: null, players: [{ player_id: 1, position_slot: "POR" }] });
+  });
+
+  it("applies the chat's proposal to the draft, undoes it and discards it", () => {
+    render(<Page />);
+    const draft = () => JSON.parse(screen.getByLabelText("Chat draft").getAttribute("data-draft") ?? "null");
+    fireEvent.click(screen.getByRole("button", { name: /Goalkeeper/ }));
+    expect(draft().players).toEqual([{ player_id: 1, position_slot: "POR" }]);
+    fireEvent.click(screen.getByRole("button", { name: "Fake answer" }));
+    const card = screen.getByRole("region", { name: "Propuesta del asistente" });
+    expect(card).toHaveTextContent("Salen Goalkeeper → entran Keeper Two");
+    fireEvent.click(screen.getByRole("button", { name: "Aplicar al borrador" }));
+    expect(draft().players).toEqual([{ player_id: 2, position_slot: "POR" }]);
+    fireEvent.click(screen.getByRole("button", { name: "Deshacer" }));
+    expect(draft().players).toEqual([{ player_id: 1, position_slot: "POR" }]);
+    fireEvent.click(screen.getByRole("button", { name: "Descartar" }));
+    expect(screen.queryByRole("region", { name: "Propuesta del asistente" })).not.toBeInTheDocument();
   });
 
   it("uses the effective deadline instead of kick-off minus margin", () => {

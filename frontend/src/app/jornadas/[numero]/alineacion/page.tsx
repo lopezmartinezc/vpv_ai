@@ -2,6 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
 import { DeadlineBanner } from "@/features/lineup/deadline-banner";
+import {
+  ProposalCard,
+  isLineupProposal,
+  type LineupProposal,
+} from "@/features/lineup/proposal-card";
 import { SeasonLink as Link } from "@/components/ui/season-link";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
@@ -18,7 +23,7 @@ import { PlayerAvatar } from "@/components/ui/player-avatar";
 import { PitchView } from "@/components/ui/pitch-view";
 import type { PitchPlayer } from "@/components/ui/pitch-view";
 import { SkeletonTable } from "@/components/ui/skeleton";
-import { AssistantPanel } from "@/components/assistant/assistant-panel";
+import { AssistantPanel, type AskResponse } from "@/components/assistant/assistant-panel";
 import { LIGA_PLAYOFF_NAME } from "@/lib/playoff-name";
 import {
   LineupAdminBar,
@@ -640,6 +645,9 @@ function LineupEditor(): JSX.Element {
   const [initialized, setInitialized] = useState(false);
   // The eleven last proposed by the optimizer, to show why each one is there.
   const [suggestion, setSuggestion] = useState<SuggestionResponse | null>(null);
+  // The eleven the chat last proposed, and the selection it replaced (to undo).
+  const [proposal, setProposal] = useState<LineupProposal | null>(null);
+  const [beforeProposal, setBeforeProposal] = useState<SquadPlayerEntry[] | null>(null);
   const prevCountRef = useRef(0);
 
   // Initialize from existing lineup
@@ -845,6 +853,33 @@ function LineupEditor(): JSX.Element {
     },
     [myLineup],
   );
+
+  const handleReply = useCallback((res: AskResponse) => {
+    if (!isLineupProposal(res.proposal)) return;
+    setProposal(res.proposal);
+    setBeforeProposal(null);
+  }, []);
+
+  const applyProposal = useCallback(() => {
+    if (!myLineup || !proposal) return;
+    const byId = new Map(myLineup.squad.map((p) => [p.player_id, p]));
+    const next = proposal.players
+      .map((p) => byId.get(p.player_id))
+      .filter((p): p is SquadPlayerEntry => p !== undefined);
+    setBeforeProposal(selectedPlayers);
+    setSelectedPlayers(next);
+    setSubmitResult(null);
+  }, [myLineup, proposal, selectedPlayers]);
+
+  const undoProposal = useCallback(() => {
+    if (beforeProposal) setSelectedPlayers(beforeProposal);
+    setBeforeProposal(null);
+  }, [beforeProposal]);
+
+  const discardProposal = useCallback(() => {
+    setProposal(null);
+    setBeforeProposal(null);
+  }, []);
 
   const handleSubmit = useCallback(async () => {
     if (!selectedSeason || !detectedFormation || submitting) return;
@@ -1094,6 +1129,16 @@ function LineupEditor(): JSX.Element {
           placeholder="Pregunta algo sobre tu alineación…"
           historyLimit={40}
           extraBody={{ draft: chatDraft }}
+          onReply={handleReply}
+        />
+      )}
+      {isAdmin && proposal && (
+        <ProposalCard
+          proposal={proposal}
+          applied={beforeProposal !== null}
+          onApply={applyProposal}
+          onUndo={undoProposal}
+          onDiscard={discardProposal}
         />
       )}
 
