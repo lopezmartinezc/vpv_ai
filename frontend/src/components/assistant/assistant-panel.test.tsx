@@ -29,7 +29,7 @@ let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   vi.mocked(apiClient.get).mockResolvedValue({ providers: [], default: "openai" });
-  fetchMock = vi.fn().mockResolvedValue(streamed());
+  fetchMock = vi.fn().mockImplementation(() => Promise.resolve(streamed()));
   vi.stubGlobal("fetch", fetchMock);
   Element.prototype.scrollIntoView = vi.fn();
 });
@@ -45,18 +45,28 @@ function sentBody(): Record<string, unknown> {
 
 describe("AssistantPanel", () => {
   it("aborts a pending request on unmount and ignores its late answer", async () => {
-    let resolve: (response: Response) => void = () => { throw new Error("Not started"); };
-    fetchMock.mockReturnValue(new Promise<Response>((done) => { resolve = done; }));
-    const view = render(<AssistantPanel title="t" endpoint="/old" intro="i"
-      suggestions={["hola"]} placeholder="p" />);
+    let resolve: (response: Response) => void = () => {
+      throw new Error("Not started");
+    };
+    fetchMock.mockReturnValue(
+      new Promise<Response>((done) => {
+        resolve = done;
+      }),
+    );
+    const view = render(
+      <AssistantPanel title="t" endpoint="/old" intro="i" suggestions={["hola"]} placeholder="p" />,
+    );
     fireEvent.click(screen.getByText("hola"));
     const signal = fetchMock.mock.calls[0][1].signal as AbortSignal;
     expect(signal.aborted).toBe(false);
     view.unmount();
     expect(signal.aborted).toBe(true);
-    render(<AssistantPanel title="t" endpoint="/new" intro="i"
-      suggestions={["hola"]} placeholder="p" />);
-    await act(async () => { resolve(streamed()); });
+    render(
+      <AssistantPanel title="t" endpoint="/new" intro="i" suggestions={["hola"]} placeholder="p" />,
+    );
+    await act(async () => {
+      resolve(streamed());
+    });
     expect(screen.queryByText(DONE.reply)).not.toBeInTheDocument();
   });
 
@@ -99,12 +109,20 @@ describe("AssistantPanel", () => {
 });
 
 function panel(): void {
-  render(<AssistantPanel title="t" endpoint="/e" intro="i" suggestions={["hola"]} placeholder="p" />);
+  render(
+    <AssistantPanel title="t" endpoint="/e" intro="i" suggestions={["hola"]} placeholder="p" />,
+  );
 }
 
 function pending(): (response: Response) => void {
-  let resolve: (response: Response) => void = () => { throw new Error("Not started"); };
-  fetchMock.mockReturnValueOnce(new Promise<Response>((done) => { resolve = done; }));
+  let resolve: (response: Response) => void = () => {
+    throw new Error("Not started");
+  };
+  fetchMock.mockReturnValueOnce(
+    new Promise<Response>((done) => {
+      resolve = done;
+    }),
+  );
   return () => resolve;
 }
 
@@ -172,6 +190,7 @@ describe("controls", () => {
     expect(screen.getByText("i")).toBeInTheDocument();
     fireEvent.click(screen.getByText("hola"));
     expect(JSON.parse(fetchMock.mock.calls[2][1].body as string)).toMatchObject({ history: [] });
+    await screen.findByText(DONE.reply);
   });
 });
 
@@ -185,4 +204,41 @@ describe("the draft chat", () => {
     expect(fetchMock.mock.calls[0][0]).toMatch(/\/draft-assistant\/3\/preseason\/ask\/stream$/);
     expect(sentBody()).toHaveProperty("participacion");
   });
+});
+
+it("stopping the retried request still aborts it after the old request finishes", async () => {
+  let finishOld!: (r: Response) => void;
+  const first = new Promise<Response>((r) => {
+    finishOld = r;
+  });
+  const second = new Promise<Response>(() => {});
+  const fetchMock = vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second);
+  vi.stubGlobal("fetch", fetchMock);
+  Element.prototype.scrollIntoView = vi.fn();
+  render(
+    <AssistantPanel title="t" endpoint="/test" intro="i" suggestions={["hola"]} placeholder="p" />,
+  );
+  fireEvent.click(screen.getByText("hola"));
+  fireEvent.click(screen.getByRole("button", { name: "Detener" }));
+  fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+  const signal = fetchMock.mock.calls[1][1].signal as AbortSignal;
+  await act(async () => {
+    finishOld(new Response("event: done\ndata: {}\n\n"));
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Detener" }));
+  expect(signal.aborted).toBe(true);
+});
+
+it("never selects a default absent from the offered models", async () => {
+  vi.mocked(apiClient.get).mockResolvedValue({
+    providers: [{ name: "openai", default_model: "retired", models: ["available"] }],
+    default: "openai",
+  });
+  render(
+    <AssistantPanel title="t" endpoint="/test" intro="i" suggestions={["hola"]} placeholder="p" />,
+  );
+  expect(await screen.findByRole("combobox", { name: "Modelo" })).toHaveValue("available");
+  fireEvent.click(screen.getByText("hola"));
+  await screen.findByText(DONE.reply);
+  expect(sentBody()).toHaveProperty("model", "available");
 });

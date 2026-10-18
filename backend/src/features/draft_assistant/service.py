@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from functools import partial
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -156,8 +157,6 @@ class DraftAssistantService:
             anonymize_participants=settings.assistant_anonymize_participants,
             participation_model=participation_model,
         )
-        if provider is None:
-            await ensure_model_offered(provider_name, model)
         active = provider or build_provider(provider_name, model)
         messages = [
             *list(history)[-MAX_HISTORY_MESSAGES:],
@@ -166,6 +165,9 @@ class DraftAssistantService:
 
         reply = await answer(
             active,
+            prepare=partial(ensure_model_offered, provider_name, model)
+            if provider is None
+            else None,
             system=SYSTEM_PROMPT,
             messages=messages,
             tools=build_tools(ctx),

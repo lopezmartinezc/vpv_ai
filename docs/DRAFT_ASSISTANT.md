@@ -247,23 +247,30 @@ los acepta como parámetro.
   límite (los `default_limits` globales no se aplican a rutas sin decorar). Hay
   un test que lo fija, y otro que avisa si alguien añade el middleware.
 - **Tope de vueltas de herramientas POR PREGUNTA** (`ASSISTANT_MAX_TOOL_ROUNDS`,
-  por defecto 20): es lo único que queda, y no limita cuántas preguntas haces —
+  por defecto 20): no limita cuántas preguntas haces —
   evita que un modelo atascado en bucle sangre tokens en una sola. Estuvo en 8 y
   se quedaba corto: *"¿a quién cojo en este pick?"* encadena `estado_draft` →
   `proximos_turnos` → `plantilla` → `escasez_posicional` → `buscar_jugadores` en
   las 4 posiciones = 8 llamadas, y se cortaba justo antes de responder. Si vuelve
   a pasar, el mensaje dice qué llegó a consultar y se sube por `.env` sin desplegar.
-- **Presupuesto por pregunta** (`backends.answer`): `ASSISTANT_MAX_OUTPUT_TOKENS`
-  (2000) acota la respuesta; `ASSISTANT_REQUEST_TIMEOUT_SECONDS` (60) cada llamada
-  al proveedor; `ASSISTANT_TIMEOUT_SECONDS` (150) la pregunta entera con todas sus
-  vueltas; `ASSISTANT_MAX_CONCURRENT` (2) cuántas preguntas corren a la vez entre
-  los dos chats. Al pasarse, la pregunta se corta con un mensaje claro ("ha tardado
-  más de N s", "está ocupado") en vez de colgar. Cada turno deja en el log
-  proveedor, modelo, segundos y herramientas.
-- **Catálogo autorizado** (`backends.ensure_model_offered`): el modelo que llega del
-  selector tiene que estar en la lista que el proveedor devuelve para esa clave, o
-  ser el configurado por defecto. Un default que el proveedor no lista no se ofrece
-  en el desplegable y deja un aviso en el log: el `.env` está mal, no el proveedor.
+- **Presupuesto por pregunta** (`execution.answer`, reexportado en `backends`):
+  `ASSISTANT_MAX_OUTPUT_TOKENS` (2000) limita la salida de Anthropic por ronda;
+  `ASSISTANT_OPENAI_MAX_OUTPUT_TOKENS` (8000, configurable entre 1 y 32768) incluye
+  razonamiento y texto de OpenAI por ronda. No es un presupuesto total de tokens
+  por pregunta, ni garantiza que toda respuesta quepa: los cortes se señalan como
+  incompletos y nunca se ejecutan herramientas de una respuesta OpenAI incompleta.
+  `ASSISTANT_REQUEST_TIMEOUT_SECONDS` (60) limita también el listado de modelos,
+  sin reintentos en ese listado. `ASSISTANT_TIMEOUT_SECONDS` (150) y
+  `ASSISTANT_MAX_CONCURRENT` (2, por proceso) abarcan validación del catálogo e
+  inferencia entre los dos chats. Cada turno registra proveedor, modelo, segundos
+  y herramientas. No hay reintentos automáticos con un presupuesto mayor.
+- **Catálogo autorizado** (`backends.ensure_model_offered`): el modelo solicitado,
+  incluido el configurado por defecto, debe estar en la lista del proveedor.
+  Solo si falla la consulta se permite el default como alternativa no verificada;
+  una lista vacía obtenida correctamente no autoriza ningún modelo. El endpoint
+  ofrece como selección inicial el primer modelo disponible (el configurado si
+  está presente); las peticiones sin modelo conservan el configurado y lo validan,
+  sin cambiar de modelo silenciosamente. No se han migrado los modelos por defecto.
 - **Entrada acotada**: pregunta ≤ 4.000 caracteres, historial ≤ 80 mensajes. Es
   para que un cliente roto no mande un megabyte, no para racionar la conversación.
 - **Límite de gasto** en la consola del proveedor. Es el sitio correcto para un

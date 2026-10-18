@@ -72,6 +72,8 @@ def _finish(
     formations: Sequence[Formation],
     basis: str,
 ) -> Proposal:
+    if len(result_ids) != len(set(result_ids)):
+        raise ProposalError("No se puede repetir jugador en la propuesta.")
     by_id = {p.player_id: p for p in squad}
     if len(result_ids) < 11:
         raise ProposalError(
@@ -107,6 +109,8 @@ def swap(
 ) -> Proposal:
     """The eleven after ``leaving`` go out and ``entering`` come in."""
     by_id = {p.player_id: p for p in squad}
+    if any(len(ids) != len(set(ids)) for ids in (base_ids, entering, leaving)):
+        raise ProposalError("No se puede repetir jugador en la propuesta.")
     strangers = [i for i in entering if i not in by_id]
     if strangers:
         raise ProposalError(f"No estan en tu plantilla: {strangers}.")
