@@ -805,11 +805,15 @@ class ScrapingService:
                     f"(procesados={processed}, errores={errors})",
                     "warning" if errors else "info",
                 )
+            # The cause goes in the message: it is the only line the panel
+            # shows for this run, and without it a fetch failure reads as a
+            # bare "errores=1".
+            cause = f" — {'; '.join(errs)}" if errs else ""
             await ScrapingLogRepository.write_log(
                 _make_log(
                     None,
                     "ok" if errors == 0 else "warning",
-                    f"Fin [match_page]: procesados={processed}, errores={errors}",
+                    f"Fin [match_page]: procesados={processed}, errores={errors}{cause}",
                 )
             )
             # The player-page branch below runs aggregate_matchday at
